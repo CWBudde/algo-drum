@@ -1,4 +1,4 @@
-module github.com/MeKo-Tech/algo-drum
+module github.com/cwbudde/algo-drum
 
 go 1.25.0
 

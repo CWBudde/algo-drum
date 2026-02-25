@@ -8,6 +8,7 @@ declare global {
       setSwing: (swing: number) => void;
       setCell: (track: number, step: number, active: boolean) => void;
       setVolume: (track: number, vol: number) => void;
+      setDecay: (track: number, amount: number) => void;
       setReverb: (amount: number) => void;
       render: (n: number) => Float32Array;
       currentStep: () => number;
@@ -76,6 +77,10 @@ export function setCell(track: number, step: number, active: boolean): void {
 
 export function setVolume(track: number, vol: number): void {
   if (wasmReady) window.AlgoDrum.setVolume(track, vol);
+}
+
+export function setDecay(track: number, amount: number): void {
+  if (wasmReady) window.AlgoDrum.setDecay(track, amount);
 }
 
 export function setReverb(amount: number): void {

@@ -1,7 +1,7 @@
 # algo-drum
 
 An algorithmic drum machine running entirely in your browser.
-[**Try it live →**](https://meko-tech.github.io/algo-drum/)
+[**Try it live →**](https://cwbudde.github.io/algo-drum/)
 
 Built with a **Go audio engine** compiled to WebAssembly and a React UI.
 No plugins, no backend — just a `.wasm` file and a browser.

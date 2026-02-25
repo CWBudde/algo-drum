@@ -18,6 +18,7 @@ const GRID_W = 656;
 const GRID_H = 440;
 const CELL_W = GRID_W / COLS;
 const CELL_H = GRID_H / ROWS;
+const CHANNEL_CTRL_X = GRID_X + GRID_W + 80;
 
 // Single warm-amber LED color — classic drum machine look
 const LED_COLOR = "#C87828";
@@ -357,6 +358,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   const [swing, setSwingState] = useState(0.0);
   const [reverb, setReverbState] = useState(0.0);
   const [volumes, setVolumes] = useState(() => Array<number>(ROWS).fill(0.75));
+  const [decays, setDecays] = useState(() => Array<number>(ROWS).fill(0.5));
   const [muted, setMuted] = useState(() => Array<boolean>(ROWS).fill(false));
   const activeStepRef = useRef(-1);
   const rafRef = useRef(0);
@@ -377,6 +379,11 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       if (wasmLoaded) engine.setVolume(TRACK_INDEX[i], muted[i] ? 0 : v);
     });
   }, [volumes, muted, wasmLoaded]);
+  useEffect(() => {
+    decays.forEach((d, i) => {
+      if (wasmLoaded) engine.setDecay(TRACK_INDEX[i], d);
+    });
+  }, [decays, wasmLoaded]);
 
   // Animation / draw loop
   const draw = useCallback(() => {
@@ -455,6 +462,14 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     setMuted((prev) => {
       const n = [...prev];
       n[track] = !n[track];
+      return n;
+    });
+  }, []);
+
+  const handleDecayChange = useCallback((track: number, v: number) => {
+    setDecays((prev) => {
+      const n = [...prev];
+      n[track] = v;
       return n;
     });
   }, []);
@@ -541,6 +556,17 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           size={54}
           color="#C87828"
         />
+      </div>
+
+      {/* Reverb control: right-aligned under the sequencer grid */}
+      <div
+        style={{
+          position: "absolute",
+          left: `${((GRID_X + GRID_W) / CW) * 100}%`,
+          top: `${((GRID_Y + GRID_H + 18) / CH) * 100}%`,
+          transform: "translate(-100%, 0)",
+        }}
+      >
         <Knob
           value={reverb}
           onChange={setReverbState}
@@ -550,10 +576,10 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         />
       </div>
 
-      {/* Per-track mute diode + volume knob */}
+      {/* Per-track mute diode + volume/decay knobs */}
       {volumes.map((v, i) => {
         const topPct = ((GRID_Y + i * CELL_H + CELL_H / 2) / CH) * 100;
-        const leftPct = ((GRID_X + GRID_W + CW - 14) / 2 / CW) * 100;
+        const leftPct = (CHANNEL_CTRL_X / CW) * 100;
         return (
           <div
             key={i}
@@ -564,7 +590,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
               transform: "translate(-50%, -50%)",
               display: "flex",
               alignItems: "flex-start",
-              gap: 8,
+              gap: 10,
             }}
           >
             {/* Mute LED diode — marginTop centers it against the knob SVG, not the label */}
@@ -595,6 +621,13 @@ export default function DrumMachine({ wasmLoaded }: Props) {
               label={TRACKS[i].slice(0, 3).toUpperCase()}
               size={42}
               color="#C87828"
+            />
+            <Knob
+              value={decays[i]}
+              onChange={(val) => handleDecayChange(i, val)}
+              label="DEC"
+              size={42}
+              color="#6D95C8"
             />
           </div>
         );

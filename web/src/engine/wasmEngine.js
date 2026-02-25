@@ -46,6 +46,10 @@ export function setVolume(track, vol) {
     if (wasmReady)
         window.AlgoDrum.setVolume(track, vol);
 }
+export function setDecay(track, amount) {
+    if (wasmReady)
+        window.AlgoDrum.setDecay(track, amount);
+}
 export function setReverb(amount) {
     if (wasmReady)
         window.AlgoDrum.setReverb(amount);

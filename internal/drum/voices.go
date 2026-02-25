@@ -13,6 +13,24 @@ type Voice interface {
 	Trigger()
 	Tick() float64
 	IsActive() bool
+	SetDecay(amount float64)
+}
+
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
+
+func decayCoef(sr, decayS float64) float64 {
+	if decayS < 0.005 {
+		decayS = 0.005
+	}
+	return math.Exp(-1.0 / (sr * decayS))
 }
 
 // ── Bass Drum ──────────────────────────────────────────────────────────────
@@ -24,19 +42,22 @@ type BassDrum struct {
 	phase     float64
 	env       float64
 	envDecay  float64
+	baseDecay float64
 	pitchFrom float64
 	pitchTo   float64
 	pitchTC   float64 // pitch time-constant in samples
 }
 
 func NewBassDrum(sr float64) *BassDrum {
-	return &BassDrum{
+	v := &BassDrum{
 		sr:        sr,
-		envDecay:  math.Exp(-1.0 / (sr * 0.45)),
+		baseDecay: 0.45,
 		pitchFrom: 200.0,
 		pitchTo:   50.0,
 		pitchTC:   sr * 0.06,
 	}
+	v.SetDecay(0.5)
+	return v
 }
 
 func (v *BassDrum) Trigger() {
@@ -47,6 +68,11 @@ func (v *BassDrum) Trigger() {
 }
 
 func (v *BassDrum) IsActive() bool { return v.active }
+
+func (v *BassDrum) SetDecay(amount float64) {
+	scale := 0.5 + clamp01(amount)
+	v.envDecay = decayCoef(v.sr, v.baseDecay*scale)
+}
 
 func (v *BassDrum) Tick() float64 {
 	if !v.active {
@@ -82,8 +108,10 @@ type Snare struct {
 	phase      float64
 	toneEnv    float64
 	toneDecay  float64
+	baseTone   float64
 	noiseEnv   float64
 	noiseDecay float64
+	baseNoise  float64
 	hpFilter   biquad.Section
 	rng        *rand.Rand
 }
@@ -91,13 +119,15 @@ type Snare struct {
 func NewSnare(sr float64) *Snare {
 	hpCoeffs := design.Highpass(2000, 0.7, sr)
 
-	return &Snare{
-		sr:         sr,
-		toneDecay:  math.Exp(-1.0 / (sr * 0.12)),
-		noiseDecay: math.Exp(-1.0 / (sr * 0.18)),
-		hpFilter:   *biquad.NewSection(hpCoeffs),
-		rng:        rand.New(rand.NewSource(42)),
+	v := &Snare{
+		sr:        sr,
+		baseTone:  0.12,
+		baseNoise: 0.18,
+		hpFilter:  *biquad.NewSection(hpCoeffs),
+		rng:       rand.New(rand.NewSource(42)),
 	}
+	v.SetDecay(0.5)
+	return v
 }
 
 func (v *Snare) Trigger() {
@@ -110,6 +140,12 @@ func (v *Snare) Trigger() {
 }
 
 func (v *Snare) IsActive() bool { return v.active }
+
+func (v *Snare) SetDecay(amount float64) {
+	scale := 0.5 + clamp01(amount)
+	v.toneDecay = decayCoef(v.sr, v.baseTone*scale)
+	v.noiseDecay = decayCoef(v.sr, v.baseNoise*scale)
+}
 
 func (v *Snare) Tick() float64 {
 	if !v.active {
@@ -139,13 +175,14 @@ func (v *Snare) Tick() float64 {
 // ── Hi-Hat ─────────────────────────────────────────────────────────────────
 
 type HiHat struct {
-	sr       float64
-	active   bool
-	age      int
-	env      float64
-	envDecay float64
-	bpFilter biquad.Section
-	rng      *rand.Rand
+	sr        float64
+	active    bool
+	age       int
+	env       float64
+	envDecay  float64
+	baseDecay float64
+	bpFilter  biquad.Section
+	rng       *rand.Rand
 }
 
 func NewHiHat(sr float64, closed bool) *HiHat {
@@ -156,12 +193,14 @@ func NewHiHat(sr float64, closed bool) *HiHat {
 		decayS = 0.4
 	}
 
-	return &HiHat{
-		sr:       sr,
-		envDecay: math.Exp(-1.0 / (sr * decayS)),
-		bpFilter: *biquad.NewSection(bpCoeffs),
-		rng:      rand.New(rand.NewSource(123)),
+	v := &HiHat{
+		sr:        sr,
+		baseDecay: decayS,
+		bpFilter:  *biquad.NewSection(bpCoeffs),
+		rng:       rand.New(rand.NewSource(123)),
 	}
+	v.SetDecay(0.5)
+	return v
 }
 
 func (v *HiHat) Trigger() {
@@ -172,6 +211,11 @@ func (v *HiHat) Trigger() {
 }
 
 func (v *HiHat) IsActive() bool { return v.active }
+
+func (v *HiHat) SetDecay(amount float64) {
+	scale := 0.5 + clamp01(amount)
+	v.envDecay = decayCoef(v.sr, v.baseDecay*scale)
+}
 
 func (v *HiHat) Tick() float64 {
 	if !v.active {
@@ -200,19 +244,22 @@ type Tom struct {
 	phase     float64
 	env       float64
 	envDecay  float64
+	baseDecay float64
 	pitchFrom float64
 	pitchTo   float64
 	pitchTC   float64
 }
 
 func NewTom(sr float64) *Tom {
-	return &Tom{
+	v := &Tom{
 		sr:        sr,
-		envDecay:  math.Exp(-1.0 / (sr * 0.35)),
+		baseDecay: 0.35,
 		pitchFrom: 120.0,
 		pitchTo:   60.0,
 		pitchTC:   sr * 0.1,
 	}
+	v.SetDecay(0.5)
+	return v
 }
 
 func (v *Tom) Trigger() {
@@ -223,6 +270,11 @@ func (v *Tom) Trigger() {
 }
 
 func (v *Tom) IsActive() bool { return v.active }
+
+func (v *Tom) SetDecay(amount float64) {
+	scale := 0.5 + clamp01(amount)
+	v.envDecay = decayCoef(v.sr, v.baseDecay*scale)
+}
 
 func (v *Tom) Tick() float64 {
 	if !v.active {
@@ -252,24 +304,27 @@ func (v *Tom) Tick() float64 {
 // ── Cymbal ─────────────────────────────────────────────────────────────────
 
 type Cymbal struct {
-	sr       float64
-	active   bool
-	age      int
-	env      float64
-	envDecay float64
-	bpFilter biquad.Section
-	rng      *rand.Rand
+	sr        float64
+	active    bool
+	age       int
+	env       float64
+	envDecay  float64
+	baseDecay float64
+	bpFilter  biquad.Section
+	rng       *rand.Rand
 }
 
 func NewCymbal(sr float64) *Cymbal {
 	bpCoeffs := design.Bandpass(7000, 1.2, sr)
 
-	return &Cymbal{
-		sr:       sr,
-		envDecay: math.Exp(-1.0 / (sr * 1.2)),
-		bpFilter: *biquad.NewSection(bpCoeffs),
-		rng:      rand.New(rand.NewSource(999)),
+	v := &Cymbal{
+		sr:        sr,
+		baseDecay: 1.2,
+		bpFilter:  *biquad.NewSection(bpCoeffs),
+		rng:       rand.New(rand.NewSource(999)),
 	}
+	v.SetDecay(0.5)
+	return v
 }
 
 func (v *Cymbal) Trigger() {
@@ -280,6 +335,11 @@ func (v *Cymbal) Trigger() {
 }
 
 func (v *Cymbal) IsActive() bool { return v.active }
+
+func (v *Cymbal) SetDecay(amount float64) {
+	scale := 0.5 + clamp01(amount)
+	v.envDecay = decayCoef(v.sr, v.baseDecay*scale)
+}
 
 func (v *Cymbal) Tick() float64 {
 	if !v.active {

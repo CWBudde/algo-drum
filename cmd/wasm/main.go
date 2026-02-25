@@ -5,7 +5,7 @@ package main
 import (
 	"syscall/js"
 
-	"github.com/MeKo-Tech/algo-drum/internal/drum"
+	"github.com/cwbudde/algo-drum/internal/drum"
 )
 
 var (
@@ -62,6 +62,14 @@ func main() {
 	api.Set("setVolume", export(func(args []js.Value) any {
 		if engine != nil && len(args) >= 2 {
 			engine.SetVolume(args[0].Int(), args[1].Float())
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("setDecay", export(func(args []js.Value) any {
+		if engine != nil && len(args) >= 2 {
+			engine.SetDecay(args[0].Int(), args[1].Float())
 		}
 
 		return js.Null()

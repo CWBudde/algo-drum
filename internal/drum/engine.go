@@ -19,6 +19,7 @@ type Engine struct {
 
 	pattern [TrackCount][StepCount]bool
 	volumes [TrackCount]float64
+	decays  [TrackCount]float64
 
 	voices [TrackCount]Voice
 
@@ -39,6 +40,7 @@ func NewEngine(sr float64) *Engine {
 	}
 	for i := range e.volumes {
 		e.volumes[i] = 1.0
+		e.decays[i] = 0.5
 	}
 
 	e.voices[0] = NewBassDrum(sr)
@@ -46,6 +48,9 @@ func NewEngine(sr float64) *Engine {
 	e.voices[2] = NewHiHat(sr, true)
 	e.voices[3] = NewTom(sr)
 	e.voices[4] = NewCymbal(sr)
+	for i := range e.voices {
+		e.voices[i].SetDecay(e.decays[i])
+	}
 	e.recomputeStepLengths()
 
 	rev, _ := reverb.NewFDNReverb(sr)
@@ -105,6 +110,22 @@ func (e *Engine) SetVolume(track int, vol float64) {
 	if track >= 0 && track < TrackCount {
 		e.volumes[track] = vol
 	}
+}
+
+// SetDecay sets per-track decay amount in [0, 1].
+func (e *Engine) SetDecay(track int, amount float64) {
+	if track < 0 || track >= TrackCount {
+		return
+	}
+	if amount < 0 {
+		amount = 0
+	}
+	if amount > 1 {
+		amount = 1
+	}
+
+	e.decays[track] = amount
+	e.voices[track].SetDecay(amount)
 }
 
 // SetReverb sets the reverb amount in [0, 1].

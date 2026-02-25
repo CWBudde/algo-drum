@@ -17,6 +17,7 @@ const GRID_W = 656;
 const GRID_H = 440;
 const CELL_W = GRID_W / COLS;
 const CELL_H = GRID_H / ROWS;
+const CHANNEL_CTRL_X = GRID_X + GRID_W + 80;
 // Single warm-amber LED color — classic drum machine look
 const LED_COLOR = "#C87828";
 // ─── Drawing helpers ────────────────────────────────────────────────────────
@@ -260,6 +261,7 @@ export default function DrumMachine({ wasmLoaded }) {
     const [swing, setSwingState] = useState(0.0);
     const [reverb, setReverbState] = useState(0.0);
     const [volumes, setVolumes] = useState(() => Array(ROWS).fill(0.75));
+    const [decays, setDecays] = useState(() => Array(ROWS).fill(0.5));
     const [muted, setMuted] = useState(() => Array(ROWS).fill(false));
     const activeStepRef = useRef(-1);
     const rafRef = useRef(0);
@@ -282,6 +284,12 @@ export default function DrumMachine({ wasmLoaded }) {
                 engine.setVolume(TRACK_INDEX[i], muted[i] ? 0 : v);
         });
     }, [volumes, muted, wasmLoaded]);
+    useEffect(() => {
+        decays.forEach((d, i) => {
+            if (wasmLoaded)
+                engine.setDecay(TRACK_INDEX[i], d);
+        });
+    }, [decays, wasmLoaded]);
     // Animation / draw loop
     const draw = useCallback(() => {
         const canvas = canvasRef.current;
@@ -358,6 +366,13 @@ export default function DrumMachine({ wasmLoaded }) {
             return n;
         });
     }, []);
+    const handleDecayChange = useCallback((track, v) => {
+        setDecays((prev) => {
+            const n = [...prev];
+            n[track] = v;
+            return n;
+        });
+    }, []);
     return (_jsxs("div", { ref: containerRef, style: { width: "100%", maxWidth: 1020, position: "relative" }, children: [_jsx("canvas", { ref: canvasRef, width: CW, height: CH, onClick: handleCanvasClick, style: {
                     width: "100%",
                     height: "auto",
@@ -392,9 +407,14 @@ export default function DrumMachine({ wasmLoaded }) {
                                 ? "0 0 18px rgba(220,50,50,0.5), 0 4px 10px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.15)"
                                 : "0 0 14px rgba(0,180,100,0.35), 0 4px 10px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.15)",
                             transition: "background 0.15s, box-shadow 0.15s",
-                        }, children: playing ? (_jsxs("svg", { width: 16, height: 16, viewBox: "0 0 18 18", children: [_jsx("rect", { x: 3, y: 3, width: 4, height: 12, fill: "white", rx: 1 }), _jsx("rect", { x: 11, y: 3, width: 4, height: 12, fill: "white", rx: 1 })] })) : (_jsx("svg", { width: 16, height: 16, viewBox: "0 0 18 18", children: _jsx("polygon", { points: "5,3 15,9 5,15", fill: "white" }) })) }), _jsx(Knob, { value: tempo, onChange: setTempoState, label: `${bpm} BPM`, size: 54, color: "#C87828" }), _jsx(Knob, { value: swing, onChange: setSwingState, label: "SWING", size: 54, color: "#C87828" }), _jsx(Knob, { value: reverb, onChange: setReverbState, label: "REVERB", size: 54, color: "#C87828" })] }), volumes.map((v, i) => {
+                        }, children: playing ? (_jsxs("svg", { width: 16, height: 16, viewBox: "0 0 18 18", children: [_jsx("rect", { x: 3, y: 3, width: 4, height: 12, fill: "white", rx: 1 }), _jsx("rect", { x: 11, y: 3, width: 4, height: 12, fill: "white", rx: 1 })] })) : (_jsx("svg", { width: 16, height: 16, viewBox: "0 0 18 18", children: _jsx("polygon", { points: "5,3 15,9 5,15", fill: "white" }) })) }), _jsx(Knob, { value: tempo, onChange: setTempoState, label: `${bpm} BPM`, size: 54, color: "#C87828" }), _jsx(Knob, { value: swing, onChange: setSwingState, label: "SWING", size: 54, color: "#C87828" })] }), _jsx("div", { style: {
+                    position: "absolute",
+                    left: `${((GRID_X + GRID_W) / CW) * 100}%`,
+                    top: `${((GRID_Y + GRID_H + 18) / CH) * 100}%`,
+                    transform: "translate(-100%, 0)",
+                }, children: _jsx(Knob, { value: reverb, onChange: setReverbState, label: "REVERB", size: 54, color: "#C87828" }) }), volumes.map((v, i) => {
                 const topPct = ((GRID_Y + i * CELL_H + CELL_H / 2) / CH) * 100;
-                const leftPct = ((GRID_X + GRID_W + CW - 14) / 2 / CW) * 100;
+                const leftPct = (CHANNEL_CTRL_X / CW) * 100;
                 return (_jsxs("div", { style: {
                         position: "absolute",
                         left: `${leftPct}%`,
@@ -402,7 +422,7 @@ export default function DrumMachine({ wasmLoaded }) {
                         transform: "translate(-50%, -50%)",
                         display: "flex",
                         alignItems: "flex-start",
-                        gap: 8,
+                        gap: 10,
                     }, children: [_jsx("button", { onClick: () => handleMuteToggle(i), title: muted[i] ? "Unmute" : "Mute", style: {
                                 width: 11,
                                 height: 11,
@@ -419,6 +439,6 @@ export default function DrumMachine({ wasmLoaded }) {
                                 padding: 0,
                                 flexShrink: 0,
                                 transition: "background 0.1s, box-shadow 0.1s",
-                            } }), _jsx(Knob, { value: v, onChange: (val) => handleVolumeChange(i, val), label: TRACKS[i].slice(0, 3).toUpperCase(), size: 42, color: "#C87828" })] }, i));
+                            } }), _jsx(Knob, { value: v, onChange: (val) => handleVolumeChange(i, val), label: TRACKS[i].slice(0, 3).toUpperCase(), size: 42, color: "#C87828" }), _jsx(Knob, { value: decays[i], onChange: (val) => handleDecayChange(i, val), label: "DEC", size: 42, color: "#6D95C8" })] }, i));
             })] }));
 }
