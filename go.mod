@@ -2,9 +2,17 @@ module github.com/MeKo-Tech/algo-drum
 
 go 1.25.0
 
-require github.com/cwbudde/algo-dsp v0.2.0
+require github.com/cwbudde/algo-dsp v0.5.0
 
 require (
+	github.com/cwbudde/algo-approx v0.1.0 // indirect
+	github.com/cwbudde/algo-fft v0.6.10 // indirect
 	github.com/cwbudde/algo-vecmath v0.1.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
+)
+
+replace (
+	github.com/cwbudde/algo-approx v0.1.0 => ../algo-approx
+	github.com/cwbudde/algo-dsp => ../algo-dsp
+	github.com/cwbudde/algo-fft v0.6.10 => ../algo-fft
 )

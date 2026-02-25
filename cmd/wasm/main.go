@@ -60,6 +60,13 @@ func main() {
 		return js.Null()
 	}))
 
+	api.Set("setReverb", export(func(args []js.Value) any {
+		if engine != nil && len(args) > 0 {
+			engine.SetReverb(args[0].Float())
+		}
+		return js.Null()
+	}))
+
 	api.Set("render", export(func(args []js.Value) any {
 		if engine == nil || len(args) < 1 {
 			return js.Global().Get("Float32Array").New(0)

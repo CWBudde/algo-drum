@@ -1,5 +1,10 @@
 package drum
 
+import (
+	"github.com/cwbudde/algo-dsp/dsp/effects/dynamics"
+	"github.com/cwbudde/algo-dsp/dsp/effects/reverb"
+)
+
 const (
 	TrackCount = 5
 	StepCount  = 8
@@ -20,6 +25,10 @@ type Engine struct {
 	currentStep int
 	stepSamples int64
 	stepLen     [StepCount]int64 // pre-computed step lengths
+
+	reverb       *reverb.FDNReverb
+	reverbAmount float64
+	limiter      *dynamics.Limiter
 }
 
 // NewEngine creates a drum engine at the given sample rate.
@@ -37,6 +46,15 @@ func NewEngine(sr float64) *Engine {
 	e.voices[3] = NewTom(sr)
 	e.voices[4] = NewCymbal(sr)
 	e.recomputeStepLengths()
+
+	rev, _ := reverb.NewFDNReverb(sr)
+	rev.SetWet(0)
+	e.reverb = rev
+
+	lim, _ := dynamics.NewLimiter(sr)
+	lim.SetThreshold(-0.1)
+	e.limiter = lim
+
 	return e
 }
 
@@ -85,6 +103,19 @@ func (e *Engine) SetVolume(track int, vol float64) {
 	}
 }
 
+// SetReverb sets the reverb amount in [0, 1].
+// 0 = fully dry, 1 = maximum reverb (wet=0.45, RT60=4 s).
+func (e *Engine) SetReverb(amount float64) {
+	e.reverbAmount = amount
+	if amount <= 0 {
+		e.reverb.SetWet(0)
+		return
+	}
+	e.reverb.SetWet(amount * 0.45)
+	rt60 := 0.3 + amount*3.7
+	e.reverb.SetRT60(rt60)
+}
+
 func (e *Engine) CurrentStep() int {
 	if !e.running {
 		return -1
@@ -114,17 +145,10 @@ func (e *Engine) Render(buf []float32) {
 		for t, v := range e.voices {
 			out += v.Tick() * e.volumes[t]
 		}
-		buf[i] = float32(softClip(out * 0.8))
+		if e.reverbAmount > 0 {
+			out = e.reverb.ProcessSample(out)
+		}
+		out = e.limiter.ProcessSample(out)
+		buf[i] = float32(out)
 	}
-}
-
-// softClip applies tanh-like saturation to prevent hard clipping.
-func softClip(x float64) float64 {
-	if x > 1 {
-		return 1
-	}
-	if x < -1 {
-		return -1
-	}
-	return x * (1.5 - 0.5*x*x)
 }

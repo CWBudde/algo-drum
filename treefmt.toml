@@ -1,0 +1,79 @@
+# treefmt configuration for algo-drum
+# Multi-language code formatting (Go + TypeScript/React)
+
+[global]
+excludes = [
+    # Git and version control
+    "**/.gitignore",
+    "**/.git/**",
+
+    # Go module files (managed by go tooling)
+    "go.sum",
+    "go.mod",
+
+    # Documentation and text files
+    "**/*.txt",
+    "CHANGELOG.md",
+    "LICENSE",
+
+    # Binary and data files
+    "**/*.wasm",
+    "**/*.wav",
+    "**/*.pdf",
+    "**/*.png",
+    "**/*.jpg",
+    "**/*.jpeg",
+
+    # Build artifacts
+    "web/dist/**",
+    "web/public/wasm_exec.js",
+
+    # Frontend dependencies
+    "web/node_modules/**",
+
+    # Coverage artifacts
+    "coverage.out",
+    "coverage.html",
+]
+
+# Go formatter - simple and strict
+[formatter.gofumpt]
+command = "gofumpt"
+options = ["-w"]
+includes = ["*.go"]
+
+# Go import organizer - runs after gofumpt
+[formatter.gci]
+command = "gci"
+options = ["write"]
+includes = ["*.go"]
+priority = 1
+
+# Shell script checker
+[formatter.shellcheck]
+command = "shellcheck"
+includes = ["*.sh"]
+
+# Shell script formatter - runs after shellcheck
+[formatter.shfmt]
+command = "shfmt"
+options = ["-s", "-w"]
+includes = ["*.sh"]
+priority = 1
+
+# Markdown, YAML, JSON, TypeScript/React formatter
+[formatter.prettier]
+command = "prettier"
+options = ["-w"]
+includes = [
+    "*.md",
+    "*.yaml",
+    "*.yml",
+    "*.json",
+    "*.ts",
+    "*.tsx",
+    "*.css",
+]
+excludes = [
+    "**/*.sops.*",
+]
