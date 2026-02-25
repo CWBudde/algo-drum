@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Knob from './Knob'
 import * as engine from '../engine/wasmEngine'
 
-const TRACKS = ['Bass', 'Snare', 'HiHat', 'Tom', 'Cymbal']
+// Visual order: Cymbal on top, Bass on bottom
+const TRACKS = ['Cymbal', 'Tom', 'HiHat', 'Snare', 'Bass']
+// Maps visual row index → engine track index (engine: 0=Bass,1=Snare,2=HiHat,3=Tom,4=Cymbal)
+const TRACK_INDEX = [4, 3, 2, 1, 0]
 const COLS = 8
 const ROWS = 5
 
@@ -63,7 +66,7 @@ function drawPuck(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: numb
   grad.addColorStop(1, PUCK_BODY)
   ctx.fillStyle = grad
   ctx.beginPath()
-  ctx.ellipse(cx, cy, r, r * 0.85, 0, 0, Math.PI * 2)
+  ctx.ellipse(cx, cy, r, r, 0, 0, Math.PI * 2)
   ctx.fill()
   ctx.restore()
 }
@@ -147,7 +150,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   useEffect(() => { if (wasmLoaded) engine.setTempo(bpm) }, [bpm, wasmLoaded])
   useEffect(() => { if (wasmLoaded) engine.setSwing(swing * 0.5) }, [swing, wasmLoaded])
   useEffect(() => {
-    volumes.forEach((v, i) => { if (wasmLoaded) engine.setVolume(i, v) })
+    volumes.forEach((v, i) => { if (wasmLoaded) engine.setVolume(TRACK_INDEX[i], v) })
   }, [volumes, wasmLoaded])
 
   // Animation / draw loop
@@ -196,7 +199,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       updated[row][col] = next
       return updated
     })
-    if (wasmLoaded) engine.setCell(row, col, next)
+    if (wasmLoaded) engine.setCell(TRACK_INDEX[row], col, next)
   }, [canvasToCell, pattern, wasmLoaded])
 
   const handlePlayStop = useCallback(async () => {
@@ -257,26 +260,26 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         <Knob value={swing} onChange={setSwingState} label="SWING" size={54} color="#C4903A" />
       </div>
 
-      {/* Per-track volume knobs — right edge */}
-      <div style={{
-        position: 'absolute',
-        right: '1.5%',
-        top: '11%',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 14,
-      }}>
-        {volumes.map((v, i) => (
-          <Knob
-            key={i}
-            value={v}
-            onChange={(val) => handleVolumeChange(i, val)}
-            label={TRACKS[i].slice(0, 3).toUpperCase()}
-            size={42}
-            color="#9B6B2A"
-          />
-        ))}
-      </div>
+      {/* Per-track volume knobs — right edge, aligned to grid rows */}
+      {volumes.map((v, i) => {
+        const topPct = (GRID_Y + i * CELL_H + CELL_H / 2) / CH * 100
+        return (
+          <div key={i} style={{
+            position: 'absolute',
+            right: '1.5%',
+            top: `${topPct}%`,
+            transform: 'translateY(-50%)',
+          }}>
+            <Knob
+              value={v}
+              onChange={(val) => handleVolumeChange(i, val)}
+              label={TRACKS[i].slice(0, 3).toUpperCase()}
+              size={42}
+              color="#9B6B2A"
+            />
+          </div>
+        )
+      })}
     </div>
   )
 }

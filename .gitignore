@@ -1,4 +1,35 @@
+# Build artifacts
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+web/dist/
 web/public/algo_drum.wasm
 web/public/wasm_exec.js
+
+# Dependencies
+node_modules/
 web/node_modules/
-web/dist/
+vendor/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Go
+/algo-drum
+*.out
+*.test
