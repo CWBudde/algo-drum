@@ -19,5 +19,16 @@ formatters:
   enable:
     - gofmt
 
+linters-settings:
+  varnamelen:
+    # Short names that are idiomatic in DSP / Go code
+    ignore-names:
+      - sr  # sample rate
+      - e   # engine local variable
+      - i   # loop index
+      - t   # track / time
+      - v   # voice / value
+      - ok  # Go error-check idiom
+
 issues:
   exclude-use-default: false

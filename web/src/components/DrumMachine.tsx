@@ -474,7 +474,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           height: "auto",
           display: "block",
           borderRadius: 22,
-          boxShadow: "0 24px 80px rgba(0,0,0,0.85), 0 4px 16px rgba(0,0,0,0.6)",
+          boxShadow: "0 14px 44px rgba(0,0,0,0.85), 0 4px 12px rgba(0,0,0,0.6)",
           cursor: "pointer",
         }}
       />
@@ -562,17 +562,18 @@ export default function DrumMachine({ wasmLoaded }: Props) {
               top: `${topPct}%`,
               transform: "translate(-50%, -50%)",
               display: "flex",
-              alignItems: "center",
+              alignItems: "flex-start",
               gap: 8,
             }}
           >
-            {/* Mute LED diode */}
+            {/* Mute LED diode — marginTop centers it against the knob SVG, not the label */}
             <button
               onClick={() => handleMuteToggle(i)}
               title={muted[i] ? "Unmute" : "Mute"}
               style={{
                 width: 11,
                 height: 11,
+                marginTop: Math.floor((42 - 11) / 2),
                 borderRadius: "50%",
                 background: muted[i]
                   ? "radial-gradient(circle at 35% 30%, #FF7070, #CC1010)"

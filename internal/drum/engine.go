@@ -40,6 +40,7 @@ func NewEngine(sr float64) *Engine {
 	for i := range e.volumes {
 		e.volumes[i] = 1.0
 	}
+
 	e.voices[0] = NewBassDrum(sr)
 	e.voices[1] = NewSnare(sr)
 	e.voices[2] = NewHiHat(sr, true)
@@ -48,11 +49,11 @@ func NewEngine(sr float64) *Engine {
 	e.recomputeStepLengths()
 
 	rev, _ := reverb.NewFDNReverb(sr)
-	rev.SetWet(0)
+	_ = rev.SetWet(0)
 	e.reverb = rev
 
 	lim, _ := dynamics.NewLimiter(sr)
-	lim.SetThreshold(-0.1)
+	_ = lim.SetThreshold(-0.1)
 	e.limiter = lim
 
 	return e
@@ -62,6 +63,7 @@ func NewEngine(sr float64) *Engine {
 // swing=0: all equal. swing=0.5: even steps get 1.5× base, odd get 0.5× base.
 func (e *Engine) recomputeStepLengths() {
 	base := e.sr * 60.0 / e.bpm / 2.0 // samples per 8th note
+
 	s := e.swing * 0.5
 	for i := range e.stepLen {
 		if i%2 == 0 {
@@ -77,6 +79,7 @@ func (e *Engine) SetRunning(r bool) {
 		e.currentStep = 0
 		e.stepSamples = 0
 	}
+
 	e.running = r
 }
 
@@ -94,6 +97,7 @@ func (e *Engine) SetCell(track, step int, active bool) {
 	if track < 0 || track >= TrackCount || step < 0 || step >= StepCount {
 		return
 	}
+
 	e.pattern[track][step] = active
 }
 
@@ -108,18 +112,20 @@ func (e *Engine) SetVolume(track int, vol float64) {
 func (e *Engine) SetReverb(amount float64) {
 	e.reverbAmount = amount
 	if amount <= 0 {
-		e.reverb.SetWet(0)
+		_ = e.reverb.SetWet(0)
 		return
 	}
-	e.reverb.SetWet(amount * 0.45)
+
+	_ = e.reverb.SetWet(amount * 0.45)
 	rt60 := 0.3 + amount*3.7
-	e.reverb.SetRT60(rt60)
+	_ = e.reverb.SetRT60(rt60)
 }
 
 func (e *Engine) CurrentStep() int {
 	if !e.running {
 		return -1
 	}
+
 	return e.currentStep
 }
 
@@ -134,6 +140,7 @@ func (e *Engine) Render(buf []float32) {
 					}
 				}
 			}
+
 			e.stepSamples++
 			if e.stepSamples >= e.stepLen[e.currentStep] {
 				e.stepSamples = 0
@@ -145,9 +152,11 @@ func (e *Engine) Render(buf []float32) {
 		for t, v := range e.voices {
 			out += v.Tick() * e.volumes[t]
 		}
+
 		if e.reverbAmount > 0 {
 			out = e.reverb.ProcessSample(out)
 		}
+
 		out = e.limiter.ProcessSample(out)
 		buf[i] = float32(out)
 	}

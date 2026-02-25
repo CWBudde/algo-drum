@@ -20,7 +20,7 @@ export default function App() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        padding: 16,
+        padding: "6px 16px",
         background: "#1A1008",
       }}
     >

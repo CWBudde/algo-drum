@@ -21,7 +21,9 @@ func main() {
 		if len(args) > 0 {
 			sr = args[0].Float()
 		}
+
 		engine = drum.NewEngine(sr)
+
 		return js.Null()
 	}))
 
@@ -29,6 +31,7 @@ func main() {
 		if engine != nil && len(args) > 0 {
 			engine.SetRunning(args[0].Bool())
 		}
+
 		return js.Null()
 	}))
 
@@ -36,6 +39,7 @@ func main() {
 		if engine != nil && len(args) > 0 {
 			engine.SetTempo(args[0].Float())
 		}
+
 		return js.Null()
 	}))
 
@@ -43,6 +47,7 @@ func main() {
 		if engine != nil && len(args) > 0 {
 			engine.SetSwing(args[0].Float())
 		}
+
 		return js.Null()
 	}))
 
@@ -50,6 +55,7 @@ func main() {
 		if engine != nil && len(args) >= 3 {
 			engine.SetCell(args[0].Int(), args[1].Int(), args[2].Bool())
 		}
+
 		return js.Null()
 	}))
 
@@ -57,6 +63,7 @@ func main() {
 		if engine != nil && len(args) >= 2 {
 			engine.SetVolume(args[0].Int(), args[1].Float())
 		}
+
 		return js.Null()
 	}))
 
@@ -64,6 +71,7 @@ func main() {
 		if engine != nil && len(args) > 0 {
 			engine.SetReverb(args[0].Float())
 		}
+
 		return js.Null()
 	}))
 
@@ -71,13 +79,16 @@ func main() {
 		if engine == nil || len(args) < 1 {
 			return js.Global().Get("Float32Array").New(0)
 		}
+
 		n := args[0].Int()
 		buf := make([]float32, n)
 		engine.Render(buf)
+
 		arr := js.Global().Get("Float32Array").New(n)
 		for i, v := range buf {
 			arr.SetIndex(i, v)
 		}
+
 		return arr
 	}))
 
@@ -85,10 +96,12 @@ func main() {
 		if engine == nil {
 			return -1
 		}
+
 		return engine.CurrentStep()
 	}))
 
 	js.Global().Set("AlgoDrum", api)
+
 	select {} // keep Go runtime alive
 }
 
@@ -97,5 +110,6 @@ func export(fn func([]js.Value) any) js.Func {
 		return fn(args)
 	})
 	funcs = append(funcs, f)
+
 	return f
 }

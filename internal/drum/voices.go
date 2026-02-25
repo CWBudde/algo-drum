@@ -52,18 +52,24 @@ func (v *BassDrum) Tick() float64 {
 	if !v.active {
 		return 0
 	}
+
 	t := float64(v.age) / v.pitchTC
 	freq := v.pitchTo + (v.pitchFrom-v.pitchTo)*math.Exp(-t*5)
+
 	v.phase += 2 * math.Pi * freq / v.sr
 	if v.phase > 2*math.Pi {
 		v.phase -= 2 * math.Pi
 	}
+
 	sample := math.Sin(v.phase) * v.env
+
 	v.env *= v.envDecay
 	if v.env < 1e-4 {
 		v.active = false
 	}
+
 	v.age++
+
 	return sample
 }
 
@@ -84,6 +90,7 @@ type Snare struct {
 
 func NewSnare(sr float64) *Snare {
 	hpCoeffs := design.Highpass(2000, 0.7, sr)
+
 	return &Snare{
 		sr:         sr,
 		toneDecay:  math.Exp(-1.0 / (sr * 0.12)),
@@ -108,19 +115,24 @@ func (v *Snare) Tick() float64 {
 	if !v.active {
 		return 0
 	}
+
 	v.phase += 2 * math.Pi * 200 / v.sr
 	if v.phase > 2*math.Pi {
 		v.phase -= 2 * math.Pi
 	}
+
 	tone := math.Sin(v.phase) * v.toneEnv
 	noise := (v.rng.Float64()*2 - 1) * v.noiseEnv
 	noise = v.hpFilter.ProcessSample(noise)
 	v.toneEnv *= v.toneDecay
+
 	v.noiseEnv *= v.noiseDecay
 	if v.toneEnv < 1e-4 && v.noiseEnv < 1e-4 {
 		v.active = false
 	}
+
 	v.age++
+
 	return tone + noise
 }
 
@@ -138,10 +150,12 @@ type HiHat struct {
 
 func NewHiHat(sr float64, closed bool) *HiHat {
 	bpCoeffs := design.Bandpass(10000, 2.0, sr)
+
 	decayS := 0.04
 	if !closed {
 		decayS = 0.4
 	}
+
 	return &HiHat{
 		sr:       sr,
 		envDecay: math.Exp(-1.0 / (sr * decayS)),
@@ -163,13 +177,17 @@ func (v *HiHat) Tick() float64 {
 	if !v.active {
 		return 0
 	}
+
 	noise := (v.rng.Float64()*2 - 1) * v.env
 	sample := v.bpFilter.ProcessSample(noise)
+
 	v.env *= v.envDecay
 	if v.env < 1e-4 {
 		v.active = false
 	}
+
 	v.age++
+
 	return sample * 1.5
 }
 
@@ -210,18 +228,24 @@ func (v *Tom) Tick() float64 {
 	if !v.active {
 		return 0
 	}
+
 	t := float64(v.age) / v.pitchTC
 	freq := v.pitchTo + (v.pitchFrom-v.pitchTo)*math.Exp(-t*5)
+
 	v.phase += 2 * math.Pi * freq / v.sr
 	if v.phase > 2*math.Pi {
 		v.phase -= 2 * math.Pi
 	}
+
 	sample := math.Sin(v.phase) * v.env
+
 	v.env *= v.envDecay
 	if v.env < 1e-4 {
 		v.active = false
 	}
+
 	v.age++
+
 	return sample * 0.9
 }
 
@@ -239,6 +263,7 @@ type Cymbal struct {
 
 func NewCymbal(sr float64) *Cymbal {
 	bpCoeffs := design.Bandpass(7000, 1.2, sr)
+
 	return &Cymbal{
 		sr:       sr,
 		envDecay: math.Exp(-1.0 / (sr * 1.2)),
@@ -260,12 +285,16 @@ func (v *Cymbal) Tick() float64 {
 	if !v.active {
 		return 0
 	}
+
 	noise := (v.rng.Float64()*2 - 1) * v.env
 	sample := v.bpFilter.ProcessSample(noise)
+
 	v.env *= v.envDecay
 	if v.env < 1e-4 {
 		v.active = false
 	}
+
 	v.age++
+
 	return sample * 1.2
 }
