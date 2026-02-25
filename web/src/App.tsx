@@ -21,7 +21,7 @@ export default function App() {
         alignItems: "center",
         justifyContent: "center",
         padding: "6px 16px",
-        background: "#1A1008",
+        background: "#0A0B0D",
       }}
     >
       {error && (

@@ -486,7 +486,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           bottom: "7%",
           left: "9%",
           display: "flex",
-          alignItems: "center",
+          alignItems: "flex-start",
           gap: 20,
         }}
       >
@@ -495,8 +495,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           disabled={!wasmLoaded}
           title={playing ? "Stop" : "Play"}
           style={{
-            width: 52,
-            height: 52,
+            width: 48,
+            height: 48,
+            marginTop: 3,
             borderRadius: "50%",
             background: playing
               ? "linear-gradient(145deg, #E03333, #991111)"
@@ -516,12 +517,12 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           }}
         >
           {playing ? (
-            <svg width={18} height={18} viewBox="0 0 18 18">
+            <svg width={16} height={16} viewBox="0 0 18 18">
               <rect x={3} y={3} width={4} height={12} fill="white" rx={1} />
               <rect x={11} y={3} width={4} height={12} fill="white" rx={1} />
             </svg>
           ) : (
-            <svg width={18} height={18} viewBox="0 0 18 18">
+            <svg width={16} height={16} viewBox="0 0 18 18">
               <polygon points="5,3 15,9 5,15" fill="white" />
             </svg>
           )}
