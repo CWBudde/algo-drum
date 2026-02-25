@@ -50,3 +50,4 @@ cd web && bun run build
 ## Deployment
 
 GitHub Actions builds WASM + frontend on every push to `main` and deploys `web/dist/` to GitHub Pages automatically.
+In repository settings, GitHub Pages should be configured with **Source: GitHub Actions**.

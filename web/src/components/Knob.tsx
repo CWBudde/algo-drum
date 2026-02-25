@@ -40,16 +40,23 @@ export default function Knob({
   size = 48,
   color = "#C87828",
 }: KnobProps) {
-  const dragRef = useRef<{ startY: number; startVal: number } | null>(null);
+  const dragRef = useRef<
+    { pointerId: number; startY: number; startVal: number } | null
+  >(null);
   const [dragging, setDragging] = useState(false);
 
   // Stable ID from label for SVG gradient references
   const id = label.replace(/[^a-z0-9]/gi, "_");
 
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent<SVGSVGElement>) => {
       e.preventDefault();
-      dragRef.current = { startY: e.clientY, startVal: value };
+      dragRef.current = {
+        pointerId: e.pointerId,
+        startY: e.clientY,
+        startVal: value,
+      };
+      e.currentTarget.setPointerCapture?.(e.pointerId);
       setDragging(true);
     },
     [value],
@@ -57,20 +64,23 @@ export default function Knob({
 
   useEffect(() => {
     if (!dragging) return;
-    const onMove = (e: MouseEvent) => {
-      if (!dragRef.current) return;
+    const onMove = (e: PointerEvent) => {
+      if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return;
       const delta = (dragRef.current.startY - e.clientY) / 150;
       onChange(Math.max(0, Math.min(1, dragRef.current.startVal + delta)));
     };
-    const onUp = () => {
+    const onUp = (e: PointerEvent) => {
+      if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return;
       setDragging(false);
       dragRef.current = null;
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
     return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
     };
   }, [dragging, onChange]);
 
@@ -92,12 +102,13 @@ export default function Knob({
         alignItems: "center",
         gap: 4,
         userSelect: "none",
+        touchAction: "none",
       }}
     >
       <svg
         width={size}
         height={size}
-        onMouseDown={handleMouseDown}
+        onPointerDown={handlePointerDown}
         style={{ cursor: "ns-resize", overflow: "visible" }}
       >
         <defs>

@@ -563,8 +563,8 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         style={{
           position: "absolute",
           left: `${((GRID_X + GRID_W) / CW) * 100}%`,
-          top: `${((GRID_Y + GRID_H + 18) / CH) * 100}%`,
-          transform: "translate(-100%, 0)",
+          bottom: "7%",
+          transform: "translateX(-100%)",
         }}
       >
         <Knob

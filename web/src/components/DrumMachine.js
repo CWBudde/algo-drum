@@ -410,8 +410,8 @@ export default function DrumMachine({ wasmLoaded }) {
                         }, children: playing ? (_jsxs("svg", { width: 16, height: 16, viewBox: "0 0 18 18", children: [_jsx("rect", { x: 3, y: 3, width: 4, height: 12, fill: "white", rx: 1 }), _jsx("rect", { x: 11, y: 3, width: 4, height: 12, fill: "white", rx: 1 })] })) : (_jsx("svg", { width: 16, height: 16, viewBox: "0 0 18 18", children: _jsx("polygon", { points: "5,3 15,9 5,15", fill: "white" }) })) }), _jsx(Knob, { value: tempo, onChange: setTempoState, label: `${bpm} BPM`, size: 54, color: "#C87828" }), _jsx(Knob, { value: swing, onChange: setSwingState, label: "SWING", size: 54, color: "#C87828" })] }), _jsx("div", { style: {
                     position: "absolute",
                     left: `${((GRID_X + GRID_W) / CW) * 100}%`,
-                    top: `${((GRID_Y + GRID_H + 18) / CH) * 100}%`,
-                    transform: "translate(-100%, 0)",
+                    bottom: "7%",
+                    transform: "translateX(-100%)",
                 }, children: _jsx(Knob, { value: reverb, onChange: setReverbState, label: "REVERB", size: 54, color: "#C87828" }) }), volumes.map((v, i) => {
                 const topPct = ((GRID_Y + i * CELL_H + CELL_H / 2) / CH) * 100;
                 const leftPct = (CHANNEL_CTRL_X / CW) * 100;
