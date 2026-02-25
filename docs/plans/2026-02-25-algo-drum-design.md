@@ -22,9 +22,9 @@ algo-drum is a teaching-focused web drum computer with a wood-finish UI inspired
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│  Browser                                    │
-│                                             │
+┌────────────────────────────────────────────┐
+│  Browser                                   │
+│                                            │
 │  ┌─────────────┐     ┌──────────────────┐  │
 │  │ React UI    │────▶│ wasmEngine.ts    │  │
 │  │ (Canvas)    │◀────│ (WASM bridge)    │  │
@@ -39,7 +39,7 @@ algo-drum is a teaching-focused web drum computer with a wood-finish UI inspired
 │                    │ algo_drum.wasm     │  │
 │                    │ (Go, 808-style syn)│  │
 │                    └────────────────────┘  │
-└─────────────────────────────────────────────┘
+└────────────────────────────────────────────┘
 ```
 
 **Two main parts:**

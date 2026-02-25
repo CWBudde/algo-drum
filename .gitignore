@@ -1,0 +1,4 @@
+web/public/algo_drum.wasm
+web/public/wasm_exec.js
+web/node_modules/
+web/dist/
