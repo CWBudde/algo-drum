@@ -23,6 +23,11 @@ const CHANNEL_CTRL_X = GRID_X + GRID_W + 80;
 // Single warm-amber LED color — classic drum machine look
 const LED_COLOR = "#C87828";
 
+const KITS = [
+  { id: 0, label: "Classic (808-inspired)" },
+  { id: 1, label: "Physical Model" },
+];
+
 // ─── Drawing helpers ────────────────────────────────────────────────────────
 
 function drawBackground(ctx: CanvasRenderingContext2D) {
@@ -358,6 +363,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   const [swing, setSwingState] = useState(0.0);
   const [reverb, setReverbState] = useState(0.0);
   const [volumes, setVolumes] = useState(() => Array<number>(ROWS).fill(0.75));
+  const [kit, setKit] = useState(0);
   const [decays, setDecays] = useState(() => Array<number>(ROWS).fill(0.5));
   const [muted, setMuted] = useState(() => Array<boolean>(ROWS).fill(false));
   const activeStepRef = useRef(-1);
@@ -374,6 +380,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   useEffect(() => {
     if (wasmLoaded) engine.setReverb(reverb);
   }, [reverb, wasmLoaded]);
+  useEffect(() => {
+    if (wasmLoaded) engine.setKit(kit);
+  }, [kit, wasmLoaded]);
   useEffect(() => {
     volumes.forEach((v, i) => {
       if (wasmLoaded) engine.setVolume(TRACK_INDEX[i], muted[i] ? 0 : v);
@@ -479,6 +488,44 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       ref={containerRef}
       style={{ width: "100%", maxWidth: 1020, position: "relative" }}
     >
+      <div
+        style={{
+          position: "absolute",
+          top: "5%",
+          left: "50%",
+          transform: "translateX(-50%)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          color: "rgba(210,190,165,0.85)",
+          fontFamily: "Inter, Helvetica Neue, sans-serif",
+          fontSize: 12,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+        }}
+      >
+        <span>Sounds</span>
+        <select
+          value={kit}
+          onChange={(e) => setKit(Number(e.target.value))}
+          style={{
+            background: "#0A0A12",
+            color: "#E3D7C8",
+            border: "1px solid rgba(200,140,40,0.45)",
+            borderRadius: 7,
+            padding: "5px 9px",
+            fontSize: 12,
+            outline: "none",
+          }}
+        >
+          {KITS.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <canvas
         ref={canvasRef}
         width={CW}

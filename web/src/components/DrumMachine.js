@@ -20,6 +20,10 @@ const CELL_H = GRID_H / ROWS;
 const CHANNEL_CTRL_X = GRID_X + GRID_W + 80;
 // Single warm-amber LED color — classic drum machine look
 const LED_COLOR = "#C87828";
+const KITS = [
+    { id: 0, label: "Classic (808-inspired)" },
+    { id: 1, label: "Physical Model" },
+];
 // ─── Drawing helpers ────────────────────────────────────────────────────────
 function drawBackground(ctx) {
     const g = ctx.createRadialGradient(CW * 0.42, CH * 0.38, 30, CW * 0.5, CH * 0.5, CW * 0.78);
@@ -261,6 +265,7 @@ export default function DrumMachine({ wasmLoaded }) {
     const [swing, setSwingState] = useState(0.0);
     const [reverb, setReverbState] = useState(0.0);
     const [volumes, setVolumes] = useState(() => Array(ROWS).fill(0.75));
+    const [kit, setKit] = useState(0);
     const [decays, setDecays] = useState(() => Array(ROWS).fill(0.5));
     const [muted, setMuted] = useState(() => Array(ROWS).fill(false));
     const activeStepRef = useRef(-1);
@@ -278,6 +283,10 @@ export default function DrumMachine({ wasmLoaded }) {
         if (wasmLoaded)
             engine.setReverb(reverb);
     }, [reverb, wasmLoaded]);
+    useEffect(() => {
+        if (wasmLoaded)
+            engine.setKit(kit);
+    }, [kit, wasmLoaded]);
     useEffect(() => {
         volumes.forEach((v, i) => {
             if (wasmLoaded)
@@ -373,7 +382,28 @@ export default function DrumMachine({ wasmLoaded }) {
             return n;
         });
     }, []);
-    return (_jsxs("div", { ref: containerRef, style: { width: "100%", maxWidth: 1020, position: "relative" }, children: [_jsx("canvas", { ref: canvasRef, width: CW, height: CH, onClick: handleCanvasClick, style: {
+    return (_jsxs("div", { ref: containerRef, style: { width: "100%", maxWidth: 1020, position: "relative" }, children: [_jsxs("div", { style: {
+                    position: "absolute",
+                    top: "5%",
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    color: "rgba(210,190,165,0.85)",
+                    fontFamily: "Inter, Helvetica Neue, sans-serif",
+                    fontSize: 12,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                }, children: [_jsx("span", { children: "Sounds" }), _jsx("select", { value: kit, onChange: (e) => setKit(Number(e.target.value)), style: {
+                            background: "#0A0A12",
+                            color: "#E3D7C8",
+                            border: "1px solid rgba(200,140,40,0.45)",
+                            borderRadius: 7,
+                            padding: "5px 9px",
+                            fontSize: 12,
+                            outline: "none",
+                        }, children: KITS.map((option) => (_jsx("option", { value: option.id, children: option.label }, option.id))) })] }), _jsx("canvas", { ref: canvasRef, width: CW, height: CH, onClick: handleCanvasClick, style: {
                     width: "100%",
                     height: "auto",
                     display: "block",
