@@ -8,6 +8,9 @@ import (
 const (
 	TrackCount = 5
 	StepCount  = 8
+
+	KitClassic808 = iota
+	KitPhysicalModel
 )
 
 // Engine is the drum machine sequencer and mixer.
@@ -22,6 +25,7 @@ type Engine struct {
 	decays  [TrackCount]float64
 
 	voices [TrackCount]Voice
+	kit    int
 
 	currentStep int
 	stepSamples int64
@@ -43,14 +47,7 @@ func NewEngine(sr float64) *Engine {
 		e.decays[i] = 0.5
 	}
 
-	e.voices[0] = NewBassDrum(sr)
-	e.voices[1] = NewSnare(sr)
-	e.voices[2] = NewHiHat(sr, true)
-	e.voices[3] = NewTom(sr)
-	e.voices[4] = NewCymbal(sr)
-	for i := range e.voices {
-		e.voices[i].SetDecay(e.decays[i])
-	}
+	e.SetKit(KitClassic808)
 	e.recomputeStepLengths()
 
 	rev, _ := reverb.NewFDNReverb(sr)
@@ -62,6 +59,39 @@ func NewEngine(sr float64) *Engine {
 	e.limiter = lim
 
 	return e
+}
+
+func (e *Engine) setVoices(voices [TrackCount]Voice) {
+	e.voices = voices
+	for i := range e.voices {
+		e.voices[i].SetDecay(e.decays[i])
+	}
+}
+
+// SetKit switches the current drumkit implementation.
+func (e *Engine) SetKit(kit int) {
+	switch kit {
+	case KitClassic808:
+		e.setVoices([TrackCount]Voice{
+			NewBassDrum(e.sr),
+			NewSnare(e.sr),
+			NewHiHat(e.sr, true),
+			NewTom(e.sr),
+			NewCymbal(e.sr),
+		})
+	case KitPhysicalModel:
+		e.setVoices([TrackCount]Voice{
+			NewPMKick(e.sr),
+			NewPMSnare(e.sr),
+			NewPMHat(e.sr),
+			NewPMTom(e.sr),
+			NewPMCymbal(e.sr),
+		})
+	default:
+		return
+	}
+
+	e.kit = kit
 }
 
 // recomputeStepLengths recalculates step durations accounting for swing.

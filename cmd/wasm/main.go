@@ -83,6 +83,14 @@ func main() {
 		return js.Null()
 	}))
 
+	api.Set("setKit", export(func(args []js.Value) any {
+		if engine != nil && len(args) > 0 {
+			engine.SetKit(args[0].Int())
+		}
+
+		return js.Null()
+	}))
+
 	api.Set("render", export(func(args []js.Value) any {
 		if engine == nil || len(args) < 1 {
 			return js.Global().Get("Float32Array").New(0)

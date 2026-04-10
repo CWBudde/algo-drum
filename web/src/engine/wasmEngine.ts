@@ -10,6 +10,7 @@ declare global {
       setVolume: (track: number, vol: number) => void;
       setDecay: (track: number, amount: number) => void;
       setReverb: (amount: number) => void;
+      setKit: (kit: number) => void;
       render: (n: number) => Float32Array;
       currentStep: () => number;
     };
@@ -90,4 +91,9 @@ export function setReverb(amount: number): void {
 export function currentStep(): number {
   if (!wasmReady) return -1;
   return window.AlgoDrum.currentStep();
+}
+
+
+export function setKit(kit: number): void {
+  if (wasmReady) window.AlgoDrum.setKit(kit);
 }

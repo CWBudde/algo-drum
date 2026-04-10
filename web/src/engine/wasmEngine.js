@@ -59,3 +59,7 @@ export function currentStep() {
         return -1;
     return window.AlgoDrum.currentStep();
 }
+export function setKit(kit) {
+    if (wasmReady)
+        window.AlgoDrum.setKit(kit);
+}
