@@ -68,3 +68,7 @@ ci: check-formatted lint check-tidy web-typecheck
 clean:
     rm -f web/public/algo_drum.wasm web/public/wasm_exec.js
     rm -rf web/dist
+
+fix:
+    just lint-fix
+    just fmt
