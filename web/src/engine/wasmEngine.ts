@@ -22,6 +22,8 @@ declare class Go {
   run(instance: WebAssembly.Instance): Promise<void>;
 }
 
+const SAMPLE_RATE = 48000;
+
 let audioCtx: AudioContext | null = null;
 let processor: ScriptProcessorNode | null = null;
 let wasmReady = false;
@@ -35,14 +37,18 @@ export async function loadWasm(): Promise<void> {
     go.importObject,
   );
   go.run(result.instance); // keeps running via select{}
+
+  // Create the engine immediately so pattern and parameter edits made
+  // before the first Play are not lost. The AudioContext is created later,
+  // on the first user gesture, at the same fixed sample rate.
+  window.AlgoDrum.init(SAMPLE_RATE);
   wasmReady = true;
 }
 
 export function startAudio(): void {
   if (audioCtx) return;
 
-  audioCtx = new AudioContext({ sampleRate: 48000 });
-  window.AlgoDrum.init(audioCtx.sampleRate);
+  audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
 
   const bufferSize = 4096;
   processor = audioCtx.createScriptProcessor(bufferSize, 0, 1);
@@ -54,8 +60,15 @@ export function startAudio(): void {
   processor.connect(audioCtx.destination);
 }
 
-export function play(): void {
+export async function play(): Promise<void> {
   startAudio();
+
+  // Autoplay policies (notably iOS Safari) can leave a freshly created
+  // context suspended; without an explicit resume there is no sound.
+  if (audioCtx && audioCtx.state === "suspended") {
+    await audioCtx.resume();
+  }
+
   window.AlgoDrum.setRunning(true);
 }
 

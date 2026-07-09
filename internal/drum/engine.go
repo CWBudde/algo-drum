@@ -69,7 +69,7 @@ func NewEngine(sr float64) *Engine {
 func (e *Engine) recomputeStepLengths() {
 	base := e.sr * 60.0 / e.bpm / 2.0 // samples per 8th note
 
-	s := e.swing * 0.5
+	s := e.swing
 	for i := range e.stepLen {
 		if i%2 == 0 {
 			e.stepLen[i] = int64(base * (1.0 + s))
@@ -88,12 +88,28 @@ func (e *Engine) SetRunning(r bool) {
 	e.running = r
 }
 
+// SetTempo sets the tempo, clamped to [30, 300] BPM.
 func (e *Engine) SetTempo(bpm float64) {
+	if bpm < 30 {
+		bpm = 30
+	}
+	if bpm > 300 {
+		bpm = 300
+	}
+
 	e.bpm = bpm
 	e.recomputeStepLengths()
 }
 
+// SetSwing sets the swing amount, clamped to [0, 0.5].
 func (e *Engine) SetSwing(swing float64) {
+	if swing < 0 {
+		swing = 0
+	}
+	if swing > 0.5 {
+		swing = 0.5
+	}
+
 	e.swing = swing
 	e.recomputeStepLengths()
 }
@@ -106,24 +122,20 @@ func (e *Engine) SetCell(track, step int, active bool) {
 	e.pattern[track][step] = active
 }
 
+// SetVolume sets per-track volume, clamped to [0, 1].
 func (e *Engine) SetVolume(track int, vol float64) {
 	if track >= 0 && track < TrackCount {
-		e.volumes[track] = vol
+		e.volumes[track] = clamp01(vol)
 	}
 }
 
-// SetDecay sets per-track decay amount in [0, 1].
+// SetDecay sets per-track decay amount, clamped to [0, 1].
 func (e *Engine) SetDecay(track int, amount float64) {
 	if track < 0 || track >= TrackCount {
 		return
 	}
-	if amount < 0 {
-		amount = 0
-	}
-	if amount > 1 {
-		amount = 1
-	}
 
+	amount = clamp01(amount)
 	e.decays[track] = amount
 	e.voices[track].SetDecay(amount)
 }

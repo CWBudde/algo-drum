@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 interface KnobProps {
   value: number; // 0.0 – 1.0
@@ -45,8 +45,9 @@ export default function Knob({
   >(null);
   const [dragging, setDragging] = useState(false);
 
-  // Stable ID from label for SVG gradient references
-  const id = label.replace(/[^a-z0-9]/gi, "_");
+  // Unique per-instance ID for SVG gradient references — labels repeat
+  // across knobs (e.g. "DEC") and can change per render (tempo readout).
+  const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<SVGSVGElement>) => {
