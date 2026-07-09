@@ -1,0 +1,47 @@
+---
+name: verify
+description: Build, launch, and drive algo-drum end-to-end (Go WASM + Vite + headless Chromium) to verify changes at the running app.
+---
+
+# Verifying algo-drum
+
+## Build & launch
+
+```bash
+bash scripts/build-wasm.sh                 # WASM → web/public/ (required first)
+cd web && bun install && bun run dev --port 5173 --strictPort   # app at http://localhost:5173/algo-drum/
+```
+
+## Drive headless
+
+Playwright works with the pre-installed browser, but the npm package's pinned
+revision may not match — pass `executablePath: "/opt/pw-browsers/chromium"` to
+`chromium.launch()`, plus `--autoplay-policy=no-user-gesture-required` so the
+AudioContext starts in headless.
+
+Useful hooks:
+
+- Wait for readiness: `window.AlgoDrum` exists and the "Loading engine" text is gone.
+- The engine is created at WASM load — `window.AlgoDrum.render(16).length === 16`
+  proves it's live before the first Play (regression check for the
+  pattern-lost-before-play bug).
+- Grid cells are canvas-drawn; click coordinates from constants in
+  `DrumMachine.tsx`: CW=1020, CH=700, GRID_X=120, GRID_Y=80, GRID_W=656,
+  GRID_H=440, 8 cols × 5 rows. Cell center:
+  `x = box.x + (GRID_X + col*CELL_W + CELL_W/2)/CW * box.width` (same for y).
+  Visual rows top→bottom: Cymbal, Tom, HiHat, Snare, Bass.
+- Play/Stop button: `button[title="Play"]` / `button[title="Stop"]`.
+- To observe real audio output, capture the ScriptProcessorNode via an init
+  script that wraps `AudioContext.prototype.createScriptProcessor`, then
+  connect an `AnalyserNode` to it and read peak from
+  `getFloatTimeDomainData` while playing. Silence ⇒ peak ~0; a pattern ⇒ >0.1.
+- Sequencer motion: `window.AlgoDrum.currentStep()` (−1 stopped; advances
+  every 250 ms at 120 BPM).
+
+## Gotchas
+
+- Vite `base` is `/algo-drum/` — the dev URL includes that path.
+- The knob BPM label (`/\d+ BPM/` text) sits next to its SVG; drag the SVG
+  vertically with mouse down/move/up to change values.
+- Known issue (PLAN.md E7): master peaks can exceed ±1.0 — don't treat
+  peak > 1 as a harness bug.

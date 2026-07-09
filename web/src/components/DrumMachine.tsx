@@ -442,7 +442,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   const handlePlayStop = useCallback(async () => {
     if (!wasmLoaded) return;
     if (!playing) {
-      engine.play();
+      await engine.play();
       setPlaying(true);
     } else {
       engine.stop();

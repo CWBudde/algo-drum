@@ -31,7 +31,7 @@ a deprecated audio path, zero tests, and a UI approach (canvas) that fights the 
 
 ## 1. Correctness & robustness — 3/10
 
-- [ ] **C1 (critical): state programmed before first Play is lost.**
+- [x] **C1 (critical): state programmed before first Play is lost.**
       `AlgoDrum.init` only runs inside `startAudio()` on the first Play click
       (`web/src/engine/wasmEngine.ts:41`). Until then `engine == nil` in Go, so every
       `setCell` / `setVolume` / `setTempo` / `setSwing` / `setDecay` / `setReverb` call is
@@ -40,21 +40,21 @@ a deprecated audio path, zero tests, and a UI approach (canvas) that fights the 
       **Fix:** create the engine at WASM load (sample rate is forced to 48 kHz anyway), or
       re-sync the complete UI state (pattern, volumes, decays, tempo, swing, reverb) right
       after `init`.
-- [ ] **C2: swing is double-scaled.** The UI sends `swing * 0.5` (`DrumMachine.tsx:372`)
+- [x] **C2: swing is double-scaled.** The UI sends `swing * 0.5` (`DrumMachine.tsx:372`)
       and the engine scales by another 0.5 (`engine.go:72`), so max shuffle is ±12.5%
       instead of the documented "0.5 = full shuffle". Pick one scaling point.
-- [ ] **C3: `SetTempo` accepts any value.** `bpm <= 0` → division by zero in
+- [x] **C3: `SetTempo` accepts any value.** `bpm <= 0` → division by zero in
       `recomputeStepLengths` → `Inf` → bogus `int64` step lengths; the sequencer wedges.
       Clamp to a sane range (e.g. 30–300) like `SetDecay` already does.
-- [ ] **C4: `SetVolume` doesn't clamp** (negative or huge gains pass straight into the mix);
+- [x] **C4: `SetVolume` doesn't clamp** (negative or huge gains pass straight into the mix);
       `SetSwing` doesn't clamp either. Mirror the `SetDecay` clamping.
-- [ ] **C5: default mismatch** — UI volume knobs start at 0.75, engine volumes at 1.0
+- [x] **C5: default mismatch** — UI volume knobs start at 0.75, engine volumes at 1.0
       (and decay 0.5 both sides only by luck). Currently masked by C1; after fixing C1,
       define one source of truth for initial values.
-- [ ] **C6: `AudioContext` is never `resume()`d.** On iOS Safari and autoplay-restricted
+- [x] **C6: `AudioContext` is never `resume()`d.** On iOS Safari and autoplay-restricted
       browsers the context can be created `suspended` → permanent silence. `await ctx.resume()`
       in the Play handler; also handle the page being backgrounded.
-- [ ] **C7: duplicate/unstable SVG ids in `Knob`.** The gradient id is derived from the
+- [x] **C7: duplicate/unstable SVG ids in `Knob`.** The gradient id is derived from the
       label: all five "DEC" knobs collide (duplicate DOM ids), and the tempo knob's id
       changes on every BPM change because the label embeds the value. Use React `useId()`.
 - [ ] **C8: step indicator leads the audio.** `currentStep()` reflects the render-ahead
@@ -102,6 +102,12 @@ a deprecated audio path, zero tests, and a UI approach (canvas) that fights the 
 - [ ] **E6: reverb tail cutoff on stop** — `SetRunning(false)` stops triggers but voices
       and reverb keep ringing (good); however Stop also resets to step 0, so there is no
       pause. Consider separate stop vs. pause semantics.
+- [ ] **E7: master output clips — the limiter isn't limiting.** Measured at runtime
+      (analyser tapped on the ScriptProcessor output): peak **1.86** with an ordinary
+      bass/snare/hat pattern, despite `Limiter` at −0.1 dB threshold — samples beyond ±1.0
+      are hard-clipped by the browser at the destination. Likely attack overshoot without
+      lookahead, or a threshold/units mismatch in the algo-dsp limiter usage. Investigate,
+      and until fixed add headroom (scale the voice mix down ~6 dB).
 
 ## 4. Architecture & state management — 5/10
 
@@ -115,7 +121,7 @@ a deprecated audio path, zero tests, and a UI approach (canvas) that fights the 
 
 ## 5. Frontend code quality — 5/10
 
-- [ ] **F1: fix the build script.** `"build": "tsc -b && vite build"` with a tsconfig
+- [x] **F1: fix the build script.** `"build": "tsc -b && vite build"` with a tsconfig
       lacking `noEmit` is what emitted `.js` files *next to the sources* (now committed,
       see H1). Set `"noEmit": true` and use `tsc --noEmit` (or `-b` with proper project
       refs) — Vite does the transpiling.
@@ -220,17 +226,17 @@ zero accessibility, constant repaints.
 
 ## 11. Repo hygiene — 4/10
 
-- [ ] **H1: remove committed build artifacts** — `web/src/**/*.js` (App.js, main.js,
+- [x] **H1: remove committed build artifacts** — `web/src/**/*.js` (App.js, main.js,
       DrumMachine.js, Knob.js, wasmEngine.js) and `web/tsconfig.tsbuildinfo` are compiler
       output sitting next to the sources (dead code; `index.html` loads `main.tsx`).
       Delete, and gitignore `*.tsbuildinfo` (root cause fixed by F1).
-- [ ] **H2: add a LICENSE** — the project is public with a live demo and README, but has
+- [x] **H2: add a LICENSE** — the project is public with a live demo and README, but has
       no license, which legally means "all rights reserved". MIT/Apache-2.0 recommended.
 - [ ] **H3: add `.editorconfig`** so Go tabs / TS spaces don't churn across editors.
 
 ## 12. Documentation — 5/10
 
-- [ ] **D1: AGENTS.md is stale in at least four places**: says algo-dsp **v0.2.0**
+- [x] **D1: AGENTS.md is stale in at least four places**: says algo-dsp **v0.2.0**
       (go.mod: v0.5.0); says the mix is "soft-clip"ped (it's FDN reverb + limiter); the
       `window.AlgoDrum` API table omits `setDecay` and `setReverb`; the DrumMachine
       description omits decay knobs, mute, and reverb.
@@ -261,6 +267,7 @@ zero accessibility, constant repaints.
 ## Suggested execution order
 
 **P0 — correctness (small, high value):** C1 (+A1/E3 state sync), C2, C3, C4, C5, C6, C7, H1, F1, H2, D1.
+✔ Done 2026-07-09 — C1 fixed by creating the engine at WASM load (the AudioContext is created later at the same fixed 48 kHz rate), which also resolves C5 since the UI pushes its defaults once loaded; A1 (engine-owned state) and E3 (bulk pattern API) remain open for the AudioWorklet migration.
 
 **P1 — foundations:** CI1 + CI2 + T1–T3 (tests before refactors), then B1/B2/B3 (AudioWorklet migration), then the §6 DOM UI rewrite (fixes U1–U6, X1–X4 structurally).
 
