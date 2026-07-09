@@ -125,10 +125,10 @@ a deprecated audio path, zero tests, and a UI approach (canvas) that fights the 
       lacking `noEmit` is what emitted `.js` files *next to the sources* (now committed,
       see H1). Set `"noEmit": true` and use `tsc --noEmit` (or `-b` with proper project
       refs) — Vite does the transpiling.
-- [ ] **F2: split `DrumMachine.tsx`** (640 lines: painting helpers + layout math + state +
+- [x] **F2: split `DrumMachine.tsx`** (640 lines: painting helpers + layout math + state +
       controls). Extract drawing, hit-testing, and control panels into modules — or make
       it moot via the DOM rewrite (§6).
-- [ ] **F3: move styling out of inline objects** — every component styles via large
+- [x] **F3: move styling out of inline objects** — every component styles via large
       inline `style` props; introduce CSS modules (or plain CSS custom properties for the
       panel theme).
 - [ ] **F4: add ESLint** (typescript-eslint + react-hooks) — currently only prettier via
@@ -142,32 +142,32 @@ a deprecated audio path, zero tests, and a UI approach (canvas) that fights the 
 The canvas approach is the root of most UI problems: blurry rendering, fragile overlays,
 zero accessibility, constant repaints.
 
-- [ ] **U1: canvas is not DPR-aware** — fixed 1020×700 backing store CSS-scaled up ⇒
+- [x] **U1: canvas is not DPR-aware** — fixed 1020×700 backing store CSS-scaled up ⇒
       visibly blurry on any hi-DPI display.
-- [ ] **U2: full-scene redraw at 60 fps forever**, even when idle/stopped — wasted CPU
+- [x] **U2: full-scene redraw at 60 fps forever**, even when idle/stopped — wasted CPU
       and battery, on the same thread as audio (B1).
-- [ ] **U3: HTML controls absolutely positioned by magic percentages over the canvas** —
+- [x] **U3: HTML controls absolutely positioned by magic percentages over the canvas** —
       already caused two "fix positioning" commits; breaks whenever geometry changes.
-- [ ] **U4: knob interaction is drag-only** — add mouse wheel, double-click-to-default,
+- [x] **U4: knob interaction is drag-only** — add mouse wheel, double-click-to-default,
       and fine-adjust (shift-drag); show the value while dragging.
-- [ ] **U5: no keyboard shortcuts** — at minimum Space = play/stop.
-- [ ] **U6: no visual feedback for "loading" beyond a text swap**; the machine renders
+- [x] **U5: no keyboard shortcuts** — at minimum Space = play/stop.
+- [x] **U6: no visual feedback for "loading" beyond a text swap**; the machine renders
       dead-looking until WASM arrives.
 
 ### UI rewrite plan (replace canvas with DOM/CSS)
 
-- [ ] Rebuild the sequencer as a CSS-grid of real `<button>` cells: free hit-testing,
+- [x] Rebuild the sequencer as a CSS-grid of real `<button>` cells: free hit-testing,
       focus, hover, keyboard, ARIA; LEDs via `box-shadow` glow; the skeuomorphic panel
       (bevels, grooves, brushed gradients) is straightforward CSS.
-- [ ] Only the playhead column changes per step — drive it with a CSS class toggle from a
+- [x] Only the playhead column changes per step — drive it with a CSS class toggle from a
       lightweight rAF (or `requestAnimationFrame` only while playing), not full repaints.
-- [ ] Keep the SVG `Knob` (it's good), fixing C7/U4 and adding `role="slider"` +
+- [x] Keep the SVG `Knob` (it's good), fixing C7/U4 and adding `role="slider"` +
       `aria-valuenow` + arrow-key support.
 - [ ] 16-step grid with 4-step bar shading (depends on E2); per-track row = mute LED,
       name, cells, volume, decay — no more overlay math.
-- [ ] Responsive: grid scales via container queries; controls wrap below on narrow
+- [x] Responsive: grid scales via container queries; controls wrap below on narrow
       screens (manifest currently claims `portrait`, see P4).
-- [ ] `prefers-reduced-motion` support for LED pulse/glow animations.
+- [x] `prefers-reduced-motion` support for LED pulse/glow animations.
 
 ## 7. Feature depth — 3/10 ("algo" is missing from algo-drum)
 
@@ -183,13 +183,13 @@ zero accessibility, constant repaints.
 
 ## 8. Accessibility — 1/10
 
-- [ ] **X1: the entire sequencer is a `<canvas>`** — no semantics, no focus, no screen
+- [x] **X1: the entire sequencer is a `<canvas>`** — no semantics, no focus, no screen
       reader access, no keyboard operation. Fixed structurally by the §6 rewrite.
-- [ ] **X2: mute button is an 11×11 px target** with color-only state — enlarge to ≥24 px
+- [x] **X2: mute button is an 11×11 px target** with color-only state — enlarge to ≥24 px
       hit area and add `aria-pressed` + label.
 - [ ] **X3: low-contrast labels** (e.g. `rgba(195,185,165,0.60)` 9 px text) — check
       WCAG AA and bump sizes/contrast.
-- [ ] **X4: knobs need `role="slider"`, ARIA values, and keyboard** (see rewrite plan).
+- [x] **X4: knobs need `role="slider"`, ARIA values, and keyboard** (see rewrite plan).
 
 ## 9. Testing — 0/10
 

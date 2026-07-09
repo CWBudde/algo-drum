@@ -15,14 +15,41 @@ let workletNode: AudioWorkletNode | null = null;
 let wasmReady = false;
 let audibleStep = -1;
 
+type StepListener = (step: number) => void;
+
+const stepListeners = new Set<StepListener>();
+
+// onStep subscribes to audible-step changes (-1 while stopped) and returns
+// an unsubscribe function.
+export function onStep(listener: StepListener): () => void {
+  stepListeners.add(listener);
+  listener(audibleStep);
+
+  return () => stepListeners.delete(listener);
+}
+
+function notifyStep(step: number): void {
+  audibleStep = step;
+  stepListeners.forEach((listener) => listener(step));
+}
+
 function send(command: WorkerCommand, transfer: Transferable[] = []): void {
   worker?.postMessage(command, transfer);
 }
 
+// Commands issued before the worker reports the engine ready are queued and
+// flushed on readiness, so nothing a fast user does during load is dropped.
+const pendingCommands: WorkerCommand[] = [];
+
 function command(name: string, ...args: unknown[]): void {
-  if (wasmReady) {
-    send({ type: "cmd", name, args } as WorkerCommand);
+  const cmd = { type: "cmd", name, args } as WorkerCommand;
+
+  if (!wasmReady) {
+    pendingCommands.push(cmd);
+    return;
   }
+
+  send(cmd);
 }
 
 export async function loadWasm(): Promise<void> {
@@ -53,6 +80,10 @@ export async function loadWasm(): Promise<void> {
 
   await ready;
   wasmReady = true;
+
+  for (const cmd of pendingCommands.splice(0)) {
+    send(cmd);
+  }
 }
 
 async function startAudio(): Promise<void> {
@@ -78,7 +109,7 @@ async function startAudio(): Promise<void> {
   workletNode.port.onmessage = (
     event: MessageEvent<{ type: string; step: number }>,
   ) => {
-    if (event.data.type === "step") audibleStep = event.data.step;
+    if (event.data.type === "step") notifyStep(event.data.step);
   };
 
   workletNode.connect(audioCtx.destination);
@@ -98,7 +129,7 @@ export async function play(): Promise<void> {
 
 export function stop(): void {
   command("setRunning", false);
-  audibleStep = -1;
+  notifyStep(-1);
 }
 
 export function setTempo(bpm: number): void {

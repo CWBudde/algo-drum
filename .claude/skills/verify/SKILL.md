@@ -31,12 +31,13 @@ Web Worker; there is NO `window.AlgoDrum` on the main thread):
   `{type:"step", step}` on its port as each chunk becomes audible — add a
   `port.addEventListener("message", ...)` in the wrapper to observe the
   playhead (works alongside the app's `onmessage`).
-- Grid cells are canvas-drawn; click coordinates from constants in
-  `DrumMachine.tsx`: CW=1020, CH=700, GRID_X=120, GRID_Y=80, GRID_W=656,
-  GRID_H=440, 8 cols × 5 rows. Cell center:
-  `x = box.x + (GRID_X + col*CELL_W + CELL_W/2)/CW * box.width` (same for y).
-  Visual rows top→bottom: Cymbal, Tom, HiHat, Snare, Bass.
-- Play/Stop button: `button[title="Play"]` / `button[title="Stop"]`.
+- The UI is DOM/CSS (no canvas). Grid cells are real buttons:
+  `getByRole("button", { name: "Bass step 1" })` etc. (tracks: Cymbal, Tom,
+  HiHat, Snare, Bass; steps 1–8). Active cells have `aria-pressed="true"`;
+  the playhead column carries `data-playhead` (5 cells while playing).
+- Play/Stop: `getByRole("button", { name: "Play" })` (aria-label toggles to
+  "Stop"), or press Space with focus on the body. Knobs are
+  `role="slider"` with `aria-valuetext` (arrow keys adjust, Escape resets).
 - Sequencer motion: step messages arrive every 250 ms at 120 BPM; −1 when
   stopped.
 - Production-build check matters here: worker bundling differs dev vs prod —
@@ -46,7 +47,7 @@ Web Worker; there is NO `window.AlgoDrum` on the main thread):
 ## Gotchas
 
 - Vite `base` is `/algo-drum/` — the dev URL includes that path.
-- The knob BPM label (`/\d+ BPM/` text) sits next to its SVG; drag the SVG
-  vertically with mouse down/move/up to change values.
+- Mouse-clicking a cell blurs it (so Space stays free for the transport);
+  keyboard activation keeps focus. Knobs still drag vertically with the mouse.
 - Known issue (PLAN.md E7): master peaks can exceed ±1.0 — don't treat
   peak > 1 as a harness bug.
