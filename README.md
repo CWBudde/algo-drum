@@ -10,20 +10,24 @@ No plugins, no backend — just a `.wasm` file and a browser.
 
 - 5 voices × 8 steps: Bass Drum, Snare, Hi-Hat, Tom, Cymbal
 - Adjustable tempo (BPM) and swing
-- Per-track volume knobs
+- Per-track volume and decay knobs, per-track mute
 - Global reverb control
+- Fully keyboard-operable (Space = play/stop; knobs respond to arrow keys)
 - Runs entirely client-side
 
 ## How it works
 
-The audio engine is written in Go and compiled to WebAssembly. It exposes a `window.AlgoDrum` API that the React frontend calls to toggle steps, update parameters, and pull rendered audio samples on each buffer callback.
+The audio engine is written in Go and compiled to WebAssembly. It runs inside a
+Web Worker, so rendering never blocks the UI; an `AudioWorklet` pulls rendered
+chunks from the worker over a direct `MessageChannel` and reports the audible
+sequencer step back to the UI playhead.
 
 ```
-Go engine (WASM)  ──render()──►  ScriptProcessorNode  ──►  AudioContext  ──►  speakers
-     ▲
-     │  setCell / setTempo / setSwing / setVolume / setReverb
-     │
-React UI (TypeScript)
+Go engine (WASM, in a Web Worker)  ──512-sample chunks──►  AudioWorklet  ──►  AudioContext  ──►  speakers
+     ▲                                                          │
+     │  setCell / setTempo / setSwing / setVolume / setReverb   │ audible step
+     │                                                          ▼
+React UI (TypeScript) ◄─────────────────────────────────── playhead
 ```
 
 The synthesizer voices are purely procedural — no samples. Each voice uses an exponential amplitude envelope; tonal voices (Bass Drum, Tom) add pitch sweep, and noise voices (Snare, Hi-Hat, Cymbal) pass filtered white noise through biquad filters from the [algo-dsp](https://github.com/cwbudde/algo-dsp) library. The mix passes through a global FDN reverb and brick-wall limiter before reaching the browser.

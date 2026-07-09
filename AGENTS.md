@@ -44,18 +44,20 @@ Vite serves `web/public/` as static assets, so `algo_drum.wasm` and `wasm_exec.j
 ## Architecture
 
 ```
-cmd/wasm/main.go          — WASM entry point; registers window.AlgoDrum JS API
+cmd/wasm/main.go          — WASM entry point; registers the AlgoDrum JS API (worker global scope)
 internal/drum/engine.go   — Sequencer: pattern grid, tempo/swing, per-track volumes, Render()
 internal/drum/voices.go   — Drum synthesizer voices (BassDrum, Snare, HiHat, Tom, Cymbal)
-web/src/engine/wasmEngine.ts — TypeScript bridge: loads WASM, wraps AlgoDrum calls, manages AudioContext
-web/src/components/DrumMachine.tsx — Main UI: 5×8 step grid, playback controls, per-track volume/decay knobs + mute LEDs, global reverb knob
-web/src/components/Knob.tsx        — Reusable rotary knob (SVG, vertical drag)
+web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands
+web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; renders audio chunks on demand
+web/public/worklet.js         — AudioWorkletProcessor: consumes chunks, reports the audible step
+web/src/components/DrumMachine.tsx — Main UI: 5×8 step grid (DOM/CSS), transport, per-track volume/decay knobs + mute LEDs, global reverb knob
+web/src/components/Knob.tsx        — Reusable rotary knob (SVG; drag, wheel, and keyboard accessible)
 web/src/App.tsx           — Root: loads WASM on mount, renders DrumMachine
 ```
 
 ### Audio Signal Flow
 
-`Engine.Render(buf)` → Go voices mix mono samples → FDN reverb (wet amount) → brick-wall limiter → `Float32Array` returned to JS → `ScriptProcessorNode` feeds `AudioContext` at 48 kHz, buffer size 4096.
+`Engine.Render(buf)` → Go voices mix mono samples → FDN reverb (wet amount) → lookahead limiter + hard clamp → `Float32Array` → 512-sample chunks posted from the Web Worker to the `AudioWorklet` over a direct `MessageChannel` → `AudioContext` at 48 kHz (~2048 samples buffered). Each chunk carries the sequencer step it starts on; the worklet reports it back so the UI playhead tracks the audible step.
 
 ### Track Order (index 0–4)
 
@@ -69,7 +71,7 @@ web/src/App.tsx           — Root: loads WASM on mount, renders DrumMachine
 
 UI displays tracks in **reverse order** (Cymbal on top, Bass on bottom).
 
-### WASM JS API (`window.AlgoDrum`)
+### WASM JS API (`AlgoDrum` on the worker's global scope)
 
 | Method                       | Description                                  |
 | ---------------------------- | -------------------------------------------- |
