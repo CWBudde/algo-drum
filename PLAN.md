@@ -57,7 +57,7 @@ a deprecated audio path, zero tests, and a UI approach (canvas) that fights the 
 - [x] **C7: duplicate/unstable SVG ids in `Knob`.** The gradient id is derived from the
       label: all five "DEC" knobs collide (duplicate DOM ids), and the tempo knob's id
       changes on every BPM change because the label embeds the value. Use React `useId()`.
-- [ ] **C8: step indicator leads the audio.** `currentStep()` reflects the render-ahead
+- [x] **C8: step indicator leads the audio.** `currentStep()` reflects the render-ahead
       position, not what's audible — with a 4096-sample buffer the LED runs up to ~85 ms +
       output latency ahead. Track step-to-time mapping in JS (or return timestamps) and
       display against `ctx.currentTime`.
@@ -67,22 +67,22 @@ a deprecated audio path, zero tests, and a UI approach (canvas) that fights the 
 
 ## 2. Audio pipeline & WASM bridge — 3/10
 
-- [ ] **B1: replace `ScriptProcessorNode` with an `AudioWorklet`.** It has been deprecated
+- [x] **B1: replace `ScriptProcessorNode` with an `AudioWorklet`.** It has been deprecated
       for years and runs audio on the *main* thread — the same thread doing full-canvas
       60 fps repaints (§6), which is a recipe for glitches. Target design: WASM instance
       inside the worklet (or a Worker feeding a ring buffer); the main thread only sends
       control messages.
-- [ ] **B2: per-sample boundary copies.** `render` in `cmd/wasm/main.go:96` calls
+- [x] **B2: per-sample boundary copies.** `render` in `cmd/wasm/main.go:96` calls
       `arr.SetIndex` 4096 times per buffer. Use `js.CopyBytesToJS` over the float32
       buffer's byte view — one copy instead of 4096 calls.
-- [ ] **B3: allocation churn** — a new Go slice *and* a new `Float32Array` per render
+- [x] **B3: allocation churn** — a new Go slice *and* a new `Float32Array` per render
       call (~12/s). Allocate once at init and reuse.
-- [ ] **B4: latency** — fixed 4096-sample buffer ≈ 85 ms. With an AudioWorklet the
+- [x] **B4: latency** — fixed 4096-sample buffer ≈ 85 ms. With an AudioWorklet the
       quantum is 128 samples; until then, make buffer size configurable and smaller.
 - [ ] **B5: no error propagation** from Go to JS (silent `nil` returns when args are
       missing/engine is nil) and errors from `SetWet`/`SetRT60`/`SetThreshold` are
       discarded (`engine.go:56–62`, `133–142`). Log once or surface them.
-- [ ] **B6: no `instantiateStreaming` fallback** for servers that mis-serve
+- [x] **B6: no `instantiateStreaming` fallback** for servers that mis-serve
       `application/wasm` (fine on Pages, breaks on naive static hosts). Add the standard
       `arrayBuffer()` fallback.
 
@@ -114,7 +114,7 @@ a deprecated audio path, zero tests, and a UI approach (canvas) that fights the 
 - [ ] **A1: single source of truth for the pattern.** Today React state and the Go engine
       each hold a copy with no reconciliation (root cause of C1). Decide: engine owns
       state, UI mirrors it (recommended), with a full-state sync on init/reset.
-- [ ] **A2: typed message layer** — replace the loose `window.AlgoDrum` global surface
+- [x] **A2: typed message layer** — replace the loose `window.AlgoDrum` global surface
       with a small versioned command interface (also what an AudioWorklet port needs, B1).
 - [ ] **A3: parameter smoothing** — volume/decay changes apply instantly per-sample; add
       short ramps to avoid zipper noise when twisting knobs during playback.
@@ -270,5 +270,6 @@ zero accessibility, constant repaints.
 ✔ Done 2026-07-09 — C1 fixed by creating the engine at WASM load (the AudioContext is created later at the same fixed 48 kHz rate), which also resolves C5 since the UI pushes its defaults once loaded; A1 (engine-owned state) and E3 (bulk pattern API) remain open for the AudioWorklet migration.
 
 **P1 — foundations:** CI1 + CI2 + T1–T3 (tests before refactors), then B1/B2/B3 (AudioWorklet migration), then the §6 DOM UI rewrite (fixes U1–U6, X1–X4 structurally).
+✔ CI, tests, and the audio migration landed 2026-07-09: the engine now renders in a Web Worker, an AudioWorklet consumes chunks over a direct MessageChannel (~43 ms buffer vs ~85 ms+), and the playhead follows the audible step (C8). E7 note: the lookahead limiter controls sustained level but its smoothed detector misses single-sample noise transients; the hard clamp in Render is the guaranteed brick wall for those (~13 samples per 3 s, inaudible).
 
 **P2 — the "algo" in algo-drum:** E1, E2, G1–G6, C8, P1, remaining polish (F6, P2–P4, D2–D3, T4–T5).

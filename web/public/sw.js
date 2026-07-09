@@ -12,6 +12,7 @@ const PRECACHE_PATHS = [
   "pwa-192x192.png",
   "pwa-512x512.png",
   "wasm_exec.js",
+  "worklet.js",
   "algo_drum.wasm",
 ];
 

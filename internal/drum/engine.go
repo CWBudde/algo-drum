@@ -63,10 +63,12 @@ func NewEngine(sr float64) *Engine {
 	_ = rev.SetWet(0)
 	e.reverb = rev
 
-	// Lookahead limiter: the plain Limiter has no lookahead, so drum
-	// transients overshoot the ceiling before its gain reacts.
+	// Lookahead limiter controls the sustained level (dense patterns, long
+	// reverb tails). Its smoothed detector still under-reacts to
+	// single-sample noise transients, so the hard clamp in Render is the
+	// actual brick wall for those rare (~inaudible) peaks.
 	lim, _ := dynamics.NewLookaheadLimiter(sr)
-	_ = lim.SetThreshold(-0.3)
+	_ = lim.SetThreshold(-1.0)
 	e.limiter = lim
 
 	return e

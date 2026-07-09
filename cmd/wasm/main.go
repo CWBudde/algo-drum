@@ -4,6 +4,7 @@ package main
 
 import (
 	"syscall/js"
+	"unsafe"
 
 	"github.com/cwbudde/algo-drum/internal/drum"
 )
@@ -11,6 +12,12 @@ import (
 var (
 	engine *drum.Engine
 	funcs  []js.Func
+
+	// Persistent render buffers, grown on demand — render() is called for
+	// every audio chunk, so per-call allocation would churn both GCs.
+	renderBuf []float32
+	jsBytes   js.Value // Uint8Array over the same allocation as jsFloats
+	jsFloats  js.Value // Float32Array returned to the caller
 )
 
 func main() {
@@ -89,15 +96,19 @@ func main() {
 		}
 
 		n := args[0].Int()
-		buf := make([]float32, n)
-		engine.Render(buf)
-
-		arr := js.Global().Get("Float32Array").New(n)
-		for i, v := range buf {
-			arr.SetIndex(i, v)
+		if n <= 0 {
+			return js.Global().Get("Float32Array").New(0)
 		}
 
-		return arr
+		ensureRenderBuffers(n)
+		buf := renderBuf[:n]
+		engine.Render(buf)
+
+		// One bulk copy across the JS boundary instead of n SetIndex calls.
+		bytes := unsafe.Slice((*byte)(unsafe.Pointer(&buf[0])), n*4)
+		js.CopyBytesToJS(jsBytes, bytes)
+
+		return jsFloats.Call("subarray", 0, n)
 	}))
 
 	api.Set("currentStep", export(func(args []js.Value) any {
@@ -111,6 +122,19 @@ func main() {
 	js.Global().Set("AlgoDrum", api)
 
 	select {} // keep Go runtime alive
+}
+
+// ensureRenderBuffers grows the shared Go and JS render buffers so they can
+// hold at least n float32 samples.
+func ensureRenderBuffers(n int) {
+	if n <= len(renderBuf) {
+		return
+	}
+
+	renderBuf = make([]float32, n)
+	arrayBuf := js.Global().Get("ArrayBuffer").New(n * 4)
+	jsBytes = js.Global().Get("Uint8Array").New(arrayBuf)
+	jsFloats = js.Global().Get("Float32Array").New(arrayBuf)
 }
 
 func export(fn func([]js.Value) any) js.Func {
