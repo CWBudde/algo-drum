@@ -1,34 +1,30 @@
 version: "2"
 
-run:
-  timeout: 5m
-
 linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
   enable:
-    - govet
-    - staticcheck
-    - errcheck
-    - ineffassign
     - thelper
     - tparallel
-    - unused
     - varnamelen
     - wsl_v5
+  settings:
+    varnamelen:
+      # Short names that are idiomatic in DSP / Go code
+      ignore-names:
+        - sr # sample rate
+        - e # engine local variable
+        - i # loop index
+        - t # track / time
+        - v # voice / value
+        - ok # Go error-check idiom
+  exclusions:
+    rules:
+      # Tests favour readable inline literals and t.Fatalf blocks.
+      - path: _test\.go
+        linters:
+          - varnamelen
+          - wsl_v5
 
 formatters:
   enable:
     - gofmt
-
-linters-settings:
-  varnamelen:
-    # Short names that are idiomatic in DSP / Go code
-    ignore-names:
-      - sr  # sample rate
-      - e   # engine local variable
-      - i   # loop index
-      - t   # track / time
-      - v   # voice / value
-      - ok  # Go error-check idiom
-
-issues:
-  exclude-use-default: false

@@ -102,7 +102,7 @@ a deprecated audio path, zero tests, and a UI approach (canvas) that fights the 
 - [ ] **E6: reverb tail cutoff on stop** — `SetRunning(false)` stops triggers but voices
       and reverb keep ringing (good); however Stop also resets to step 0, so there is no
       pause. Consider separate stop vs. pause semantics.
-- [ ] **E7: master output clips — the limiter isn't limiting.** Measured at runtime
+- [x] **E7: master output clips — the limiter isn't limiting.** Measured at runtime
       (analyser tapped on the ScriptProcessor output): peak **1.86** with an ordinary
       bass/snare/hat pattern, despite `Limiter` at −0.1 dB threshold — samples beyond ±1.0
       are hard-clipped by the browser at the destination. Likely attack overshoot without
@@ -193,27 +193,27 @@ zero accessibility, constant repaints.
 
 ## 9. Testing — 0/10
 
-- [ ] **T1: Go unit tests** for the engine: step timing math (incl. swing sums to
+- [x] **T1: Go unit tests** for the engine: step timing math (incl. swing sums to
       constant bar length), tempo/decay/volume clamping (C3/C4), trigger-on-step
       behavior, stop-resets-to-zero.
-- [ ] **T2: Go voice tests**: envelopes decay monotonically to inactive, no NaN/Inf
+- [x] **T2: Go voice tests**: envelopes decay monotonically to inactive, no NaN/Inf
       output, peak levels bounded, deterministic with fixed seeds.
-- [ ] **T3: golden render test** — render N buffers of a known pattern, assert RMS/peak
+- [x] **T3: golden render test** — render N buffers of a known pattern, assert RMS/peak
       per step window (guards DSP regressions without brittle sample equality).
 - [ ] **T4: frontend unit tests (Vitest)** — Knob value/angle math, drag delta logic,
       pattern state reducers.
 - [ ] **T5: e2e smoke (Playwright)** — page loads, WASM initializes, Play toggles,
       toggling a cell before Play still produces audible output (regression test for C1;
       assert via `OfflineAudioContext` or engine state).
-- [ ] **T6: run T1–T4 in CI** (see CI1). Note: engine tests need a non-WASM build —
+- [x] **T6: run T1–T4 in CI** (see CI1). Note: engine tests need a non-WASM build —
       `internal/drum` is pure Go, so plain `go test ./internal/...` works.
 
 ## 10. CI/CD & tooling — 4/10
 
-- [ ] **CI1: add a CI workflow** (PRs + pushes) running `just ci` — format check, lint,
+- [x] **CI1: add a CI workflow** (PRs + pushes) running `just ci` — format check, lint,
       `go mod tidy` check, typecheck — plus `go test` and a WASM compile check. Today the
       only workflow is deploy-on-main; nothing gates a PR.
-- [ ] **CI2: fix `.golangci.yml`** — it declares `version: "2"` but uses v1 keys
+- [x] **CI2: fix `.golangci.yml`** — it declares `version: "2"` but uses v1 keys
       (`linters-settings:`, `issues.exclude-use-default`, `run.timeout`), which v2 ignores
       or rejects; move settings under `linters.settings`, verify with
       `golangci-lint config verify`.

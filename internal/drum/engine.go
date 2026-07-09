@@ -8,6 +8,10 @@ import (
 const (
 	TrackCount = 5
 	StepCount  = 8
+
+	// mixHeadroom scales the summed voice mix so simultaneous hits do not
+	// slam the limiter; the limiter then only catches rare worst cases.
+	mixHeadroom = 0.5
 )
 
 // Engine is the drum machine sequencer and mixer.
@@ -29,7 +33,7 @@ type Engine struct {
 
 	reverb       *reverb.FDNReverb
 	reverbAmount float64
-	limiter      *dynamics.Limiter
+	limiter      *dynamics.LookaheadLimiter
 }
 
 // NewEngine creates a drum engine at the given sample rate.
@@ -47,18 +51,22 @@ func NewEngine(sr float64) *Engine {
 	e.voices[1] = NewSnare(sr)
 	e.voices[2] = NewHiHat(sr, true)
 	e.voices[3] = NewTom(sr)
+
 	e.voices[4] = NewCymbal(sr)
 	for i := range e.voices {
 		e.voices[i].SetDecay(e.decays[i])
 	}
+
 	e.recomputeStepLengths()
 
 	rev, _ := reverb.NewFDNReverb(sr)
 	_ = rev.SetWet(0)
 	e.reverb = rev
 
-	lim, _ := dynamics.NewLimiter(sr)
-	_ = lim.SetThreshold(-0.1)
+	// Lookahead limiter: the plain Limiter has no lookahead, so drum
+	// transients overshoot the ceiling before its gain reacts.
+	lim, _ := dynamics.NewLookaheadLimiter(sr)
+	_ = lim.SetThreshold(-0.3)
 	e.limiter = lim
 
 	return e
@@ -79,13 +87,13 @@ func (e *Engine) recomputeStepLengths() {
 	}
 }
 
-func (e *Engine) SetRunning(r bool) {
-	if !r {
+func (e *Engine) SetRunning(running bool) {
+	if !running {
 		e.currentStep = 0
 		e.stepSamples = 0
 	}
 
-	e.running = r
+	e.running = running
 }
 
 // SetTempo sets the tempo, clamped to [30, 300] BPM.
@@ -93,6 +101,7 @@ func (e *Engine) SetTempo(bpm float64) {
 	if bpm < 30 {
 		bpm = 30
 	}
+
 	if bpm > 300 {
 		bpm = 300
 	}
@@ -106,6 +115,7 @@ func (e *Engine) SetSwing(swing float64) {
 	if swing < 0 {
 		swing = 0
 	}
+
 	if swing > 0.5 {
 		swing = 0.5
 	}
@@ -186,11 +196,22 @@ func (e *Engine) Render(buf []float32) {
 			out += v.Tick() * e.volumes[t]
 		}
 
+		out *= mixHeadroom
+
 		if e.reverbAmount > 0 {
 			out = e.reverb.ProcessSample(out)
 		}
 
 		out = e.limiter.ProcessSample(out)
+
+		// Hard safety clamp — anything past ±1.0 would be clipped by the
+		// browser's output stage anyway; this guarantees the contract.
+		if out > 1 {
+			out = 1
+		} else if out < -1 {
+			out = -1
+		}
+
 		buf[i] = float32(out)
 	}
 }
