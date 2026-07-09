@@ -19,24 +19,29 @@ revision may not match — pass `executablePath: "/opt/pw-browsers/chromium"` to
 `chromium.launch()`, plus `--autoplay-policy=no-user-gesture-required` so the
 AudioContext starts in headless.
 
-Useful hooks:
+Useful hooks (post AudioWorklet migration — the WASM engine runs inside a
+Web Worker; there is NO `window.AlgoDrum` on the main thread):
 
-- Wait for readiness: `window.AlgoDrum` exists and the "Loading engine" text is gone.
-- The engine is created at WASM load — `window.AlgoDrum.render(16).length === 16`
-  proves it's live before the first Play (regression check for the
-  pattern-lost-before-play bug).
+- Wait for readiness: the "Loading engine" text disappears once the worker
+  reports the engine ready (regression check for the
+  pattern-lost-before-play bug: program cells before Play, then expect audio).
+- Capture the audio node by wrapping the `AudioWorkletNode` constructor in an
+  init script (stash `this` and the ctx on `window`); connect an
+  `AnalyserNode` to it for output peaks. The worklet also posts
+  `{type:"step", step}` on its port as each chunk becomes audible — add a
+  `port.addEventListener("message", ...)` in the wrapper to observe the
+  playhead (works alongside the app's `onmessage`).
 - Grid cells are canvas-drawn; click coordinates from constants in
   `DrumMachine.tsx`: CW=1020, CH=700, GRID_X=120, GRID_Y=80, GRID_W=656,
   GRID_H=440, 8 cols × 5 rows. Cell center:
   `x = box.x + (GRID_X + col*CELL_W + CELL_W/2)/CW * box.width` (same for y).
   Visual rows top→bottom: Cymbal, Tom, HiHat, Snare, Bass.
 - Play/Stop button: `button[title="Play"]` / `button[title="Stop"]`.
-- To observe real audio output, capture the ScriptProcessorNode via an init
-  script that wraps `AudioContext.prototype.createScriptProcessor`, then
-  connect an `AnalyserNode` to it and read peak from
-  `getFloatTimeDomainData` while playing. Silence ⇒ peak ~0; a pattern ⇒ >0.1.
-- Sequencer motion: `window.AlgoDrum.currentStep()` (−1 stopped; advances
-  every 250 ms at 120 BPM).
+- Sequencer motion: step messages arrive every 250 ms at 120 BPM; −1 when
+  stopped.
+- Production-build check matters here: worker bundling differs dev vs prod —
+  also drive `bunx vite build && bunx vite preview --port 4173` at
+  `http://localhost:4173/algo-drum/`.
 
 ## Gotchas
 

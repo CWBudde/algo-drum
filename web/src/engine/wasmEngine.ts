@@ -1,67 +1,91 @@
-// Type declaration for the Go-exported global
-declare global {
-  interface Window {
-    AlgoDrum: {
-      init: (sampleRate: number) => void;
-      setRunning: (playing: boolean) => void;
-      setTempo: (bpm: number) => void;
-      setSwing: (swing: number) => void;
-      setCell: (track: number, step: number, active: boolean) => void;
-      setVolume: (track: number, vol: number) => void;
-      setDecay: (track: number, amount: number) => void;
-      setReverb: (amount: number) => void;
-      render: (n: number) => Float32Array;
-      currentStep: () => number;
-    };
-  }
-}
+// Main-thread bridge to the drum engine.
+//
+// The Go WASM engine runs inside a dedicated Worker (audioWorker.ts); an
+// AudioWorklet (public/worklet.js) pulls rendered chunks from it over a
+// direct MessageChannel. This module only sends control commands and mirrors
+// the audible sequencer step reported back by the worklet.
 
-// Go runtime — loaded via <script src="wasm_exec.js"> in index.html
-declare class Go {
-  importObject: WebAssembly.Imports;
-  run(instance: WebAssembly.Instance): Promise<void>;
-}
+import type { WorkerCommand } from "./audioWorker";
 
 const SAMPLE_RATE = 48000;
 
+let worker: Worker | null = null;
 let audioCtx: AudioContext | null = null;
-let processor: ScriptProcessorNode | null = null;
+let workletNode: AudioWorkletNode | null = null;
 let wasmReady = false;
+let audibleStep = -1;
+
+function send(command: WorkerCommand, transfer: Transferable[] = []): void {
+  worker?.postMessage(command, transfer);
+}
+
+function command(name: string, ...args: unknown[]): void {
+  if (wasmReady) {
+    send({ type: "cmd", name, args } as WorkerCommand);
+  }
+}
 
 export async function loadWasm(): Promise<void> {
   if (wasmReady) return;
 
-  const go = new (window as unknown as { Go: typeof Go }).Go();
-  const result = await WebAssembly.instantiateStreaming(
-    fetch(import.meta.env.BASE_URL + "algo_drum.wasm"),
-    go.importObject,
-  );
-  go.run(result.instance); // keeps running via select{}
+  worker = new Worker(new URL("./audioWorker.ts", import.meta.url), {
+    type: "module",
+  });
 
-  // Create the engine immediately so pattern and parameter edits made
-  // before the first Play are not lost. The AudioContext is created later,
-  // on the first user gesture, at the same fixed sample rate.
-  window.AlgoDrum.init(SAMPLE_RATE);
+  const ready = new Promise<void>((resolve, reject) => {
+    if (!worker) return;
+    worker.onmessage = (event: MessageEvent<{ type: string; error?: string }>) => {
+      if (event.data.type === "ready") resolve();
+      if (event.data.type === "error") reject(new Error(event.data.error));
+    };
+  });
+
+  // Create the engine immediately so pattern and parameter edits made before
+  // the first Play are not lost. The AudioContext is created later, on the
+  // first user gesture, at the same fixed sample rate.
+  const base = new URL(import.meta.env.BASE_URL, self.location.href);
+  send({
+    type: "load",
+    wasmExecUrl: new URL("wasm_exec.js", base).toString(),
+    wasmUrl: new URL("algo_drum.wasm", base).toString(),
+    sampleRate: SAMPLE_RATE,
+  });
+
+  await ready;
   wasmReady = true;
 }
 
-export function startAudio(): void {
-  if (audioCtx) return;
+async function startAudio(): Promise<void> {
+  if (audioCtx || !worker) return;
 
   audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
+  await audioCtx.audioWorklet.addModule(
+    import.meta.env.BASE_URL + "worklet.js",
+  );
 
-  const bufferSize = 4096;
-  processor = audioCtx.createScriptProcessor(bufferSize, 0, 1);
-  processor.onaudioprocess = (e) => {
-    const output = e.outputBuffer.getChannelData(0);
-    const samples = window.AlgoDrum.render(bufferSize);
-    output.set(samples);
+  workletNode = new AudioWorkletNode(audioCtx, "algo-drum", {
+    numberOfInputs: 0,
+    outputChannelCount: [1],
+  });
+
+  // Direct worker <-> worklet channel for audio chunks.
+  const channel = new MessageChannel();
+  send({ type: "connect" }, [channel.port1]);
+  workletNode.port.postMessage({ type: "workerPort" }, [channel.port2]);
+
+  // The worklet reports the step each playing chunk starts on, so the UI
+  // playhead follows what is audible rather than what was rendered ahead.
+  workletNode.port.onmessage = (
+    event: MessageEvent<{ type: string; step: number }>,
+  ) => {
+    if (event.data.type === "step") audibleStep = event.data.step;
   };
-  processor.connect(audioCtx.destination);
+
+  workletNode.connect(audioCtx.destination);
 }
 
 export async function play(): Promise<void> {
-  startAudio();
+  await startAudio();
 
   // Autoplay policies (notably iOS Safari) can leave a freshly created
   // context suspended; without an explicit resume there is no sound.
@@ -69,38 +93,38 @@ export async function play(): Promise<void> {
     await audioCtx.resume();
   }
 
-  window.AlgoDrum.setRunning(true);
+  command("setRunning", true);
 }
 
 export function stop(): void {
-  window.AlgoDrum.setRunning(false);
+  command("setRunning", false);
+  audibleStep = -1;
 }
 
 export function setTempo(bpm: number): void {
-  if (wasmReady) window.AlgoDrum.setTempo(bpm);
+  command("setTempo", bpm);
 }
 
 export function setSwing(swing: number): void {
-  if (wasmReady) window.AlgoDrum.setSwing(swing);
+  command("setSwing", swing);
 }
 
 export function setCell(track: number, step: number, active: boolean): void {
-  if (wasmReady) window.AlgoDrum.setCell(track, step, active);
+  command("setCell", track, step, active);
 }
 
 export function setVolume(track: number, vol: number): void {
-  if (wasmReady) window.AlgoDrum.setVolume(track, vol);
+  command("setVolume", track, vol);
 }
 
 export function setDecay(track: number, amount: number): void {
-  if (wasmReady) window.AlgoDrum.setDecay(track, amount);
+  command("setDecay", track, amount);
 }
 
 export function setReverb(amount: number): void {
-  if (wasmReady) window.AlgoDrum.setReverb(amount);
+  command("setReverb", amount);
 }
 
 export function currentStep(): number {
-  if (!wasmReady) return -1;
-  return window.AlgoDrum.currentStep();
+  return audibleStep;
 }
