@@ -209,18 +209,18 @@ func (e *Engine) SetSwing(swing float64) {
 
 // SetStepCount sets the active pattern length, clamped to [1, MaxSteps].
 // Cells beyond the new length keep their contents (see SetCell).
-func (e *Engine) SetStepCount(n int) {
-	if n < 1 {
-		n = 1
+func (e *Engine) SetStepCount(count int) {
+	if count < 1 {
+		count = 1
 	}
 
-	if n > MaxSteps {
-		n = MaxSteps
+	if count > MaxSteps {
+		count = MaxSteps
 	}
 
-	e.stepCount = n
-	if e.currentStep >= n {
-		e.currentStep %= n
+	e.stepCount = count
+	if e.currentStep >= count {
+		e.currentStep %= count
 	}
 }
 
@@ -389,6 +389,7 @@ func (e *Engine) Render(buf []float32) {
 		e.firePending()
 
 		var out float64
+
 		for t, v := range e.voices {
 			// One-pole ramp toward the target volume so knob moves during
 			// playback do not step the gain per-sample (zipper noise).
