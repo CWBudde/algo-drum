@@ -15,6 +15,11 @@ excludes = [
     "**/*.txt",
     "CHANGELOG.md",
     "LICENSE",
+    # AGENTS.md / PLAN.md are maintained by hand as point-in-time review
+    # artifacts (see AGENTS.md header, PLAN.md intro) and are not touched by
+    # automated formatting.
+    "AGENTS.md",
+    "PLAN.md",
 
     # Binary and data files
     "**/*.wasm",

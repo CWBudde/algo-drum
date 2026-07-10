@@ -3,6 +3,10 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "README.md"
+      - "PLAN.md"
+      - "docs/**"
   workflow_dispatch:
 
 permissions:
@@ -28,15 +32,42 @@ jobs:
       - name: Build WASM
         run: bash scripts/build-wasm.sh
 
+      - name: Report WASM size
+        run: |
+          size=$(stat -c%s web/public/algo_drum.wasm)
+          size_kib=$(( (size + 1023) / 1024 ))
+          {
+            echo "### WASM build size"
+            echo
+            echo "\`algo_drum.wasm\`: ${size} bytes (~${size_kib} KiB), built with \`-ldflags=\"-s -w\"\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      - name: Cache bun install cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('web/bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
 
       - name: Install frontend dependencies
         run: cd web && bun install --frozen-lockfile
 
       - name: Build frontend
+        env:
+          # Derive the Pages base path from the repo name so forks/renames
+          # don't need a source change; vite.config.ts defaults to
+          # "/algo-drum/" when this is unset (local prod builds unaffected).
+          VITE_BASE: /${{ github.event.repository.name }}/
         run: cd web && bun run build
+
+      - name: Stamp service worker cache version
+        run: |
+          sed -i "s/algo-drum-v1/algo-drum-${GITHUB_SHA::12}/" web/dist/sw.js
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
