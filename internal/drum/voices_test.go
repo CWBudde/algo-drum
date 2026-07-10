@@ -9,7 +9,7 @@ func newTestVoices() map[string]Voice {
 	return map[string]Voice{
 		"BassDrum": NewBassDrum(testSampleRate),
 		"Snare":    NewSnare(testSampleRate),
-		"HiHat":    NewHiHat(testSampleRate, true),
+		"HiHat":    NewHiHat(testSampleRate),
 		"Tom":      NewTom(testSampleRate),
 		"Cymbal":   NewCymbal(testSampleRate),
 	}
@@ -58,7 +58,7 @@ func TestVoicesSilentWhenInactive(t *testing.T) {
 
 func TestVoicesDecayToInactiveWithBoundedOutput(t *testing.T) {
 	for name, voice := range newTestVoices() {
-		voice.Trigger()
+		voice.Trigger(1)
 
 		if !voice.IsActive() {
 			t.Fatalf("%s not active after Trigger", name)
@@ -82,6 +82,43 @@ func TestVoicesDecayToInactiveWithBoundedOutput(t *testing.T) {
 	}
 }
 
+func TestVoicesVelocityScalesPeak(t *testing.T) {
+	peakAt := func(name string, velocity float64) float64 {
+		voice := newTestVoices()[name]
+		voice.Trigger(velocity)
+
+		var peak float64
+
+		for sampleIndex := 0; sampleIndex < 4800; sampleIndex++ {
+			sample := voice.Tick()
+			if math.IsNaN(sample) || math.IsInf(sample, 0) {
+				t.Fatalf("%s velocity %v produced non-finite sample: %v", name, velocity, sample)
+			}
+
+			if abs := math.Abs(sample); abs > peak {
+				peak = abs
+			}
+		}
+
+		return peak
+	}
+
+	for name := range newTestVoices() {
+		full := peakAt(name, 1.0)
+		half := peakAt(name, 0.5)
+
+		if full <= 0 {
+			t.Fatalf("%s produced no output at full velocity", name)
+		}
+
+		// Voices are linear in velocity (same seed = same noise), so half
+		// velocity must yield ~half the peak.
+		if ratio := half / full; math.Abs(ratio-0.5) > 0.02 {
+			t.Fatalf("%s velocity 0.5 peak ratio = %.3f, want ~0.5", name, ratio)
+		}
+	}
+}
+
 func TestVoicesLongerDecaySettingRingsLonger(t *testing.T) {
 	for name := range newTestVoices() {
 		shortVoice := newTestVoices()[name]
@@ -90,8 +127,8 @@ func TestVoicesLongerDecaySettingRingsLonger(t *testing.T) {
 		shortVoice.SetDecay(0)
 		longVoice.SetDecay(1)
 
-		shortVoice.Trigger()
-		longVoice.Trigger()
+		shortVoice.Trigger(1)
+		longVoice.Trigger(1)
 
 		shortLen, _ := tickUntilInactive(t, name+" (decay 0)", shortVoice)
 		longLen, _ := tickUntilInactive(t, name+" (decay 1)", longVoice)
@@ -107,8 +144,8 @@ func TestVoicesDeterministic(t *testing.T) {
 		first := newTestVoices()[name]
 		second := newTestVoices()[name]
 
-		first.Trigger()
-		second.Trigger()
+		first.Trigger(1)
+		second.Trigger(1)
 
 		for sampleIndex := 0; sampleIndex < 4800; sampleIndex++ {
 			a := first.Tick()
@@ -123,10 +160,10 @@ func TestVoicesDeterministic(t *testing.T) {
 
 func TestVoicesRetriggerRestartsEnvelope(t *testing.T) {
 	for name, voice := range newTestVoices() {
-		voice.Trigger()
+		voice.Trigger(1)
 		tickUntilInactive(t, name, voice)
 
-		voice.Trigger()
+		voice.Trigger(1)
 
 		if !voice.IsActive() {
 			t.Fatalf("%s not active after retrigger", name)

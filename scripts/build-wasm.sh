@@ -23,7 +23,10 @@ if [[ -z $WASM_EXEC ]]; then
 fi
 
 cp "$WASM_EXEC" "$OUT_DIR/wasm_exec.js"
-GOOS=js GOARCH=wasm go build -o "$OUT_DIR/algo_drum.wasm" "$ROOT_DIR/cmd/wasm/"
+# -s -w strip the symbol table and DWARF debug info: shaves several hundred KB
+# off the WASM payload with no behavior change. Used for both dev and CI
+# builds so the two never drift apart (see CI3 in PLAN.md).
+GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o "$OUT_DIR/algo_drum.wasm" "$ROOT_DIR/cmd/wasm/"
 
 echo "Built $OUT_DIR/algo_drum.wasm"
 echo "Copied $OUT_DIR/wasm_exec.js"

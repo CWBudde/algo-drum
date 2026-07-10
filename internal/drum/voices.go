@@ -2,7 +2,7 @@ package drum
 
 import (
 	"math"
-	"math/rand"
+	"math/rand/v2"
 
 	"github.com/cwbudde/algo-dsp/dsp/filter/biquad"
 	"github.com/cwbudde/algo-dsp/dsp/filter/design"
@@ -10,11 +10,73 @@ import (
 
 // Voice is a single-shot drum synthesizer voice.
 type Voice interface {
-	Trigger()
+	// Trigger starts (or restarts) the voice; velocity in [0, 1] scales
+	// the level of the whole hit.
+	Trigger(velocity float64)
 	Tick() float64
 	IsActive() bool
 	SetDecay(amount float64)
 }
+
+// Shared voice tuning.
+const (
+	// envSilence is the envelope level below which a voice deactivates.
+	envSilence = 1e-4
+
+	// decayScaleMin: SetDecay(amount) scales a voice's base decay time by
+	// decayScaleMin + amount, i.e. 0.5×–1.5× of the base.
+	decayScaleMin = 0.5
+
+	// pitchSweepRate shapes the exponential pitch drop of the tonal drums;
+	// higher settles onto the target pitch faster.
+	pitchSweepRate = 5.0
+)
+
+// Bass drum tuning.
+const (
+	bassPitchFromHz = 200.0 // pitch sweep start
+	bassPitchToHz   = 50.0  // pitch sweep target
+	bassPitchTCS    = 0.06  // pitch sweep time constant, seconds
+	bassBaseDecayS  = 0.45  // base envelope decay, seconds
+)
+
+// Snare tuning.
+const (
+	snareToneHz     = 200.0  // body oscillator frequency
+	snareToneLevel  = 0.7    // tone level relative to noise at trigger
+	snareBaseToneS  = 0.12   // base tone decay, seconds
+	snareBaseNoiseS = 0.18   // base noise decay, seconds
+	snareHPHz       = 2000.0 // noise highpass cutoff
+	snareHPQ        = 0.7
+	snareSeed       = 42
+)
+
+// Hi-hat tuning (closed hat; an open-hat track is deferred, see PLAN.md G7).
+const (
+	hatBPHz       = 10000.0 // metallic bandpass center
+	hatBPQ        = 2.0
+	hatBaseDecayS = 0.04 // base envelope decay, seconds
+	hatGain       = 1.5  // make-up gain after the bandpass
+	hatSeed       = 123
+)
+
+// Tom tuning.
+const (
+	tomPitchFromHz = 120.0
+	tomPitchToHz   = 60.0
+	tomPitchTCS    = 0.1
+	tomBaseDecayS  = 0.35
+	tomGain        = 0.9
+)
+
+// Cymbal tuning.
+const (
+	cymBPHz       = 7000.0
+	cymBPQ        = 1.2
+	cymBaseDecayS = 1.2
+	cymGain       = 1.2
+	cymSeed       = 999
+)
 
 func clamp01(v float64) float64 {
 	if v < 0 {
@@ -36,46 +98,42 @@ func decayCoef(sr, decayS float64) float64 {
 	return math.Exp(-1.0 / (sr * decayS))
 }
 
+// newVoiceRng returns a deterministic per-voice noise source; fixed seeds
+// keep renders reproducible across runs.
+func newVoiceRng(seed uint64) *rand.Rand {
+	return rand.New(rand.NewPCG(seed, seed))
+}
+
 // ── Bass Drum ──────────────────────────────────────────────────────────────
 
 type BassDrum struct {
-	sr        float64
-	active    bool
-	age       int
-	phase     float64
-	env       float64
-	envDecay  float64
-	baseDecay float64
-	pitchFrom float64
-	pitchTo   float64
-	pitchTC   float64 // pitch time-constant in samples
+	sr       float64
+	active   bool
+	age      int
+	phase    float64
+	env      float64
+	envDecay float64
 }
 
 func NewBassDrum(sr float64) *BassDrum {
-	v := &BassDrum{
-		sr:        sr,
-		baseDecay: 0.45,
-		pitchFrom: 200.0,
-		pitchTo:   50.0,
-		pitchTC:   sr * 0.06,
-	}
+	v := &BassDrum{sr: sr}
 	v.SetDecay(0.5)
 
 	return v
 }
 
-func (v *BassDrum) Trigger() {
+func (v *BassDrum) Trigger(velocity float64) {
 	v.active = true
 	v.age = 0
-	v.env = 1.0
+	v.env = clamp01(velocity)
 	v.phase = 0
 }
 
 func (v *BassDrum) IsActive() bool { return v.active }
 
 func (v *BassDrum) SetDecay(amount float64) {
-	scale := 0.5 + clamp01(amount)
-	v.envDecay = decayCoef(v.sr, v.baseDecay*scale)
+	scale := decayScaleMin + clamp01(amount)
+	v.envDecay = decayCoef(v.sr, bassBaseDecayS*scale)
 }
 
 func (v *BassDrum) Tick() float64 {
@@ -83,8 +141,8 @@ func (v *BassDrum) Tick() float64 {
 		return 0
 	}
 
-	t := float64(v.age) / v.pitchTC
-	freq := v.pitchTo + (v.pitchFrom-v.pitchTo)*math.Exp(-t*5)
+	t := float64(v.age) / (v.sr * bassPitchTCS)
+	freq := bassPitchToHz + (bassPitchFromHz-bassPitchToHz)*math.Exp(-t*pitchSweepRate)
 
 	v.phase += 2 * math.Pi * freq / v.sr
 	if v.phase > 2*math.Pi {
@@ -94,7 +152,7 @@ func (v *BassDrum) Tick() float64 {
 	sample := math.Sin(v.phase) * v.env
 
 	v.env *= v.envDecay
-	if v.env < 1e-4 {
+	if v.env < envSilence {
 		v.active = false
 	}
 
@@ -108,38 +166,33 @@ func (v *BassDrum) Tick() float64 {
 type Snare struct {
 	sr         float64
 	active     bool
-	age        int
 	phase      float64
 	toneEnv    float64
 	toneDecay  float64
-	baseTone   float64
 	noiseEnv   float64
 	noiseDecay float64
-	baseNoise  float64
 	hpFilter   biquad.Section
 	rng        *rand.Rand
 }
 
 func NewSnare(sr float64) *Snare {
-	hpCoeffs := design.Highpass(2000, 0.7, sr)
+	hpCoeffs := design.Highpass(snareHPHz, snareHPQ, sr)
 
 	v := &Snare{
-		sr:        sr,
-		baseTone:  0.12,
-		baseNoise: 0.18,
-		hpFilter:  *biquad.NewSection(hpCoeffs),
-		rng:       rand.New(rand.NewSource(42)),
+		sr:       sr,
+		hpFilter: *biquad.NewSection(hpCoeffs),
+		rng:      newVoiceRng(snareSeed),
 	}
 	v.SetDecay(0.5)
 
 	return v
 }
 
-func (v *Snare) Trigger() {
+func (v *Snare) Trigger(velocity float64) {
+	vel := clamp01(velocity)
 	v.active = true
-	v.age = 0
-	v.toneEnv = 0.7
-	v.noiseEnv = 1.0
+	v.toneEnv = snareToneLevel * vel
+	v.noiseEnv = vel
 	v.phase = 0
 	v.hpFilter.Reset()
 }
@@ -147,9 +200,9 @@ func (v *Snare) Trigger() {
 func (v *Snare) IsActive() bool { return v.active }
 
 func (v *Snare) SetDecay(amount float64) {
-	scale := 0.5 + clamp01(amount)
-	v.toneDecay = decayCoef(v.sr, v.baseTone*scale)
-	v.noiseDecay = decayCoef(v.sr, v.baseNoise*scale)
+	scale := decayScaleMin + clamp01(amount)
+	v.toneDecay = decayCoef(v.sr, snareBaseToneS*scale)
+	v.noiseDecay = decayCoef(v.sr, snareBaseNoiseS*scale)
 }
 
 func (v *Snare) Tick() float64 {
@@ -157,7 +210,7 @@ func (v *Snare) Tick() float64 {
 		return 0
 	}
 
-	v.phase += 2 * math.Pi * 200 / v.sr
+	v.phase += 2 * math.Pi * snareToneHz / v.sr
 	if v.phase > 2*math.Pi {
 		v.phase -= 2 * math.Pi
 	}
@@ -168,11 +221,9 @@ func (v *Snare) Tick() float64 {
 	v.toneEnv *= v.toneDecay
 
 	v.noiseEnv *= v.noiseDecay
-	if v.toneEnv < 1e-4 && v.noiseEnv < 1e-4 {
+	if v.toneEnv < envSilence && v.noiseEnv < envSilence {
 		v.active = false
 	}
-
-	v.age++
 
 	return tone + noise
 }
@@ -180,47 +231,38 @@ func (v *Snare) Tick() float64 {
 // ── Hi-Hat ─────────────────────────────────────────────────────────────────
 
 type HiHat struct {
-	sr        float64
-	active    bool
-	age       int
-	env       float64
-	envDecay  float64
-	baseDecay float64
-	bpFilter  biquad.Section
-	rng       *rand.Rand
+	sr       float64
+	active   bool
+	env      float64
+	envDecay float64
+	bpFilter biquad.Section
+	rng      *rand.Rand
 }
 
-func NewHiHat(sr float64, closed bool) *HiHat {
-	bpCoeffs := design.Bandpass(10000, 2.0, sr)
-
-	decayS := 0.04
-	if !closed {
-		decayS = 0.4
-	}
+func NewHiHat(sr float64) *HiHat {
+	bpCoeffs := design.Bandpass(hatBPHz, hatBPQ, sr)
 
 	v := &HiHat{
-		sr:        sr,
-		baseDecay: decayS,
-		bpFilter:  *biquad.NewSection(bpCoeffs),
-		rng:       rand.New(rand.NewSource(123)),
+		sr:       sr,
+		bpFilter: *biquad.NewSection(bpCoeffs),
+		rng:      newVoiceRng(hatSeed),
 	}
 	v.SetDecay(0.5)
 
 	return v
 }
 
-func (v *HiHat) Trigger() {
+func (v *HiHat) Trigger(velocity float64) {
 	v.active = true
-	v.age = 0
-	v.env = 1.0
+	v.env = clamp01(velocity)
 	v.bpFilter.Reset()
 }
 
 func (v *HiHat) IsActive() bool { return v.active }
 
 func (v *HiHat) SetDecay(amount float64) {
-	scale := 0.5 + clamp01(amount)
-	v.envDecay = decayCoef(v.sr, v.baseDecay*scale)
+	scale := decayScaleMin + clamp01(amount)
+	v.envDecay = decayCoef(v.sr, hatBaseDecayS*scale)
 }
 
 func (v *HiHat) Tick() float64 {
@@ -232,55 +274,43 @@ func (v *HiHat) Tick() float64 {
 	sample := v.bpFilter.ProcessSample(noise)
 
 	v.env *= v.envDecay
-	if v.env < 1e-4 {
+	if v.env < envSilence {
 		v.active = false
 	}
 
-	v.age++
-
-	return sample * 1.5
+	return sample * hatGain
 }
 
 // ── Tom ────────────────────────────────────────────────────────────────────
 
 type Tom struct {
-	sr        float64
-	active    bool
-	age       int
-	phase     float64
-	env       float64
-	envDecay  float64
-	baseDecay float64
-	pitchFrom float64
-	pitchTo   float64
-	pitchTC   float64
+	sr       float64
+	active   bool
+	age      int
+	phase    float64
+	env      float64
+	envDecay float64
 }
 
 func NewTom(sr float64) *Tom {
-	v := &Tom{
-		sr:        sr,
-		baseDecay: 0.35,
-		pitchFrom: 120.0,
-		pitchTo:   60.0,
-		pitchTC:   sr * 0.1,
-	}
+	v := &Tom{sr: sr}
 	v.SetDecay(0.5)
 
 	return v
 }
 
-func (v *Tom) Trigger() {
+func (v *Tom) Trigger(velocity float64) {
 	v.active = true
 	v.age = 0
-	v.env = 1.0
+	v.env = clamp01(velocity)
 	v.phase = 0
 }
 
 func (v *Tom) IsActive() bool { return v.active }
 
 func (v *Tom) SetDecay(amount float64) {
-	scale := 0.5 + clamp01(amount)
-	v.envDecay = decayCoef(v.sr, v.baseDecay*scale)
+	scale := decayScaleMin + clamp01(amount)
+	v.envDecay = decayCoef(v.sr, tomBaseDecayS*scale)
 }
 
 func (v *Tom) Tick() float64 {
@@ -288,8 +318,8 @@ func (v *Tom) Tick() float64 {
 		return 0
 	}
 
-	t := float64(v.age) / v.pitchTC
-	freq := v.pitchTo + (v.pitchFrom-v.pitchTo)*math.Exp(-t*5)
+	t := float64(v.age) / (v.sr * tomPitchTCS)
+	freq := tomPitchToHz + (tomPitchFromHz-tomPitchToHz)*math.Exp(-t*pitchSweepRate)
 
 	v.phase += 2 * math.Pi * freq / v.sr
 	if v.phase > 2*math.Pi {
@@ -299,54 +329,50 @@ func (v *Tom) Tick() float64 {
 	sample := math.Sin(v.phase) * v.env
 
 	v.env *= v.envDecay
-	if v.env < 1e-4 {
+	if v.env < envSilence {
 		v.active = false
 	}
 
 	v.age++
 
-	return sample * 0.9
+	return sample * tomGain
 }
 
 // ── Cymbal ─────────────────────────────────────────────────────────────────
 
 type Cymbal struct {
-	sr        float64
-	active    bool
-	age       int
-	env       float64
-	envDecay  float64
-	baseDecay float64
-	bpFilter  biquad.Section
-	rng       *rand.Rand
+	sr       float64
+	active   bool
+	env      float64
+	envDecay float64
+	bpFilter biquad.Section
+	rng      *rand.Rand
 }
 
 func NewCymbal(sr float64) *Cymbal {
-	bpCoeffs := design.Bandpass(7000, 1.2, sr)
+	bpCoeffs := design.Bandpass(cymBPHz, cymBPQ, sr)
 
 	v := &Cymbal{
-		sr:        sr,
-		baseDecay: 1.2,
-		bpFilter:  *biquad.NewSection(bpCoeffs),
-		rng:       rand.New(rand.NewSource(999)),
+		sr:       sr,
+		bpFilter: *biquad.NewSection(bpCoeffs),
+		rng:      newVoiceRng(cymSeed),
 	}
 	v.SetDecay(0.5)
 
 	return v
 }
 
-func (v *Cymbal) Trigger() {
+func (v *Cymbal) Trigger(velocity float64) {
 	v.active = true
-	v.age = 0
-	v.env = 1.0
+	v.env = clamp01(velocity)
 	v.bpFilter.Reset()
 }
 
 func (v *Cymbal) IsActive() bool { return v.active }
 
 func (v *Cymbal) SetDecay(amount float64) {
-	scale := 0.5 + clamp01(amount)
-	v.envDecay = decayCoef(v.sr, v.baseDecay*scale)
+	scale := decayScaleMin + clamp01(amount)
+	v.envDecay = decayCoef(v.sr, cymBaseDecayS*scale)
 }
 
 func (v *Cymbal) Tick() float64 {
@@ -358,11 +384,9 @@ func (v *Cymbal) Tick() float64 {
 	sample := v.bpFilter.ProcessSample(noise)
 
 	v.env *= v.envDecay
-	if v.env < 1e-4 {
+	if v.env < envSilence {
 		v.active = false
 	}
 
-	v.age++
-
-	return sample * 1.2
+	return sample * cymGain
 }

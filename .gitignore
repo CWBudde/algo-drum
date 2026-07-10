@@ -32,5 +32,8 @@ Thumbs.db
 
 # Go
 /algo-drum
+# `GOOS=js GOARCH=wasm go build ./cmd/wasm/` (or `./...`) with no -o writes
+# a plain "wasm" binary here, named after the last path element.
+/wasm
 *.out
 *.test

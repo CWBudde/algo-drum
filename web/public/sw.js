@@ -1,5 +1,17 @@
+// Stamped with the deployed commit SHA by .github/workflows/deploy.yml so a
+// new deploy invalidates old runtime caches immediately instead of leaving
+// returning visitors on stale WASM for one visit. Keep this literal value
+// (rather than a template) so local `vite dev`/`vite preview` builds still
+// get a sensible, stable cache name.
 const CACHE_VERSION = "algo-drum-v1";
 const CACHE_NAME = `${CACHE_VERSION}-runtime`;
+
+// Assets that must be served network-first: a deploy can ship a new
+// algo_drum.wasm without changing this file's own contents (or before the SW
+// update cycle notices), so a stale cache-first response here would keep
+// serving an old engine build. Everything else stays cache-first for
+// offline-first behavior.
+const NETWORK_FIRST_PATTERN = /\/(algo_drum\.wasm|wasm_exec\.js)$/;
 
 const PRECACHE_PATHS = [
   "",
@@ -70,6 +82,20 @@ self.addEventListener("fetch", (event) => {
       fetch(request).catch(() =>
         caches.match(toScopedUrl("index.html")),
       ),
+    );
+    return;
+  }
+
+  if (NETWORK_FIRST_PATTERN.test(requestUrl.pathname)) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response && response.ok) {
+            void caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone()));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request)),
     );
     return;
   }
