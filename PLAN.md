@@ -61,7 +61,7 @@ a deprecated audio path, zero tests, and a UI approach (canvas) that fights the 
       position, not what's audible — with a 4096-sample buffer the LED runs up to ~85 ms +
       output latency ahead. Track step-to-time mapping in JS (or return timestamps) and
       display against `ctx.currentTime`.
-- [ ] **C9: dead code** — `HiHat`'s open mode (`closed=false`) is never used; `age` is
+- [x] **C9: dead code** — `HiHat`'s open mode (`closed=false`) is never used; `age` is
       unused in the noise voices (`Snare`, `HiHat`, `Cymbal`). Remove or wire up
       (an open-hat track is a natural 6th voice).
 
@@ -79,7 +79,7 @@ a deprecated audio path, zero tests, and a UI approach (canvas) that fights the 
       call (~12/s). Allocate once at init and reuse.
 - [x] **B4: latency** — fixed 4096-sample buffer ≈ 85 ms. With an AudioWorklet the
       quantum is 128 samples; until then, make buffer size configurable and smaller.
-- [ ] **B5: no error propagation** from Go to JS (silent `nil` returns when args are
+- [x] **B5: no error propagation** from Go to JS (silent `nil` returns when args are
       missing/engine is nil) and errors from `SetWet`/`SetRT60`/`SetThreshold` are
       discarded (`engine.go:56–62`, `133–142`). Log once or surface them.
 - [x] **B6: no `instantiateStreaming` fallback** for servers that mis-serve
@@ -88,16 +88,16 @@ a deprecated audio path, zero tests, and a UI approach (canvas) that fights the 
 
 ## 3. Go engine / DSP — 6/10
 
-- [ ] **E1: no velocity/accent.** Every hit is full-strength. Per-step velocity (even
+- [x] **E1: no velocity/accent.** Every hit is full-strength. Per-step velocity (even
       just accent on/off) transforms how the machine feels.
-- [ ] **E2: fixed 5 tracks × 8 steps.** 16 steps is the genre standard; make
+- [x] **E2: fixed 5 tracks × 8 steps.** 16 steps is the genre standard; make
       `StepCount` a runtime pattern length (1–16) rather than a compile-time constant.
-- [ ] **E3: bulk pattern API.** Only per-cell `setCell` exists. Add `setPattern`/
+- [x] **E3: bulk pattern API.** Only per-cell `setCell` exists. Add `setPattern`/
       `getPattern` (bit-packed) so the UI can re-sync state cheaply (needed by C1) and
       presets/persistence become trivial (§7).
-- [ ] **E4: migrate `math/rand` → `math/rand/v2`** (current API, faster). Keeping fixed
+- [x] **E4: migrate `math/rand` → `math/rand/v2`** (current API, faster). Keeping fixed
       per-voice seeds for reproducibility is fine.
-- [ ] **E5: voice parameters are hardcoded** (pitch sweep, filter freqs). Expose tune/
+- [x] **E5: voice parameters are hardcoded** (pitch sweep, filter freqs). Expose tune/
       snap per voice later; at minimum lift magic numbers into named consts.
 - [ ] **E6: reverb tail cutoff on stop** — `SetRunning(false)` stops triggers but voices
       and reverb keep ringing (good); however Stop also resets to step 0, so there is no
@@ -116,7 +116,7 @@ a deprecated audio path, zero tests, and a UI approach (canvas) that fights the 
       state, UI mirrors it (recommended), with a full-state sync on init/reset.
 - [x] **A2: typed message layer** — replace the loose `window.AlgoDrum` global surface
       with a small versioned command interface (also what an AudioWorklet port needs, B1).
-- [ ] **A3: parameter smoothing** — volume/decay changes apply instantly per-sample; add
+- [x] **A3: parameter smoothing** — volume/decay changes apply instantly per-sample; add
       short ramps to avoid zipper noise when twisting knobs during playback.
 
 ## 5. Frontend code quality — 5/10
@@ -163,7 +163,7 @@ zero accessibility, constant repaints.
       lightweight rAF (or `requestAnimationFrame` only while playing), not full repaints.
 - [x] Keep the SVG `Knob` (it's good), fixing C7/U4 and adding `role="slider"` +
       `aria-valuenow` + arrow-key support.
-- [ ] 16-step grid with 4-step bar shading (depends on E2); per-track row = mute LED,
+- [x] 16-step grid with 4-step bar shading (depends on E2); per-track row = mute LED,
       name, cells, volume, decay — no more overlay math.
 - [x] Responsive: grid scales via container queries; controls wrap below on narrow
       screens (manifest currently claims `portrait`, see P4).
@@ -171,14 +171,14 @@ zero accessibility, constant repaints.
 
 ## 7. Feature depth — 3/10 ("algo" is missing from algo-drum)
 
-- [ ] **G1: Euclidean rhythm generator** per track (classic, cheap, immediately
+- [x] **G1: Euclidean rhythm generator** per track (classic, cheap, immediately
       "algorithmic": E(3,8), E(5,16)…).
-- [ ] **G2: per-step probability / humanize** (chance a hit fires, timing jitter).
-- [ ] **G3: pattern mutate / evolve button** (small random walk on the current pattern).
-- [ ] **G4: preset patterns** (rock, house, breakbeat…) + Clear button.
-- [ ] **G5: persistence** — save pattern+params to `localStorage`; encode in the URL
+- [x] **G2: per-step probability / humanize** (chance a hit fires, timing jitter).
+- [x] **G3: pattern mutate / evolve button** (small random walk on the current pattern).
+- [x] **G4: preset patterns** (rock, house, breakbeat…) + Clear button.
+- [x] **G5: persistence** — save pattern+params to `localStorage`; encode in the URL
       hash for shareable links.
-- [ ] **G6: tap tempo.**
+- [x] **G6: tap tempo.**
 - [ ] **G7 (later): accent row, open hi-hat track (C9), master volume.**
 
 ## 8. Accessibility — 1/10
@@ -217,10 +217,10 @@ zero accessibility, constant repaints.
       (`linters-settings:`, `issues.exclude-use-default`, `run.timeout`), which v2 ignores
       or rejects; move settings under `linters.settings`, verify with
       `golangci-lint config verify`.
-- [ ] **CI3: deploy workflow polish** — cache bun store, add `workflow` path filters,
+- [x] **CI3: deploy workflow polish** — cache bun store, add `workflow` path filters,
       and build with `-ldflags="-s -w"` (plus optional `wasm-opt -Oz`) to cut the
       multi-MB WASM payload; report the size in the job summary.
-- [ ] **CI4: treefmt lists gofumpt/gci/shellcheck/shfmt/prettier but nothing installs
+- [x] **CI4: treefmt lists gofumpt/gci/shellcheck/shfmt/prettier but nothing installs
       them in CI** — the `ci` recipe will no-op with `--allow-missing-formatter`. Pin and
       install formatters in the CI job so format checks actually check.
 
@@ -232,7 +232,7 @@ zero accessibility, constant repaints.
       Delete, and gitignore `*.tsbuildinfo` (root cause fixed by F1).
 - [x] **H2: add a LICENSE** — the project is public with a live demo and README, but has
       no license, which legally means "all rights reserved". MIT/Apache-2.0 recommended.
-- [ ] **H3: add `.editorconfig`** so Go tabs / TS spaces don't churn across editors.
+- [x] **H3: add `.editorconfig`** so Go tabs / TS spaces don't churn across editors.
 
 ## 12. Documentation — 5/10
 
@@ -240,26 +240,26 @@ zero accessibility, constant repaints.
       (go.mod: v0.5.0); says the mix is "soft-clip"ped (it's FDN reverb + limiter); the
       `window.AlgoDrum` API table omits `setDecay` and `setReverb`; the DrumMachine
       description omits decay knobs, mute, and reverb.
-- [ ] **D2: README gaps** — feature list omits decay/mute; add a screenshot or GIF of
+- [x] **D2: README gaps** — feature list omits decay/mute; add a screenshot or GIF of
       the UI; document browser requirements (WebAssembly + Web Audio).
-- [ ] **D3: document the voice architecture** (one short doc: per-voice synthesis recipe,
+- [x] **D3: document the voice architecture** (one short doc: per-voice synthesis recipe,
       parameter ranges) — invaluable once voice params become editable (E5).
 
 ## 13. PWA & deployment — 5/10
 
-- [ ] **P1: service worker staleness** — `CACHE_VERSION` is a hardcoded `"algo-drum-v1"`
+- [x] **P1: service worker staleness** — `CACHE_VERSION` is a hardcoded `"algo-drum-v1"`
       that never changes across deploys, and `algo_drum.wasm` is un-hashed and served
       cache-first: after a deploy, returning visitors get the **old** WASM with new JS for
       one visit (stale-while-revalidate lag), and mismatches are possible. Inject a build
       hash into the SW at build time, or serve `.wasm` network-first, or move the WASM
       through Vite's hashed asset pipeline.
-- [ ] **P2: COOP/COEP headers exist only in the dev server** (`vite.config.ts`) — GitHub
+- [x] **P2: COOP/COEP headers exist only in the dev server** (`vite.config.ts`) — GitHub
       Pages cannot send them. They're unnecessary today (no SharedArrayBuffer); remove
       them, or keep with a comment noting the B1 ring-buffer design will need the
       `coi-serviceworker` workaround on Pages.
-- [ ] **P3: hardcoded `base: "/algo-drum/"`** breaks forks/renames — derive from an env
+- [x] **P3: hardcoded `base: "/algo-drum/"`** breaks forks/renames — derive from an env
       var with the current value as default.
-- [ ] **P4: manifest tweaks** — `orientation: "portrait"` contradicts the landscape
+- [x] **P4: manifest tweaks** — `orientation: "portrait"` contradicts the landscape
       layout; add a `maskable` purpose icon variant.
 
 ---
@@ -273,3 +273,9 @@ zero accessibility, constant repaints.
 ✔ CI, tests, and the audio migration landed 2026-07-09: the engine now renders in a Web Worker, an AudioWorklet consumes chunks over a direct MessageChannel (~43 ms buffer vs ~85 ms+), and the playhead follows the audible step (C8). E7 note: the lookahead limiter controls sustained level but its smoothed detector misses single-sample noise transients; the hard clamp in Render is the guaranteed brick wall for those (~13 samples per 3 s, inaudible).
 
 **P2 — the "algo" in algo-drum:** E1, E2, G1–G6, C8, P1, remaining polish (F6, P2–P4, D2–D3, T4–T5).
+✔ Largely done 2026-07-10 — velocity/accent + 16-step runtime patterns + bulk pattern API
+(E1–E5), euclid/probability/humanize/mutate/presets/persistence/tap-tempo (G1–G6), CI
+format gate + deploy polish (CI3/CI4), PWA fixes (P1–P4), docs (D2/D3, `docs/voices.md`),
+`.editorconfig` (H3), dead-code and error-logging cleanups (C9/B5), volume smoothing (A3).
+Still open: A1 (engine-owned state), E6 (pause semantics), G7 (accent row/open-hat/master
+volume), X3/F4/F5/F6/T4/T5 (in progress), CI3 wasm-opt, D1-adjacent doc drift checks.
