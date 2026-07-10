@@ -35,6 +35,56 @@ jobs:
         with:
           version: latest
 
+  format:
+    # Mirrors `just check-formatted`: treefmt with every formatter it lists
+    # (treefmt.toml) actually installed, so the check can't silently no-op
+    # via --allow-missing-formatter.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Install Go-based formatters
+        run: |
+          go install mvdan.cc/gofumpt@v0.10.0
+          go install github.com/daixiang0/gci@v0.14.0
+          go install mvdan.cc/sh/v3/cmd/shfmt@v3.13.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install prettier
+        run: |
+          bun install --global prettier@3.9.5
+          echo "$(bun pm bin -g)" >> "$GITHUB_PATH"
+
+      - name: Install treefmt
+        env:
+          TREEFMT_VERSION: 2.5.0
+        run: |
+          asset="treefmt_${TREEFMT_VERSION}_linux_amd64.tar.gz"
+          base_url="https://github.com/numtide/treefmt/releases/download/v${TREEFMT_VERSION}"
+          curl -sSL -o "$asset" "$base_url/$asset"
+          curl -sSL -o checksums.txt "$base_url/treefmt_${TREEFMT_VERSION}_checksums.txt"
+          sha256sum --ignore-missing -c checksums.txt
+          tar -xzf "$asset" treefmt
+          sudo install -m 755 treefmt /usr/local/bin/treefmt
+          rm -f "$asset" checksums.txt treefmt
+
+      - name: Check formatting
+        run: treefmt --allow-missing-formatter --fail-on-change
+
   web:
     runs-on: ubuntu-latest
     defaults:
@@ -53,5 +103,43 @@ jobs:
       - name: Type-check
         run: bunx tsc --noEmit
 
+      - name: Lint
+        run: bun run lint
+
+      - name: Unit tests
+        run: bun run test
+
       - name: Build
         run: bunx vite build
+
+  e2e:
+    # Playwright smoke test against the production build. Needs Go to compile
+    # the WASM engine, then a real Chromium (installed here, not the dev
+    # container's pre-provisioned one).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Build WASM
+        run: bash scripts/build-wasm.sh
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        working-directory: web
+        run: bun install --frozen-lockfile
+
+      - name: Install Chromium
+        working-directory: web
+        run: bunx playwright install --with-deps chromium
+
+      - name: E2E smoke test
+        working-directory: web
+        run: bun run test:e2e
