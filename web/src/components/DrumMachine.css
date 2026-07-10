@@ -1,0 +1,343 @@
+/* algo-drum machine panel — skeuomorphic hardware look, all DOM/CSS.
+   Colors and depths mirror the original canvas rendering. */
+
+.dm-machine {
+  --dm-led: #c87828;
+  --dm-led-dim: rgba(140, 90, 30, 0.18);
+  --dm-text: rgba(200, 190, 170, 0.55);
+
+  width: min(100%, 1000px);
+  padding: 20px 28px 26px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #2e2e3c 0%, #212130 32%, #141420 100%);
+  border: 1px solid rgba(0, 0, 0, 0.75);
+  box-shadow:
+    0 14px 44px rgba(0, 0, 0, 0.85),
+    0 4px 12px rgba(0, 0, 0, 0.6),
+    inset 0 2px 2px rgba(255, 255, 255, 0.14),
+    inset 2px 0 2px rgba(255, 255, 255, 0.05),
+    inset 0 -3px 5px rgba(0, 0, 0, 0.55),
+    inset -3px 0 4px rgba(0, 0, 0, 0.3);
+  font-family: "Inter", "Helvetica Neue", sans-serif;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+
+.dm-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.dm-title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.dm-title-algo {
+  color: #8888a8;
+}
+
+.dm-title-drum {
+  color: #4468c0;
+}
+
+.dm-status {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #4a3418, #201204);
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  animation: dm-status-pulse 1.1s ease-in-out infinite;
+}
+
+.dm-status-ready {
+  background: radial-gradient(circle at 35% 30%, #ffcf8a, var(--dm-led));
+  box-shadow: 0 0 8px rgba(200, 140, 40, 0.7);
+  animation: none;
+}
+
+@keyframes dm-status-pulse {
+  50% {
+    background: radial-gradient(circle at 35% 30%, #8a6430, #3a2408);
+  }
+}
+
+/* ── Board grid: labels | 8 cells | gap | track controls ────────────────── */
+
+.dm-board {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto repeat(8, minmax(0, 1fr)) 26px auto;
+  grid-auto-rows: min-content;
+  column-gap: 2px;
+  align-items: center;
+}
+
+.dm-screen {
+  grid-row: 1 / 6;
+  grid-column: 2 / 10;
+  align-self: stretch;
+  justify-self: stretch;
+  margin: -10px;
+  border-radius: 12px;
+  background: #08080e;
+  border: 1px solid rgba(0, 0, 0, 0.9);
+  box-shadow:
+    inset 0 14px 18px -8px rgba(0, 0, 0, 0.75),
+    inset 10px 0 14px -8px rgba(0, 0, 0, 0.45),
+    inset 0 -5px 8px -4px rgba(255, 255, 255, 0.04),
+    0 2px 10px rgba(0, 0, 0, 0.65);
+}
+
+.dm-track-label {
+  padding-right: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--dm-text);
+  text-align: right;
+  z-index: 1;
+}
+
+/* ── Step cells ─────────────────────────────────────────────────────────── */
+
+.dm-cell {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  aspect-ratio: 41 / 37;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.dm-cell::before {
+  /* recessed hole */
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: 7px;
+  background: #06060c;
+  box-shadow:
+    inset 0 8px 10px -5px rgba(0, 0, 0, 0.7),
+    inset 6px 0 8px -5px rgba(0, 0, 0, 0.4),
+    inset 0 -4px 6px -4px rgba(255, 255, 255, 0.05);
+}
+
+.dm-cell[data-bar-start]:not(:first-of-type)::after {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 8%;
+  bottom: 8%;
+  width: 2px;
+  background: rgba(180, 160, 130, 0.08);
+}
+
+.dm-cell:focus-visible {
+  outline: none;
+}
+
+.dm-cell:focus-visible::before {
+  outline: 2px solid rgba(200, 140, 60, 0.85);
+  outline-offset: 2px;
+}
+
+.dm-led {
+  position: relative;
+  width: 42%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 42% 38%,
+    var(--dm-led-dim),
+    rgba(60, 38, 12, 0.12)
+  );
+  transition: box-shadow 90ms ease, background 90ms ease;
+}
+
+.dm-cell[data-active] .dm-led {
+  background: radial-gradient(
+    circle at 38% 32%,
+    rgba(255, 255, 255, 0.92),
+    var(--dm-led) 34%,
+    rgba(200, 120, 40, 0.25) 100%
+  );
+  box-shadow:
+    0 0 10px 2px rgba(200, 130, 40, 0.55),
+    0 0 26px 4px rgba(200, 130, 40, 0.2);
+}
+
+/* Playhead column */
+.dm-cell[data-playhead] {
+  background: rgba(200, 140, 40, 0.07);
+}
+
+.dm-cell[data-playhead]::before {
+  box-shadow:
+    inset 0 8px 10px -5px rgba(0, 0, 0, 0.7),
+    inset 6px 0 8px -5px rgba(0, 0, 0, 0.4),
+    inset 0 -4px 6px -4px rgba(255, 255, 255, 0.05),
+    inset 0 2px 0 rgba(200, 140, 40, 0.4);
+}
+
+.dm-cell[data-playhead][data-active] .dm-led {
+  box-shadow:
+    0 0 12px 3px rgba(235, 165, 60, 0.8),
+    0 0 30px 6px rgba(200, 130, 40, 0.3);
+}
+
+.dm-step-number {
+  padding-top: 16px;
+  text-align: center;
+  font-size: 10px;
+  font-family: "Inter", monospace;
+  color: rgba(180, 165, 140, 0.3);
+  z-index: 1;
+}
+
+.dm-step-number[data-playhead] {
+  color: rgba(230, 190, 120, 0.8);
+}
+
+/* ── Per-track controls ─────────────────────────────────────────────────── */
+
+.dm-track-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 2px;
+}
+
+.dm-mute {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin-bottom: 13px; /* optical: centers LED against knob body, not label */
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.dm-mute:focus-visible {
+  outline: 2px solid rgba(200, 140, 60, 0.85);
+  outline-offset: 1px;
+}
+
+.dm-mute-led {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #3a1010, #1a0505);
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: background 100ms ease, box-shadow 100ms ease;
+}
+
+.dm-mute[aria-pressed="true"] .dm-mute-led {
+  background: radial-gradient(circle at 35% 30%, #ff7070, #cc1010);
+  box-shadow:
+    0 0 7px rgba(210, 20, 20, 0.75),
+    inset 0 1px 0 rgba(255, 200, 200, 0.25);
+}
+
+/* ── Transport ──────────────────────────────────────────────────────────── */
+
+.dm-transport {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  margin-top: 28px;
+  padding: 0 4px;
+}
+
+.dm-transport-spacer {
+  flex: 1;
+}
+
+.dm-play {
+  width: 48px;
+  height: 48px;
+  margin-top: 3px;
+  border-radius: 50%;
+  border: none;
+  outline: 1.5px solid rgba(0, 200, 120, 0.35);
+  background: linear-gradient(145deg, #1a9a66, #0d6644);
+  box-shadow:
+    0 0 14px rgba(0, 180, 100, 0.35),
+    0 4px 10px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 150ms ease, box-shadow 150ms ease;
+}
+
+.dm-play:disabled {
+  filter: grayscale(0.8) brightness(0.6);
+  cursor: default;
+}
+
+.dm-play:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  outline-offset: 3px;
+}
+
+.dm-play-active {
+  background: linear-gradient(145deg, #e03333, #991111);
+  outline-color: rgba(255, 80, 80, 0.45);
+  box-shadow:
+    0 0 18px rgba(220, 50, 50, 0.5),
+    0 4px 10px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* ── Small screens ──────────────────────────────────────────────────────── */
+
+@media (max-width: 620px) {
+  .dm-machine {
+    padding: 14px 14px 18px;
+  }
+
+  .dm-board {
+    grid-template-columns: auto repeat(8, minmax(0, 1fr)) 12px auto;
+  }
+
+  .dm-track-label {
+    padding-right: 10px;
+    font-size: 9px;
+  }
+
+  .dm-track-controls {
+    gap: 4px;
+  }
+
+  .dm-transport {
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .dm-machine *,
+  .dm-machine *::before {
+    transition: none !important;
+    animation: none !important;
+  }
+}
