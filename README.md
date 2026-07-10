@@ -8,11 +8,24 @@ No plugins, no backend — just a `.wasm` file and a browser.
 
 ## Features
 
-- 5 voices × 8 steps: Bass Drum, Snare, Hi-Hat, Tom, Cymbal
-- Adjustable tempo (BPM) and swing
-- Per-track volume and decay knobs, per-track mute
+- 5 voices × up to 16 steps: Bass Drum, Snare, Hi-Hat, Tom, Cymbal, with a
+  runtime-adjustable pattern length (STEPS knob, 1–16)
+- Per-step velocity: click a cell to cycle off → hit → accent
+- Per-track volume (smoothed, zipper-free) and decay knobs, plus per-track mute
+- Tempo (BPM) and swing, with tap tempo
+- Trigger probability and humanize (timing jitter) knobs for less mechanical
+  patterns
+- Euclidean rhythm generator — fill any track with an even E(pulses, steps)
+  pattern at a chosen rotation
+- Pattern mutate (random-walk the current pattern), 6 built-in presets, and a
+  Clear button
 - Global reverb control
-- Fully keyboard-operable (Space = play/stop; knobs respond to arrow keys)
+- Shareable patterns: state round-trips through a URL hash and
+  `localStorage`, so reloading or sending a link restores the pattern, tempo,
+  and knobs
+- Fully keyboard-operable (Space = play/stop; the step grid and knobs are
+  focusable and respond to arrow keys)
+- Installable / offline-capable (PWA with a service worker and app manifest)
 - Runs entirely client-side
 
 ## How it works
@@ -30,7 +43,21 @@ Go engine (WASM, in a Web Worker)  ──512-sample chunks──►  AudioWorkle
 React UI (TypeScript) ◄─────────────────────────────────── playhead
 ```
 
-The synthesizer voices are purely procedural — no samples. Each voice uses an exponential amplitude envelope; tonal voices (Bass Drum, Tom) add pitch sweep, and noise voices (Snare, Hi-Hat, Cymbal) pass filtered white noise through biquad filters from the [algo-dsp](https://github.com/cwbudde/algo-dsp) library. The mix passes through a global FDN reverb and brick-wall limiter before reaching the browser.
+The synthesizer voices are purely procedural — no samples. Each voice uses an exponential amplitude envelope; tonal voices (Bass Drum, Tom) add pitch sweep, and noise voices (Snare, Hi-Hat, Cymbal) pass filtered white noise through biquad filters from the [algo-dsp](https://github.com/cwbudde/algo-dsp) library. The mix passes through a global FDN reverb and brick-wall limiter before reaching the browser. See [`docs/voices.md`](docs/voices.md) for the full per-voice synthesis recipe and parameter reference.
+
+## Browser requirements
+
+algo-drum needs a browser with:
+
+- **WebAssembly** support (to run the Go audio engine)
+- **Web Audio API** with **AudioWorklet** support (the engine renders audio
+  in a Web Worker; an AudioWorklet consumes the rendered chunks on the audio
+  thread)
+- A **user gesture** (e.g. pressing Play) to start the `AudioContext` — this
+  is a standard browser autoplay restriction, not an algo-drum limitation
+
+All current major desktop and mobile browsers (Chrome, Firefox, Safari, Edge)
+satisfy these requirements.
 
 ## Building locally
 
