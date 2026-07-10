@@ -38,7 +38,8 @@
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.14em;
-  color: rgba(200, 180, 150, 0.5);
+  /* X3: 3.2:1 → 6.2:1 on the recessed group background. */
+  color: rgba(212, 194, 164, 0.74);
 }
 
 .dm-algo-row {
@@ -54,10 +55,11 @@
 }
 
 .dm-algo-label {
-  font-size: 8px;
+  /* X3: 8px → 10px and 3.7:1 → 6.5:1 (was tiny and low-contrast). */
+  font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.1em;
-  color: rgba(195, 185, 165, 0.55);
+  color: rgba(202, 192, 172, 0.78);
 }
 
 .dm-algo-select,

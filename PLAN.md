@@ -131,11 +131,11 @@ a deprecated audio path, zero tests, and a UI approach (canvas) that fights the 
 - [x] **F3: move styling out of inline objects** — every component styles via large
       inline `style` props; introduce CSS modules (or plain CSS custom properties for the
       panel theme).
-- [ ] **F4: add ESLint** (typescript-eslint + react-hooks) — currently only prettier via
+- [x] **F4: add ESLint** (typescript-eslint + react-hooks) — currently only prettier via
       treefmt; hook rules would have flagged several issues here.
-- [ ] **F5: error handling** — no React error boundary; the WASM load error renders raw
+- [x] **F5: error handling** — no React error boundary; the WASM load error renders raw
       `String(e)`. Add a boundary and a friendly retry UI.
-- [ ] **F6: upgrade React 18 → 19** (already on Vite 7 / TS 5.6; low risk at this size).
+- [x] **F6: upgrade React 18 → 19** (already on Vite 7 / TS 5.6; low risk at this size).
 
 ## 6. UI / UX — 5/10 (rewrite recommended — see plan below)
 
@@ -187,7 +187,7 @@ zero accessibility, constant repaints.
       reader access, no keyboard operation. Fixed structurally by the §6 rewrite.
 - [x] **X2: mute button is an 11×11 px target** with color-only state — enlarge to ≥24 px
       hit area and add `aria-pressed` + label.
-- [ ] **X3: low-contrast labels** (e.g. `rgba(195,185,165,0.60)` 9 px text) — check
+- [x] **X3: low-contrast labels** (e.g. `rgba(195,185,165,0.60)` 9 px text) — check
       WCAG AA and bump sizes/contrast.
 - [x] **X4: knobs need `role="slider"`, ARIA values, and keyboard** (see rewrite plan).
 
@@ -200,9 +200,9 @@ zero accessibility, constant repaints.
       output, peak levels bounded, deterministic with fixed seeds.
 - [x] **T3: golden render test** — render N buffers of a known pattern, assert RMS/peak
       per step window (guards DSP regressions without brittle sample equality).
-- [ ] **T4: frontend unit tests (Vitest)** — Knob value/angle math, drag delta logic,
+- [x] **T4: frontend unit tests (Vitest)** — Knob value/angle math, drag delta logic,
       pattern state reducers.
-- [ ] **T5: e2e smoke (Playwright)** — page loads, WASM initializes, Play toggles,
+- [x] **T5: e2e smoke (Playwright)** — page loads, WASM initializes, Play toggles,
       toggling a cell before Play still produces audible output (regression test for C1;
       assert via `OfflineAudioContext` or engine state).
 - [x] **T6: run T1–T4 in CI** (see CI1). Note: engine tests need a non-WASM build —
@@ -277,5 +277,7 @@ zero accessibility, constant repaints.
 (E1–E5), euclid/probability/humanize/mutate/presets/persistence/tap-tempo (G1–G6), CI
 format gate + deploy polish (CI3/CI4), PWA fixes (P1–P4), docs (D2/D3, `docs/voices.md`),
 `.editorconfig` (H3), dead-code and error-logging cleanups (C9/B5), volume smoothing (A3).
+Also landed the same day: ESLint + error boundary + React 19 (F4/F5/F6), WCAG-AA
+contrast pass (X3), Vitest unit suite and Playwright e2e smoke in CI (T4/T5).
 Still open: A1 (engine-owned state), E6 (pause semantics), G7 (accent row/open-hat/master
-volume), X3/F4/F5/F6/T4/T5 (in progress), CI3 wasm-opt, D1-adjacent doc drift checks.
+volume), optional wasm-opt from CI3.

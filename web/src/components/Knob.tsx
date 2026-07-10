@@ -1,4 +1,12 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  MAX_ANGLE,
+  MIN_ANGLE,
+  dragValue,
+  keyValue,
+  valueToAngle,
+  wheelValue,
+} from "./knobMath";
 import "./Knob.css";
 
 interface KnobProps {
@@ -13,20 +21,6 @@ interface KnobProps {
   defaultValue?: number;
   size?: number; // diameter in px, default 48
   color?: string;
-}
-
-const MIN_ANGLE = -135;
-const MAX_ANGLE = 135;
-const KEY_STEP = 0.02;
-const KEY_STEP_LARGE = 0.1;
-const WHEEL_STEP = 0.03;
-
-function clamp01(v: number) {
-  return Math.max(0, Math.min(1, v));
-}
-
-function valueToAngle(v: number) {
-  return MIN_ANGLE + v * (MAX_ANGLE - MIN_ANGLE);
 }
 
 function polarToXY(cx: number, cy: number, r: number, angleDeg: number) {
@@ -90,9 +84,14 @@ export default function Knob({
     if (!dragging) return;
     const onMove = (e: PointerEvent) => {
       if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return;
-      const fine = e.shiftKey ? 0.25 : 1;
-      const delta = ((dragRef.current.startY - e.clientY) / 150) * fine;
-      onChange(clamp01(dragRef.current.startVal + delta));
+      onChange(
+        dragValue(
+          dragRef.current.startVal,
+          dragRef.current.startY,
+          e.clientY,
+          e.shiftKey,
+        ),
+      );
     };
     const onUp = (e: PointerEvent) => {
       if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return;
@@ -115,8 +114,7 @@ export default function Knob({
     if (!svg) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const direction = e.deltaY < 0 ? 1 : -1;
-      onChange(clamp01(value + direction * WHEEL_STEP));
+      onChange(wheelValue(value, e.deltaY));
     };
     svg.addEventListener("wheel", onWheel, { passive: false });
     return () => svg.removeEventListener("wheel", onWheel);
@@ -124,36 +122,10 @@ export default function Knob({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<SVGSVGElement>) => {
-      let next: number | null = null;
-      const step = e.shiftKey ? KEY_STEP_LARGE : KEY_STEP;
-      switch (e.key) {
-        case "ArrowUp":
-        case "ArrowRight":
-          next = value + step;
-          break;
-        case "ArrowDown":
-        case "ArrowLeft":
-          next = value - step;
-          break;
-        case "PageUp":
-          next = value + KEY_STEP_LARGE;
-          break;
-        case "PageDown":
-          next = value - KEY_STEP_LARGE;
-          break;
-        case "Home":
-          next = 0;
-          break;
-        case "End":
-          next = 1;
-          break;
-        case "Escape":
-          if (defaultValue !== undefined) next = defaultValue;
-          break;
-      }
+      const next = keyValue(value, e.key, e.shiftKey, defaultValue);
       if (next !== null) {
         e.preventDefault();
-        onChange(clamp01(next));
+        onChange(next);
       }
     },
     [value, onChange, defaultValue],

@@ -4,7 +4,8 @@
 .dm-machine {
   --dm-led: #c87828;
   --dm-led-dim: rgba(140, 90, 30, 0.18);
-  --dm-text: rgba(200, 190, 170, 0.55);
+  /* X3: track labels 3.5:1 → 7.1:1 on the ~#242433 panel. */
+  --dm-text: rgba(208, 199, 180, 0.86);
 
   width: min(100%, 1000px);
   padding: 20px 28px 26px;
@@ -42,7 +43,8 @@
 }
 
 .dm-title-drum {
-  color: #4468c0;
+  /* X3: 2.7:1 → 4.6:1 on the machine header (large text needs 3:1). */
+  color: #6f92e0;
 }
 
 .dm-status {
@@ -231,7 +233,8 @@
   text-align: center;
   font-size: 10px;
   font-family: "Inter", monospace;
-  color: rgba(180, 165, 140, 0.3);
+  /* X3: 1.7:1 → 5.3:1 on the #08080e screen (step numbers were near-invisible). */
+  color: rgba(192, 178, 152, 0.72);
   z-index: 1;
 }
 

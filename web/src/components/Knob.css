@@ -20,7 +20,8 @@
 }
 
 .knob-label {
-  color: rgba(195, 185, 165, 0.6);
+  /* X3: 3.6:1 → 6.4:1 on the ~#2a2a38 panel (raised alpha/lightness). */
+  color: rgba(206, 197, 178, 0.85);
   font-size: 9px;
   font-family: "Inter", "Helvetica Neue", sans-serif;
   letter-spacing: 0.09em;
