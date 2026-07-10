@@ -1,17 +1,27 @@
 package drum
 
 import (
+	"math"
+
 	"github.com/cwbudde/algo-dsp/dsp/effects/dynamics"
 	"github.com/cwbudde/algo-dsp/dsp/effects/reverb"
 )
 
 const (
 	TrackCount = 5
-	StepCount  = 8
+
+	// MaxSteps is the pattern capacity; the active length is set at runtime
+	// via SetStepCount (1–MaxSteps). Steps are 16th notes, so 16 steps span
+	// one 4/4 bar.
+	MaxSteps = 16
 
 	// mixHeadroom scales the summed voice mix so simultaneous hits do not
 	// slam the limiter; the limiter then only catches rare worst cases.
 	mixHeadroom = 0.5
+
+	// volSmoothTauS is the per-track volume ramp time constant. ~8 ms feels
+	// instant on a knob but is long enough to avoid zipper noise.
+	volSmoothTauS = 0.008
 )
 
 // Engine is the drum machine sequencer and mixer.
@@ -21,15 +31,18 @@ type Engine struct {
 	bpm     float64
 	swing   float64 // 0.0 = no swing, 0.5 = full shuffle
 
-	pattern [TrackCount][StepCount]bool
-	volumes [TrackCount]float64
+	pattern [TrackCount][MaxSteps]float64 // per-cell velocity in [0, 1], 0 = off
+	volumes [TrackCount]float64           // targets set by SetVolume
+	liveVol [TrackCount]float64           // smoothed volumes applied in Render
+	volCoef float64                       // per-sample one-pole ramp coefficient
 	decays  [TrackCount]float64
 
 	voices [TrackCount]Voice
 
+	stepCount   int // active pattern length in [1, MaxSteps]
 	currentStep int
 	stepSamples int64
-	stepLen     [StepCount]int64 // pre-computed step lengths
+	stepLen     [MaxSteps]int64 // pre-computed step lengths
 
 	reverb       *reverb.FDNReverb
 	reverbAmount float64
@@ -39,17 +52,20 @@ type Engine struct {
 // NewEngine creates a drum engine at the given sample rate.
 func NewEngine(sr float64) *Engine {
 	e := &Engine{
-		sr:  sr,
-		bpm: 120,
+		sr:        sr,
+		bpm:       120,
+		stepCount: MaxSteps,
+		volCoef:   1 - math.Exp(-1.0/(sr*volSmoothTauS)),
 	}
 	for i := range e.volumes {
 		e.volumes[i] = 1.0
+		e.liveVol[i] = 1.0
 		e.decays[i] = 0.5
 	}
 
 	e.voices[0] = NewBassDrum(sr)
 	e.voices[1] = NewSnare(sr)
-	e.voices[2] = NewHiHat(sr, true)
+	e.voices[2] = NewHiHat(sr)
 	e.voices[3] = NewTom(sr)
 
 	e.voices[4] = NewCymbal(sr)
@@ -59,25 +75,35 @@ func NewEngine(sr float64) *Engine {
 
 	e.recomputeStepLengths()
 
-	rev, _ := reverb.NewFDNReverb(sr)
-	_ = rev.SetWet(0)
+	rev, err := reverb.NewFDNReverb(sr)
+	logErr("NewFDNReverb", err)
+	logErr("reverb.SetWet", rev.SetWet(0))
 	e.reverb = rev
 
 	// Lookahead limiter controls the sustained level (dense patterns, long
 	// reverb tails). Its smoothed detector still under-reacts to
 	// single-sample noise transients, so the hard clamp in Render is the
 	// actual brick wall for those rare (~inaudible) peaks.
-	lim, _ := dynamics.NewLookaheadLimiter(sr)
-	_ = lim.SetThreshold(-1.0)
+	lim, err := dynamics.NewLookaheadLimiter(sr)
+	logErr("NewLookaheadLimiter", err)
+	logErr("limiter.SetThreshold", lim.SetThreshold(-1.0))
 	e.limiter = lim
 
 	return e
 }
 
+// logErr reports a discarded DSP configuration error; under wasm println
+// lands in the JS console.
+func logErr(context string, err error) {
+	if err != nil {
+		println("drum: " + context + ": " + err.Error())
+	}
+}
+
 // recomputeStepLengths recalculates step durations accounting for swing.
 // swing=0: all equal. swing=0.5: even steps get 1.5× base, odd get 0.5× base.
 func (e *Engine) recomputeStepLengths() {
-	base := e.sr * 60.0 / e.bpm / 2.0 // samples per 8th note
+	base := e.sr * 60.0 / e.bpm / 4.0 // samples per 16th note
 
 	s := e.swing
 	for i := range e.stepLen {
@@ -126,15 +152,60 @@ func (e *Engine) SetSwing(swing float64) {
 	e.recomputeStepLengths()
 }
 
-func (e *Engine) SetCell(track, step int, active bool) {
-	if track < 0 || track >= TrackCount || step < 0 || step >= StepCount {
+// SetStepCount sets the active pattern length, clamped to [1, MaxSteps].
+// Cells beyond the new length keep their contents (see SetCell).
+func (e *Engine) SetStepCount(n int) {
+	if n < 1 {
+		n = 1
+	}
+
+	if n > MaxSteps {
+		n = MaxSteps
+	}
+
+	e.stepCount = n
+	if e.currentStep >= n {
+		e.currentStep %= n
+	}
+}
+
+// SetCell sets a cell's velocity, clamped to [0, 1] (0 = off). Steps are
+// addressable up to MaxSteps regardless of the active step count, so
+// shrinking and re-growing the pattern is lossless.
+func (e *Engine) SetCell(track, step int, velocity float64) {
+	if track < 0 || track >= TrackCount || step < 0 || step >= MaxSteps {
 		return
 	}
 
-	e.pattern[track][step] = active
+	e.pattern[track][step] = clamp01(velocity)
 }
 
-// SetVolume sets per-track volume, clamped to [0, 1].
+// SetPattern replaces cells from a flat track-major slice (index =
+// track*MaxSteps + step) of velocities, each clamped to [0, 1]. Values past
+// TrackCount×MaxSteps are ignored; a shorter slice leaves the rest untouched.
+func (e *Engine) SetPattern(velocities []float64) {
+	for i, vel := range velocities {
+		if i >= TrackCount*MaxSteps {
+			return
+		}
+
+		e.pattern[i/MaxSteps][i%MaxSteps] = clamp01(vel)
+	}
+}
+
+// Pattern returns a flat track-major copy of the full pattern (see
+// SetPattern for the layout).
+func (e *Engine) Pattern() []float64 {
+	out := make([]float64, 0, TrackCount*MaxSteps)
+	for t := range e.pattern {
+		out = append(out, e.pattern[t][:]...)
+	}
+
+	return out
+}
+
+// SetVolume sets per-track volume, clamped to [0, 1]. The change ramps in
+// over ~volSmoothTauS inside Render to avoid zipper noise.
 func (e *Engine) SetVolume(track int, vol float64) {
 	if track >= 0 && track < TrackCount {
 		e.volumes[track] = clamp01(vol)
@@ -155,15 +226,17 @@ func (e *Engine) SetDecay(track int, amount float64) {
 // SetReverb sets the reverb amount in [0, 1].
 // 0 = fully dry, 1 = maximum reverb (wet=0.45, RT60=4 s).
 func (e *Engine) SetReverb(amount float64) {
+	amount = clamp01(amount)
 	e.reverbAmount = amount
+
 	if amount <= 0 {
-		_ = e.reverb.SetWet(0)
+		logErr("reverb.SetWet", e.reverb.SetWet(0))
 		return
 	}
 
-	_ = e.reverb.SetWet(amount * 0.45)
+	logErr("reverb.SetWet", e.reverb.SetWet(amount*0.45))
 	rt60 := 0.3 + amount*3.7
-	_ = e.reverb.SetRT60(rt60)
+	logErr("reverb.SetRT60", e.reverb.SetRT60(rt60))
 }
 
 func (e *Engine) CurrentStep() int {
@@ -180,8 +253,8 @@ func (e *Engine) Render(buf []float32) {
 		if e.running {
 			if e.stepSamples == 0 {
 				for t := range e.voices {
-					if e.pattern[t][e.currentStep] {
-						e.voices[t].Trigger()
+					if vel := e.pattern[t][e.currentStep]; vel > 0 {
+						e.voices[t].Trigger(vel)
 					}
 				}
 			}
@@ -189,13 +262,16 @@ func (e *Engine) Render(buf []float32) {
 			e.stepSamples++
 			if e.stepSamples >= e.stepLen[e.currentStep] {
 				e.stepSamples = 0
-				e.currentStep = (e.currentStep + 1) % StepCount
+				e.currentStep = (e.currentStep + 1) % e.stepCount
 			}
 		}
 
 		var out float64
 		for t, v := range e.voices {
-			out += v.Tick() * e.volumes[t]
+			// One-pole ramp toward the target volume so knob moves during
+			// playback do not step the gain per-sample (zipper noise).
+			e.liveVol[t] += (e.volumes[t] - e.liveVol[t]) * e.volCoef
+			out += v.Tick() * e.liveVol[t]
 		}
 
 		out *= mixHeadroom
