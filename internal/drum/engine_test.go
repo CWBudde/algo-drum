@@ -454,6 +454,157 @@ func TestRenderOutputBoundedAndFinite(t *testing.T) {
 	}
 }
 
+// firstOnset returns the index of the first sample whose magnitude crosses a
+// small threshold, or -1 if the buffer stays silent.
+func firstOnset(buf []float32) int {
+	for i, sample := range buf {
+		if math.Abs(float64(sample)) > 1e-3 {
+			return i
+		}
+	}
+
+	return -1
+}
+
+func TestProbabilityZeroNeverTriggers(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+
+	// Dense pattern: a hit on every cell of every track.
+	for track := 0; track < TrackCount; track++ {
+		for step := 0; step < MaxSteps; step++ {
+			engine.SetCell(track, step, 1)
+		}
+	}
+
+	engine.SetProbability(0)
+	engine.SetRunning(true)
+
+	buf := renderTotal(engine, int(testSampleRate*2))
+	if peak := peakOf(buf); peak != 0 {
+		t.Fatalf("probability 0 rendered peak %v, want silence", peak)
+	}
+}
+
+func TestProbabilityOneAlwaysTriggers(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetSwing(0)
+	engine.SetStepCount(1) // one-step loop: a bass hit on every step
+	engine.SetCell(0, 0, 1)
+	engine.SetProbability(1)
+	engine.SetRunning(true)
+
+	// Every step must produce an onset near its boundary.
+	stepLen := int(engine.stepLen[0])
+	for step := 0; step < 8; step++ {
+		buf := renderTotal(engine, stepLen)
+		if firstOnset(buf) < 0 {
+			t.Fatalf("probability 1: step %d produced no onset", step)
+		}
+	}
+}
+
+func TestHumanizeZeroIsSampleExact(t *testing.T) {
+	build := func(setHumanize bool) *Engine {
+		engine := NewEngine(testSampleRate)
+		engine.SetCell(0, 0, 1)
+		engine.SetCell(2, 4, 0.7)
+
+		if setHumanize {
+			engine.SetHumanize(0)
+		}
+
+		engine.SetRunning(true)
+
+		return engine
+	}
+
+	reference := renderTotal(build(false), int(testSampleRate))
+	explicit := renderTotal(build(true), int(testSampleRate))
+
+	for i := range reference {
+		if reference[i] != explicit[i] {
+			t.Fatalf("humanize 0 changed sample %d: %v vs %v", i, reference[i], explicit[i])
+		}
+	}
+}
+
+func TestHumanizeTimingStaysWithinBounds(t *testing.T) {
+	maxDelay := int(humanizeTimingMaxS * testSampleRate)
+
+	// Many trials: with a single hit on step 0, the onset must never land
+	// before the boundary nor later than the maximum timing jitter.
+	for trial := 0; trial < 200; trial++ {
+		engine := NewEngine(testSampleRate)
+		engine.SetHumanize(1)
+		engine.SetCell(0, 0, 1)
+		engine.SetRunning(true)
+
+		buf := renderTotal(engine, maxDelay*4)
+
+		onset := firstOnset(buf)
+		if onset < 0 {
+			t.Fatalf("trial %d: humanized hit never fired", trial)
+		}
+
+		// Allow a couple of samples of slack for envelope ramp-up.
+		if onset > maxDelay+4 {
+			t.Fatalf("trial %d: onset at %d exceeds max jitter %d", trial, onset, maxDelay)
+		}
+	}
+}
+
+func TestHumanizeRenderDoesNotAllocate(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetHumanize(1)
+	engine.SetReverb(0) // isolate the humanize path from reverb internals
+
+	for track := 0; track < TrackCount; track++ {
+		for step := 0; step < MaxSteps; step++ {
+			engine.SetCell(track, step, 1)
+		}
+	}
+
+	engine.SetTempo(300) // fastest tempo → most step boundaries per render
+	engine.SetRunning(true)
+
+	buf := make([]float32, 4096)
+	allocs := testing.AllocsPerRun(50, func() {
+		engine.Render(buf)
+	})
+
+	if allocs != 0 {
+		t.Fatalf("humanized Render allocated %v times per call, want 0", allocs)
+	}
+}
+
+func TestHumanizeLongRenderIsFinite(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetHumanize(1)
+	engine.SetProbability(0.5)
+
+	for track := 0; track < TrackCount; track++ {
+		for step := 0; step < MaxSteps; step++ {
+			engine.SetCell(track, step, 1)
+		}
+	}
+
+	engine.SetReverb(1)
+	engine.SetTempo(300)
+	engine.SetRunning(true)
+
+	buf := renderTotal(engine, int(testSampleRate*10))
+	for i, sample := range buf {
+		value := float64(sample)
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			t.Fatalf("sample %d not finite over long humanized render: %v", i, value)
+		}
+
+		if math.Abs(value) > 1.0 {
+			t.Fatalf("sample %d = %v exceeds ±1.0 ceiling", i, value)
+		}
+	}
+}
+
 func TestRenderDeterministic(t *testing.T) {
 	build := func() *Engine {
 		engine := NewEngine(testSampleRate)

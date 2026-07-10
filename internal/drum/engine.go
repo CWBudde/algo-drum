@@ -2,6 +2,7 @@ package drum
 
 import (
 	"math"
+	"math/rand/v2"
 
 	"github.com/cwbudde/algo-dsp/dsp/effects/dynamics"
 	"github.com/cwbudde/algo-dsp/dsp/effects/reverb"
@@ -22,7 +23,35 @@ const (
 	// volSmoothTauS is the per-track volume ramp time constant. ~8 ms feels
 	// instant on a knob but is long enough to avoid zipper noise.
 	volSmoothTauS = 0.008
+
+	// engineSeed seeds the probability/humanize randomness so renders stay
+	// reproducible run-to-run (the voices are seeded the same way).
+	engineSeed = 0x5eed
+
+	// humanizeTimingMaxS is the largest timing jitter at humanize=1: each hit
+	// is delayed by a random offset in [0, humanize·humanizeTimingMaxS]. A hit
+	// can only be pushed later — the step boundary has already elapsed — so the
+	// jitter is one-sided rather than centered.
+	humanizeTimingMaxS = 0.015
+
+	// humanizeVelMax is the largest velocity deviation at humanize=1: each hit's
+	// velocity is scaled by 1 ± a random fraction up to humanize·humanizeVelMax.
+	humanizeVelMax = 0.20
+
+	// maxPending caps in-flight humanize-delayed triggers; sized well above the
+	// handful that can overlap so scheduling stays allocation-free in Render.
+	maxPending = 32
 )
+
+// pendingTrigger is a voice hit scheduled to fire a few samples in the future
+// (humanize timing jitter). The pending set is a fixed-size array so the render
+// loop never allocates.
+type pendingTrigger struct {
+	countdown int     // samples remaining until the voice fires
+	track     int     // voice index to trigger
+	velocity  float64 // humanized velocity to trigger at
+	active    bool    // slot in use
+}
 
 // Engine is the drum machine sequencer and mixer.
 type Engine struct {
@@ -44,6 +73,11 @@ type Engine struct {
 	stepSamples int64
 	stepLen     [MaxSteps]int64 // pre-computed step lengths
 
+	prob     float64 // per-hit trigger probability in [0, 1]
+	humanize float64 // timing/velocity randomization amount in [0, 1]
+	rng      *rand.Rand
+	pending  [maxPending]pendingTrigger
+
 	reverb       *reverb.FDNReverb
 	reverbAmount float64
 	limiter      *dynamics.LookaheadLimiter
@@ -56,6 +90,9 @@ func NewEngine(sr float64) *Engine {
 		bpm:       120,
 		stepCount: MaxSteps,
 		volCoef:   1 - math.Exp(-1.0/(sr*volSmoothTauS)),
+		prob:      1,
+		humanize:  0,
+		rng:       rand.New(rand.NewPCG(engineSeed, engineSeed)),
 	}
 	for i := range e.volumes {
 		e.volumes[i] = 1.0
@@ -119,9 +156,27 @@ func (e *Engine) SetRunning(running bool) {
 	if !running {
 		e.currentStep = 0
 		e.stepSamples = 0
+
+		// Drop any humanize-delayed hits so they don't fire after restart.
+		for i := range e.pending {
+			e.pending[i].active = false
+		}
 	}
 
 	e.running = running
+}
+
+// SetProbability sets the chance each scheduled hit actually fires, clamped to
+// [0, 1]. 1 = every hit plays (default); 0 = silence.
+func (e *Engine) SetProbability(p float64) {
+	e.prob = clamp01(p)
+}
+
+// SetHumanize sets the humanize amount, clamped to [0, 1]. It jitters each
+// hit's timing (delayed up to humanize·15 ms) and scales its velocity by up to
+// ±humanize·20%. 0 = mechanical (default).
+func (e *Engine) SetHumanize(h float64) {
+	e.humanize = clamp01(h)
 }
 
 // SetTempo sets the tempo, clamped to [30, 300] BPM.
@@ -247,16 +302,81 @@ func (e *Engine) CurrentStep() int {
 	return e.currentStep
 }
 
+// triggerStep fires (or schedules) the voices whose cell is active on the
+// current step, applying probability and humanize.
+func (e *Engine) triggerStep() {
+	for t := range e.voices {
+		vel := e.pattern[t][e.currentStep]
+		if vel <= 0 {
+			continue
+		}
+
+		// Probability gate: drop the hit with chance 1-prob. At prob=1 the
+		// rng is left untouched so mechanical renders stay deterministic.
+		if e.prob < 1 && e.rng.Float64() >= e.prob {
+			continue
+		}
+
+		if e.humanize <= 0 {
+			e.voices[t].Trigger(vel)
+			continue
+		}
+
+		// Velocity humanize: scale by 1 ± up to humanize·20%.
+		vel = clamp01(vel * (1 + (e.rng.Float64()*2-1)*e.humanize*humanizeVelMax))
+
+		// Timing humanize: delay by 0..humanize·15 ms worth of samples.
+		delay := int(e.rng.Float64() * e.humanize * humanizeTimingMaxS * e.sr)
+		if delay <= 0 {
+			e.voices[t].Trigger(vel)
+			continue
+		}
+
+		e.schedule(t, vel, delay)
+	}
+}
+
+// schedule queues a delayed voice trigger; if the fixed pending buffer is full
+// the hit fires immediately rather than being dropped.
+func (e *Engine) schedule(track int, velocity float64, delay int) {
+	for i := range e.pending {
+		if !e.pending[i].active {
+			e.pending[i] = pendingTrigger{
+				countdown: delay,
+				track:     track,
+				velocity:  velocity,
+				active:    true,
+			}
+
+			return
+		}
+	}
+
+	e.voices[track].Trigger(velocity)
+}
+
+// firePending advances every queued trigger by one sample and fires those that
+// have reached their scheduled time.
+func (e *Engine) firePending() {
+	for i := range e.pending {
+		if !e.pending[i].active {
+			continue
+		}
+
+		e.pending[i].countdown--
+		if e.pending[i].countdown <= 0 {
+			e.voices[e.pending[i].track].Trigger(e.pending[i].velocity)
+			e.pending[i].active = false
+		}
+	}
+}
+
 // Render fills buf with mono audio samples.
 func (e *Engine) Render(buf []float32) {
 	for i := range buf {
 		if e.running {
 			if e.stepSamples == 0 {
-				for t := range e.voices {
-					if vel := e.pattern[t][e.currentStep]; vel > 0 {
-						e.voices[t].Trigger(vel)
-					}
-				}
+				e.triggerStep()
 			}
 
 			e.stepSamples++
@@ -265,6 +385,8 @@ func (e *Engine) Render(buf []float32) {
 				e.currentStep = (e.currentStep + 1) % e.stepCount
 			}
 		}
+
+		e.firePending()
 
 		var out float64
 		for t, v := range e.voices {

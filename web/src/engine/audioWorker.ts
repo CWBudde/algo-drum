@@ -16,6 +16,8 @@ interface AlgoDrumApi {
   setVolume: (track: number, vol: number) => void;
   setDecay: (track: number, amount: number) => void;
   setReverb: (amount: number) => void;
+  setProbability: (p: number) => void;
+  setHumanize: (h: number) => void;
   render: (n: number) => Float32Array;
   currentStep: () => number;
 }

@@ -202,6 +202,16 @@ export function setReverb(amount: number): void {
   command("setReverb", amount);
 }
 
+// setProbability sets the per-hit trigger chance in [0, 1] (1 = every hit).
+export function setProbability(p: number): void {
+  command("setProbability", p);
+}
+
+// setHumanize sets the timing/velocity randomization amount in [0, 1].
+export function setHumanize(h: number): void {
+  command("setHumanize", h);
+}
+
 export function currentStep(): number {
   return audibleStep;
 }

@@ -144,6 +144,22 @@ func main() {
 		return js.Null()
 	}))
 
+	api.Set("setProbability", export(func(args []js.Value) any {
+		if ready() && len(args) > 0 {
+			engine.SetProbability(args[0].Float())
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("setHumanize", export(func(args []js.Value) any {
+		if ready() && len(args) > 0 {
+			engine.SetHumanize(args[0].Float())
+		}
+
+		return js.Null()
+	}))
+
 	api.Set("render", export(func(args []js.Value) any {
 		if !ready() || len(args) < 1 {
 			return js.Global().Get("Float32Array").New(0)

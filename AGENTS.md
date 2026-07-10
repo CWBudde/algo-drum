@@ -45,13 +45,19 @@ Vite serves `web/public/` as static assets, so `algo_drum.wasm` and `wasm_exec.j
 
 ```
 cmd/wasm/main.go          — WASM entry point; registers the AlgoDrum JS API (worker global scope)
-internal/drum/engine.go   — Sequencer: velocity pattern grid (5×16), runtime step count, tempo/swing, smoothed per-track volumes, Render()
+internal/drum/engine.go   — Sequencer: velocity pattern grid (5×16), runtime step count, tempo/swing, probability + humanize (allocation-free pending-trigger list), smoothed per-track volumes, Render()
 internal/drum/voices.go   — Drum synthesizer voices (BassDrum, Snare, HiHat, Tom, Cymbal)
 web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands
 web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; renders audio chunks on demand
 web/public/worklet.js         — AudioWorkletProcessor: consumes chunks, reports the audible step
-web/src/components/DrumMachine.tsx — Main UI: 5×16 step grid (DOM/CSS; clicking a cell cycles off → on → accent), transport, per-track volume/decay knobs + mute LEDs, global reverb + pattern-length (STEPS) knobs
+web/src/components/DrumMachine.tsx — Main UI + state owner: 5×16 step grid (DOM/CSS; clicking a cell cycles off → on → accent), transport (play, tempo + TAP, swing, STEPS, PROB, HUMAN, reverb), per-track volume/decay knobs + mute LEDs; persistence/share wiring
+web/src/components/AlgoPanel.tsx    — Algorithmic tools panel: preset selector, CLEAR, MUTATE, per-track Euclidean fill (E(k,n) + rotation), SHARE (copy link)
 web/src/components/Knob.tsx        — Reusable rotary knob (SVG; drag, wheel, and keyboard accessible)
+web/src/algo/euclid.ts     — Pure Bjorklund/Euclidean E(pulses, steps) rhythm generator with rotation
+web/src/algo/mutate.ts     — Pure musical random-walk mutation of a flat pattern
+web/src/algo/presets.ts    — Classic 16-step preset patterns (rock, house, breakbeat, hip-hop, techno, funk) + Clear
+web/src/algo/persistence.ts — Pure versioned encode/decode of full state → base64url; localStorage + URL-hash glue
+web/src/algo/pattern.ts    — Shared pattern constants (dims, velocities, flat-index helper) for the algo modules
 web/src/App.tsx           — Root: loads WASM on mount, renders DrumMachine
 ```
 
@@ -86,6 +92,8 @@ UI displays tracks in **reverse order** (Cymbal on top, Bass on bottom).
 | `setVolume(track, 0–1)`         | Set track volume (ramped over ~8 ms to avoid zipper noise)                         |
 | `setDecay(track, 0–1)`          | Set track decay amount                                                             |
 | `setReverb(0–1)`                | Set global reverb amount                                                           |
+| `setProbability(0–1)`           | Per-hit trigger chance (1 = every hit fires, default; 0 = silence)                 |
+| `setHumanize(0–1)`              | Timing/velocity randomization (delay ≤ h·15 ms, velocity ±h·20%; 0 = mechanical)   |
 | `render(n)`                     | Render n samples → Float32Array                                                    |
 | `currentStep()`                 | Returns active step index (-1 if stopped)                                          |
 
