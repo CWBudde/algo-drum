@@ -1,15 +1,29 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import "./Knob.css";
 
 interface KnobProps {
   value: number; // 0.0 – 1.0
   onChange: (v: number) => void;
   label: string;
+  /** Accessible name; falls back to label. */
+  ariaLabel?: string;
+  /** Human-readable value, e.g. "120 BPM"; defaults to a percentage. */
+  valueText?: (v: number) => string;
+  /** Double-click / Escape resets to this value. */
+  defaultValue?: number;
   size?: number; // diameter in px, default 48
   color?: string;
 }
 
 const MIN_ANGLE = -135;
 const MAX_ANGLE = 135;
+const KEY_STEP = 0.02;
+const KEY_STEP_LARGE = 0.1;
+const WHEEL_STEP = 0.03;
+
+function clamp01(v: number) {
+  return Math.max(0, Math.min(1, v));
+}
 
 function valueToAngle(v: number) {
   return MIN_ANGLE + v * (MAX_ANGLE - MIN_ANGLE);
@@ -37,16 +51,27 @@ export default function Knob({
   value,
   onChange,
   label,
+  ariaLabel,
+  valueText,
+  defaultValue,
   size = 48,
   color = "#C87828",
 }: KnobProps) {
-  const dragRef = useRef<
-    { pointerId: number; startY: number; startVal: number } | null
-  >(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    startY: number;
+    startVal: number;
+  } | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  // Stable ID from label for SVG gradient references
-  const id = label.replace(/[^a-z0-9]/gi, "_");
+  // Unique per-instance ID for SVG gradient references — labels repeat
+  // across knobs (e.g. "DEC") and can change per render (tempo readout).
+  const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+
+  const readout = valueText
+    ? valueText(value)
+    : `${Math.round(value * 100)}%`;
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<SVGSVGElement>) => {
@@ -57,6 +82,7 @@ export default function Knob({
         startVal: value,
       };
       e.currentTarget.setPointerCapture?.(e.pointerId);
+      e.currentTarget.focus();
       setDragging(true);
     },
     [value],
@@ -66,8 +92,9 @@ export default function Knob({
     if (!dragging) return;
     const onMove = (e: PointerEvent) => {
       if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return;
-      const delta = (dragRef.current.startY - e.clientY) / 150;
-      onChange(Math.max(0, Math.min(1, dragRef.current.startVal + delta)));
+      const fine = e.shiftKey ? 0.25 : 1;
+      const delta = ((dragRef.current.startY - e.clientY) / 150) * fine;
+      onChange(clamp01(dragRef.current.startVal + delta));
     };
     const onUp = (e: PointerEvent) => {
       if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return;
@@ -84,6 +111,60 @@ export default function Knob({
     };
   }, [dragging, onChange]);
 
+  // Wheel support needs a non-passive listener to preventDefault scrolling.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const direction = e.deltaY < 0 ? 1 : -1;
+      onChange(clamp01(value + direction * WHEEL_STEP));
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, [value, onChange]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<SVGSVGElement>) => {
+      let next: number | null = null;
+      const step = e.shiftKey ? KEY_STEP_LARGE : KEY_STEP;
+      switch (e.key) {
+        case "ArrowUp":
+        case "ArrowRight":
+          next = value + step;
+          break;
+        case "ArrowDown":
+        case "ArrowLeft":
+          next = value - step;
+          break;
+        case "PageUp":
+          next = value + KEY_STEP_LARGE;
+          break;
+        case "PageDown":
+          next = value - KEY_STEP_LARGE;
+          break;
+        case "Home":
+          next = 0;
+          break;
+        case "End":
+          next = 1;
+          break;
+        case "Escape":
+          if (defaultValue !== undefined) next = defaultValue;
+          break;
+      }
+      if (next !== null) {
+        e.preventDefault();
+        onChange(clamp01(next));
+      }
+    },
+    [value, onChange, defaultValue],
+  );
+
+  const handleDoubleClick = useCallback(() => {
+    if (defaultValue !== undefined) onChange(defaultValue);
+  }, [defaultValue, onChange]);
+
   const cx = size / 2;
   const cy = size / 2;
   const arcR = size * 0.42; // travel arc radius (outside the knob body)
@@ -95,22 +176,25 @@ export default function Knob({
   const indOuter = polarToXY(cx, cy, bodyR * 0.8, angle);
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 4,
-        userSelect: "none",
-        touchAction: "none",
-      }}
-    >
+    <div className="knob">
+      {dragging && <span className="knob-readout">{readout}</span>}
       <svg
+        ref={svgRef}
         width={size}
         height={size}
+        role="slider"
+        aria-label={ariaLabel ?? label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(value * 100)}
+        aria-valuetext={readout}
+        tabIndex={0}
         onPointerDown={handlePointerDown}
-        style={{ cursor: "ns-resize", overflow: "visible" }}
+        onKeyDown={handleKeyDown}
+        onDoubleClick={handleDoubleClick}
+        style={{ overflow: "visible" }}
       >
+        <title>{readout}</title>
         <defs>
           {/* Body: radial gradient — light top-left, shadow bottom-right */}
           <radialGradient id={`kb_${id}`} cx="34%" cy="28%" r="70%">
@@ -185,17 +269,7 @@ export default function Knob({
         />
       </svg>
 
-      <span
-        style={{
-          color: "rgba(195,185,165,0.60)",
-          fontSize: 9,
-          fontFamily: '"Inter", "Helvetica Neue", sans-serif',
-          letterSpacing: "0.09em",
-          fontWeight: 500,
-        }}
-      >
-        {label}
-      </span>
+      <span className="knob-label">{label}</span>
     </div>
   );
 }

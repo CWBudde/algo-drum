@@ -8,6 +8,10 @@ import (
 const (
 	TrackCount = 5
 	StepCount  = 8
+
+	// mixHeadroom scales the summed voice mix so simultaneous hits do not
+	// slam the limiter; the limiter then only catches rare worst cases.
+	mixHeadroom = 0.5
 )
 
 // Engine is the drum machine sequencer and mixer.
@@ -29,7 +33,7 @@ type Engine struct {
 
 	reverb       *reverb.FDNReverb
 	reverbAmount float64
-	limiter      *dynamics.Limiter
+	limiter      *dynamics.LookaheadLimiter
 }
 
 // NewEngine creates a drum engine at the given sample rate.
@@ -47,18 +51,24 @@ func NewEngine(sr float64) *Engine {
 	e.voices[1] = NewSnare(sr)
 	e.voices[2] = NewHiHat(sr, true)
 	e.voices[3] = NewTom(sr)
+
 	e.voices[4] = NewCymbal(sr)
 	for i := range e.voices {
 		e.voices[i].SetDecay(e.decays[i])
 	}
+
 	e.recomputeStepLengths()
 
 	rev, _ := reverb.NewFDNReverb(sr)
 	_ = rev.SetWet(0)
 	e.reverb = rev
 
-	lim, _ := dynamics.NewLimiter(sr)
-	_ = lim.SetThreshold(-0.1)
+	// Lookahead limiter controls the sustained level (dense patterns, long
+	// reverb tails). Its smoothed detector still under-reacts to
+	// single-sample noise transients, so the hard clamp in Render is the
+	// actual brick wall for those rare (~inaudible) peaks.
+	lim, _ := dynamics.NewLookaheadLimiter(sr)
+	_ = lim.SetThreshold(-1.0)
 	e.limiter = lim
 
 	return e
@@ -69,7 +79,7 @@ func NewEngine(sr float64) *Engine {
 func (e *Engine) recomputeStepLengths() {
 	base := e.sr * 60.0 / e.bpm / 2.0 // samples per 8th note
 
-	s := e.swing * 0.5
+	s := e.swing
 	for i := range e.stepLen {
 		if i%2 == 0 {
 			e.stepLen[i] = int64(base * (1.0 + s))
@@ -79,21 +89,39 @@ func (e *Engine) recomputeStepLengths() {
 	}
 }
 
-func (e *Engine) SetRunning(r bool) {
-	if !r {
+func (e *Engine) SetRunning(running bool) {
+	if !running {
 		e.currentStep = 0
 		e.stepSamples = 0
 	}
 
-	e.running = r
+	e.running = running
 }
 
+// SetTempo sets the tempo, clamped to [30, 300] BPM.
 func (e *Engine) SetTempo(bpm float64) {
+	if bpm < 30 {
+		bpm = 30
+	}
+
+	if bpm > 300 {
+		bpm = 300
+	}
+
 	e.bpm = bpm
 	e.recomputeStepLengths()
 }
 
+// SetSwing sets the swing amount, clamped to [0, 0.5].
 func (e *Engine) SetSwing(swing float64) {
+	if swing < 0 {
+		swing = 0
+	}
+
+	if swing > 0.5 {
+		swing = 0.5
+	}
+
 	e.swing = swing
 	e.recomputeStepLengths()
 }
@@ -106,24 +134,20 @@ func (e *Engine) SetCell(track, step int, active bool) {
 	e.pattern[track][step] = active
 }
 
+// SetVolume sets per-track volume, clamped to [0, 1].
 func (e *Engine) SetVolume(track int, vol float64) {
 	if track >= 0 && track < TrackCount {
-		e.volumes[track] = vol
+		e.volumes[track] = clamp01(vol)
 	}
 }
 
-// SetDecay sets per-track decay amount in [0, 1].
+// SetDecay sets per-track decay amount, clamped to [0, 1].
 func (e *Engine) SetDecay(track int, amount float64) {
 	if track < 0 || track >= TrackCount {
 		return
 	}
-	if amount < 0 {
-		amount = 0
-	}
-	if amount > 1 {
-		amount = 1
-	}
 
+	amount = clamp01(amount)
 	e.decays[track] = amount
 	e.voices[track].SetDecay(amount)
 }
@@ -174,11 +198,22 @@ func (e *Engine) Render(buf []float32) {
 			out += v.Tick() * e.volumes[t]
 		}
 
+		out *= mixHeadroom
+
 		if e.reverbAmount > 0 {
 			out = e.reverb.ProcessSample(out)
 		}
 
 		out = e.limiter.ProcessSample(out)
+
+		// Hard safety clamp — anything past ±1.0 would be clipped by the
+		// browser's output stage anyway; this guarantees the contract.
+		if out > 1 {
+			out = 1
+		} else if out < -1 {
+			out = -1
+		}
+
 		buf[i] = float32(out)
 	}
 }

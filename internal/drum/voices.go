@@ -20,9 +20,11 @@ func clamp01(v float64) float64 {
 	if v < 0 {
 		return 0
 	}
+
 	if v > 1 {
 		return 1
 	}
+
 	return v
 }
 
@@ -30,6 +32,7 @@ func decayCoef(sr, decayS float64) float64 {
 	if decayS < 0.005 {
 		decayS = 0.005
 	}
+
 	return math.Exp(-1.0 / (sr * decayS))
 }
 
@@ -57,6 +60,7 @@ func NewBassDrum(sr float64) *BassDrum {
 		pitchTC:   sr * 0.06,
 	}
 	v.SetDecay(0.5)
+
 	return v
 }
 
@@ -127,6 +131,7 @@ func NewSnare(sr float64) *Snare {
 		rng:       rand.New(rand.NewSource(42)),
 	}
 	v.SetDecay(0.5)
+
 	return v
 }
 
@@ -200,6 +205,7 @@ func NewHiHat(sr float64, closed bool) *HiHat {
 		rng:       rand.New(rand.NewSource(123)),
 	}
 	v.SetDecay(0.5)
+
 	return v
 }
 
@@ -259,6 +265,7 @@ func NewTom(sr float64) *Tom {
 		pitchTC:   sr * 0.1,
 	}
 	v.SetDecay(0.5)
+
 	return v
 }
 
@@ -324,6 +331,7 @@ func NewCymbal(sr float64) *Cymbal {
 		rng:       rand.New(rand.NewSource(999)),
 	}
 	v.SetDecay(0.5)
+
 	return v
 }
 

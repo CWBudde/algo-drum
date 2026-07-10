@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import DrumMachine from "./components/DrumMachine";
 import { loadWasm } from "./engine/wasmEngine";
+import "./App.css";
 
 export default function App() {
   const [wasmLoaded, setWasmLoaded] = useState(false);
@@ -13,41 +14,14 @@ export default function App() {
   }, []);
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "6px 16px",
-        background: "#0A0B0D",
-      }}
-    >
+    <main className="app">
       {error && (
-        <p
-          style={{
-            color: "#ff6b6b",
-            marginBottom: 12,
-            fontFamily: "monospace",
-            fontSize: 13,
-          }}
-        >
+        <p className="app-error" role="alert">
           Failed to load engine: {error}
         </p>
       )}
-      {!wasmLoaded && !error && (
-        <p
-          style={{
-            color: "#C4A07A",
-            marginBottom: 16,
-            fontFamily: "Georgia, serif",
-          }}
-        >
-          Loading engine…
-        </p>
-      )}
+      {!wasmLoaded && !error && <p className="app-loading">Loading engine…</p>}
       <DrumMachine wasmLoaded={wasmLoaded} />
-    </div>
+    </main>
   );
 }

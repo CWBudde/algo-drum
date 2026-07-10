@@ -1,0 +1,29 @@
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background:
+    radial-gradient(
+      120% 90% at 46% 40%,
+      #252535 0%,
+      #111118 55%,
+      #05050a 100%
+    )
+    #05050a;
+}
+
+.app-error {
+  color: #ff6b6b;
+  margin-bottom: 12px;
+  font-family: monospace;
+  font-size: 13px;
+}
+
+.app-loading {
+  color: #c4a07a;
+  margin-bottom: 16px;
+  font-family: Georgia, serif;
+}

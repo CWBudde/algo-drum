@@ -44,18 +44,20 @@ Vite serves `web/public/` as static assets, so `algo_drum.wasm` and `wasm_exec.j
 ## Architecture
 
 ```
-cmd/wasm/main.go          — WASM entry point; registers window.AlgoDrum JS API
+cmd/wasm/main.go          — WASM entry point; registers the AlgoDrum JS API (worker global scope)
 internal/drum/engine.go   — Sequencer: pattern grid, tempo/swing, per-track volumes, Render()
 internal/drum/voices.go   — Drum synthesizer voices (BassDrum, Snare, HiHat, Tom, Cymbal)
-web/src/engine/wasmEngine.ts — TypeScript bridge: loads WASM, wraps AlgoDrum calls, manages AudioContext
-web/src/components/DrumMachine.tsx — Main UI: 5×8 step grid, playback controls, per-track volume knobs
-web/src/components/Knob.tsx        — Reusable rotary knob (SVG, vertical drag)
+web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands
+web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; renders audio chunks on demand
+web/public/worklet.js         — AudioWorkletProcessor: consumes chunks, reports the audible step
+web/src/components/DrumMachine.tsx — Main UI: 5×8 step grid (DOM/CSS), transport, per-track volume/decay knobs + mute LEDs, global reverb knob
+web/src/components/Knob.tsx        — Reusable rotary knob (SVG; drag, wheel, and keyboard accessible)
 web/src/App.tsx           — Root: loads WASM on mount, renders DrumMachine
 ```
 
 ### Audio Signal Flow
 
-`Engine.Render(buf)` → Go voices mix mono samples → soft-clip → `Float32Array` returned to JS → `ScriptProcessorNode` feeds `AudioContext` at 48 kHz, buffer size 4096.
+`Engine.Render(buf)` → Go voices mix mono samples → FDN reverb (wet amount) → lookahead limiter + hard clamp → `Float32Array` → 512-sample chunks posted from the Web Worker to the `AudioWorklet` over a direct `MessageChannel` → `AudioContext` at 48 kHz (~2048 samples buffered). Each chunk carries the sequencer step it starts on; the worklet reports it back so the UI playhead tracks the audible step.
 
 ### Track Order (index 0–4)
 
@@ -69,22 +71,24 @@ web/src/App.tsx           — Root: loads WASM on mount, renders DrumMachine
 
 UI displays tracks in **reverse order** (Cymbal on top, Bass on bottom).
 
-### WASM JS API (`window.AlgoDrum`)
+### WASM JS API (`AlgoDrum` on the worker's global scope)
 
-| Method                       | Description                               |
-| ---------------------------- | ----------------------------------------- |
-| `init(sampleRate)`           | Initialize engine                         |
-| `setRunning(bool)`           | Play / stop (stop resets to step 0)       |
-| `setTempo(bpm)`              | Set tempo (BPM)                           |
-| `setSwing(0–0.5)`            | Set swing amount                          |
-| `setCell(track, step, bool)` | Toggle grid cell                          |
-| `setVolume(track, 0–1)`      | Set track volume                          |
-| `render(n)`                  | Render n samples → Float32Array           |
-| `currentStep()`              | Returns active step index (-1 if stopped) |
+| Method                       | Description                                  |
+| ---------------------------- | -------------------------------------------- |
+| `init(sampleRate)`           | Initialize engine (called once at WASM load) |
+| `setRunning(bool)`           | Play / stop (stop resets to step 0)          |
+| `setTempo(bpm)`              | Set tempo in BPM (clamped to 30–300)         |
+| `setSwing(0–0.5)`            | Set swing amount (0.5 = full shuffle)        |
+| `setCell(track, step, bool)` | Toggle grid cell                             |
+| `setVolume(track, 0–1)`      | Set track volume                             |
+| `setDecay(track, 0–1)`       | Set track decay amount                       |
+| `setReverb(0–1)`             | Set global reverb amount                     |
+| `render(n)`                  | Render n samples → Float32Array              |
+| `currentStep()`              | Returns active step index (-1 if stopped)    |
 
 ## Key Dependencies
 
-- **[algo-dsp](https://github.com/cwbudde/algo-dsp) v0.2.0** — DSP library used for biquad filters in voices (`biquad.Section`, `design.Highpass`, `design.Bandpass`)
+- **[algo-dsp](https://github.com/cwbudde/algo-dsp) v0.5.0** — DSP library used for biquad filters in voices (`biquad.Section`, `design.Highpass`, `design.Bandpass`) plus master effects (`reverb.FDNReverb`, `dynamics.Limiter`)
 - **bun** — package manager and script runner for the frontend
 - **Vite 7** — frontend bundler; configured with `@vitejs/plugin-react`
 
