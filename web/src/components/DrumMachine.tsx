@@ -1,6 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Knob from "./Knob";
+import AlgoPanel from "./AlgoPanel";
 import * as engine from "../engine/wasmEngine";
+import {
+  loadInitialState,
+  saveLocal,
+  shareUrl,
+  type PersistedState,
+} from "../algo/persistence";
 import "./DrumMachine.css";
 
 // Visual order: Cymbal on top, Bass on bottom
@@ -28,25 +35,68 @@ function velocityName(velocity: number): string {
   return velocity < VEL_ACCENT ? "on" : "accent";
 }
 
+// visualToFlat / flatToVisual bridge the UI's reverse-ordered visual grid and
+// the engine-major flat pattern (index = engineTrack·COLS + step) used by the
+// bulk pattern API and every algo module.
+function visualToFlat(visual: number[][]): number[] {
+  const flat = new Array<number>(ROWS * COLS).fill(0);
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      flat[TRACK_INDEX[row] * COLS + col] = visual[row][col];
+    }
+  }
+  return flat;
+}
+
+function flatToVisual(flat: number[]): number[][] {
+  return TRACKS.map((_, row) =>
+    Array.from(
+      { length: COLS },
+      (_, col) => flat[TRACK_INDEX[row] * COLS + col] ?? 0,
+    ),
+  );
+}
+
+// Tap tempo maps between BPM and the tempo knob position (see bpm below).
+const BPM_MIN = 60;
+const BPM_MAX = 200;
+const BPM_RANGE = 140; // BPM_MAX - BPM_MIN
+const TAP_RESET_MS = 2000;
+const TAP_WINDOW = 4;
+
 interface Props {
   wasmLoaded: boolean;
 }
 
 export default function DrumMachine({ wasmLoaded }: Props) {
+  // Restore saved/shared state once on mount; a valid URL hash wins over
+  // localStorage (see loadInitialState).
+  const initial = useMemo<PersistedState | null>(() => loadInitialState(), []);
+
   const [pattern, setPattern] = useState<number[][]>(() =>
-    Array.from({ length: ROWS }, () => Array<number>(COLS).fill(0)),
+    initial
+      ? flatToVisual(initial.pattern)
+      : Array.from({ length: ROWS }, () => Array<number>(COLS).fill(0)),
   );
   const [playing, setPlaying] = useState(false);
-  const [tempo, setTempoState] = useState(0.43); // ~120 BPM
-  const [swing, setSwingState] = useState(0.0);
-  const [steps, setStepsState] = useState(1.0); // knob position; 1.0 = 16 steps
-  const [reverb, setReverbState] = useState(0.0);
-  const [volumes, setVolumes] = useState(() => Array<number>(ROWS).fill(0.75));
-  const [decays, setDecays] = useState(() => Array<number>(ROWS).fill(0.5));
-  const [muted, setMuted] = useState(() => Array<boolean>(ROWS).fill(false));
+  const [tempo, setTempoState] = useState(initial?.tempo ?? 0.43); // ~120 BPM
+  const [swing, setSwingState] = useState(initial?.swing ?? 0.0);
+  const [steps, setStepsState] = useState(initial?.steps ?? 1.0); // 1.0 = 16 steps
+  const [reverb, setReverbState] = useState(initial?.reverb ?? 0.0);
+  const [prob, setProbState] = useState(initial?.prob ?? 1.0);
+  const [humanize, setHumanizeState] = useState(initial?.humanize ?? 0.0);
+  const [volumes, setVolumes] = useState<number[]>(
+    () => initial?.volumes ?? Array<number>(ROWS).fill(0.75),
+  );
+  const [decays, setDecays] = useState<number[]>(
+    () => initial?.decays ?? Array<number>(ROWS).fill(0.5),
+  );
+  const [muted, setMuted] = useState<boolean[]>(
+    () => initial?.muted ?? Array<boolean>(ROWS).fill(false),
+  );
   const [currentStep, setCurrentStep] = useState(-1);
 
-  const bpm = Math.round(60 + tempo * 140);
+  const bpm = Math.round(BPM_MIN + tempo * BPM_RANGE);
   const stepCount = Math.round(1 + steps * (COLS - 1));
 
   // Push parameters to the engine (queued by the bridge until it's ready)
@@ -63,6 +113,12 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     engine.setReverb(reverb);
   }, [reverb]);
   useEffect(() => {
+    engine.setProbability(prob);
+  }, [prob]);
+  useEffect(() => {
+    engine.setHumanize(humanize);
+  }, [humanize]);
+  useEffect(() => {
     volumes.forEach((v, i) => {
       engine.setVolume(TRACK_INDEX[i], muted[i] ? 0 : v);
     });
@@ -73,8 +129,81 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     });
   }, [decays]);
 
+  // Push the (possibly restored) initial pattern to the engine once — per-cell
+  // edits sync in cycleCell, but a bulk restore needs one setPattern.
+  useEffect(() => {
+    engine.setPattern(Float32Array.from(visualToFlat(pattern)));
+    // Mount-only: intentionally seeds the engine with the initial pattern.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Playhead follows the audible step reported by the audio worklet
   useEffect(() => engine.onStep(setCurrentStep), []);
+
+  // Snapshot the full serializable UI state for persistence + share links.
+  const buildState = useCallback(
+    (): PersistedState => ({
+      pattern: visualToFlat(pattern),
+      steps,
+      tempo,
+      swing,
+      reverb,
+      prob,
+      humanize,
+      volumes,
+      decays,
+      muted,
+    }),
+    [
+      pattern,
+      steps,
+      tempo,
+      swing,
+      reverb,
+      prob,
+      humanize,
+      volumes,
+      decays,
+      muted,
+    ],
+  );
+
+  // Auto-save to localStorage, debounced so a knob sweep writes once it settles.
+  useEffect(() => {
+    const id = window.setTimeout(() => saveLocal(buildState()), 300);
+    return () => window.clearTimeout(id);
+  }, [buildState]);
+
+  const getShareUrl = useCallback(() => shareUrl(buildState()), [buildState]);
+
+  const flatPattern = useMemo(() => visualToFlat(pattern), [pattern]);
+
+  // applyFlatPattern replaces the whole pattern (presets, clear, mutate,
+  // Euclid) in both the UI and the engine.
+  const applyFlatPattern = useCallback((flat: number[]) => {
+    setPattern(flatToVisual(flat));
+    engine.setPattern(Float32Array.from(flat));
+  }, []);
+
+  // Tap tempo: average the intervals of the last few taps, reset after a gap.
+  const tapTimes = useRef<number[]>([]);
+  const handleTap = useCallback(() => {
+    const now = performance.now();
+    const times = tapTimes.current;
+    if (times.length > 0 && now - times[times.length - 1] > TAP_RESET_MS) {
+      times.length = 0;
+    }
+    times.push(now);
+    if (times.length > TAP_WINDOW) times.splice(0, times.length - TAP_WINDOW);
+
+    if (times.length >= 2) {
+      let sum = 0;
+      for (let i = 1; i < times.length; i++) sum += times[i] - times[i - 1];
+      const avgMs = sum / (times.length - 1);
+      const clampedBpm = Math.max(BPM_MIN, Math.min(BPM_MAX, 60000 / avgMs));
+      setTempoState((clampedBpm - BPM_MIN) / BPM_RANGE);
+    }
+  }, []);
 
   // Mouse clicks blur the button so Space stays free for play/stop;
   // keyboard activation (detail === 0) keeps focus for grid navigation.
@@ -243,6 +372,14 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         ))}
       </div>
 
+      <AlgoPanel
+        disabled={!wasmLoaded}
+        pattern={flatPattern}
+        stepCount={stepCount}
+        onApplyPattern={applyFlatPattern}
+        getShareUrl={getShareUrl}
+      />
+
       <footer className="dm-transport">
         <button
           type="button"
@@ -264,16 +401,28 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           )}
         </button>
 
-        <Knob
-          value={tempo}
-          onChange={setTempoState}
-          label={`${bpm} BPM`}
-          ariaLabel="Tempo"
-          valueText={() => `${bpm} BPM`}
-          defaultValue={0.43}
-          size={54}
-          color={AMBER}
-        />
+        <div className="dm-tempo-group">
+          <Knob
+            value={tempo}
+            onChange={setTempoState}
+            label={`${bpm} BPM`}
+            ariaLabel="Tempo"
+            valueText={() => `${bpm} BPM`}
+            defaultValue={0.43}
+            size={54}
+            color={AMBER}
+          />
+          <button
+            type="button"
+            className="dm-tap"
+            onClick={handleTap}
+            disabled={!wasmLoaded}
+            aria-label="Tap tempo"
+            title="Tap to set tempo"
+          >
+            TAP
+          </button>
+        </div>
         <Knob
           value={swing}
           onChange={setSwingState}
@@ -289,6 +438,24 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           ariaLabel="Pattern length"
           valueText={() => `${stepCount} steps`}
           defaultValue={1}
+          size={54}
+          color={AMBER}
+        />
+        <Knob
+          value={prob}
+          onChange={setProbState}
+          label="PROB"
+          ariaLabel="Trigger probability"
+          defaultValue={1}
+          size={54}
+          color={AMBER}
+        />
+        <Knob
+          value={humanize}
+          onChange={setHumanizeState}
+          label="HUMAN"
+          ariaLabel="Humanize"
+          defaultValue={0}
           size={54}
           color={AMBER}
         />

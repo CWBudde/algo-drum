@@ -69,9 +69,7 @@ export default function Knob({
   // across knobs (e.g. "DEC") and can change per render (tempo readout).
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
 
-  const readout = valueText
-    ? valueText(value)
-    : `${Math.round(value * 100)}%`;
+  const readout = valueText ? valueText(value) : `${Math.round(value * 100)}%`;
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<SVGSVGElement>) => {
