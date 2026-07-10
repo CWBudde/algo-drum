@@ -9,7 +9,10 @@ interface AlgoDrumApi {
   setRunning: (playing: boolean) => void;
   setTempo: (bpm: number) => void;
   setSwing: (swing: number) => void;
-  setCell: (track: number, step: number, active: boolean) => void;
+  setStepCount: (steps: number) => void;
+  setCell: (track: number, step: number, velocity: number) => void;
+  setPattern: (pattern: Float32Array) => void;
+  getPattern: () => Float32Array;
   setVolume: (track: number, vol: number) => void;
   setDecay: (track: number, amount: number) => void;
   setReverb: (amount: number) => void;
@@ -25,7 +28,13 @@ interface GoRuntime {
 export type WorkerCommand =
   | { type: "load"; wasmExecUrl: string; wasmUrl: string; sampleRate: number }
   | { type: "connect" }
-  | { type: "cmd"; name: keyof AlgoDrumApi; args: unknown[] };
+  | { type: "cmd"; name: keyof AlgoDrumApi; args: unknown[] }
+  | { type: "getPattern"; id: number };
+
+export type WorkerResponse =
+  | { type: "ready" }
+  | { type: "error"; error: string }
+  | { type: "pattern"; id: number; pattern: Float32Array };
 
 const workerScope = globalThis as unknown as {
   Go: new () => GoRuntime;
@@ -35,6 +44,10 @@ const workerScope = globalThis as unknown as {
 };
 
 let engineReady = false;
+
+function respond(message: WorkerResponse): void {
+  workerScope.postMessage(message);
+}
 
 async function instantiate(
   wasmUrl: string,
@@ -67,7 +80,7 @@ async function load(
 
   workerScope.AlgoDrum.init(sampleRate);
   engineReady = true;
-  workerScope.postMessage({ type: "ready" });
+  respond({ type: "ready" });
 }
 
 function handleWorkletPort(port: MessagePort): void {
@@ -91,7 +104,7 @@ workerScope.onmessage = (event: MessageEvent<WorkerCommand>) => {
     case "load":
       void load(message.wasmExecUrl, message.wasmUrl, message.sampleRate).catch(
         (error: unknown) => {
-          workerScope.postMessage({ type: "error", error: String(error) });
+          respond({ type: "error", error: String(error) });
         },
       );
       break;
@@ -106,5 +119,13 @@ workerScope.onmessage = (event: MessageEvent<WorkerCommand>) => {
         method(...message.args);
       }
       break;
+    case "getPattern": {
+      // Reply even before the engine is ready so callers never hang.
+      const pattern = engineReady
+        ? workerScope.AlgoDrum.getPattern()
+        : new Float32Array(0);
+      respond({ type: "pattern", id: message.id, pattern });
+      break;
+    }
   }
 };

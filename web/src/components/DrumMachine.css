@@ -66,12 +66,12 @@
   }
 }
 
-/* ── Board grid: labels | 8 cells | gap | track controls ────────────────── */
+/* ── Board grid: labels | 16 cells | gap | track controls ───────────────── */
 
 .dm-board {
   position: relative;
   display: grid;
-  grid-template-columns: auto repeat(8, minmax(0, 1fr)) 26px auto;
+  grid-template-columns: auto repeat(16, minmax(0, 1fr)) 26px auto;
   grid-auto-rows: min-content;
   column-gap: 2px;
   align-items: center;
@@ -79,7 +79,7 @@
 
 .dm-screen {
   grid-row: 1 / 6;
-  grid-column: 2 / 10;
+  grid-column: 2 / 18;
   align-self: stretch;
   justify-self: stretch;
   margin: -10px;
@@ -143,6 +143,21 @@
   background: rgba(180, 160, 130, 0.08);
 }
 
+/* Alternate 4-step bar groups get a subtle tint for orientation at 16 steps
+   (overridden by the stronger playhead highlight below). */
+.dm-cell[data-bar-odd] {
+  background: rgba(200, 180, 150, 0.035);
+}
+
+/* Cells beyond the active pattern length: dimmed but still editable */
+.dm-cell[data-beyond] {
+  opacity: 0.4;
+}
+
+.dm-step-number[data-beyond] {
+  opacity: 0.4;
+}
+
 .dm-cell:focus-visible {
   outline: none;
 }
@@ -175,6 +190,19 @@
   box-shadow:
     0 0 10px 2px rgba(200, 130, 40, 0.55),
     0 0 26px 4px rgba(200, 130, 40, 0.2);
+}
+
+/* Accent hits burn brighter and hotter than normal hits */
+.dm-cell[data-accent] .dm-led {
+  background: radial-gradient(
+    circle at 38% 32%,
+    #ffffff,
+    #ffb050 30%,
+    rgba(255, 165, 55, 0.4) 100%
+  );
+  box-shadow:
+    0 0 13px 3px rgba(255, 170, 60, 0.8),
+    0 0 32px 7px rgba(235, 150, 45, 0.32);
 }
 
 /* Playhead column */
@@ -314,7 +342,13 @@
   }
 
   .dm-board {
-    grid-template-columns: auto repeat(8, minmax(0, 1fr)) 12px auto;
+    grid-template-columns: auto repeat(16, minmax(0, 1fr)) 12px auto;
+  }
+
+  /* 16 columns leave little room per cell — shrink the recess margin */
+  .dm-cell::before {
+    inset: 3px;
+    border-radius: 5px;
   }
 
   .dm-track-label {

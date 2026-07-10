@@ -5,7 +5,7 @@
 // direct MessageChannel. This module only sends control commands and mirrors
 // the audible sequencer step reported back by the worklet.
 
-import type { WorkerCommand } from "./audioWorker";
+import type { WorkerCommand, WorkerResponse } from "./audioWorker";
 
 const SAMPLE_RATE = 48000;
 
@@ -41,16 +41,23 @@ function send(command: WorkerCommand, transfer: Transferable[] = []): void {
 // flushed on readiness, so nothing a fast user does during load is dropped.
 const pendingCommands: WorkerCommand[] = [];
 
-function command(name: string, ...args: unknown[]): void {
-  const cmd = { type: "cmd", name, args } as WorkerCommand;
-
+function post(command: WorkerCommand): void {
   if (!wasmReady) {
-    pendingCommands.push(cmd);
+    pendingCommands.push(command);
     return;
   }
 
-  send(cmd);
+  send(command);
 }
+
+function command(name: string, ...args: unknown[]): void {
+  post({ type: "cmd", name, args } as WorkerCommand);
+}
+
+// getPattern is fire-and-forget on the command channel, so pattern reads go
+// through a small request/reply keyed by id.
+let nextRequestId = 1;
+const patternResolvers = new Map<number, (pattern: Float32Array) => void>();
 
 export async function loadWasm(): Promise<void> {
   if (wasmReady) return;
@@ -61,9 +68,22 @@ export async function loadWasm(): Promise<void> {
 
   const ready = new Promise<void>((resolve, reject) => {
     if (!worker) return;
-    worker.onmessage = (event: MessageEvent<{ type: string; error?: string }>) => {
-      if (event.data.type === "ready") resolve();
-      if (event.data.type === "error") reject(new Error(event.data.error));
+    worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+      const data = event.data;
+      switch (data.type) {
+        case "ready":
+          resolve();
+          break;
+        case "error":
+          reject(new Error(data.error));
+          break;
+        case "pattern": {
+          const resolvePattern = patternResolvers.get(data.id);
+          patternResolvers.delete(data.id);
+          resolvePattern?.(data.pattern);
+          break;
+        }
+      }
     };
   });
 
@@ -140,8 +160,34 @@ export function setSwing(swing: number): void {
   command("setSwing", swing);
 }
 
-export function setCell(track: number, step: number, active: boolean): void {
-  command("setCell", track, step, active);
+// setStepCount sets the active pattern length (clamped to 1–16 in the
+// engine); cells beyond it are kept, just not played.
+export function setStepCount(steps: number): void {
+  command("setStepCount", steps);
+}
+
+// setCell sets one cell's velocity in [0, 1]; 0 turns the cell off.
+export function setCell(track: number, step: number, velocity: number): void {
+  command("setCell", track, step, velocity);
+}
+
+// setPattern replaces the whole pattern: a flat track-major Float32Array of
+// TrackCount×MaxSteps (5×16) velocities in [0, 1], index = track*16 + step.
+export function setPattern(pattern: Float32Array): void {
+  command("setPattern", pattern);
+}
+
+// getPattern resolves with the engine's pattern in the same flat layout
+// setPattern accepts (empty before the engine has loaded).
+export function getPattern(): Promise<Float32Array> {
+  const id = nextRequestId++;
+  const result = new Promise<Float32Array>((resolve) => {
+    patternResolvers.set(id, resolve);
+  });
+
+  post({ type: "getPattern", id });
+
+  return result;
 }
 
 export function setVolume(track: number, vol: number): void {

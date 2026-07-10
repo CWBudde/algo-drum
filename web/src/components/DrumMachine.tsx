@@ -7,23 +7,39 @@ import "./DrumMachine.css";
 const TRACKS = ["Cymbal", "Tom", "HiHat", "Snare", "Bass"];
 // Maps visual row index → engine track index (engine: 0=Bass,1=Snare,2=HiHat,3=Tom,4=Cymbal)
 const TRACK_INDEX = [4, 3, 2, 1, 0];
-const COLS = 8;
+const COLS = 16;
 const ROWS = 5;
+
+// Clicking a cell cycles off → normal hit → accent → off.
+const VEL_NORMAL = 0.7;
+const VEL_ACCENT = 1.0;
 
 const AMBER = "#C87828";
 const BLUE = "#6D95C8";
+
+function cycleVelocity(velocity: number): number {
+  if (velocity === 0) return VEL_NORMAL;
+  if (velocity < VEL_ACCENT) return VEL_ACCENT;
+  return 0;
+}
+
+function velocityName(velocity: number): string {
+  if (velocity === 0) return "off";
+  return velocity < VEL_ACCENT ? "on" : "accent";
+}
 
 interface Props {
   wasmLoaded: boolean;
 }
 
 export default function DrumMachine({ wasmLoaded }: Props) {
-  const [pattern, setPattern] = useState<boolean[][]>(() =>
-    Array.from({ length: ROWS }, () => Array<boolean>(COLS).fill(false)),
+  const [pattern, setPattern] = useState<number[][]>(() =>
+    Array.from({ length: ROWS }, () => Array<number>(COLS).fill(0)),
   );
   const [playing, setPlaying] = useState(false);
   const [tempo, setTempoState] = useState(0.43); // ~120 BPM
   const [swing, setSwingState] = useState(0.0);
+  const [steps, setStepsState] = useState(1.0); // knob position; 1.0 = 16 steps
   const [reverb, setReverbState] = useState(0.0);
   const [volumes, setVolumes] = useState(() => Array<number>(ROWS).fill(0.75));
   const [decays, setDecays] = useState(() => Array<number>(ROWS).fill(0.5));
@@ -31,6 +47,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   const [currentStep, setCurrentStep] = useState(-1);
 
   const bpm = Math.round(60 + tempo * 140);
+  const stepCount = Math.round(1 + steps * (COLS - 1));
 
   // Push parameters to the engine (queued by the bridge until it's ready)
   useEffect(() => {
@@ -39,6 +56,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   useEffect(() => {
     engine.setSwing(swing * 0.5);
   }, [swing]);
+  useEffect(() => {
+    engine.setStepCount(stepCount);
+  }, [stepCount]);
   useEffect(() => {
     engine.setReverb(reverb);
   }, [reverb]);
@@ -62,10 +82,10 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     if (e.detail > 0) e.currentTarget.blur();
   };
 
-  const toggleCell = useCallback((row: number, col: number) => {
+  const cycleCell = useCallback((row: number, col: number) => {
     setPattern((prev) => {
       const next = prev.map((cells) => [...cells]);
-      next[row][col] = !next[row][col];
+      next[row][col] = cycleVelocity(next[row][col]);
       engine.setCell(TRACK_INDEX[row], col, next[row][col]);
       return next;
     });
@@ -151,14 +171,17 @@ export default function DrumMachine({ wasmLoaded }: Props) {
               type="button"
               className="dm-cell"
               style={{ gridRow: row + 1, gridColumn: col + 2 }}
-              data-active={pattern[row][col] || undefined}
+              data-active={pattern[row][col] > 0 || undefined}
+              data-accent={pattern[row][col] >= VEL_ACCENT || undefined}
+              data-beyond={col >= stepCount || undefined}
               data-playhead={col === currentStep || undefined}
               data-bar-start={col % 4 === 0 || undefined}
-              aria-pressed={pattern[row][col]}
-              aria-label={`${name} step ${col + 1}`}
+              data-bar-odd={Math.floor(col / 4) % 2 === 1 || undefined}
+              aria-pressed={pattern[row][col] > 0}
+              aria-label={`${name} step ${col + 1}: ${velocityName(pattern[row][col])}`}
               onClick={(e) => {
                 blurOnMouseClick(e);
-                toggleCell(row, col);
+                cycleCell(row, col);
               }}
             >
               <span className="dm-led" aria-hidden="true" />
@@ -172,6 +195,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
             className="dm-step-number"
             style={{ gridRow: ROWS + 1, gridColumn: col + 2 }}
             data-playhead={col === currentStep || undefined}
+            data-beyond={col >= stepCount || undefined}
             aria-hidden="true"
           >
             {col + 1}
@@ -255,6 +279,16 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           onChange={setSwingState}
           label="SWING"
           defaultValue={0}
+          size={54}
+          color={AMBER}
+        />
+        <Knob
+          value={steps}
+          onChange={setStepsState}
+          label="STEPS"
+          ariaLabel="Pattern length"
+          valueText={() => `${stepCount} steps`}
+          defaultValue={1}
           size={54}
           color={AMBER}
         />

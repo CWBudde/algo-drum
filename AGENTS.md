@@ -45,12 +45,12 @@ Vite serves `web/public/` as static assets, so `algo_drum.wasm` and `wasm_exec.j
 
 ```
 cmd/wasm/main.go          — WASM entry point; registers the AlgoDrum JS API (worker global scope)
-internal/drum/engine.go   — Sequencer: pattern grid, tempo/swing, per-track volumes, Render()
+internal/drum/engine.go   — Sequencer: velocity pattern grid (5×16), runtime step count, tempo/swing, smoothed per-track volumes, Render()
 internal/drum/voices.go   — Drum synthesizer voices (BassDrum, Snare, HiHat, Tom, Cymbal)
 web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands
 web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; renders audio chunks on demand
 web/public/worklet.js         — AudioWorkletProcessor: consumes chunks, reports the audible step
-web/src/components/DrumMachine.tsx — Main UI: 5×8 step grid (DOM/CSS), transport, per-track volume/decay knobs + mute LEDs, global reverb knob
+web/src/components/DrumMachine.tsx — Main UI: 5×16 step grid (DOM/CSS; clicking a cell cycles off → on → accent), transport, per-track volume/decay knobs + mute LEDs, global reverb + pattern-length (STEPS) knobs
 web/src/components/Knob.tsx        — Reusable rotary knob (SVG; drag, wheel, and keyboard accessible)
 web/src/App.tsx           — Root: loads WASM on mount, renders DrumMachine
 ```
@@ -73,18 +73,21 @@ UI displays tracks in **reverse order** (Cymbal on top, Bass on bottom).
 
 ### WASM JS API (`AlgoDrum` on the worker's global scope)
 
-| Method                       | Description                                  |
-| ---------------------------- | -------------------------------------------- |
-| `init(sampleRate)`           | Initialize engine (called once at WASM load) |
-| `setRunning(bool)`           | Play / stop (stop resets to step 0)          |
-| `setTempo(bpm)`              | Set tempo in BPM (clamped to 30–300)         |
-| `setSwing(0–0.5)`            | Set swing amount (0.5 = full shuffle)        |
-| `setCell(track, step, bool)` | Toggle grid cell                             |
-| `setVolume(track, 0–1)`      | Set track volume                             |
-| `setDecay(track, 0–1)`       | Set track decay amount                       |
-| `setReverb(0–1)`             | Set global reverb amount                     |
-| `render(n)`                  | Render n samples → Float32Array              |
-| `currentStep()`              | Returns active step index (-1 if stopped)    |
+| Method                          | Description                                                                       |
+| ------------------------------- | --------------------------------------------------------------------------------- |
+| `init(sampleRate)`              | Initialize engine (called once at WASM load)                                       |
+| `setRunning(bool)`              | Play / stop (stop resets to step 0)                                                |
+| `setTempo(bpm)`                 | Set tempo in BPM (clamped to 30–300)                                               |
+| `setSwing(0–0.5)`               | Set swing amount (0.5 = full shuffle)                                              |
+| `setStepCount(n)`               | Set active pattern length (clamped to 1–16); steps are 16th notes                  |
+| `setCell(track, step, 0–1)`     | Set cell velocity (0 = off; UI uses 0.7 = normal, 1.0 = accent)                    |
+| `setPattern(Float32Array)`      | Replace pattern from a flat track-major array of 5×16 velocities (`track*16+step`) |
+| `getPattern()`                  | Returns the pattern in the same flat Float32Array layout                           |
+| `setVolume(track, 0–1)`         | Set track volume (ramped over ~8 ms to avoid zipper noise)                         |
+| `setDecay(track, 0–1)`          | Set track decay amount                                                             |
+| `setReverb(0–1)`                | Set global reverb amount                                                           |
+| `render(n)`                     | Render n samples → Float32Array                                                    |
+| `currentStep()`                 | Returns active step index (-1 if stopped)                                          |
 
 ## Key Dependencies
 

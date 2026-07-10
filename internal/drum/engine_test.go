@@ -30,7 +30,7 @@ func TestStepLengthsNoSwingAreEqual(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	engine.SetSwing(0)
 
-	for step := 1; step < StepCount; step++ {
+	for step := 1; step < MaxSteps; step++ {
 		if engine.stepLen[step] != engine.stepLen[0] {
 			t.Fatalf("step %d length %d != step 0 length %d", step, engine.stepLen[step], engine.stepLen[0])
 		}
@@ -73,9 +73,82 @@ func TestStepLengthsSwingPreservesBarLength(t *testing.T) {
 		}
 
 		// Rounding may cost at most one sample per step.
-		if diff := straight - swung; diff < 0 || diff > StepCount {
+		if diff := straight - swung; diff < 0 || diff > MaxSteps {
 			t.Fatalf("swing %.2f changed bar length by %d samples", swing, diff)
 		}
+	}
+}
+
+func TestSixteenStepsSpanOneBar(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetTempo(120)
+
+	// Steps are 16th notes: 16 of them must add up to one 4/4 bar
+	// (4 beats = 2 s at 120 BPM), give or take rounding per step.
+	var total int64
+
+	for _, length := range engine.stepLen {
+		total += length
+	}
+
+	wantBar := int64(testSampleRate * 60.0 / 120.0 * 4.0)
+	if diff := wantBar - total; diff < 0 || diff > MaxSteps {
+		t.Fatalf("16 steps span %d samples, want one bar = %d", total, wantBar)
+	}
+}
+
+func TestSetStepCountClamps(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+
+	if engine.stepCount != MaxSteps {
+		t.Fatalf("default stepCount = %d, want %d", engine.stepCount, MaxSteps)
+	}
+
+	engine.SetStepCount(0)
+
+	if engine.stepCount != 1 {
+		t.Fatalf("SetStepCount(0): stepCount = %d, want clamp to 1", engine.stepCount)
+	}
+
+	engine.SetStepCount(99)
+
+	if engine.stepCount != MaxSteps {
+		t.Fatalf("SetStepCount(99): stepCount = %d, want clamp to %d", engine.stepCount, MaxSteps)
+	}
+
+	engine.SetStepCount(8)
+
+	if engine.stepCount != 8 {
+		t.Fatalf("SetStepCount(8): stepCount = %d, want 8", engine.stepCount)
+	}
+}
+
+func TestSetStepCountWrapsCurrentStep(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetRunning(true)
+	engine.currentStep = 10
+
+	engine.SetStepCount(4)
+
+	if got := engine.CurrentStep(); got != 10%4 {
+		t.Fatalf("shrinking to 4 steps left currentStep = %d, want %d", got, 10%4)
+	}
+}
+
+func TestStepAdvanceWrapsAtStepCount(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetSwing(0)
+	engine.SetStepCount(4)
+	engine.SetRunning(true)
+
+	// Render six steps' worth of audio one step at a time; the step index
+	// must stay inside the shortened loop the whole way.
+	for i := 0; i < 6; i++ {
+		if got := engine.CurrentStep(); got != i%4 {
+			t.Fatalf("after %d steps CurrentStep() = %d, want %d", i, got, i%4)
+		}
+
+		renderTotal(engine, int(engine.stepLen[0]))
 	}
 }
 
@@ -143,6 +216,26 @@ func TestSetVolumeClamps(t *testing.T) {
 	engine.SetVolume(TrackCount, 0.5)
 }
 
+func TestVolumeChangeRampsSmoothly(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+
+	// Drop the target from 1 to 0: one rendered sample may only move the
+	// applied gain by the one-pole coefficient, not jump instantly.
+	engine.SetVolume(0, 0)
+	renderTotal(engine, 1)
+
+	if engine.liveVol[0] < 1-2*engine.volCoef {
+		t.Fatalf("live volume jumped to %v after one sample (coef %v)", engine.liveVol[0], engine.volCoef)
+	}
+
+	// After many time constants the ramp must have converged.
+	renderTotal(engine, int(testSampleRate/10))
+
+	if engine.liveVol[0] > 0.01 {
+		t.Fatalf("live volume %v has not converged to target 0 after 100 ms", engine.liveVol[0])
+	}
+}
+
 func TestSetDecayClamps(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 
@@ -165,17 +258,82 @@ func TestSetDecayClamps(t *testing.T) {
 func TestSetCellIgnoresOutOfRange(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 
-	engine.SetCell(-1, 0, true)
-	engine.SetCell(TrackCount, 0, true)
-	engine.SetCell(0, -1, true)
-	engine.SetCell(0, StepCount, true)
+	engine.SetCell(-1, 0, 1)
+	engine.SetCell(TrackCount, 0, 1)
+	engine.SetCell(0, -1, 1)
+	engine.SetCell(0, MaxSteps, 1)
 
 	for track := range engine.pattern {
 		for step := range engine.pattern[track] {
-			if engine.pattern[track][step] {
+			if engine.pattern[track][step] != 0 {
 				t.Fatalf("out-of-range SetCell activated cell (%d, %d)", track, step)
 			}
 		}
+	}
+}
+
+func TestSetCellClampsVelocity(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+
+	engine.SetCell(0, 0, 2.5)
+
+	if engine.pattern[0][0] != 1 {
+		t.Fatalf("SetCell velocity 2.5 stored %v, want clamp to 1", engine.pattern[0][0])
+	}
+
+	engine.SetCell(0, 0, -1)
+
+	if engine.pattern[0][0] != 0 {
+		t.Fatalf("SetCell velocity -1 stored %v, want clamp to 0", engine.pattern[0][0])
+	}
+}
+
+func TestSetPatternPatternRoundtrip(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+
+	in := make([]float64, TrackCount*MaxSteps)
+	for i := range in {
+		in[i] = float64(i%4) / 4.0 // 0, 0.25, 0.5, 0.75, ...
+	}
+
+	engine.SetPattern(in)
+
+	out := engine.Pattern()
+	if len(out) != TrackCount*MaxSteps {
+		t.Fatalf("Pattern() length = %d, want %d", len(out), TrackCount*MaxSteps)
+	}
+
+	for i := range in {
+		if out[i] != in[i] {
+			t.Fatalf("pattern[%d] = %v after roundtrip, want %v", i, out[i], in[i])
+		}
+	}
+}
+
+func TestSetPatternClampsAndTolerantLengths(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+
+	// Out-of-range velocities clamp; over-long input must not panic.
+	over := make([]float64, TrackCount*MaxSteps+7)
+	for i := range over {
+		over[i] = 5
+	}
+
+	engine.SetPattern(over)
+
+	if engine.pattern[0][0] != 1 || engine.pattern[TrackCount-1][MaxSteps-1] != 1 {
+		t.Fatal("SetPattern did not clamp velocities to 1")
+	}
+
+	// A short slice updates only the cells it covers.
+	engine.SetPattern([]float64{0.5})
+
+	if engine.pattern[0][0] != 0.5 {
+		t.Fatalf("short SetPattern: cell (0,0) = %v, want 0.5", engine.pattern[0][0])
+	}
+
+	if engine.pattern[0][1] != 1 {
+		t.Fatalf("short SetPattern touched cell (0,1): %v, want untouched 1", engine.pattern[0][1])
 	}
 }
 
@@ -227,7 +385,7 @@ func TestRenderPlaysPatternSetBeforeStart(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 
 	// Program the pattern BEFORE starting — the original bug dropped this.
-	engine.SetCell(0, 0, true)
+	engine.SetCell(0, 0, 1)
 	engine.SetRunning(true)
 
 	buf := renderTotal(engine, int(engine.stepLen[0]))
@@ -237,16 +395,40 @@ func TestRenderPlaysPatternSetBeforeStart(t *testing.T) {
 	}
 }
 
+func TestRenderVelocityScalesOutput(t *testing.T) {
+	renderHit := func(velocity float64) float64 {
+		engine := NewEngine(testSampleRate)
+		engine.SetCell(0, 0, velocity)
+		engine.SetRunning(true)
+
+		return peakOf(renderTotal(engine, int(engine.stepLen[0])))
+	}
+
+	full := renderHit(1.0)
+	half := renderHit(0.5)
+
+	if full <= 0 || half <= 0 {
+		t.Fatalf("hits rendered no output: full=%v half=%v", full, half)
+	}
+
+	// The signal path below the limiter threshold is linear, so half
+	// velocity must come out at ~half the peak.
+	if ratio := half / full; math.Abs(ratio-0.5) > 0.05 {
+		t.Fatalf("velocity 0.5 peak ratio = %.3f, want ~0.5 (full=%v half=%v)", ratio, full, half)
+	}
+}
+
 func TestRenderOutputBoundedAndFinite(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 
-	// Worst case: everything on, full volume, full reverb, long decays.
+	// Worst case: everything on with accent, full volume, full reverb,
+	// long decays.
 	for track := 0; track < TrackCount; track++ {
 		engine.SetVolume(track, 1)
 		engine.SetDecay(track, 1)
 
-		for step := 0; step < StepCount; step++ {
-			engine.SetCell(track, step, true)
+		for step := 0; step < MaxSteps; step++ {
+			engine.SetCell(track, step, 1)
 		}
 	}
 
@@ -275,9 +457,9 @@ func TestRenderOutputBoundedAndFinite(t *testing.T) {
 func TestRenderDeterministic(t *testing.T) {
 	build := func() *Engine {
 		engine := NewEngine(testSampleRate)
-		engine.SetCell(0, 0, true)
-		engine.SetCell(1, 2, true)
-		engine.SetCell(2, 4, true)
+		engine.SetCell(0, 0, 1)
+		engine.SetCell(1, 2, 0.7)
+		engine.SetCell(2, 4, 1)
 		engine.SetReverb(0.5)
 		engine.SetRunning(true)
 
