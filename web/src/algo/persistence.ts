@@ -69,7 +69,10 @@ function bytesToBase64Url(bytes: Uint8Array): string {
 
 function base64UrlToBytes(text: string): Uint8Array | null {
   try {
-    const padded = text.replace(/-/g, "+").replace(/_/g, "/");
+    const base64 = text.replace(/-/g, "+").replace(/_/g, "/");
+    // Restore the "=" padding stripped by encoding — not every atob
+    // implementation accepts unpadded input.
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
     const binary = atob(padded);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);

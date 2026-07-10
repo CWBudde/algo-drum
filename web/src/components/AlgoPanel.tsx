@@ -80,9 +80,12 @@ export default function AlgoPanel({
 
   const handleShare = useCallback(() => {
     const url = getShareUrl();
-    void navigator.clipboard?.writeText(url).catch(() => {
-      // Clipboard may be blocked; the hash is still in the address bar.
-    });
+    const clipboard = navigator.clipboard as Clipboard | undefined;
+    if (clipboard) {
+      void clipboard.writeText(url).catch(() => {
+        // Clipboard may be blocked; the hash is still in the address bar.
+      });
+    }
     setCopied(true);
     if (copiedTimer.current) window.clearTimeout(copiedTimer.current);
     copiedTimer.current = window.setTimeout(() => setCopied(false), 1600);

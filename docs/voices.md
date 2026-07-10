@@ -25,11 +25,11 @@ constant it should replace and what range makes sense.
 
 A few constants and helpers in `voices.go` are shared across voices:
 
-| Name             | Value  | Meaning                                                                 |
-| ---------------- | ------ | ------------------------------------------------------------------------ |
-| `envSilence`     | `1e-4` | Envelope level below which a voice deactivates (`IsActive()` → false).  |
+| Name             | Value  | Meaning                                                                                                                                           |
+| ---------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `envSilence`     | `1e-4` | Envelope level below which a voice deactivates (`IsActive()` → false).                                                                            |
 | `decayScaleMin`  | `0.5`  | `SetDecay(amount)` scales the voice's base decay time by `decayScaleMin + amount`, i.e. **0.5x–1.5x** of the base decay for `amount` in `[0, 1]`. |
-| `pitchSweepRate` | `5.0`  | Exponential rate of the pitch-sweep decay used by Bass Drum and Tom; higher settles onto the target pitch faster. |
+| `pitchSweepRate` | `5.0`  | Exponential rate of the pitch-sweep decay used by Bass Drum and Tom; higher settles onto the target pitch faster.                                 |
 
 Two helper functions do the actual math:
 
@@ -59,12 +59,12 @@ freq := bassPitchToHz + (bassPitchFromHz-bassPitchToHz)*math.Exp(-t*pitchSweepRa
 sample := math.Sin(phase) * env
 ```
 
-| Constant         | Value     | What it controls                                   |
-| ---------------- | --------- | --------------------------------------------------- |
-| `bassPitchFromHz` | `200.0 Hz` | Pitch at the instant of trigger (the "click").      |
-| `bassPitchToHz`   | `50.0 Hz`  | Pitch the sweep settles on (the "body").            |
+| Constant          | Value      | What it controls                                                                                    |
+| ----------------- | ---------- | --------------------------------------------------------------------------------------------------- |
+| `bassPitchFromHz` | `200.0 Hz` | Pitch at the instant of trigger (the "click").                                                      |
+| `bassPitchToHz`   | `50.0 Hz`  | Pitch the sweep settles on (the "body").                                                            |
 | `bassPitchTCS`    | `0.06 s`   | Time constant of the pitch sweep — how fast it drops from `bassPitchFromHz` toward `bassPitchToHz`. |
-| `bassBaseDecayS`  | `0.45 s`   | Base amplitude-envelope decay before `SetDecay` scaling. |
+| `bassBaseDecayS`  | `0.45 s`   | Base amplitude-envelope decay before `SetDecay` scaling.                                            |
 
 **Decay:** `SetDecay(amount)` scales `bassBaseDecayS` by `decayScaleMin + amount`
 → effective decay ranges **0.225 s – 0.675 s**.
@@ -90,17 +90,17 @@ noise := hpFilter.ProcessSample((rng.Float64()*2 - 1) * noiseEnv)
 return tone + noise
 ```
 
-| Constant          | Value       | What it controls                                        |
-| ----------------- | ----------- | ---------------------------------------------------------- |
-| `snareToneHz`     | `200.0 Hz`  | Frequency of the body oscillator.                         |
+| Constant          | Value       | What it controls                                                                                                     |
+| ----------------- | ----------- | -------------------------------------------------------------------------------------------------------------------- |
+| `snareToneHz`     | `200.0 Hz`  | Frequency of the body oscillator.                                                                                    |
 | `snareToneLevel`  | `0.7`       | Tone level relative to the noise layer at trigger time (tone starts at `0.7 * velocity`, noise at `1.0 * velocity`). |
-| `snareBaseToneS`  | `0.12 s`    | Base decay of the tone layer.                             |
-| `snareBaseNoiseS` | `0.18 s`    | Base decay of the noise layer (outlasts the tone).        |
-| `snareHPHz`       | `2000.0 Hz` | Highpass cutoff applied to the noise layer (`design.Highpass`). |
-| `snareHPQ`        | `0.7`       | Q of that highpass (`biquad.Section` via `design.Highpass`). |
-| `snareSeed`       | `42`        | Fixed PCG seed for the noise generator.                    |
+| `snareBaseToneS`  | `0.12 s`    | Base decay of the tone layer.                                                                                        |
+| `snareBaseNoiseS` | `0.18 s`    | Base decay of the noise layer (outlasts the tone).                                                                   |
+| `snareHPHz`       | `2000.0 Hz` | Highpass cutoff applied to the noise layer (`design.Highpass`).                                                      |
+| `snareHPQ`        | `0.7`       | Q of that highpass (`biquad.Section` via `design.Highpass`).                                                         |
+| `snareSeed`       | `42`        | Fixed PCG seed for the noise generator.                                                                              |
 
-**Decay:** `SetDecay(amount)` scales *both* `snareBaseToneS` and
+**Decay:** `SetDecay(amount)` scales _both_ `snareBaseToneS` and
 `snareBaseNoiseS` by the same `decayScaleMin + amount` factor — tone and noise
 stay in the same 0.5x–1.5x relationship to each other as decay changes.
 **Velocity:** scales tone and noise envelopes independently at trigger
@@ -108,7 +108,7 @@ stay in the same 0.5x–1.5x relationship to each other as decay changes.
 so a harder hit is louder, not longer.
 **RNG:** `newVoiceRng(snareSeed)`; `hpFilter.Reset()` runs on every `Trigger`
 so filter state doesn't carry a click from the previous hit, but the noise
-stream itself is *not* reseeded (see
+stream itself is _not_ reseeded (see
 [Determinism](#determinism-and-the-golden-render-tests)).
 
 Natural tune-parameter candidates: `snareToneHz` (body pitch), `snareHPHz`
@@ -128,13 +128,13 @@ sample := bpFilter.ProcessSample((rng.Float64()*2 - 1) * env)
 return sample * hatGain
 ```
 
-| Constant        | Value        | What it controls                                    |
-| --------------- | ------------ | ------------------------------------------------------ |
-| `hatBPHz`       | `10000.0 Hz` | Center frequency of the metallic bandpass (`design.Bandpass`). |
-| `hatBPQ`        | `2.0`        | Q of that bandpass — narrower Q rings more.            |
-| `hatBaseDecayS` | `0.04 s`     | Base envelope decay — short, giving the closed-hat "tick" (vs. the Cymbal's long decay). |
+| Constant        | Value        | What it controls                                                                                |
+| --------------- | ------------ | ----------------------------------------------------------------------------------------------- |
+| `hatBPHz`       | `10000.0 Hz` | Center frequency of the metallic bandpass (`design.Bandpass`).                                  |
+| `hatBPQ`        | `2.0`        | Q of that bandpass — narrower Q rings more.                                                     |
+| `hatBaseDecayS` | `0.04 s`     | Base envelope decay — short, giving the closed-hat "tick" (vs. the Cymbal's long decay).        |
 | `hatGain`       | `1.5`        | Make-up gain applied after the bandpass, to bring the filtered noise back up to a usable level. |
-| `hatSeed`       | `123`        | Fixed PCG seed for the noise generator.                 |
+| `hatSeed`       | `123`        | Fixed PCG seed for the noise generator.                                                         |
 
 **Decay:** `SetDecay(amount)` scales `hatBaseDecayS` by `decayScaleMin + amount`
 → effective decay ranges **0.02 s – 0.06 s**, still very short at the top of
@@ -160,13 +160,13 @@ sample := math.Sin(phase) * env
 return sample * tomGain
 ```
 
-| Constant        | Value     | What it controls                                  |
-| --------------- | --------- | ----------------------------------------------------- |
-| `tomPitchFromHz` | `120.0 Hz` | Pitch at trigger.                                     |
-| `tomPitchToHz`   | `60.0 Hz`  | Pitch the sweep settles on.                           |
+| Constant         | Value      | What it controls                                                                                      |
+| ---------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
+| `tomPitchFromHz` | `120.0 Hz` | Pitch at trigger.                                                                                     |
+| `tomPitchToHz`   | `60.0 Hz`  | Pitch the sweep settles on.                                                                           |
 | `tomPitchTCS`    | `0.1 s`    | Time constant of the pitch sweep (slower than the Bass Drum's `0.06 s`, giving a more audible glide). |
-| `tomBaseDecayS`  | `0.35 s`   | Base amplitude-envelope decay before `SetDecay` scaling. |
-| `tomGain`        | `0.9`      | Output gain applied after the envelope.               |
+| `tomBaseDecayS`  | `0.35 s`   | Base amplitude-envelope decay before `SetDecay` scaling.                                              |
+| `tomGain`        | `0.9`      | Output gain applied after the envelope.                                                               |
 
 **Decay:** `SetDecay(amount)` scales `tomBaseDecayS` by `decayScaleMin +
 amount` → effective decay ranges **0.175 s – 0.525 s**.
@@ -191,13 +191,13 @@ sample := bpFilter.ProcessSample((rng.Float64()*2 - 1) * env)
 return sample * cymGain
 ```
 
-| Constant       | Value       | What it controls                                    |
-| -------------- | ----------- | ------------------------------------------------------ |
-| `cymBPHz`      | `7000.0 Hz` | Center frequency of the bandpass (`design.Bandpass`) — lower than the Hi-Hat's `10000.0 Hz`. |
-| `cymBPQ`       | `1.2`       | Q of that bandpass — wider than the Hi-Hat's `2.0`, giving a broader, washier band. |
-| `cymBaseDecayS` | `1.2 s`     | Base envelope decay — long, giving the cymbal its sustained tail. |
-| `cymGain`      | `1.2`       | Make-up gain applied after the bandpass.                |
-| `cymSeed`      | `999`       | Fixed PCG seed for the noise generator.                 |
+| Constant        | Value       | What it controls                                                                             |
+| --------------- | ----------- | -------------------------------------------------------------------------------------------- |
+| `cymBPHz`       | `7000.0 Hz` | Center frequency of the bandpass (`design.Bandpass`) — lower than the Hi-Hat's `10000.0 Hz`. |
+| `cymBPQ`        | `1.2`       | Q of that bandpass — wider than the Hi-Hat's `2.0`, giving a broader, washier band.          |
+| `cymBaseDecayS` | `1.2 s`     | Base envelope decay — long, giving the cymbal its sustained tail.                            |
+| `cymGain`       | `1.2`       | Make-up gain applied after the bandpass.                                                     |
+| `cymSeed`       | `999`       | Fixed PCG seed for the noise generator.                                                      |
 
 **Decay:** `SetDecay(amount)` scales `cymBaseDecayS` by `decayScaleMin +
 amount` → effective decay ranges **0.6 s – 1.8 s**.

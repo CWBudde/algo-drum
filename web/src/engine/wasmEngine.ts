@@ -59,6 +59,15 @@ function command(name: string, ...args: unknown[]): void {
 let nextRequestId = 1;
 const patternResolvers = new Map<number, (pattern: Float32Array) => void>();
 
+// settlePendingPatternRequests resolves every in-flight getPattern() with an
+// empty pattern so callers never hang when the worker dies or fails to load.
+function settlePendingPatternRequests(): void {
+  for (const resolve of patternResolvers.values()) {
+    resolve(new Float32Array(0));
+  }
+  patternResolvers.clear();
+}
+
 export async function loadWasm(): Promise<void> {
   if (wasmReady) return;
 
@@ -68,6 +77,7 @@ export async function loadWasm(): Promise<void> {
   if (worker) {
     worker.terminate();
     worker = null;
+    settlePendingPatternRequests();
   }
 
   worker = new Worker(new URL("./audioWorker.ts", import.meta.url), {
@@ -83,6 +93,7 @@ export async function loadWasm(): Promise<void> {
           resolve();
           break;
         case "error":
+          settlePendingPatternRequests();
           reject(new Error(data.error));
           break;
         case "pattern": {
