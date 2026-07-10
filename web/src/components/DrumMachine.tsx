@@ -57,6 +57,17 @@ function flatToVisual(flat: number[]): number[][] {
   );
 }
 
+// snapVelocity undoes float32 rounding on velocities echoed back from the
+// engine (0.7 stored as float32 reads back as 0.699999988…) so the mirror
+// stays strictly equal to what the UI wrote.
+function snapVelocity(velocity: number): number {
+  return Math.round(velocity * 1000) / 1000;
+}
+
+function visualPatternsEqual(a: number[][], b: number[][]): boolean {
+  return a.every((row, r) => row.every((vel, c) => vel === b[r][c]));
+}
+
 // Tap tempo maps between BPM and the tempo knob position (see bpm below).
 const BPM_MIN = 60;
 const BPM_MAX = 200;
@@ -139,6 +150,21 @@ export default function DrumMachine({ wasmLoaded }: Props) {
 
   // Playhead follows the audible step reported by the audio worklet
   useEffect(() => engine.onStep(setCurrentStep), []);
+
+  // The engine owns the pattern: edits above apply optimistically for instant
+  // feedback, and the authoritative copy the engine echoes back after each
+  // edit replaces the mirror (once no newer edits are in flight). Bail out on
+  // equality so confirming echoes don't re-render the grid.
+  useEffect(
+    () =>
+      engine.onPattern((flat) => {
+        setPattern((prev) => {
+          const next = flatToVisual(Array.from(flat, snapVelocity));
+          return visualPatternsEqual(prev, next) ? prev : next;
+        });
+      }),
+    [],
+  );
 
   // Snapshot the full serializable UI state for persistence + share links.
   const buildState = useCallback(

@@ -6,6 +6,7 @@
 // the audible sequencer step reported back by the worklet.
 
 import type { WorkerCommand, WorkerResponse } from "./audioWorker";
+import { PatternMirror } from "./patternMirror";
 
 const SAMPLE_RATE = 48000;
 
@@ -31,6 +32,19 @@ export function onStep(listener: StepListener): () => void {
 function notifyStep(step: number): void {
   audibleStep = step;
   stepListeners.forEach((listener) => listener(step));
+}
+
+// The engine owns the pattern: the worker echoes the authoritative copy back
+// after every edit, and the mirror reconciles those echoes with edits still
+// in flight before notifying the UI.
+const patternMirror = new PatternMirror();
+
+// onPattern subscribes to authoritative pattern snapshots (flat track-major
+// Float32Array, see setPattern) and returns an unsubscribe function.
+export function onPattern(
+  listener: (pattern: Float32Array) => void,
+): () => void {
+  return patternMirror.subscribe(listener);
 }
 
 function send(command: WorkerCommand, transfer: Transferable[] = []): void {
@@ -78,6 +92,7 @@ export async function loadWasm(): Promise<void> {
     worker.terminate();
     worker = null;
     settlePendingPatternRequests();
+    patternMirror.reset(); // edits sent to the dead worker won't be echoed
   }
 
   worker = new Worker(new URL("./audioWorker.ts", import.meta.url), {
@@ -102,6 +117,9 @@ export async function loadWasm(): Promise<void> {
           resolvePattern?.(data.pattern);
           break;
         }
+        case "patternSync":
+          patternMirror.receiveSync(data.pattern);
+          break;
       }
     };
   });
@@ -185,14 +203,18 @@ export function setStepCount(steps: number): void {
   command("setStepCount", steps);
 }
 
-// setCell sets one cell's velocity in [0, 1]; 0 turns the cell off.
+// setCell sets one cell's velocity in [0, 1]; 0 turns the cell off. The
+// engine echoes its authoritative pattern back to onPattern subscribers.
 export function setCell(track: number, step: number, velocity: number): void {
+  patternMirror.beginMutation();
   command("setCell", track, step, velocity);
 }
 
 // setPattern replaces the whole pattern: a flat track-major Float32Array of
 // TrackCount×MaxSteps (5×16) velocities in [0, 1], index = track*16 + step.
+// The engine echoes its authoritative pattern back to onPattern subscribers.
 export function setPattern(pattern: Float32Array): void {
+  patternMirror.beginMutation();
   command("setPattern", pattern);
 }
 
