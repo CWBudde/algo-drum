@@ -62,6 +62,14 @@ const patternResolvers = new Map<number, (pattern: Float32Array) => void>();
 export async function loadWasm(): Promise<void> {
   if (wasmReady) return;
 
+  // A previous attempt may have left a worker running (e.g. the WASM fetch
+  // failed after the worker spawned). Tear it down so Retry starts clean and
+  // we don't leak workers.
+  if (worker) {
+    worker.terminate();
+    worker = null;
+  }
+
   worker = new Worker(new URL("./audioWorker.ts", import.meta.url), {
     type: "module",
   });

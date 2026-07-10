@@ -103,5 +103,43 @@ jobs:
       - name: Type-check
         run: bunx tsc --noEmit
 
+      - name: Lint
+        run: bun run lint
+
+      - name: Unit tests
+        run: bun run test
+
       - name: Build
         run: bunx vite build
+
+  e2e:
+    # Playwright smoke test against the production build. Needs Go to compile
+    # the WASM engine, then a real Chromium (installed here, not the dev
+    # container's pre-provisioned one).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Build WASM
+        run: bash scripts/build-wasm.sh
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        working-directory: web
+        run: bun install --frozen-lockfile
+
+      - name: Install Chromium
+        working-directory: web
+        run: bunx playwright install --with-deps chromium
+
+      - name: E2E smoke test
+        working-directory: web
+        run: bun run test:e2e
