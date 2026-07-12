@@ -36,7 +36,8 @@ export type WorkerCommand =
 export type WorkerResponse =
   | { type: "ready" }
   | { type: "error"; error: string }
-  | { type: "pattern"; id: number; pattern: Float32Array };
+  | { type: "pattern"; id: number; pattern: Float32Array }
+  | { type: "patternSync"; pattern: Float32Array };
 
 const workerScope = globalThis as unknown as {
   Go: new () => GoRuntime;
@@ -119,6 +120,19 @@ workerScope.onmessage = (event: MessageEvent<WorkerCommand>) => {
           ...args: unknown[]
         ) => unknown;
         method(...message.args);
+      }
+
+      // The engine owns the pattern: after every pattern edit, echo its
+      // authoritative copy so the main-thread mirror can reconcile. Exactly
+      // one echo per edit, even when the engine is not ready (empty echoes
+      // keep the mirror's in-flight accounting balanced).
+      if (message.name === "setCell" || message.name === "setPattern") {
+        respond({
+          type: "patternSync",
+          pattern: engineReady
+            ? workerScope.AlgoDrum.getPattern()
+            : new Float32Array(0),
+        });
       }
       break;
     case "getPattern": {
