@@ -37,3 +37,24 @@ test("loads, plays, and responds to input", async ({ page }) => {
     timeout: 4_000,
   });
 });
+
+// The engine owns the pattern: every edit is echoed back as the engine's
+// authoritative copy and reconciled into the UI mirror. Cycle a cell through
+// all three velocity states and check each one still holds after the echo
+// round-trip has had time to land (a bad echo would revert the cell).
+test("cell edits survive the engine's authoritative pattern echo", async ({
+  page,
+}) => {
+  await page.goto("./");
+  const play = page.getByRole("button", { name: "Play", exact: true });
+  await expect(play).toBeEnabled({ timeout: 30_000 });
+
+  const cell = page.getByRole("button", { name: /^Snare step 5:/ });
+  await expect(cell).toHaveAccessibleName("Snare step 5: off");
+
+  for (const state of ["on", "accent", "off"]) {
+    await cell.click();
+    await page.waitForTimeout(150); // worker echo round-trip
+    await expect(cell).toHaveAccessibleName(`Snare step 5: ${state}`);
+  }
+});

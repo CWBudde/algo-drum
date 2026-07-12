@@ -111,9 +111,13 @@ a deprecated audio path, zero tests, and a UI approach (canvas) that fights the 
 
 ## 4. Architecture & state management — 5/10
 
-- [ ] **A1: single source of truth for the pattern.** Today React state and the Go engine
+- [x] **A1: single source of truth for the pattern.** Today React state and the Go engine
       each hold a copy with no reconciliation (root cause of C1). Decide: engine owns
       state, UI mirrors it (recommended), with a full-state sync on init/reset.
+      ✔ 2026-07-10 — the engine owns the pattern: the worker echoes the authoritative
+      copy after every `setCell`/`setPattern`, and `patternMirror.ts` reconciles echoes
+      with in-flight optimistic edits before updating the React mirror (`onPattern`).
+      The UI's mount-time `setPattern` push doubles as the full sync on init.
 - [x] **A2: typed message layer** — replace the loose `window.AlgoDrum` global surface
       with a small versioned command interface (also what an AudioWorklet port needs, B1).
 - [x] **A3: parameter smoothing** — volume/decay changes apply instantly per-sample; add
@@ -279,5 +283,6 @@ format gate + deploy polish (CI3/CI4), PWA fixes (P1–P4), docs (D2/D3, `docs/v
 `.editorconfig` (H3), dead-code and error-logging cleanups (C9/B5), volume smoothing (A3).
 Also landed the same day: ESLint + error boundary + React 19 (F4/F5/F6), WCAG-AA
 contrast pass (X3), Vitest unit suite and Playwright e2e smoke in CI (T4/T5).
-Still open: A1 (engine-owned state), E6 (pause semantics), G7 (accent row/open-hat/master
-volume), optional wasm-opt from CI3.
+Still open: E6 (pause semantics), G7 (accent row/open-hat/master volume), optional
+wasm-opt from CI3. A1 (engine-owned pattern state) closed 2026-07-10 via worker pattern
+echo + mirror reconciliation.
