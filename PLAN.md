@@ -124,7 +124,7 @@ structure, not just the ten instances.
       a bad track/step index (`engine.go:231`, `:265`), so a UI bug looks like a dead
       pad. Decide — and document — whether these clamp, error to JS, or panic in dev
       builds; today the answer differs per method.
-- [ ] **C23: an engine self-check.** A `Validate()` (or a build-tagged assertion in
+- [x] **C23: an engine self-check.** A `Validate()` (or a build-tagged assertion in
       `Render`) verifying the invariants the tests already assume — `stepLen` positive
       and finite, `currentStep < stepCount`, no active pending trigger past its deadline
       — turns silent corruption like C11 into a loud failure.

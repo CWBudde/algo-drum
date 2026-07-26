@@ -564,7 +564,14 @@ func (e *Engine) firePending() {
 }
 
 // Render fills buf with mono audio samples.
+//
+// The invariants the loop relies on — a positive length for every step, the
+// playhead inside the loop, no pending trigger past its deadline — are checked
+// per buffer, on entry and on exit, only in builds tagged `drumassert`; the
+// shipped build compiles assertValid away to nothing (see assert.go).
 func (e *Engine) Render(buf []float32) {
+	e.assertValid()
+
 	for i := range buf {
 		if e.running {
 			if e.stepSamples == 0 {
@@ -616,4 +623,10 @@ func (e *Engine) Render(buf []float32) {
 
 		buf[i] = float32(out)
 	}
+
+	// Checked again on the way out: the loop advances the playhead and the
+	// pending set itself, so this catches corruption Render caused rather
+	// than inherited. Deliberately not deferred — the loop cannot return
+	// early, and a defer would not compile away in the untagged build.
+	e.assertValid()
 }

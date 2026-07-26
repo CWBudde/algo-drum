@@ -112,53 +112,13 @@ func applyFuzzProgram(engine *Engine, program []byte) {
 
 // checkEngineInvariants asserts the state the render loop relies on. Output
 // checks alone are not enough: the last-resort clamp in Render mutes a stray
-// NaN, so corruption has to be caught where it actually lands.
+// NaN, so corruption has to be caught where it actually lands — which is
+// exactly what Engine.Validate reports (see validate.go).
 func checkEngineInvariants(t *testing.T, engine *Engine) {
 	t.Helper()
 
-	if math.IsNaN(engine.bpm) || engine.bpm < minTempoBPM || engine.bpm > maxTempoBPM {
-		t.Fatalf("bpm out of contract: %v", engine.bpm)
-	}
-
-	if math.IsNaN(engine.swing) || engine.swing < 0 || engine.swing > maxSwing {
-		t.Fatalf("swing out of contract: %v", engine.swing)
-	}
-
-	if engine.stepCount < 1 || engine.stepCount > MaxSteps {
-		t.Fatalf("stepCount out of contract: %d", engine.stepCount)
-	}
-
-	if engine.currentStep < 0 || engine.currentStep >= engine.stepCount {
-		t.Fatalf("currentStep %d outside loop of %d steps", engine.currentStep, engine.stepCount)
-	}
-
-	for step, length := range engine.stepLen {
-		if length <= 0 {
-			t.Fatalf("step %d has non-positive length %d", step, length)
-		}
-	}
-
-	for track := range engine.pattern {
-		for step, velocity := range engine.pattern[track] {
-			if math.IsNaN(velocity) || velocity < 0 || velocity > 1 {
-				t.Fatalf("cell (%d, %d) velocity out of contract: %v", track, step, velocity)
-			}
-		}
-	}
-
-	for track, volume := range engine.volumes {
-		if math.IsNaN(volume) || volume < 0 || volume > 1 {
-			t.Fatalf("track %d volume out of contract: %v", track, volume)
-		}
-	}
-
-	for track, voice := range engine.voices {
-		for index := range voice.ParamSpecs() {
-			param := voice.Param(index)
-			if math.IsNaN(param) || param < 0 || param > 1 {
-				t.Fatalf("track %d param %d out of contract: %v", track, index, param)
-			}
-		}
+	if err := engine.Validate(); err != nil {
+		t.Fatalf("engine invariants broken: %v", err)
 	}
 }
 
