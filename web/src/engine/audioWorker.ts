@@ -4,7 +4,10 @@
 // AudioWorklet requests chunks over a direct MessagePort, and UI parameter
 // changes arrive as command messages from the main thread.
 
-interface AlgoDrumApi {
+// The engine's JS surface. Exported so the main-thread bridge can type its
+// command sender against it (method name and argument tuple) instead of
+// casting into the wire format.
+export interface AlgoDrumApi {
   init: (sampleRate: number) => void;
   setRunning: (playing: boolean) => void;
   setTempo: (bpm: number) => void;
@@ -85,13 +88,11 @@ interface GoRuntime {
 export type WorkerCommand =
   | { type: "load"; wasmExecUrl: string; wasmUrl: string; sampleRate: number }
   | { type: "connect" }
-  | { type: "cmd"; name: keyof AlgoDrumApi; args: unknown[] }
-  | { type: "getPattern"; id: number };
+  | { type: "cmd"; name: keyof AlgoDrumApi; args: unknown[] };
 
 export type WorkerResponse =
   | { type: "ready" }
   | { type: "error"; error: string }
-  | { type: "pattern"; id: number; pattern: Float32Array }
   | { type: "patternSync"; pattern: Float32Array };
 
 const workerScope = globalThis as unknown as {
@@ -159,6 +160,47 @@ function handleWorkletPort(port: MessagePort): void {
   };
 }
 
+// invokeEngine calls one engine method. AlgoDrum is a foreign object built by
+// Go, so neither the method's existence nor its success is guaranteed at
+// runtime: an uncaught throw here would escape the message handler as an
+// unhandled worker error that the main thread cannot attribute to anything.
+// Reporting it as an error response keeps the failure diagnosable.
+function invokeEngine(name: keyof AlgoDrumApi, args: unknown[]): void {
+  const method: unknown = workerScope.AlgoDrum[name];
+
+  if (typeof method !== "function") {
+    respond({ type: "error", error: `AlgoDrum.${name} is not callable` });
+    return;
+  }
+
+  try {
+    (method as (...callArgs: unknown[]) => unknown)(...args);
+  } catch (error) {
+    respond({
+      type: "error",
+      error: `AlgoDrum.${name} failed: ${String(error)}`,
+    });
+  }
+}
+
+// readPattern reads the engine's authoritative pattern for an echo, falling
+// back to an empty array if it cannot. The mirror counts exactly one echo per
+// edit, so a swallowed echo would stall it permanently; an empty one is
+// ignored by the mirror but still balances the books. The catch also covers
+// the engine not being ready (AlgoDrum undefined), which the main thread's
+// command queue already prevents.
+function readPattern(): Float32Array {
+  try {
+    return workerScope.AlgoDrum.getPattern();
+  } catch (error) {
+    respond({
+      type: "error",
+      error: `AlgoDrum.getPattern failed: ${String(error)}`,
+    });
+    return new Float32Array(0);
+  }
+}
+
 workerScope.onmessage = (event: MessageEvent<WorkerCommand>) => {
   const message = event.data;
 
@@ -174,33 +216,15 @@ workerScope.onmessage = (event: MessageEvent<WorkerCommand>) => {
       if (event.ports[0]) handleWorkletPort(event.ports[0]);
       break;
     case "cmd":
-      if (engineReady) {
-        const method = workerScope.AlgoDrum[message.name] as (
-          ...args: unknown[]
-        ) => unknown;
-        method(...message.args);
-      }
+      if (engineReady) invokeEngine(message.name, message.args);
 
       // The engine owns the pattern: after every pattern edit, echo its
       // authoritative copy so the main-thread mirror can reconcile. Exactly
-      // one echo per edit, even when the engine is not ready (empty echoes
-      // keep the mirror's in-flight accounting balanced).
+      // one echo per edit, so the mirror's in-flight accounting stays
+      // balanced even when the read fails.
       if (message.name === "setCell" || message.name === "setPattern") {
-        respond({
-          type: "patternSync",
-          pattern: engineReady
-            ? workerScope.AlgoDrum.getPattern()
-            : new Float32Array(0),
-        });
+        respond({ type: "patternSync", pattern: readPattern() });
       }
       break;
-    case "getPattern": {
-      // Reply even before the engine is ready so callers never hang.
-      const pattern = engineReady
-        ? workerScope.AlgoDrum.getPattern()
-        : new Float32Array(0);
-      respond({ type: "pattern", id: message.id, pattern });
-      break;
-    }
   }
 };
