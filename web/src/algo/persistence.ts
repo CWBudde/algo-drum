@@ -6,18 +6,35 @@
 // pure and testable; the localStorage/hash glue below is a thin, fail-soft
 // wrapper around it.
 
-import { PATTERN_SIZE, VEL_ACCENT, VEL_NORMAL, VEL_OFF } from "./pattern";
+import { VOICE_PARAM_CAPACITY } from "../engine/voiceParams";
+import {
+  PATTERN_SIZE,
+  TRACK_COUNT,
+  VEL_ACCENT,
+  VEL_NORMAL,
+  VEL_OFF,
+} from "./pattern";
 
-// Bump when the byte layout changes; older/garbage blobs then fail to decode
-// and the app starts fresh instead of loading corrupt state.
-const FORMAT_VERSION = 1;
+// Bump when the byte layout changes. v2 is a strict append: every v1 field
+// keeps its offset and meaning, so one parse path serves both and links shared
+// before the voice editor existed still decode (with voiceParams left unset).
+const FORMAT_VERSION = 2;
 
 // Byte layout: version, 6 scalar knobs, 5 volumes, 5 decays, 1 mute mask,
-// then the 80-cell pattern packed 2 bits per cell (20 bytes).
+// then the 80-cell pattern packed 2 bits per cell (20 bytes)...
 const HEADER_BYTES = 1 + 6 + 5 + 5 + 1;
 const PATTERN_BYTES = PATTERN_SIZE / 4;
-const TOTAL_BYTES = HEADER_BYTES + PATTERN_BYTES;
+const V1_BYTES = HEADER_BYTES + PATTERN_BYTES;
 
+// ...then, in v2, the per-voice synthesis parameters: one byte per slot,
+// engine-major, at V1_BYTES + track*VOICE_PARAM_CAPACITY + index. Voices with
+// fewer parameters than the capacity leave their trailing slots at 0.
+const VOICE_PARAM_BYTES = TRACK_COUNT * VOICE_PARAM_CAPACITY;
+const TOTAL_BYTES = V1_BYTES + VOICE_PARAM_BYTES;
+
+// Names the storage slot, not the blob version — it never tracked
+// FORMAT_VERSION, and the decoder is version-tolerant. Bumping it would orphan
+// every pattern users have saved, which is exactly what v2 avoids.
 export const STORAGE_KEY = "algo-drum.state.v1";
 
 // PersistedState mirrors the DrumMachine's serializable UI state. Scalar knob
@@ -33,6 +50,10 @@ export interface PersistedState {
   volumes: number[]; // length 5
   decays: number[]; // length 5
   muted: boolean[]; // length 5
+  // Per-voice synthesis parameters, engine-major, TRACK_COUNT rows of
+  // VOICE_PARAM_CAPACITY normalized positions. Absent from v1 blobs — callers
+  // fall back to the per-voice defaults in engine/voiceParams.ts.
+  voiceParams?: number[][];
 }
 
 function clamp01(v: number): number {
@@ -112,6 +133,14 @@ export function encodeState(state: PersistedState): string {
     bytes[offset++] = packed;
   }
 
+  // Rows are padded and truncated to the capacity so the record stays fixed
+  // width no matter how many parameters a voice actually exposes.
+  for (let track = 0; track < TRACK_COUNT; track++) {
+    for (let i = 0; i < VOICE_PARAM_CAPACITY; i++) {
+      bytes[offset++] = toByte(state.voiceParams?.[track]?.[i] ?? 0);
+    }
+  }
+
   return bytesToBase64Url(bytes);
 }
 
@@ -119,10 +148,17 @@ export function encodeState(state: PersistedState): string {
 // version/length/garbage mismatch so callers can fall back to a fresh start.
 export function decodeState(text: string): PersistedState | null {
   const bytes = base64UrlToBytes(text);
-  if (!bytes || bytes.length !== TOTAL_BYTES) return null;
+  if (!bytes || bytes.length === 0) return null;
 
-  let offset = 0;
-  if (bytes[offset++] !== FORMAT_VERSION) return null;
+  // The expected length is version-specific: a v1 blob is not a truncated v2
+  // blob, and a full-length blob claiming v1 is corrupt rather than v1 with
+  // junk appended.
+  const version = bytes[0];
+  const expected =
+    version === 1 ? V1_BYTES : version === FORMAT_VERSION ? TOTAL_BYTES : -1;
+  if (bytes.length !== expected) return null;
+
+  let offset = 1;
 
   const steps = fromByte(bytes[offset++]);
   const tempo = fromByte(bytes[offset++]);
@@ -149,7 +185,7 @@ export function decodeState(text: string): PersistedState | null {
     }
   }
 
-  return {
+  const state: PersistedState = {
     pattern,
     steps,
     tempo,
@@ -161,6 +197,18 @@ export function decodeState(text: string): PersistedState | null {
     decays,
     muted,
   };
+
+  if (version === 1) return state;
+
+  const voiceParams: number[][] = [];
+  for (let track = 0; track < TRACK_COUNT; track++) {
+    const row: number[] = [];
+    for (let i = 0; i < VOICE_PARAM_CAPACITY; i++)
+      row.push(fromByte(bytes[offset++]));
+    voiceParams.push(row);
+  }
+
+  return { ...state, voiceParams };
 }
 
 // ── localStorage + URL hash glue (fail-soft) ────────────────────────────────

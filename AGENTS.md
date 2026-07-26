@@ -22,6 +22,7 @@ just test            # Go test suite
 just web-test        # frontend unit tests (Vitest)
 just fmt             # format everything via treefmt (gofumpt, gci, shfmt, prettier)
 just lint            # golangci-lint against the js/wasm target
+just gen-params      # regenerate the TS mirror of the voice parameter table
 just fix             # lint --fix, then fmt
 just ci              # the full local gate — run this before pushing
 ```
@@ -87,21 +88,25 @@ Vite serves `web/public/` as static assets, so `algo_drum.wasm` and `wasm_exec.j
 ```
 cmd/wasm/main.go          — WASM entry point; registers the AlgoDrum JS API (worker global scope)
 internal/drum/engine.go   — Sequencer: velocity pattern grid (5×16), runtime step count, tempo/swing, probability + humanize (allocation-free pending-trigger list), smoothed per-track volumes, Render()
-internal/drum/voices.go   — Drum synthesizer voices (BassDrum, Snare, HiHat, Tom, Cymbal)
+internal/drum/voices.go   — Drum synthesizer voices (BassDrum, Snare, HiHat, Tom, Cymbal); all tuning is runtime-settable
+internal/drum/params.go   — Per-voice synthesis parameter specs (ranges, curves, defaults) + the normalized→engineering mapping
+cmd/gen-voiceparams/      — Generates web/src/engine/voiceParams.generated.ts from params.go (`just gen-params`; CI diffs it)
 internal/drum/*_test.go   — Go unit tests: sequencing, clamping, bit-exact render determinism, per-voice envelopes
 web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands, exposes onPattern (engine-owned pattern snapshots)
 web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; renders audio chunks on demand, echoes the authoritative pattern after each edit
 web/src/engine/patternMirror.ts — Reconciles the engine's pattern echoes with in-flight optimistic UI edits (engine = single source of truth)
+web/src/engine/voiceParams.ts   — Curve renderer + readout formatting over voiceParams.generated.ts (the committed mirror of internal/drum/params.go)
 web/public/worklet.js         — AudioWorkletProcessor: consumes chunks, reports the audible step
-web/src/components/DrumMachine.tsx — Main UI: 5×16 step grid (DOM/CSS; clicking a cell cycles off → on → accent) mirroring the engine-owned pattern, transport (play, tempo + TAP, swing, STEPS, PROB, HUMAN, reverb), per-track volume/decay knobs + mute LEDs; persistence/share wiring
+web/src/components/DrumMachine.tsx — Main UI: 5×16 step grid (DOM/CSS; clicking a cell cycles off → on → accent) mirroring the engine-owned pattern, transport (play, tempo + TAP, swing, STEPS, PROB, HUMAN, reverb), per-track volume/decay knobs + mute LEDs + a per-voice editor button; persistence/share wiring
 web/src/components/AlgoPanel.tsx    — Algorithmic tools panel: preset selector, CLEAR, MUTATE, per-track Euclidean fill (E(k,n) + rotation), SHARE (copy link)
+web/src/components/VoiceEditor.tsx — Per-voice synthesis editor: native <dialog> modal of knobs driven by the generated parameter table, plus AUDITION and RESET
 web/src/components/Knob.tsx        — Reusable rotary knob (SVG; drag, wheel, and keyboard accessible)
 web/src/components/knobMath.ts     — Pure knob math extracted from Knob.tsx: value↔angle, drag/wheel/key deltas (unit-tested without a DOM)
 web/src/components/ErrorBoundary.tsx — App-wide React error boundary; a render crash shows a themed panel instead of a blank page
 web/src/algo/euclid.ts     — Pure Bjorklund/Euclidean E(pulses, steps) rhythm generator with rotation
 web/src/algo/mutate.ts     — Pure musical random-walk mutation of a flat pattern
 web/src/algo/presets.ts    — Classic 16-step preset patterns (rock, house, breakbeat, hip-hop, techno, funk) + Clear
-web/src/algo/persistence.ts — Pure versioned encode/decode of full state → base64url; localStorage + URL-hash glue
+web/src/algo/persistence.ts — Pure versioned encode/decode of full state → base64url (v2 appends the voice parameters; v1 blobs still decode); localStorage + URL-hash glue
 web/src/algo/pattern.ts    — Shared pattern constants (dims, velocities, flat-index helper) for the algo modules
 web/src/App.tsx           — Root: loads WASM on mount, renders DrumMachine inside the ErrorBoundary, shows a retryable fault panel if the engine fails
 web/src/main.tsx          — Browser entry: mounts App and registers the service worker (production builds only)
@@ -142,7 +147,9 @@ UI displays tracks in **reverse order** (Cymbal on top, Bass on bottom).
 | `setPattern(Float32Array)`      | Replace pattern from a flat track-major array of 5×16 velocities (`track*16+step`) |
 | `getPattern()`                  | Returns the pattern in the same flat Float32Array layout                           |
 | `setVolume(track, 0–1)`         | Set track volume (ramped over ~8 ms to avoid zipper noise)                         |
-| `setDecay(track, 0–1)`          | Set track decay amount                                                             |
+| `setDecay(track, 0–1)`          | Trim the track's base decay time by 0.5×–1.5×                                      |
+| `setVoiceParam(track, i, 0–1)`  | Set one per-voice synthesis parameter (tables in `docs/voices.md`)                 |
+| `triggerVoice(track, 0–1)`      | Fire one voice immediately, independent of the sequencer (audition)                |
 | `setReverb(0–1)`                | Set global reverb amount                                                           |
 | `setProbability(0–1)`           | Per-hit trigger chance (1 = every hit fires, default; 0 = silence)                 |
 | `setHumanize(0–1)`              | Timing/velocity randomization (delay ≤ h·15 ms, velocity ±h·20%; 0 = mechanical)   |

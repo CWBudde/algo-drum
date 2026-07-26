@@ -624,7 +624,9 @@ type engineState struct {
 	volume   float64
 	decay    float64
 	cell     float64
-	stepLen  [MaxSteps]int64
+	// voiceParam must stay a plain float64: engineState is compared with !=.
+	voiceParam float64
+	stepLen    [MaxSteps]int64
 }
 
 func snapshotState(engine *Engine) engineState {
@@ -637,7 +639,9 @@ func snapshotState(engine *Engine) engineState {
 		volume:   engine.volumes[1],
 		decay:    engine.decays[1],
 		cell:     engine.pattern[1][3],
-		stepLen:  engine.stepLen,
+		// Snare param 0 is snare.toneHz; see params.go.
+		voiceParam: engine.voices[1].Param(0),
+		stepLen:    engine.stepLen,
 	}
 }
 
@@ -653,6 +657,7 @@ func configuredEngine() *Engine {
 	engine.SetVolume(1, 0.4)
 	engine.SetDecay(1, 0.8)
 	engine.SetCell(1, 3, 0.7)
+	engine.SetVoiceParam(1, 0, 0.9)
 
 	return engine
 }
@@ -670,6 +675,8 @@ func TestNonFiniteSettersLeaveStateUnchanged(t *testing.T) {
 		engine.SetVolume(1, bad)
 		engine.SetDecay(1, bad)
 		engine.SetCell(1, 3, bad)
+		engine.SetVoiceParam(1, 0, bad)
+		engine.TriggerVoice(1, bad)
 		engine.SetPattern([]float64{bad, bad, bad})
 
 		if got := snapshotState(engine); got != want {
@@ -865,6 +872,12 @@ func TestIndexedSettersNoOpOutOfRange(t *testing.T) {
 		engine.SetVolume(track, 0.1)
 		engine.SetDecay(track, 0.1)
 		engine.SetCell(track, 0, 1)
+		engine.SetVoiceParam(track, 0, 0.1)
+		engine.TriggerVoice(track, 1)
+	}
+
+	for _, index := range []int{-1, maxVoiceParams, math.MaxInt} {
+		engine.SetVoiceParam(1, index, 0.1)
 	}
 
 	for _, step := range []int{-1, MaxSteps, math.MaxInt} {
@@ -894,6 +907,119 @@ func TestRenderDeterministic(t *testing.T) {
 	for i := range first {
 		if first[i] != second[i] {
 			t.Fatalf("sample %d differs between identical engines: %v vs %v", i, first[i], second[i])
+		}
+	}
+}
+
+// ── Per-voice synthesis parameters (PLAN.md G20) ───────────────────────────
+
+func TestSetVoiceParamClamps(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+
+	engine.SetVoiceParam(0, 0, -2)
+
+	if got := engine.voices[0].Param(0); got != 0 {
+		t.Fatalf("SetVoiceParam(-2) stored %v, want 0", got)
+	}
+
+	engine.SetVoiceParam(0, 0, 3)
+
+	if got := engine.voices[0].Param(0); got != 1 {
+		t.Fatalf("SetVoiceParam(3) stored %v, want 1", got)
+	}
+
+	engine.SetVoiceParam(0, 0, 0.25)
+
+	if got := engine.voices[0].Param(0); got != 0.25 {
+		t.Fatalf("SetVoiceParam(0.25) stored %v, want 0.25", got)
+	}
+}
+
+// TestDefaultVoiceParamsPreserveRender is the engine-level twin of
+// TestVoiceParamDefaultsAreShippedConstants: explicitly writing every
+// parameter's default must leave the mix bit-identical to a never-touched
+// engine, so restoring a saved state cannot subtly retune the kit.
+func TestDefaultVoiceParamsPreserveRender(t *testing.T) {
+	build := func() *Engine {
+		engine := NewEngine(testSampleRate)
+		engine.SetCell(0, 0, 1)
+		engine.SetCell(1, 2, 0.7)
+		engine.SetCell(2, 4, 1)
+		engine.SetCell(3, 6, 0.7)
+		engine.SetCell(4, 8, 1)
+		engine.SetReverb(0.5)
+		engine.SetRunning(true)
+
+		return engine
+	}
+
+	untouched := build()
+
+	explicit := build()
+	for track := range TrackCount {
+		for index, spec := range SpecsForTrack(track) {
+			explicit.SetVoiceParam(track, index, spec.Default)
+		}
+	}
+
+	want := make([]float32, int(testSampleRate))
+	untouched.Render(want)
+
+	got := make([]float32, len(want))
+	explicit.Render(got)
+
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("sample %d differs after writing every default: %v vs %v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestTriggerVoiceSoundsWhileStopped(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+
+	engine.TriggerVoice(0, 1)
+
+	if step := engine.CurrentStep(); step != -1 {
+		t.Fatalf("CurrentStep() = %d after an audition, want -1 (still stopped)", step)
+	}
+
+	buf := make([]float32, int(testSampleRate/2))
+	engine.Render(buf)
+
+	var peak float64
+
+	for _, sample := range buf {
+		if abs := math.Abs(float64(sample)); abs > peak {
+			peak = abs
+		}
+	}
+
+	if peak < 0.05 {
+		t.Fatalf("audition peak %v, want an audible hit while stopped", peak)
+	}
+}
+
+func TestTriggerVoiceIgnoresInvalidInput(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+
+	for _, track := range []int{-1, TrackCount, math.MaxInt} {
+		engine.TriggerVoice(track, 1)
+	}
+
+	engine.TriggerVoice(0, 0)
+	engine.TriggerVoice(0, -1)
+
+	for _, bad := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		engine.TriggerVoice(0, bad)
+	}
+
+	buf := make([]float32, int(testSampleRate/4))
+	engine.Render(buf)
+
+	for i, sample := range buf {
+		if sample != 0 {
+			t.Fatalf("rejected audition still produced %v at sample %d", sample, i)
 		}
 	}
 }

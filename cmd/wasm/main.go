@@ -230,6 +230,37 @@ func main() {
 		return js.Null()
 	}))
 
+	api.Set("setVoiceParam", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		track, trackOK := argInt(args, 0, "setVoiceParam")
+		index, indexOK := argInt(args, 1, "setVoiceParam")
+		value, valueOK := argFloat(args, 2, "setVoiceParam")
+
+		if trackOK && indexOK && valueOK {
+			engine.SetVoiceParam(track, index, value)
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("triggerVoice", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		track, trackOK := argInt(args, 0, "triggerVoice")
+		velocity, velOK := argFloat(args, 1, "triggerVoice")
+
+		if trackOK && velOK {
+			engine.TriggerVoice(track, velocity)
+		}
+
+		return js.Null()
+	}))
+
 	api.Set("setReverb", export(func(args []js.Value) any {
 		if !ready() {
 			return js.Null()

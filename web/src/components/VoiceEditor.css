@@ -1,0 +1,180 @@
+/* Per-voice synthesis editor (PLAN.md G20).
+ *
+ * The <dialog> is rendered inside .dm-machine on purpose — do not move it to a
+ * portal. Being a descendant is what lets it inherit --dm-text/--dm-led and be
+ * matched by the existing `@media (prefers-reduced-motion) .dm-machine *` rule
+ * in DrumMachine.css. Top-layer promotion is DOM-position independent, so it
+ * still paints above everything.
+ *
+ * The footer reuses .dm-algo-btn / .dm-algo-btn-warn from AlgoPanel.css (both
+ * components are always mounted, and the class names are globally prefixed like
+ * everything else here) rather than restating the brushed-metal recipe.
+ */
+
+.dm-voice {
+  width: min(92vw, 430px);
+  max-height: min(86vh, 660px);
+  /* A modal dialog is centred by the UA's `margin: auto` against its
+     `inset: 0`, but the `* { margin: 0 }` reset in index.html outranks the UA
+     stylesheet and pins it to the top-left. Restore it explicitly. */
+  margin: auto;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.8);
+  border-radius: 16px;
+  background: linear-gradient(135deg, #2e2e3c 0%, #212130 32%, #141420 100%);
+  color: var(--dm-text);
+  font-family: "Inter", "Helvetica Neue", sans-serif;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.9),
+    inset 0 2px 2px rgba(255, 255, 255, 0.12),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.55);
+  /* The Knob's drag readout is absolutely positioned above the knob body and
+     must be able to escape the top row of the grid. */
+  overflow: visible;
+}
+
+.dm-voice::backdrop {
+  background: rgba(4, 4, 10, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.dm-voice-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 14px 10px 18px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.55);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.dm-voice-title {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  /* Rendered uppercase but kept natural-case in the DOM: Chromium computes the
+     accessible name from rendered text, so this only affects the visual. */
+  text-transform: uppercase;
+  /* X3: #d8c9a8 on #212130 → 9.6:1, well past the 4.5:1 floor for this size. */
+  color: #d8c9a8;
+}
+
+.dm-voice-close {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  /* X3: rgba(206,197,178,0.85) over #2e2e3c → 7.4:1. */
+  color: rgba(206, 197, 178, 0.85);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dm-voice-close:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* auto-fit fits four knobs on one row; the extra top padding leaves room for
+   the first row's drag readout. */
+.dm-voice-knobs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: 22px 10px;
+  padding: 28px 18px 16px;
+  justify-items: center;
+}
+
+/* Five or six parameters would otherwise wrap 4+1 / 4+2; three columns splits
+   them evenly instead. */
+.dm-voice-knobs[data-params="5"],
+.dm-voice-knobs[data-params="6"] {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.dm-voice-param {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+/* A live numeric readout for keyboard and wheel edits, which never show the
+   Knob's drag-only readout (PLAN U10, inside this dialog). */
+.dm-voice-value {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  /* X3: rgba(206,197,178,0.85) over the panel gradient → ≥7:1 throughout. */
+  color: rgba(206, 197, 178, 0.85);
+  white-space: nowrap;
+}
+
+.dm-voice-hint {
+  margin: 0;
+  padding: 0 18px 12px;
+  font-size: 10px;
+  line-height: 1.5;
+  /* X3: rgba(178,170,155,0.8) over #1a1a26 → 5.6:1. */
+  color: rgba(178, 170, 155, 0.8);
+}
+
+.dm-voice-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px 14px;
+  border-top: 1px solid rgba(0, 0, 0, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.dm-voice-foot-spacer {
+  flex: 1;
+}
+
+.dm-voice-audition {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Visually hidden, but kept in the a11y tree so the live region can announce
+   the RESET that moved every knob with nothing focused. */
+.dm-voice-notice {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.dm-voice:focus-visible,
+.dm-voice-close:focus-visible {
+  outline: 2px solid rgba(200, 140, 60, 0.85);
+  outline-offset: 2px;
+}
+
+@media (max-width: 620px) {
+  .dm-voice {
+    width: 94vw;
+  }
+
+  /* The [data-params] rules above are more specific, so they have to be
+     restated here or a 5/6-parameter voice would stay at three columns. */
+  .dm-voice-knobs,
+  .dm-voice-knobs[data-params="5"],
+  .dm-voice-knobs[data-params="6"] {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px 8px;
+    padding: 24px 12px 12px;
+  }
+
+  .dm-voice-foot {
+    flex-wrap: wrap;
+  }
+}

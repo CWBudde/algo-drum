@@ -36,12 +36,17 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"], executablePath },
     },
   ],
-  // Build the WASM engine (only if missing) + a production bundle, then serve
-  // it with `vite preview`. Worker/worklet bundling differs dev vs prod, so the
-  // smoke test deliberately runs against the built output.
+  // Build the WASM engine + a production bundle, then serve it with
+  // `vite preview`. Worker/worklet bundling differs dev vs prod, so the smoke
+  // test deliberately runs against the built output.
+  //
+  // The rebuild is unconditional: audioWorker.ts checks REQUIRED_METHODS at
+  // load and refuses to start against a .wasm older than the bundle, so a
+  // "build only if missing" shortcut made every dev machine with a stale
+  // artifact fail the suite with a rebuild-me error instead of running it.
   webServer: {
     command:
-      "sh -c '[ -f public/algo_drum.wasm ] || bash ../scripts/build-wasm.sh; bunx vite build && bunx vite preview --port 4173 --strictPort'",
+      "sh -c 'bash ../scripts/build-wasm.sh && bunx vite build && bunx vite preview --port 4173 --strictPort'",
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,

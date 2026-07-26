@@ -123,10 +123,16 @@ export default function Knob({
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<SVGSVGElement>) => {
       const next = keyValue(value, e.key, e.shiftKey, defaultValue);
-      if (next !== null) {
-        e.preventDefault();
-        onChange(next);
-      }
+      if (next === null) return;
+
+      // An Escape that would not change anything is not a reset, so let it
+      // bubble: an enclosing <dialog> (the voice editor) treats it as a close
+      // request. Restricted to Escape on purpose — skipping preventDefault for
+      // every key would let ArrowUp at value 1 scroll the page.
+      if (e.key === "Escape" && next === value) return;
+
+      e.preventDefault();
+      onChange(next);
     },
     [value, onChange, defaultValue],
   );
