@@ -41,6 +41,33 @@ const (
 	// maxPending caps in-flight humanize-delayed triggers; sized well above the
 	// handful that can overlap so scheduling stays allocation-free in Render.
 	maxPending = 32
+
+	// Tempo bounds in BPM. The lower bound also bounds a step's length, which
+	// keeps the swing arithmetic in recomputeStepLengths well away from
+	// degenerate (sub-sample) steps.
+	minTempoBPM = 30.0
+	maxTempoBPM = 300.0
+
+	// maxSwing is full shuffle: the long step of a pair runs at 1.5× the base
+	// step length and the short one at 0.5×.
+	maxSwing = 0.5
+
+	// Sample-rate bounds. The rate arrives from JS, so a non-finite or
+	// non-positive value falls back to defaultSampleRate and anything else is
+	// clamped into a range the DSP is defined over.
+	defaultSampleRate = 48000.0
+	minSampleRate     = 8000.0
+	maxSampleRate     = 768000.0
+
+	// secondsPerMinute and stepsPerBeat convert BPM to samples per step;
+	// steps are 16th notes, so there are four per quarter-note beat.
+	secondsPerMinute = 60.0
+	stepsPerBeat     = 4.0
+
+	// Reverb mapping: SetReverb(1) means a 0.45 wet mix and a 4 s RT60.
+	reverbMaxWet     = 0.45
+	reverbMinRT60S   = 0.3
+	reverbRangeRT60S = 3.7
 )
 
 // pendingTrigger is a voice hit scheduled to fire a few samples in the future
@@ -83,8 +110,12 @@ type Engine struct {
 	limiter      *dynamics.LookaheadLimiter
 }
 
-// NewEngine creates a drum engine at the given sample rate.
+// NewEngine creates a drum engine at the given sample rate. A non-finite or
+// non-positive rate falls back to defaultSampleRate; any other value is
+// clamped to [minSampleRate, maxSampleRate].
 func NewEngine(sr float64) *Engine {
+	sr = validSampleRate(sr)
+
 	e := &Engine{
 		sr:        sr,
 		bpm:       120,
@@ -112,9 +143,16 @@ func NewEngine(sr float64) *Engine {
 
 	e.recomputeStepLengths()
 
+	// The DSP constructors return (nil, err) for a rate they cannot work
+	// with, so both handles stay nil-checked: a broken effect degrades to a
+	// bypass instead of taking the engine down (see Render).
 	rev, err := reverb.NewFDNReverb(sr)
 	logErr("NewFDNReverb", err)
-	logErr("reverb.SetWet", rev.SetWet(0))
+
+	if rev != nil {
+		logErr("reverb.SetWet", rev.SetWet(0))
+	}
+
 	e.reverb = rev
 
 	// Lookahead limiter controls the sustained level (dense patterns, long
@@ -123,7 +161,11 @@ func NewEngine(sr float64) *Engine {
 	// actual brick wall for those rare (~inaudible) peaks.
 	lim, err := dynamics.NewLookaheadLimiter(sr)
 	logErr("NewLookaheadLimiter", err)
-	logErr("limiter.SetThreshold", lim.SetThreshold(-1.0))
+
+	if lim != nil {
+		logErr("limiter.SetThreshold", lim.SetThreshold(-1.0))
+	}
+
 	e.limiter = lim
 
 	return e
@@ -137,17 +179,80 @@ func logErr(context string, err error) {
 	}
 }
 
-// recomputeStepLengths recalculates step durations accounting for swing.
-// swing=0: all equal. swing=0.5: even steps get 1.5× base, odd get 0.5× base.
-func (e *Engine) recomputeStepLengths() {
-	base := e.sr * 60.0 / e.bpm / 4.0 // samples per 16th note
+// validFloat is the single validation boundary for every float parameter that
+// crosses into the engine. Non-finite input (NaN, ±Inf) is rejected — ok is
+// false and the caller must leave its state untouched — while a finite value
+// is clamped into [minVal, maxVal]. Plain comparisons cannot do this: every
+// `<`/`>` test is false for NaN, so an unchecked NaN would walk through the
+// clamp and poison the whole signal path.
+func validFloat(val, minVal, maxVal float64) (float64, bool) {
+	if math.IsNaN(val) || math.IsInf(val, 0) {
+		return 0, false
+	}
 
-	s := e.swing
+	if val < minVal {
+		return minVal, true
+	}
+
+	if val > maxVal {
+		return maxVal, true
+	}
+
+	return val, true
+}
+
+// validSampleRate sanitises the rate handed to NewEngine. Unlike the setters
+// it cannot no-op — the engine has to exist — so a rejected rate falls back to
+// defaultSampleRate.
+func validSampleRate(sr float64) float64 {
+	if math.IsNaN(sr) || math.IsInf(sr, 0) || sr <= 0 {
+		return defaultSampleRate
+	}
+
+	rate, _ := validFloat(sr, minSampleRate, maxSampleRate)
+
+	return rate
+}
+
+// validTrack reports whether track addresses a real voice. Out-of-range
+// indices are a no-op for every indexed setter (see SetCell).
+func validTrack(track int) bool {
+	return track >= 0 && track < TrackCount
+}
+
+// validStep reports whether step addresses a real pattern cell. Steps are
+// addressable up to MaxSteps regardless of the active step count.
+func validStep(step int) bool {
+	return step >= 0 && step < MaxSteps
+}
+
+// recomputeStepLengths recalculates step durations accounting for swing.
+// Swing lengthens a step and shortens the one after it by the same amount, so
+// each (long, short) pair still spans exactly two base steps and the loop
+// keeps its tempo: sum(stepLen[0:stepCount]) == stepCount·base for any swing.
+// An odd step count leaves the final step unpaired, so it keeps the plain base
+// length rather than stretching the loop. Steps past the active length never
+// play and are held at the base length too.
+func (e *Engine) recomputeStepLengths() {
+	base := e.sr * secondsPerMinute / e.bpm / stepsPerBeat // samples per 16th note
+
+	// The short step is derived by subtraction, not by scaling with (1-swing),
+	// so truncation to whole samples cannot make a pair drift off 2·base.
+	plain := int64(base)
+	long := int64(base * (1.0 + e.swing))
+	short := 2*plain - long
+	last := e.stepCount - 1
+
 	for i := range e.stepLen {
-		if i%2 == 0 {
-			e.stepLen[i] = int64(base * (1.0 + s))
-		} else {
-			e.stepLen[i] = int64(base * (1.0 - s))
+		unpaired := i > last || (i == last && e.stepCount%2 == 1)
+
+		switch {
+		case unpaired:
+			e.stepLen[i] = plain
+		case i%2 == 0:
+			e.stepLen[i] = long
+		default:
+			e.stepLen[i] = short
 		}
 	}
 }
@@ -167,48 +272,57 @@ func (e *Engine) SetRunning(running bool) {
 }
 
 // SetProbability sets the chance each scheduled hit actually fires, clamped to
-// [0, 1]. 1 = every hit plays (default); 0 = silence.
+// [0, 1]. 1 = every hit plays (default); 0 = silence. A non-finite value is
+// rejected and leaves the current probability unchanged.
 func (e *Engine) SetProbability(p float64) {
-	e.prob = clamp01(p)
+	prob, ok := validFloat(p, 0, 1)
+	if !ok {
+		return
+	}
+
+	e.prob = prob
 }
 
 // SetHumanize sets the humanize amount, clamped to [0, 1]. It jitters each
 // hit's timing (delayed up to humanize·15 ms) and scales its velocity by up to
-// ±humanize·20%. 0 = mechanical (default).
+// ±humanize·20%. 0 = mechanical (default). A non-finite value is rejected and
+// leaves the current amount unchanged.
 func (e *Engine) SetHumanize(h float64) {
-	e.humanize = clamp01(h)
+	humanize, ok := validFloat(h, 0, 1)
+	if !ok {
+		return
+	}
+
+	e.humanize = humanize
 }
 
-// SetTempo sets the tempo, clamped to [30, 300] BPM.
+// SetTempo sets the tempo, clamped to [minTempoBPM, maxTempoBPM]. A non-finite
+// value is rejected and leaves the current tempo unchanged.
 func (e *Engine) SetTempo(bpm float64) {
-	if bpm < 30 {
-		bpm = 30
+	tempo, ok := validFloat(bpm, minTempoBPM, maxTempoBPM)
+	if !ok {
+		return
 	}
 
-	if bpm > 300 {
-		bpm = 300
-	}
-
-	e.bpm = bpm
+	e.bpm = tempo
 	e.recomputeStepLengths()
 }
 
-// SetSwing sets the swing amount, clamped to [0, 0.5].
+// SetSwing sets the swing amount, clamped to [0, maxSwing]. A non-finite value
+// is rejected and leaves the current swing unchanged.
 func (e *Engine) SetSwing(swing float64) {
-	if swing < 0 {
-		swing = 0
+	amount, ok := validFloat(swing, 0, maxSwing)
+	if !ok {
+		return
 	}
 
-	if swing > 0.5 {
-		swing = 0.5
-	}
-
-	e.swing = swing
+	e.swing = amount
 	e.recomputeStepLengths()
 }
 
 // SetStepCount sets the active pattern length, clamped to [1, MaxSteps].
-// Cells beyond the new length keep their contents (see SetCell).
+// Cells beyond the new length keep their contents (see SetCell). Step lengths
+// are recomputed because swing pairs steps within the active loop.
 func (e *Engine) SetStepCount(count int) {
 	if count < 1 {
 		count = 1
@@ -220,31 +334,54 @@ func (e *Engine) SetStepCount(count int) {
 
 	e.stepCount = count
 	if e.currentStep >= count {
+		// The playhead lands inside the shortened loop; restart that step so
+		// it plays out with its own length instead of inheriting the elapsed
+		// samples of the step it replaced.
 		e.currentStep %= count
+		e.stepSamples = 0
 	}
+
+	e.recomputeStepLengths()
 }
 
 // SetCell sets a cell's velocity, clamped to [0, 1] (0 = off). Steps are
 // addressable up to MaxSteps regardless of the active step count, so
 // shrinking and re-growing the pattern is lossless.
+//
+// Out-of-range contract: an invalid track or step index is a silent no-op, as
+// is a non-finite velocity — the cell keeps its previous value. Every indexed
+// setter behaves this way (SetVolume, SetDecay), because the JS bridge feeds
+// unvalidated arguments straight through and must never take the engine down.
 func (e *Engine) SetCell(track, step int, velocity float64) {
-	if track < 0 || track >= TrackCount || step < 0 || step >= MaxSteps {
+	if !validTrack(track) || !validStep(step) {
 		return
 	}
 
-	e.pattern[track][step] = clamp01(velocity)
+	vel, ok := validFloat(velocity, 0, 1)
+	if !ok {
+		return
+	}
+
+	e.pattern[track][step] = vel
 }
 
 // SetPattern replaces cells from a flat track-major slice (index =
 // track*MaxSteps + step) of velocities, each clamped to [0, 1]. Values past
 // TrackCount×MaxSteps are ignored; a shorter slice leaves the rest untouched.
+// Per the SetCell contract a non-finite entry is skipped, leaving that one
+// cell unchanged while the rest of the slice still applies.
 func (e *Engine) SetPattern(velocities []float64) {
-	for i, vel := range velocities {
+	for i, velocity := range velocities {
 		if i >= TrackCount*MaxSteps {
 			return
 		}
 
-		e.pattern[i/MaxSteps][i%MaxSteps] = clamp01(vel)
+		vel, ok := validFloat(velocity, 0, 1)
+		if !ok {
+			continue
+		}
+
+		e.pattern[i/MaxSteps][i%MaxSteps] = vel
 	}
 }
 
@@ -260,38 +397,60 @@ func (e *Engine) Pattern() []float64 {
 }
 
 // SetVolume sets per-track volume, clamped to [0, 1]. The change ramps in
-// over ~volSmoothTauS inside Render to avoid zipper noise.
+// over ~volSmoothTauS inside Render to avoid zipper noise. An out-of-range
+// track or a non-finite volume is a silent no-op (see SetCell).
 func (e *Engine) SetVolume(track int, vol float64) {
-	if track >= 0 && track < TrackCount {
-		e.volumes[track] = clamp01(vol)
+	if !validTrack(track) {
+		return
 	}
+
+	volume, ok := validFloat(vol, 0, 1)
+	if !ok {
+		return
+	}
+
+	e.volumes[track] = volume
 }
 
-// SetDecay sets per-track decay amount, clamped to [0, 1].
+// SetDecay sets per-track decay amount, clamped to [0, 1]. An out-of-range
+// track or a non-finite amount is a silent no-op (see SetCell).
 func (e *Engine) SetDecay(track int, amount float64) {
-	if track < 0 || track >= TrackCount {
+	if !validTrack(track) {
 		return
 	}
 
-	amount = clamp01(amount)
-	e.decays[track] = amount
-	e.voices[track].SetDecay(amount)
+	decay, ok := validFloat(amount, 0, 1)
+	if !ok {
+		return
+	}
+
+	e.decays[track] = decay
+	e.voices[track].SetDecay(decay)
 }
 
-// SetReverb sets the reverb amount in [0, 1].
-// 0 = fully dry, 1 = maximum reverb (wet=0.45, RT60=4 s).
+// SetReverb sets the reverb amount in [0, 1]. 0 = fully dry, 1 = maximum
+// reverb (wet=reverbMaxWet, RT60=4 s). A non-finite amount is rejected and
+// leaves the current setting unchanged.
 func (e *Engine) SetReverb(amount float64) {
-	amount = clamp01(amount)
-	e.reverbAmount = amount
-
-	if amount <= 0 {
-		logErr("reverb.SetWet", e.reverb.SetWet(0))
+	wet, ok := validFloat(amount, 0, 1)
+	if !ok {
 		return
 	}
 
-	logErr("reverb.SetWet", e.reverb.SetWet(amount*0.45))
-	rt60 := 0.3 + amount*3.7
-	logErr("reverb.SetRT60", e.reverb.SetRT60(rt60))
+	e.reverbAmount = wet
+
+	if e.reverb == nil {
+		return
+	}
+
+	if wet <= 0 {
+		logErr("reverb.SetWet", e.reverb.SetWet(0))
+
+		return
+	}
+
+	logErr("reverb.SetWet", e.reverb.SetWet(wet*reverbMaxWet))
+	logErr("reverb.SetRT60", e.reverb.SetRT60(reverbMinRT60S+wet*reverbRangeRT60S))
 }
 
 func (e *Engine) CurrentStep() int {
@@ -399,18 +558,27 @@ func (e *Engine) Render(buf []float32) {
 
 		out *= mixHeadroom
 
-		if e.reverbAmount > 0 {
+		if e.reverbAmount > 0 && e.reverb != nil {
 			out = e.reverb.ProcessSample(out)
 		}
 
-		out = e.limiter.ProcessSample(out)
+		if e.limiter != nil {
+			out = e.limiter.ProcessSample(out)
+		}
 
 		// Hard safety clamp — anything past ±1.0 would be clipped by the
-		// browser's output stage anyway; this guarantees the contract.
-		if out > 1 {
+		// browser's output stage anyway; this guarantees the contract. ±Inf
+		// falls into the comparisons; NaN does not, and a single NaN sample
+		// silences the Web Audio graph until reload, so it is caught last and
+		// muted. Parameters are validated at the setters (see validFloat), so
+		// this branch should never be reachable.
+		switch {
+		case out > 1:
 			out = 1
-		} else if out < -1 {
+		case out < -1:
 			out = -1
+		case math.IsNaN(out):
+			out = 0
 		}
 
 		buf[i] = float32(out)

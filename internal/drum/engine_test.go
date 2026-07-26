@@ -605,6 +605,277 @@ func TestHumanizeLongRenderIsFinite(t *testing.T) {
 	}
 }
 
+// nonFiniteInputs are the values every float setter must reject outright.
+func nonFiniteInputs() map[string]float64 {
+	return map[string]float64{
+		"NaN":  math.NaN(),
+		"+Inf": math.Inf(1),
+		"-Inf": math.Inf(-1),
+	}
+}
+
+// engineState is the parameter state a rejected setter must leave untouched.
+type engineState struct {
+	bpm      float64
+	swing    float64
+	prob     float64
+	humanize float64
+	reverb   float64
+	volume   float64
+	decay    float64
+	cell     float64
+	stepLen  [MaxSteps]int64
+}
+
+func snapshotState(engine *Engine) engineState {
+	return engineState{
+		bpm:      engine.bpm,
+		swing:    engine.swing,
+		prob:     engine.prob,
+		humanize: engine.humanize,
+		reverb:   engine.reverbAmount,
+		volume:   engine.volumes[1],
+		decay:    engine.decays[1],
+		cell:     engine.pattern[1][3],
+		stepLen:  engine.stepLen,
+	}
+}
+
+// configuredEngine returns an engine whose every parameter sits at a distinct
+// non-default value, so any accidental reset is visible.
+func configuredEngine() *Engine {
+	engine := NewEngine(testSampleRate)
+	engine.SetTempo(137)
+	engine.SetSwing(0.25)
+	engine.SetProbability(0.6)
+	engine.SetHumanize(0.2)
+	engine.SetReverb(0.3)
+	engine.SetVolume(1, 0.4)
+	engine.SetDecay(1, 0.8)
+	engine.SetCell(1, 3, 0.7)
+
+	return engine
+}
+
+func TestNonFiniteSettersLeaveStateUnchanged(t *testing.T) {
+	for name, bad := range nonFiniteInputs() {
+		engine := configuredEngine()
+		want := snapshotState(engine)
+
+		engine.SetTempo(bad)
+		engine.SetSwing(bad)
+		engine.SetProbability(bad)
+		engine.SetHumanize(bad)
+		engine.SetReverb(bad)
+		engine.SetVolume(1, bad)
+		engine.SetDecay(1, bad)
+		engine.SetCell(1, 3, bad)
+		engine.SetPattern([]float64{bad, bad, bad})
+
+		if got := snapshotState(engine); got != want {
+			t.Fatalf("%s input changed engine state:\n got %+v\nwant %+v", name, got, want)
+		}
+	}
+}
+
+func TestNonFiniteCellVelocityKeepsRenderFinite(t *testing.T) {
+	for name, bad := range nonFiniteInputs() {
+		engine := NewEngine(testSampleRate)
+		engine.SetCell(0, 0, bad)
+
+		if engine.pattern[0][0] != 0 {
+			t.Fatalf("%s velocity stored as %v, want the cell left at 0", name, engine.pattern[0][0])
+		}
+
+		engine.SetRunning(true)
+
+		buf := renderTotal(engine, 1024)
+		for i, sample := range buf {
+			value := float64(sample)
+			if math.IsNaN(value) || math.IsInf(value, 0) {
+				t.Fatalf("%s velocity: sample %d is not finite: %v", name, i, value)
+			}
+		}
+	}
+}
+
+func TestNonFiniteTempoKeepsStepLengthsSane(t *testing.T) {
+	for name, bad := range nonFiniteInputs() {
+		engine := NewEngine(testSampleRate)
+		engine.SetTempo(120)
+
+		want := engine.stepLen
+
+		engine.SetTempo(bad)
+
+		if engine.bpm != 120 {
+			t.Fatalf("%s tempo stored as %v, want 120 kept", name, engine.bpm)
+		}
+
+		if engine.stepLen != want {
+			t.Fatalf("%s tempo rewrote step lengths: %v", name, engine.stepLen)
+		}
+
+		for step, length := range engine.stepLen {
+			if length <= 0 {
+				t.Fatalf("%s tempo: step %d length %d, want positive", name, step, length)
+			}
+		}
+	}
+}
+
+func TestSetPatternSkipsNonFiniteEntries(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetPattern([]float64{0.5, 0.5, 0.5})
+
+	engine.SetPattern([]float64{math.NaN(), 1, math.Inf(-1)})
+
+	if engine.pattern[0][0] != 0.5 {
+		t.Fatalf("NaN entry overwrote cell 0: %v, want 0.5", engine.pattern[0][0])
+	}
+
+	if engine.pattern[0][1] != 1 {
+		t.Fatalf("valid entry after a NaN was dropped: cell 1 = %v, want 1", engine.pattern[0][1])
+	}
+
+	if engine.pattern[0][2] != 0.5 {
+		t.Fatalf("-Inf entry overwrote cell 2: %v, want 0.5", engine.pattern[0][2])
+	}
+}
+
+func TestNewEngineToleratesInvalidSampleRate(t *testing.T) {
+	for _, sr := range []float64{0, -1, math.NaN(), math.Inf(1), math.Inf(-1)} {
+		engine := NewEngine(sr)
+
+		if engine.sr != defaultSampleRate {
+			t.Fatalf("NewEngine(%v): sr = %v, want fallback %v", sr, engine.sr, defaultSampleRate)
+		}
+
+		// The DSP constructors must have produced usable objects — and even
+		// if they had not, Render must not panic.
+		engine.SetReverb(1)
+		engine.SetCell(0, 0, 1)
+		engine.SetRunning(true)
+
+		buf := renderTotal(engine, 1024)
+		for i, sample := range buf {
+			value := float64(sample)
+			if math.IsNaN(value) || math.IsInf(value, 0) {
+				t.Fatalf("NewEngine(%v): sample %d is not finite: %v", sr, i, value)
+			}
+		}
+	}
+}
+
+// TestSwingPreservesLoopLengthForEveryStepCount pins the swing invariant: the
+// active loop always spans stepCount base steps, whatever the swing amount or
+// (odd or even) loop length. A 7-step loop at full swing used to run 7.14 %
+// slow because long/short was picked by absolute step-index parity.
+func TestSwingPreservesLoopLengthForEveryStepCount(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+
+	for _, bpm := range []float64{60, 120, 137, 300} {
+		engine.SetTempo(bpm)
+
+		base := int64(testSampleRate * 60.0 / bpm / 4.0)
+
+		for count := 1; count <= MaxSteps; count++ {
+			for _, swing := range []float64{0, 0.1, 0.25, 0.5} {
+				engine.SetStepCount(count)
+				engine.SetSwing(swing)
+
+				var total int64
+
+				for step, length := range engine.stepLen[:count] {
+					if length <= 0 {
+						t.Fatalf("bpm %v swing %v count %d: step %d length %d, want positive",
+							bpm, swing, count, step, length)
+					}
+
+					total += length
+				}
+
+				if want := int64(count) * base; total != want {
+					t.Fatalf("bpm %v swing %v count %d: loop spans %d samples, want %d",
+						bpm, swing, count, total, want)
+				}
+
+				// An odd loop cannot pair its final step, so that step must
+				// keep the plain base length instead of doubling up on long.
+				if count%2 == 1 && engine.stepLen[count-1] != base {
+					t.Fatalf("bpm %v swing %v count %d: unpaired final step is %d, want base %d",
+						bpm, swing, count, engine.stepLen[count-1], base)
+				}
+			}
+		}
+	}
+}
+
+func TestSevenStepLoopAtFullSwingKeepsTempo(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetTempo(120)
+	engine.SetSwing(0.5)
+	engine.SetStepCount(7)
+
+	var total int64
+
+	for _, length := range engine.stepLen[:7] {
+		total += length
+	}
+
+	// 120 BPM at 48 kHz = 6000 samples per 16th note; seven of them = 42000.
+	if total != 42000 {
+		t.Fatalf("7-step loop at full swing spans %d samples, want 42000", total)
+	}
+}
+
+func TestSetStepCountRestartsWrappedStep(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetSwing(0)
+	engine.SetRunning(true)
+
+	// Part-way through step 10, shrink the loop under the playhead.
+	engine.currentStep = 10
+	engine.stepSamples = engine.stepLen[10] - 1
+
+	engine.SetStepCount(4)
+
+	if engine.stepSamples != 0 {
+		t.Fatalf("wrapping the playhead left stepSamples = %d, want 0", engine.stepSamples)
+	}
+
+	if got := engine.CurrentStep(); got != 10%4 {
+		t.Fatalf("shrinking to 4 steps left currentStep = %d, want %d", got, 10%4)
+	}
+
+	// The step it landed on must play out in full rather than ending after
+	// the single sample the old step had left.
+	renderTotal(engine, int(engine.stepLen[2])-1)
+
+	if got := engine.CurrentStep(); got != 2 {
+		t.Fatalf("wrapped step ended early: CurrentStep() = %d, want 2", got)
+	}
+}
+
+func TestIndexedSettersNoOpOutOfRange(t *testing.T) {
+	engine := configuredEngine()
+	want := snapshotState(engine)
+
+	for _, track := range []int{-1, TrackCount, math.MaxInt} {
+		engine.SetVolume(track, 0.1)
+		engine.SetDecay(track, 0.1)
+		engine.SetCell(track, 0, 1)
+	}
+
+	for _, step := range []int{-1, MaxSteps, math.MaxInt} {
+		engine.SetCell(0, step, 1)
+	}
+
+	if got := snapshotState(engine); got != want {
+		t.Fatalf("out-of-range indices changed engine state:\n got %+v\nwant %+v", got, want)
+	}
+}
+
 func TestRenderDeterministic(t *testing.T) {
 	build := func() *Engine {
 		engine := NewEngine(testSampleRate)
