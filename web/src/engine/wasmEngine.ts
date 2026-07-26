@@ -22,6 +22,10 @@ let workletNode: AudioWorkletNode | null = null;
 let wasmReady = false;
 let audibleStep = -1;
 
+// Set by stop() and cleared once the worklet has drained the samples it had
+// already buffered when the stop was issued. See stop() and reportAudibleStep.
+let awaitingStopDrain = false;
+
 type StepListener = (step: number) => void;
 
 const stepListeners = new Set<StepListener>();
@@ -38,6 +42,23 @@ export function onStep(listener: StepListener): () => void {
 function notifyStep(step: number): void {
   audibleStep = step;
   stepListeners.forEach((listener) => listener(step));
+}
+
+// reportAudibleStep publishes a step the worklet says has become audible,
+// unless it belongs to a chunk rendered before a Stop that is still draining.
+// The engine reports -1 for everything it renders while stopped, so the first
+// such chunk is exactly the end of the drain.
+function reportAudibleStep(step: number): void {
+  if (awaitingStopDrain) {
+    if (step !== -1) return;
+
+    awaitingStopDrain = false;
+  }
+
+  // The -1 that ends a drain repeats the one stop() already published.
+  if (step === audibleStep) return;
+
+  notifyStep(step);
 }
 
 // The engine owns the pattern: the worker echoes the authoritative copy back
@@ -108,6 +129,11 @@ function teardownWorker(): void {
 // terminate the first call's worker and leave its promise pending forever.
 let loadAttempt: Promise<void> | null = null;
 
+// Settles a load that is still waiting on the worker. dispose() terminates
+// that worker, so without this its promise would never settle and the app
+// would sit on "Loading engine…" forever.
+let cancelLoad: ((error: Error) => void) | null = null;
+
 export function loadWasm(): Promise<void> {
   if (wasmReady) return Promise.resolve();
 
@@ -172,6 +198,8 @@ async function attemptLoad(): Promise<void> {
       reject(new Error("Audio engine worker sent an undeliverable message"));
     };
 
+    cancelLoad = reject;
+
     timeout = setTimeout(() => {
       reject(
         new Error(
@@ -200,11 +228,16 @@ async function attemptLoad(): Promise<void> {
     // timed out would keep running until the user hits Retry — or forever if
     // they never do. This also clears the module-level reference, so nothing
     // can post to it afterwards.
-    teardownWorker();
+    //
+    // Only our own worker, though: dispose() settles this promise and clears
+    // loadAttempt synchronously, so a replacement load can already be under
+    // way by the time this rejection is delivered.
+    if (worker === active) teardownWorker();
 
     throw error;
   } finally {
     clearTimeout(timeout);
+    cancelLoad = null;
   }
 
   wasmReady = true;
@@ -222,13 +255,46 @@ function describeError(error: unknown): string {
 
 // teardownAudio tears the audio graph down so the next play() can rebuild it.
 function teardownAudio(): void {
-  workletNode?.disconnect();
+  if (workletNode) {
+    // Drop the step handler with the node: it closes over this module's
+    // reporting state and would otherwise keep answering a graph we no
+    // longer own.
+    workletNode.port.onmessage = null;
+    workletNode.disconnect();
+  }
+
   workletNode = null;
 
   // close() is fire-and-forget here: we are already on an error path and a
   // context that refuses to close is being dropped anyway.
   void audioCtx?.close().catch(() => undefined);
   audioCtx = null;
+}
+
+// dispose tears the whole bridge down — audio graph, worker, and every piece
+// of module state derived from them. The engine is a process-wide singleton
+// with no owner in the React tree, so nothing else ever stops it: an unmount,
+// a UI crash that swaps the machine out for a fault panel, or an HMR update
+// would otherwise leave a worker rendering into a live AudioContext with no
+// controls attached to it. A later loadWasm() rebuilds from scratch.
+export function dispose(): void {
+  teardownAudio();
+
+  // Drop queued commands before the worker goes: they were meant for an
+  // engine that is going away, and teardownWorker() would otherwise re-base
+  // the mirror on edits that will never be replayed.
+  pendingCommands.length = 0;
+  teardownWorker();
+  patternMirror.reset();
+
+  // An in-flight load is waiting on a worker that no longer exists.
+  cancelLoad?.(new Error("Audio engine was disposed"));
+  cancelLoad = null;
+  loadAttempt = null;
+
+  wasmReady = false;
+  awaitingStopDrain = false;
+  notifyStep(-1);
 }
 
 async function startAudio(): Promise<void> {
@@ -256,7 +322,7 @@ async function startAudio(): Promise<void> {
     node.port.onmessage = (
       event: MessageEvent<{ type: string; step: number }>,
     ) => {
-      if (event.data.type === "step") notifyStep(event.data.step);
+      if (event.data.type === "step") reportAudibleStep(event.data.step);
     };
 
     node.connect(ctx.destination);
@@ -287,11 +353,21 @@ export async function play(): Promise<void> {
     await audioCtx.resume();
   }
 
+  // A Play that beat the previous Stop's drain ends it here: the stopped
+  // engine may never render the -1 chunk reportAudibleStep is waiting for,
+  // and the playhead would then stay dark for the whole next pass.
+  awaitingStopDrain = false;
   command("setRunning", true);
 }
 
 export function stop(): void {
   command("setRunning", false);
+
+  // The worklet still holds ~2048 already-rendered samples (~43 ms) tagged
+  // with the steps they were rendered on. Darkening the playhead now and
+  // letting those chunks report would flash it backwards through the last
+  // steps, so suppress them until the engine's first stopped chunk arrives.
+  awaitingStopDrain = true;
   notifyStep(-1);
 }
 
@@ -376,3 +452,10 @@ export function setProbability(p: number): void {
 export function setHumanize(h: number): void {
   command("setHumanize", h);
 }
+
+// Vite swaps this module on save without unloading the old one, so every edit
+// during development would otherwise strand another worker and AudioContext —
+// audible as the same pattern playing several times over.
+import.meta.hot?.dispose(() => {
+  dispose();
+});

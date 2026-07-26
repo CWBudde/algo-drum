@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import DrumMachine from "./components/DrumMachine";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { loadWasm } from "./engine/wasmEngine";
+import { dispose, loadWasm } from "./engine/wasmEngine";
 import "./App.css";
 
 type LoadState =
@@ -32,6 +32,16 @@ export default function App() {
     attemptLoad();
   }, [attemptLoad]);
 
+  // A render crash replaces the machine with the boundary's fault panel, which
+  // has no transport: the engine would keep playing with nothing able to stop
+  // it. Tear it down so the page falls silent and the only way on is Reload.
+  //
+  // This is deliberately not the mount effect's cleanup — StrictMode runs that
+  // on every mount and would kill the engine the effect had just started.
+  const handleCrash = useCallback(() => {
+    dispose();
+  }, []);
+
   return (
     <main className="app">
       {load.status === "error" && (
@@ -55,7 +65,7 @@ export default function App() {
         <p className="app-loading">Loading engine…</p>
       )}
       {load.status !== "error" && (
-        <ErrorBoundary>
+        <ErrorBoundary onError={handleCrash}>
           <DrumMachine wasmLoaded={load.status === "ready"} />
         </ErrorBoundary>
       )}
