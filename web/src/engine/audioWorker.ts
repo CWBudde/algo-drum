@@ -18,6 +18,8 @@ export interface AlgoDrumApi {
   getPattern: () => Float32Array;
   setVolume: (track: number, vol: number) => void;
   setDecay: (track: number, amount: number) => void;
+  setVoiceParam: (track: number, index: number, value: number) => void;
+  triggerVoice: (track: number, velocity: number) => void;
   setReverb: (amount: number) => void;
   setProbability: (p: number) => void;
   setHumanize: (h: number) => void;
@@ -43,6 +45,8 @@ const REQUIRED_METHODS = [
   "getPattern",
   "setVolume",
   "setDecay",
+  "setVoiceParam",
+  "triggerVoice",
   "setReverb",
   "setProbability",
   "setHumanize",

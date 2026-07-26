@@ -37,6 +37,20 @@ jobs:
           GOOS=js GOARCH=wasm go mod tidy
           git diff --exit-code go.mod go.sum
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.7"
+
+      - name: Check the generated voice parameter table is current
+        # web/src/engine/voiceParams.generated.ts mirrors internal/drum/params.go
+        # and is committed so the UI can read defaults synchronously at mount.
+        # Changing a spec without running `just gen-params` must fail here
+        # rather than silently drift from the sound the engine produces.
+        run: |
+          go run ./cmd/gen-voiceparams -o web/src/engine/voiceParams.generated.ts
+          bunx prettier@3.9.5 --write web/src/engine/voiceParams.generated.ts
+          git diff --exit-code web/src/engine/voiceParams.generated.ts
+
       - name: Lint
         uses: golangci/golangci-lint-action@v8
         env:

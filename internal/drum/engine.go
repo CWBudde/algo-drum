@@ -428,6 +428,39 @@ func (e *Engine) SetDecay(track int, amount float64) {
 	e.voices[track].SetDecay(decay)
 }
 
+// SetVoiceParam sets one of a voice's synthesis parameters from a normalized
+// [0, 1] position; see params.go for the per-voice tables. An out-of-range
+// track or index, or a non-finite value, is a silent no-op (see SetCell).
+//
+// Unlike SetVolume/SetDecay the engine keeps no mirror of the value — it lives
+// in the voice, reachable via Voice.Param.
+func (e *Engine) SetVoiceParam(track, index int, value01 float64) {
+	if !validTrack(track) {
+		return
+	}
+
+	e.voices[track].SetParam(index, value01)
+}
+
+// TriggerVoice fires one voice immediately, independent of the sequencer, so
+// the UI can audition a voice while the transport is stopped. An out-of-range
+// track, a non-finite velocity, or a velocity of 0 is a silent no-op.
+//
+// Triggering advances a noise voice's RNG stream, so an audition shifts the
+// noise a later rendered hit will draw — see docs/voices.md.
+func (e *Engine) TriggerVoice(track int, velocity float64) {
+	if !validTrack(track) {
+		return
+	}
+
+	vel, ok := validFloat(velocity, 0, 1)
+	if !ok || vel <= 0 {
+		return
+	}
+
+	e.voices[track].Trigger(vel)
+}
+
 // SetReverb sets the reverb amount in [0, 1]. 0 = fully dry, 1 = maximum
 // reverb (wet=reverbMaxWet, RT60=4 s). A non-finite amount is rejected and
 // leaves the current setting unchanged.

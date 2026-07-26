@@ -324,6 +324,8 @@ per-cell attribute toggle — the right mechanism. Layout and feedback are what 
 - [ ] **U10: no value readout outside dragging.** `Knob.tsx:150` renders `.knob-readout`
       only while `dragging`, so keyboard and wheel changes to SWING/STEPS/PROB/HUMAN/
       REVERB/volumes/decays show **no number**. Only tempo embeds its value in the label.
+      Partly addressed by G20: every knob inside the voice editor has a persistent
+      `.dm-voice-value` readout under it. The main panel still does not.
 - [ ] **U11: the wheel handler hijacks page scroll unconditionally** (`Knob.tsx:112`
       always `preventDefault()`s, focused or not) — scrolling with the cursor over a knob
       silently changes the value.
@@ -549,6 +551,8 @@ three test suites — is documented for the first time.
 - [x] **D10: `.claude/skills/verify/SKILL.md:36` says "steps 1–8"** — the grid is 16.
 - [x] **D11: `docs/voices.md:20` treats E5 as future work** while this plan marks it done;
       voice params are indeed still hardcoded and unexposed. Reconcile the two.
+      Resolved by G20 actually exposing them: the doc now describes the shipped
+      parameter API and the constants it defaults to.
 
 ## 12. PWA & deployment — 6/10
 
@@ -669,9 +673,11 @@ deterministically.
       that fills a track reproducibly would tie euclid, mutate and probability into a
       coherent generative story, and make shared links reproduce a _generator_ rather
       than a frozen snapshot.
-- [ ] **G20: expose per-voice tuning.** `docs/voices.md` documents the pitch/filter
-      constants per voice but only `setDecay` is on the API. Tune and snap per voice
-      multiply the range of every other feature here (and close out D11).
+- [x] **G20: expose per-voice tuning.** Done: 25 parameters across the five voices
+      (`internal/drum/params.go`), reachable via `setVoiceParam(track, index, 0–1)`
+      plus `triggerVoice` for auditioning, edited in a per-strip modal
+      (`VoiceEditor.tsx`) driven by a generated descriptor table, and persisted in
+      the v2 share/localStorage blob. Closes D11.
 - [ ] **G21: a demo that plays itself.** The landing experience is a silent empty grid
       (see U19). Given presets, mutate and a share format already exist, an autoplaying
       demo pattern is nearly free and is what communicates "algorithmic" in five seconds.

@@ -8,23 +8,65 @@ All voices implement the same interface:
 
 ```go
 type Voice interface {
-    Trigger(velocity float64) // velocity in [0, 1] scales the whole hit
-    Tick() float64            // one sample, mono, roughly in [-1, 1]
-    IsActive() bool           // false once the envelope has decayed to silence
-    SetDecay(amount float64)  // amount in [0, 1], see per-voice tables below
+    Trigger(velocity float64)            // velocity in [0, 1] scales the whole hit
+    Tick() float64                       // one sample, mono, roughly in [-1, 1]
+    IsActive() bool                      // false once the envelope has decayed to silence
+    SetDecay(amount float64)             // amount in [0, 1], trims the base decay 0.5x-1.5x
+    SetParam(index int, value01 float64) // one synthesis parameter, normalized
+    Param(index int) float64
+    ParamSpecs() []ParamSpec
 }
 ```
 
 Nothing here reads from disk or a network — every voice is procedural
 (oscillator or noise generator + envelope + optional biquad filter).
 
-Every tuning value below is already a **named constant** rather than a magic
-number in the signal path — that part is done (PLAN.md **E5**). What is still
-missing is any way to change them at runtime: `SetDecay` is the only per-voice
-parameter on the JS API, so pitch, filter and gain constants remain
-compile-time. Exposing them ("tune"/"snap" per voice) is tracked as PLAN.md
-**G20**. The per-voice notes below therefore say which constant a future
-control should drive and what range makes sense.
+## Runtime parameters
+
+Every tuning value below is a **named constant** rather than a magic number in
+the signal path (PLAN.md **E5**), and each one is now also reachable at runtime
+(PLAN.md **G20**, which closes **D11**). The constants did not go away — they
+are the `Shipped` field of the parameter specs in `internal/drum/params.go`,
+which is what pins the default sound.
+
+A parameter is addressed by `(track, index)` and set from a normalized `[0, 1]`
+position via `setVoiceParam` on the JS API. `internal/drum/params.go` maps that
+position onto engineering units:
+
+- **exp**: `min · (max/min)^v` — every frequency and every time, because the ear
+  hears ratios rather than differences.
+- **lin**: `min + (max − min) · v` — levels and mixes, so 0 really is silence.
+
+`ParamSpec.Map` snaps to `Shipped` within half a persistence byte step
+(`|v − Default| < 1/510`). Persistence stores each scalar as one byte, so a
+default of `0.4648` would otherwise come back as `0.4667` and retune a 200 Hz
+body to 205 Hz on every reload. The dead zone is ±0.2 %, sub-pixel on the knob's
+150 px sweep, and reads as a detent at the default position. The TypeScript
+mirror (`web/src/engine/voiceParams.ts`) applies the same snap, and both sides
+pin the same triples in tests.
+
+**Decay has two controls.** The strip's `DEC` knob (`setDecay`, unchanged) is a
+trim; the modal's `TIME` parameter is the base:
+
+```
+effective decay = base decay parameter × (decayScaleMin + strip knob)
+                = base × (0.5 … 1.5)
+```
+
+**Not exposed on purpose:** `envSilence` — raising it stops a voice ever
+deactivating, leaving it stuck and burning CPU — and `decayScaleMin`, which
+defines what the persisted `setDecay` byte means, so changing it would silently
+reinterpret every share link already in the wild.
+
+Filter-backed voices (Snare highpass, Hi-Hat and Cymbal bandpass) recompute
+their coefficients in place when a tone parameter changes. Only
+`Section.Coefficients` is reassigned; the delay line is left alone, so a hit
+already ringing keeps ringing rather than clicking. `clampDesignHz` keeps the
+frequency inside `(0, Nyquist)`, because `design.Bandpass`/`Highpass` return
+all-zero coefficients — a silent voice — at or above Nyquist.
+
+The per-voice tables below list each parameter's index, ID, curve and range
+alongside the constant it defaults to.
 
 ## Shared building blocks
 
@@ -71,15 +113,26 @@ sample := math.Sin(phase) * env
 | `bassPitchTCS`    | `0.06 s`   | Time constant of the pitch sweep — how fast it drops from `bassPitchFromHz` toward `bassPitchToHz`. |
 | `bassBaseDecayS`  | `0.45 s`   | Base amplitude-envelope decay before `SetDecay` scaling.                                            |
 
-**Decay:** `SetDecay(amount)` scales `bassBaseDecayS` by `decayScaleMin + amount`
-→ effective decay ranges **0.225 s – 0.675 s**.
+**Decay:** `SetDecay(amount)` scales the `bass.decay` parameter by
+`decayScaleMin + amount` → **0.225 s – 0.675 s** with that parameter at its
+default, or **0.025 s – 3.0 s** across its full range.
 **Velocity:** `env = clamp01(velocity)` — linear gain, no timbral change.
 **RNG:** none; deterministic per pitch/decay/velocity, no seed needed.
 
-A future tune parameter would most naturally replace `bassPitchFromHz` /
-`bassPitchToHz` (a "pitch"/"punch" knob) or `bassPitchTCS` (a "sweep speed"
-knob); `pitchSweepRate` is shared with the Tom so changing it would affect
-both voices.
+**Parameters** (`bassSpecs`, `internal/drum/params.go`):
+
+| idx | ID               | Label | Curve | Range       | Default constant      |
+| --- | ---------------- | ----- | ----- | ----------- | --------------------- |
+| 0   | `bass.pitchFrom` | ATK   | exp   | 60–800 Hz   | `bassPitchFromHz` 200 |
+| 1   | `bass.pitchTo`   | TUNE  | exp   | 25–120 Hz   | `bassPitchToHz` 50    |
+| 2   | `bass.sweepTime` | SWP   | exp   | 0.005–0.5 s | `bassPitchTCS` 0.06   |
+| 3   | `bass.sweepRate` | SNAP  | exp   | 1–20        | `pitchSweepRate` 5.0  |
+| 4   | `bass.decay`     | TIME  | exp   | 0.05–2.0 s  | `bassBaseDecayS` 0.45 |
+
+`sweepRate` is a per-voice field initialised from the shared `pitchSweepRate`
+constant, so the Bass Drum and the Tom can now be swept independently. Nothing
+stops `pitchFrom` being dragged below `pitchTo`; the sweep simply rises instead
+of falling.
 
 ---
 
@@ -105,9 +158,10 @@ return tone + noise
 | `snareHPQ`        | `0.7`       | Q of that highpass (`biquad.Section` via `design.Highpass`).                                                         |
 | `snareSeed`       | `42`        | Fixed PCG seed for the noise generator.                                                                              |
 
-**Decay:** `SetDecay(amount)` scales _both_ `snareBaseToneS` and
-`snareBaseNoiseS` by the same `decayScaleMin + amount` factor — tone and noise
-stay in the same 0.5x–1.5x relationship to each other as decay changes.
+**Decay:** `SetDecay(amount)` scales _both_ the `snare.toneDecay` and
+`snare.noiseDecay` parameters by the same `decayScaleMin + amount` factor, so
+the strip knob keeps their relationship intact; the two parameters themselves
+set it (**0.01 s – 1.5 s** and **0.01 s – 2.25 s** including the trim).
 **Velocity:** scales tone and noise envelopes independently at trigger
 (`toneEnv = snareToneLevel * vel`, `noiseEnv = vel`) with a fixed decay rate,
 so a harder hit is louder, not longer.
@@ -116,8 +170,21 @@ so filter state doesn't carry a click from the previous hit, but the noise
 stream itself is _not_ reseeded (see
 [Determinism](#determinism-and-the-golden-render-tests)).
 
-Natural tune-parameter candidates: `snareToneHz` (body pitch), `snareHPHz`
-(brightness/snap), and `snareToneLevel` (tone vs. noise balance).
+**Parameters** (`snareSpecs`):
+
+| idx | ID                 | Label | Curve | Range       | Default constant       |
+| --- | ------------------ | ----- | ----- | ----------- | ---------------------- |
+| 0   | `snare.toneHz`     | BODY  | exp   | 100–500 Hz  | `snareToneHz` 200      |
+| 1   | `snare.toneLevel`  | MIX   | lin   | 0–1         | `snareToneLevel` 0.7   |
+| 2   | `snare.toneDecay`  | B.DEC | exp   | 0.02–1.0 s  | `snareBaseToneS` 0.12  |
+| 3   | `snare.noiseDecay` | S.DEC | exp   | 0.02–1.5 s  | `snareBaseNoiseS` 0.18 |
+| 4   | `snare.hpHz`       | SNAP  | exp   | 200–8000 Hz | `snareHPHz` 2000       |
+| 5   | `snare.hpQ`        | RES   | exp   | 0.3–4       | `snareHPQ` 0.7         |
+
+The two decay times are separate parameters, so the tone/noise balance is no
+longer fixed — but the strip's `DEC` trim still scales both together, keeping
+the documented relationship as it is swept. `MIX` at 0 silences the body and
+leaves the snap.
 
 ---
 
@@ -141,16 +208,25 @@ return sample * hatGain
 | `hatGain`       | `1.5`        | Make-up gain applied after the bandpass, to bring the filtered noise back up to a usable level. |
 | `hatSeed`       | `123`        | Fixed PCG seed for the noise generator.                                                         |
 
-**Decay:** `SetDecay(amount)` scales `hatBaseDecayS` by `decayScaleMin + amount`
-→ effective decay ranges **0.02 s – 0.06 s**, still very short at the top of
-the range — this voice is meant to stay a "closed" hat.
+**Decay:** `SetDecay(amount)` scales the `hat.decay` parameter by
+`decayScaleMin + amount` → **0.02 s – 0.06 s** with that parameter at its
+default, which keeps the "closed" character; the parameter itself widens this
+to **0.0025 s – 0.6 s**.
 **Velocity:** linear gain via `env = clamp01(velocity)`.
 **RNG:** `newVoiceRng(hatSeed)`; `bpFilter.Reset()` on every `Trigger`.
 
-A tune parameter here would likely target `hatBPHz`/`hatBPQ` (brightness) or
-`hatBaseDecayS` capped low enough to keep the "closed" character; a
-genuinely open hat is a separate voice/track (G7), not just a wider decay
-range on this one.
+**Parameters** (`hatSpecs`):
+
+| idx | ID          | Label | Curve | Range         | Default constant     |
+| --- | ----------- | ----- | ----- | ------------- | -------------------- |
+| 0   | `hat.bpHz`  | TONE  | exp   | 2000–16000 Hz | `hatBPHz` 10000      |
+| 1   | `hat.bpQ`   | RES   | exp   | 0.5–8         | `hatBPQ` 2.0         |
+| 2   | `hat.decay` | TIME  | exp   | 0.005–0.4 s   | `hatBaseDecayS` 0.04 |
+| 3   | `hat.gain`  | LVL   | lin   | 0–2.5         | `hatGain` 1.5        |
+
+`hat.decay` can now be pushed past the "closed" character it was designed for;
+a genuinely open hat is still a separate voice/track (**G7**), not just a longer
+envelope on this one.
 
 ---
 
@@ -173,15 +249,24 @@ return sample * tomGain
 | `tomBaseDecayS`  | `0.35 s`   | Base amplitude-envelope decay before `SetDecay` scaling.                                              |
 | `tomGain`        | `0.9`      | Output gain applied after the envelope.                                                               |
 
-**Decay:** `SetDecay(amount)` scales `tomBaseDecayS` by `decayScaleMin +
-amount` → effective decay ranges **0.175 s – 0.525 s**.
+**Decay:** `SetDecay(amount)` scales the `tom.decay` parameter by
+`decayScaleMin + amount` → **0.175 s – 0.525 s** at its default, or
+**0.025 s – 3.0 s** across its full range.
 **Velocity:** linear gain via `env = clamp01(velocity)`.
 **RNG:** none; deterministic like the Bass Drum.
 
-Same shape as the Bass Drum section above: `tomPitchFromHz`/`tomPitchToHz`
-are the obvious "pitch" knob, `tomPitchTCS` the "sweep speed" knob. Both toms
-and the bass drum share `pitchSweepRate`, so a per-voice sweep-shape control
-would need its own constant rather than reusing the shared one.
+**Parameters** (`tomSpecs`):
+
+| idx | ID              | Label | Curve | Range       | Default constant     |
+| --- | --------------- | ----- | ----- | ----------- | -------------------- |
+| 0   | `tom.pitchFrom` | ATK   | exp   | 60–600 Hz   | `tomPitchFromHz` 120 |
+| 1   | `tom.pitchTo`   | TUNE  | exp   | 30–300 Hz   | `tomPitchToHz` 60    |
+| 2   | `tom.sweepTime` | SWP   | exp   | 0.005–0.5 s | `tomPitchTCS` 0.1    |
+| 3   | `tom.sweepRate` | SNAP  | exp   | 1–20        | `pitchSweepRate` 5.0 |
+| 4   | `tom.decay`     | TIME  | exp   | 0.05–2.0 s  | `tomBaseDecayS` 0.35 |
+| 5   | `tom.gain`      | LVL   | lin   | 0–2         | `tomGain` 0.9        |
+
+Same shape as the Bass Drum, plus its own output level.
 
 ---
 
@@ -204,14 +289,26 @@ return sample * cymGain
 | `cymGain`       | `1.2`       | Make-up gain applied after the bandpass.                                                     |
 | `cymSeed`       | `999`       | Fixed PCG seed for the noise generator.                                                      |
 
-**Decay:** `SetDecay(amount)` scales `cymBaseDecayS` by `decayScaleMin +
-amount` → effective decay ranges **0.6 s – 1.8 s**.
+**Decay:** `SetDecay(amount)` scales the `cym.decay` parameter by
+`decayScaleMin + amount` → **0.6 s – 1.8 s** at its default, or
+**0.05 s – 6.0 s** across its full range.
 **Velocity:** linear gain via `env = clamp01(velocity)`.
 **RNG:** `newVoiceRng(cymSeed)`; `bpFilter.Reset()` on every `Trigger`.
 
-Tune-parameter candidates mirror the Hi-Hat: `cymBPHz`/`cymBPQ` for tone,
-`cymBaseDecayS` for wash length — the Hi-Hat and Cymbal could plausibly share
-one "metallic voice" tuning UI with different defaults.
+**Parameters** (`cymSpecs`):
+
+| idx | ID          | Label | Curve | Range         | Default constant    |
+| --- | ----------- | ----- | ----- | ------------- | ------------------- |
+| 0   | `cym.bpHz`  | TONE  | exp   | 1000–14000 Hz | `cymBPHz` 7000      |
+| 1   | `cym.bpQ`   | RES   | exp   | 0.3–6         | `cymBPQ` 1.2        |
+| 2   | `cym.decay` | TIME  | exp   | 0.1–4.0 s     | `cymBaseDecayS` 1.2 |
+| 3   | `cym.gain`  | LVL   | lin   | 0–2           | `cymGain` 1.2       |
+
+Structurally the same table as the Hi-Hat with different ranges, which is why
+both voices render from the same descriptor-driven editor UI. At the top of its
+range a cymbal takes ~55 s to fall below `envSilence`; that is inaudible long
+before, but it is why the parameter-extremes test uses a longer cap than the
+30 s one `tickUntilInactive` applies elsewhere.
 
 ---
 
@@ -270,3 +367,20 @@ PCG seeds here. Any future change that reseeds a voice's RNG per-trigger (to
 add hit-to-hit variation, say) would need to either accept that it breaks
 bit-exact reproducibility, or thread a seed derived from something
 deterministic (e.g. step index) rather than real time.
+
+**Auditioning breaks the "same link, same audio" property.** `TriggerVoice`
+(the voice editor's AUDITION button) fires a voice outside the sequencer, and
+for the noise voices that advances the same PCG stream a later rendered hit
+draws from. The result is inaudible — white noise is white either way — and no
+test is affected, because none of them audition. But it does mean a share link
+only reproduces sample-for-sample until the first audition. If bit-exactness
+ever has to survive that (an offline WAV export, PLAN.md **G12**), the escape
+hatch is to marshal each noise voice's PCG state around the audition trigger;
+that allocates, but only on a UI gesture, never inside `Render`.
+
+Turning the tuning constants into runtime parameters did not change any of
+this: `TestVoiceParamDefaultsAreShippedConstants` and
+`TestDefaultVoiceParamsPreserveRender` assert that a fresh voice (and a fresh
+engine) renders bit-identically to one whose every parameter was explicitly
+written to its default, which is what the byte-step snap in `ParamSpec.Map`
+buys.

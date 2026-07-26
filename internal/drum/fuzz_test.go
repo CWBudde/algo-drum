@@ -35,6 +35,8 @@ const (
 	opStepCountRaw // whole value word as an int: reaches MinInt64/MaxInt64
 	opStepCount    // small index-sized loop lengths around [1, MaxSteps]
 	opRunning
+	opVoiceParam
+	opTriggerVoice
 	fuzzOpCount
 )
 
@@ -100,6 +102,10 @@ func applyFuzzProgram(engine *Engine, program []byte) {
 			engine.SetStepCount(small)
 		case opRunning:
 			engine.SetRunning(bits&1 == 1)
+		case opVoiceParam:
+			engine.SetVoiceParam(index, small, value)
+		case opTriggerVoice:
+			engine.TriggerVoice(index, value)
 		}
 	}
 }
@@ -145,6 +151,15 @@ func checkEngineInvariants(t *testing.T, engine *Engine) {
 			t.Fatalf("track %d volume out of contract: %v", track, volume)
 		}
 	}
+
+	for track, voice := range engine.voices {
+		for index := range voice.ParamSpecs() {
+			param := voice.Param(index)
+			if math.IsNaN(param) || param < 0 || param > 1 {
+				t.Fatalf("track %d param %d out of contract: %v", track, index, param)
+			}
+		}
+	}
 }
 
 // FuzzEngineSetters drives an arbitrary sequence of setter calls with
@@ -181,6 +196,23 @@ func FuzzEngineSetters(f *testing.F) {
 		fuzzOp(opProbability, 0, nan),
 		fuzzOp(opHumanize, 0, nan),
 		fuzzOp(opReverb, 0, nan),
+	))
+	// Voice parameters at both extremes on every track, plus auditions mixed
+	// with the strip decay trim on the same track: the filter-based voices
+	// redesign their biquads from these values, so a bad range mutes or blows
+	// up a voice rather than merely sounding wrong.
+	f.Add(fuzzProgram(
+		fuzzOp(opVoiceParam, fuzzIndexBias+2, fuzzIndexValue(0)),
+		fuzzOp(opVoiceParam, fuzzIndexBias+2, math.Float64frombits(uint64(1+fuzzIndexBias))),
+		fuzzOp(opVoiceParam, fuzzIndexBias+4, nan),
+		fuzzOp(opVoiceParam, fuzzIndexBias, posInf),
+		fuzzOp(opRunning, 0, math.Float64frombits(1)),
+	))
+	f.Add(fuzzProgram(
+		fuzzOp(opTriggerVoice, fuzzIndexBias, 1),
+		fuzzOp(opDecay, fuzzIndexBias, 1),
+		fuzzOp(opVoiceParam, fuzzIndexBias, negInf),
+		fuzzOp(opTriggerVoice, 15, nan),
 	))
 	f.Add([]byte{})
 

@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Knob from "./Knob";
 import AlgoPanel from "./AlgoPanel";
+import VoiceEditor from "./VoiceEditor";
 import * as engine from "../engine/wasmEngine";
+import {
+  defaultVoiceParams,
+  VOICE_NAMES,
+  VOICE_PARAMS,
+} from "../engine/voiceParams";
 import {
   loadInitialState,
   saveLocal,
@@ -105,6 +111,23 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   const [muted, setMuted] = useState<boolean[]>(
     () => initial?.muted ?? Array<boolean>(ROWS).fill(false),
   );
+  // Per-track state comes in two flavours; do not mix them up:
+  //   pattern / volumes / decays / muted — indexed by VISUAL ROW (0 = Cymbal … 4 = Bass)
+  //   voiceParamsByEngineTrack          — indexed by ENGINE TRACK (0 = Bass … 4 = Cymbal)
+  // TRACK_INDEX converts either way (it is a reversal, so it is its own inverse).
+  // The voice parameters follow the engine's order because the generated
+  // descriptor table, the persisted tail and setVoiceParam all do.
+  const [voiceParamsByEngineTrack, setVoiceParams] = useState<number[][]>(
+    () => {
+      const defaults = defaultVoiceParams();
+      return defaults.map((row, track) =>
+        row.map((value, i) => initial?.voiceParams?.[track]?.[i] ?? value),
+      );
+    },
+  );
+  // Engine track whose editor is open, or null. Also used to hand the keyboard
+  // over to the dialog (see the Space handler below).
+  const [editorTrack, setEditorTrack] = useState<number | null>(null);
   const [currentStep, setCurrentStep] = useState(-1);
 
   const bpm = Math.round(BPM_MIN + tempo * BPM_RANGE);
@@ -148,6 +171,23 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Same for a restored voice-parameter table. Skipped when there is nothing to
+  // restore: the engine already starts at exactly these defaults, and sending
+  // them would only risk re-quantising them.
+  useEffect(() => {
+    if (!initial?.voiceParams) return;
+
+    voiceParamsByEngineTrack.forEach((params, track) => {
+      params.forEach((value, i) => {
+        if (i < VOICE_PARAMS[track].length) {
+          engine.setVoiceParam(track, i, value);
+        }
+      });
+    });
+    // Mount-only: a bulk restore, mirroring the setPattern seed above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Playhead follows the audible step reported by the audio worklet
   useEffect(() => engine.onStep(setCurrentStep), []);
 
@@ -179,6 +219,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       volumes,
       decays,
       muted,
+      voiceParams: voiceParamsByEngineTrack,
     }),
     [
       pattern,
@@ -191,6 +232,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       volumes,
       decays,
       muted,
+      voiceParamsByEngineTrack,
     ],
   );
 
@@ -261,6 +303,10 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code !== "Space") return;
+      // The voice editor owns the keyboard while it is open. A state check
+      // rather than target.closest("dialog"), so it also holds when focus has
+      // drifted to <body>.
+      if (editorTrack !== null) return;
       const target = e.target as HTMLElement;
       if (target.closest("button, [role='slider'], input, textarea")) return;
       e.preventDefault();
@@ -268,7 +314,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handlePlayStop]);
+  }, [handlePlayStop, editorTrack]);
 
   const setTrackValue = (
     setter: React.Dispatch<React.SetStateAction<number[]>>,
@@ -289,6 +335,59 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       return next;
     });
   };
+
+  // ── Voice editor ──────────────────────────────────────────────────────────
+
+  // Where focus goes when the dialog closes, and whether it should: mouse users
+  // get focus dropped so Space stays free for the transport, the same trade-off
+  // blurOnMouseClick makes elsewhere.
+  const editorOpener = useRef<HTMLButtonElement | null>(null);
+  const editorOpenedByMouse = useRef(false);
+
+  const openEditor = useCallback(
+    (engineTrack: number, opener: HTMLButtonElement, byMouse: boolean) => {
+      editorOpener.current = opener;
+      editorOpenedByMouse.current = byMouse;
+      setEditorTrack(engineTrack);
+    },
+    [],
+  );
+
+  const closeEditor = useCallback(() => {
+    setEditorTrack(null);
+    if (!editorOpenedByMouse.current) editorOpener.current?.focus();
+    editorOpener.current = null;
+  }, []);
+
+  // One message per user event. A fan-out effect like the volume/decay ones
+  // would re-send all ~25 parameters on every pointermove of a knob drag.
+  const setVoiceParam = useCallback(
+    (engineTrack: number, index: number, value: number) => {
+      setVoiceParams((prev) => {
+        const next = prev.map((row) => [...row]);
+        next[engineTrack][index] = value;
+        return next;
+      });
+      engine.setVoiceParam(engineTrack, index, value);
+    },
+    [],
+  );
+
+  const resetVoice = useCallback((engineTrack: number) => {
+    const specs = VOICE_PARAMS[engineTrack];
+
+    setVoiceParams((prev) => {
+      const next = prev.map((row) => [...row]);
+      specs.forEach((spec, i) => {
+        next[engineTrack][i] = spec.default;
+      });
+      return next;
+    });
+
+    specs.forEach((spec, i) => {
+      engine.setVoiceParam(engineTrack, i, spec.default);
+    });
+  }, []);
 
   return (
     <div className="dm-machine">
@@ -394,9 +493,61 @@ export default function DrumMachine({ wasmLoaded }: Props) {
               size={42}
               color={BLUE}
             />
+            {/* Deliberately no blurOnMouseClick: closeEditor needs the opener
+                to still be focusable to hand focus back to it. */}
+            <button
+              type="button"
+              className="dm-voice-open"
+              // Named from VOICE_NAMES rather than the strip's short label so
+              // the trigger and the dialog it opens announce the same voice.
+              aria-label={`${VOICE_NAMES[TRACK_INDEX[row]]} voice settings`}
+              aria-haspopup="dialog"
+              title={`Edit the ${VOICE_NAMES[TRACK_INDEX[row]]} synth voice`}
+              disabled={!wasmLoaded}
+              onClick={(e) =>
+                openEditor(TRACK_INDEX[row], e.currentTarget, e.detail > 0)
+              }
+            >
+              {/* Three faders, not a gear: this opens a synth panel. */}
+              <svg
+                width={13}
+                height={13}
+                viewBox="0 0 14 14"
+                aria-hidden="true"
+              >
+                <g
+                  stroke="currentColor"
+                  strokeWidth={1.3}
+                  strokeLinecap="round"
+                  opacity={0.55}
+                >
+                  <line x1={3} y1={2} x2={3} y2={12} />
+                  <line x1={7} y1={2} x2={7} y2={12} />
+                  <line x1={11} y1={2} x2={11} y2={12} />
+                </g>
+                <g fill="currentColor">
+                  <rect x={1.6} y={4} width={2.8} height={2} rx={1} />
+                  <rect x={5.6} y={8} width={2.8} height={2} rx={1} />
+                  <rect x={9.6} y={5.5} width={2.8} height={2} rx={1} />
+                </g>
+              </svg>
+            </button>
           </div>
         ))}
       </div>
+
+      {editorTrack !== null && (
+        <VoiceEditor
+          name={VOICE_NAMES[editorTrack]}
+          specs={VOICE_PARAMS[editorTrack]}
+          values={voiceParamsByEngineTrack[editorTrack]}
+          disabled={!wasmLoaded}
+          onChange={(index, value) => setVoiceParam(editorTrack, index, value)}
+          onReset={() => resetVoice(editorTrack)}
+          onAudition={() => void engine.triggerVoice(editorTrack, 1)}
+          onRequestClose={closeEditor}
+        />
+      )}
 
       <AlgoPanel
         disabled={!wasmLoaded}

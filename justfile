@@ -39,6 +39,15 @@ check-tidy:
 build-wasm:
     bash scripts/build-wasm.sh
 
+# Regenerate the TypeScript mirror of the engine's voice parameter table
+gen-params:
+    go run ./cmd/gen-voiceparams -o web/src/engine/voiceParams.generated.ts
+    cd web && bunx prettier --write src/engine/voiceParams.generated.ts
+
+# Fail if the generated voice parameter table is stale (Go table changed without `just gen-params`)
+check-params: gen-params
+    git diff --exit-code web/src/engine/voiceParams.generated.ts
+
 # ── Frontend ─────────────────────────────────────────────────────────────────
 
 # Install frontend dependencies
@@ -68,7 +77,7 @@ preview: build
 # ── Quality gates ────────────────────────────────────────────────────────────
 
 # Run all CI checks, mirroring .github/workflows/ci.yml (a green `just ci` must mean the same as a green CI run)
-ci: check-formatted lint check-tidy test web-typecheck web-test
+ci: check-formatted lint check-tidy check-params test web-typecheck web-test
 
 # ── Housekeeping ─────────────────────────────────────────────────────────────
 

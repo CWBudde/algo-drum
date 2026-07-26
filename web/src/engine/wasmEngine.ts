@@ -332,6 +332,37 @@ export function setDecay(track: number, amount: number): void {
   command("setDecay", track, amount);
 }
 
+// setVoiceParam sets one of a voice's synthesis parameters from a normalized
+// position in [0, 1]; the (track, index) addressing and the per-voice tables
+// live in engine/voiceParams.ts (generated from the Go engine).
+export function setVoiceParam(
+  track: number,
+  index: number,
+  value: number,
+): void {
+  command("setVoiceParam", track, index, value);
+}
+
+// triggerVoice fires one voice immediately, independent of the sequencer, so
+// the voice editor can audition a sound while the transport is stopped.
+//
+// That is the case startAudio() would otherwise miss: the graph is only built
+// inside play(), so with no context there is nothing pulling chunks and the
+// hit would be silent. The audition click is itself the user gesture the
+// autoplay policy requires, so building and resuming here is safe.
+export async function triggerVoice(
+  track: number,
+  velocity: number,
+): Promise<void> {
+  await startAudio();
+
+  if (audioCtx && audioCtx.state === "suspended") {
+    await audioCtx.resume();
+  }
+
+  command("triggerVoice", track, velocity);
+}
+
 export function setReverb(amount: number): void {
   command("setReverb", amount);
 }
