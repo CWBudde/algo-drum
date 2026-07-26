@@ -1,288 +1,688 @@
 # algo-drum — Repository Review & Improvement Plan
 
-Reviewed: 2026-07-09 · Scope: entire repository at `main` (commit `00f7727`).
+Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `main` (commit `81dae31`).
 
-> The original implementation plan (`docs/plans/2026-02-25-algo-drum-impl.md`, 11 tasks)
-> was fully completed and has been removed from the tree — nothing from it is carried
-> over. This document is a fresh review; every item below is **open** unless checked.
+> The 2026-07-09 review found 13 categories of problems and drove three implementation
+> passes (07-09, 07-10, 07-26). Its completed items have been removed from this document;
+> `git log` and the review commits are the record. **Everything below is open work.**
 
 ## Scorecard
 
-| # | Category | Score | Verdict |
-| - | -------- | :---: | ------- |
-| 1 | Correctness & robustness | **3/10** | Several real bugs, incl. a showstopper: pattern programmed before first Play is silently lost |
-| 2 | Audio pipeline & WASM bridge | **3/10** | Deprecated `ScriptProcessorNode`, per-sample JS boundary copies, ~85 ms latency, per-buffer allocations |
-| 3 | Go engine / DSP | **6/10** | Clean, readable voices; missing input validation, velocity, and any tests |
-| 4 | Architecture & state management | **5/10** | Sensible layering, but UI and engine each hold pattern state with no sync-on-init |
-| 5 | Frontend code quality | **5/10** | Typechecks strict-clean, but 640-line canvas component, inline styles everywhere, `tsc -b` misconfigured |
-| 6 | UI / UX | **5/10** | Attractive skeuomorphic look, but blurry on hi-DPI, fragile %-overlay layout, constant 60 fps repaint |
-| 7 | Accessibility | **1/10** | Canvas grid is invisible to assistive tech; no keyboard path at all |
-| 8 | Testing | **0/10** | Zero tests of any kind (Go, unit, e2e) |
-| 9 | CI/CD & tooling | **4/10** | Deploy-only workflow; `just ci` exists but nothing runs it; golangci config mixes v1/v2 keys |
-| 10 | Repo hygiene | **4/10** | Compiled `.js` + `.tsbuildinfo` committed next to sources; **no LICENSE** |
-| 11 | Documentation | **5/10** | Good README skeleton, but AGENTS.md is stale in ≥4 places |
-| 12 | PWA & deployment | **5/10** | Works, but SW cache version never bumps → one-visit-stale `.wasm`; COOP/COEP only in dev |
-| 13 | Feature depth vs. the name | **3/10** | "algo-drum" contains no algorithmic features — it's a plain 5×8 step sequencer |
+| #   | Category                  |  Score   | Δ   | Verdict                                                                                      |
+| --- | ------------------------- | :------: | --- | -------------------------------------------------------------------------------------------- |
+| 1   | Correctness & robustness  | **6/10** | +3  | Sequencer core is sound; NaN walks through every clamp and swing is wrong at odd step counts |
+| 2   | Audio pipeline & WASM     | **7/10** | +4  | Right architecture, ~43 ms latency; the pull protocol has no recovery path                   |
+| 3   | Go engine / DSP           | **7/10** | +1  | Idiomatic, tested, allocation-free render; gain staging still lets transients hit the clamp  |
+| 4   | Architecture & state      | **6/10** | +1  | Pattern is engine-owned and reconciled — the other nine parameters are not                   |
+| 5   | Frontend code quality     | **7/10** | +2  | Lint/typecheck clean, zero `any`; one 502-line god component and no CSS token layer          |
+| 6   | UI / UX                   | **6/10** | +1  | Good knob and playhead mechanics; the grid is unusable below ~725 px                         |
+| 7   | Accessibility             | **6/10** | +5  | Real buttons, real sliders, AA text contrast; 80 flat tab stops and no AT playhead           |
+| 8   | Testing                   | **7/10** | +7  | 98.8 % Go coverage, 67 frontend tests; bridge, worker and components untested                |
+| 9   | CI/CD & tooling           | **7/10** | +3  | Four real gates on every PR; lint silently skips `cmd/wasm`, deploy doesn't wait for CI      |
+| 10  | Repo hygiene              | **8/10** | +4  | Clean tree, LICENSE, thorough gitignore; deps three majors behind, no update bot             |
+| 11  | Documentation             | **7/10** | +2  | API table and signal flow verified accurate; toolchain undocumented, two false claims        |
+| 12  | PWA & deployment          | **6/10** | +1  | Cache busting genuinely works; the app bundle is never precached, so offline is broken       |
+| 13  | Feature depth vs the name | **6/10** | +3  | The "algo" arrived — but every algorithmic control is global and one-shot                    |
 
-**Overall: 4/10** — a nice start with a solid skeleton, held back by correctness bugs,
-a deprecated audio path, zero tests, and a UI approach (canvas) that fights the web platform.
+**Overall: 6.6/10** (was 4/10) — the skeleton became a real product: the audio path is
+off the main thread, the UI is accessible DOM, and four CI gates guard every PR. What
+remains is a different class of problem than last time — hardening (NaN, protocol
+recovery, lint blind spots) and reach (mobile layout, offline, per-step algorithms)
+rather than foundational defects.
+
+### Verified this pass
+
+Measurements reproduced directly against the working tree, not taken on trust:
+
+| Probe                                               | Result                                              |
+| --------------------------------------------------- | --------------------------------------------------- |
+| `go test ./internal/...`                            | pass, **98.8 %** statement coverage                 |
+| `bunx tsc --noEmit` · `bun run lint` · `vitest run` | pass · pass (0 warnings) · **67/67**                |
+| `SetCell(0,0,NaN)` → `Render`                       | **1024/1024 samples NaN**                           |
+| `SetTempo(NaN)`                                     | `stepLen[0] = -9223372036854775808`                 |
+| `SetSwing(0.5)` + `SetStepCount(7)`                 | loop 45000 vs 42000 samples → **+7.14 % tempo err** |
+| 3 s rock pattern, reverb 0.3                        | **16 samples** hard-clipped at ±1.0                 |
+| `golangci-lint run ./cmd/...` (host GOOS)           | `no go files to analyze` — **CI never lints it**    |
+| `GOOS=js GOARCH=wasm golangci-lint run ./...`       | **3 real issues** in `cmd/wasm/main.go`             |
 
 ---
 
-## 1. Correctness & robustness — 3/10
+## 1. Correctness & robustness — 6/10
 
-- [x] **C1 (critical): state programmed before first Play is lost.**
-      `AlgoDrum.init` only runs inside `startAudio()` on the first Play click
-      (`web/src/engine/wasmEngine.ts:41`). Until then `engine == nil` in Go, so every
-      `setCell` / `setVolume` / `setTempo` / `setSwing` / `setDecay` / `setReverb` call is
-      silently dropped (`cmd/wasm/main.go` guards). A user who programs a pattern and then
-      hits Play hears *silence* while the UI shows active cells.
-      **Fix:** create the engine at WASM load (sample rate is forced to 48 kHz anyway), or
-      re-sync the complete UI state (pattern, volumes, decays, tempo, swing, reverb) right
-      after `init`.
-- [x] **C2: swing is double-scaled.** The UI sends `swing * 0.5` (`DrumMachine.tsx:372`)
-      and the engine scales by another 0.5 (`engine.go:72`), so max shuffle is ±12.5%
-      instead of the documented "0.5 = full shuffle". Pick one scaling point.
-- [x] **C3: `SetTempo` accepts any value.** `bpm <= 0` → division by zero in
-      `recomputeStepLengths` → `Inf` → bogus `int64` step lengths; the sequencer wedges.
-      Clamp to a sane range (e.g. 30–300) like `SetDecay` already does.
-- [x] **C4: `SetVolume` doesn't clamp** (negative or huge gains pass straight into the mix);
-      `SetSwing` doesn't clamp either. Mirror the `SetDecay` clamping.
-- [x] **C5: default mismatch** — UI volume knobs start at 0.75, engine volumes at 1.0
-      (and decay 0.5 both sides only by luck). Currently masked by C1; after fixing C1,
-      define one source of truth for initial values.
-- [x] **C6: `AudioContext` is never `resume()`d.** On iOS Safari and autoplay-restricted
-      browsers the context can be created `suspended` → permanent silence. `await ctx.resume()`
-      in the Play handler; also handle the page being backgrounded.
-- [x] **C7: duplicate/unstable SVG ids in `Knob`.** The gradient id is derived from the
-      label: all five "DEC" knobs collide (duplicate DOM ids), and the tempo knob's id
-      changes on every BPM change because the label embeds the value. Use React `useId()`.
-- [x] **C8: step indicator leads the audio.** `currentStep()` reflects the render-ahead
-      position, not what's audible — with a 4096-sample buffer the LED runs up to ~85 ms +
-      output latency ahead. Track step-to-time mapping in JS (or return timestamps) and
-      display against `ctx.currentTime`.
-- [x] **C9: dead code** — `HiHat`'s open mode (`closed=false`) is never used; `age` is
-      unused in the noise voices (`Snare`, `HiHat`, `Cymbal`). Remove or wire up
-      (an open-hat track is a natural 6th voice).
+The sequencer core is genuinely correct — step _k_ occupies exactly `stepLen[k]` samples
+with no off-by-one, the probability gate short-circuits at `prob==1`, and pending
+humanize triggers are cleared on stop. Every guard, however, is a `<`/`>` comparison.
 
-## 2. Audio pipeline & WASM bridge — 3/10
+- [ ] **C10 (high): NaN defeats every clamp.** `clamp01` (`internal/drum/voices.go:81`)
+      and the manual clamps in `SetTempo` (`engine.go:183`) / `SetSwing` (`engine.go:196`)
+      use `<`/`>`, which are false for NaN. Verified: `SetCell(NaN)` → 100 % NaN output;
+      `SetTempo(NaN)` → `stepLen[0] = INT64_MIN`, advancing a step per sample. The final
+      clamp (`engine.go:410`) is also `>`/`<`, so nothing sanitises it and the Web Audio
+      graph is dead until reload. Add an `IsNaN` rejection at the API boundary.
+- [ ] **C11 (high): swing is wrong for odd step counts.** `recomputeStepLengths`
+      (`engine.go:142`) assigns long/short by absolute step-index parity, but
+      `SetStepCount` (`engine.go:212`) allows any end index. Verified: a 7-step loop at
+      swing 0.5 runs **7.14 % slow** with two long steps back-to-back across the wrap.
+      `SetStepCount` also leaves `stepSamples` untouched when it wraps `currentStep`, so
+      the in-flight step plays out with another step's length.
+- [ ] **C12: nil-deref on an invalid sample rate.** `engine.go:115` calls `rev.SetWet(0)`
+      unconditionally after `reverb.NewFDNReverb`, which returns `(nil, err)` for
+      `sr<=0`/NaN/Inf; the argument is evaluated before `logErr` runs. Same shape at
+      `engine.go:124` for the limiter. `cmd/wasm/main.go:30` passes `args[0].Float()`
+      straight through, so `AlgoDrum.init(0)` kills the runtime.
+- [ ] **C13: non-numeric JS args panic the engine.** `.Float()`/`.Int()`/`.Bool()` panic
+      on a wrong-typed `js.Value` (`cmd/wasm/main.go:43,52,59,67,75,125,133,141,149,157,168`);
+      `setPattern` calls `arr.Get("length").Int()` (`:90`) and panics on any non-array. A
+      panic here takes the whole engine down with nothing reported to the app.
+- [ ] **C14 (high): the pattern mirror mis-reconciles after a retry.**
+      `wasmEngine.ts:91-96` calls `patternMirror.reset()` on teardown but never clears
+      `pendingCommands` (`:56`), so edits queued against the dead worker are flushed at
+      `:141` with `inFlight` back at 0 — every intermediate echo is then published as
+      authoritative (`patternMirror.ts:34`), reverting newer edits. This is precisely the
+      scenario the mirror exists to prevent.
+- [ ] **C15: `loadWasm()` has no in-flight guard.** `wasmEngine.ts:86` checks only
+      `wasmReady`. Under StrictMode the App effect (`App.tsx:31`) invokes it twice: call
+      #1 binds its `ready` handler to worker W1, call #2 terminates W1 — P1 **never
+      settles**. Double-clicking Retry does the same.
+- [ ] **C16 (high): no `worker.onerror` / `onmessageerror`.** `wasmEngine.ts:104` wires
+      only `onmessage`, and `audioWorker.ts:176` dispatches `AlgoDrum[name](...)` with no
+      `try`/`catch` and no callable check. A post-load throw leaves the UI showing a
+      "ready" machine that makes no sound, with no timeout and no Retry path.
+- [ ] **C17: playhead flashes backwards on Stop.** `stop()` fires `notifyStep(-1)`
+      (`wasmEngine.ts:187`) while ~2048 already-rendered samples carrying pre-stop step
+      numbers drain; `worklet.js:63` reports them and re-lights the LED for ~43 ms.
+- [ ] **C18: no teardown.** Nothing calls `audioCtx.close()`, `workletNode.disconnect()`
+      or `worker.terminate()` outside the retry path.
+- [ ] **C19: unbounded allocation from a JS arg.** `cmd/wasm/main.go:168` accepts any
+      positive `n`; `ensureRenderBuffers` allocates `n` floats + an `n*4` ArrayBuffer.
 
-- [x] **B1: replace `ScriptProcessorNode` with an `AudioWorklet`.** It has been deprecated
-      for years and runs audio on the *main* thread — the same thread doing full-canvas
-      60 fps repaints (§6), which is a recipe for glitches. Target design: WASM instance
-      inside the worklet (or a Worker feeding a ring buffer); the main thread only sends
-      control messages.
-- [x] **B2: per-sample boundary copies.** `render` in `cmd/wasm/main.go:96` calls
-      `arr.SetIndex` 4096 times per buffer. Use `js.CopyBytesToJS` over the float32
-      buffer's byte view — one copy instead of 4096 calls.
-- [x] **B3: allocation churn** — a new Go slice *and* a new `Float32Array` per render
-      call (~12/s). Allocate once at init and reuse.
-- [x] **B4: latency** — fixed 4096-sample buffer ≈ 85 ms. With an AudioWorklet the
-      quantum is 128 samples; until then, make buffer size configurable and smaller.
-- [x] **B5: no error propagation** from Go to JS (silent `nil` returns when args are
-      missing/engine is nil) and errors from `SetWet`/`SetRT60`/`SetThreshold` are
-      discarded (`engine.go:56–62`, `133–142`). Log once or surface them.
-- [x] **B6: no `instantiateStreaming` fallback** for servers that mis-serve
-      `application/wasm` (fine on Pages, breaks on naive static hosts). Add the standard
-      `arrayBuffer()` fallback.
+### To raise this score — correctness
 
-## 3. Go engine / DSP — 6/10
+The defects above are symptoms of one root cause: **validation is re-implemented
+per setter**, so each new parameter is a fresh chance to forget a case. Fix the
+structure, not just the ten instances.
 
-- [x] **E1: no velocity/accent.** Every hit is full-strength. Per-step velocity (even
-      just accent on/off) transforms how the machine feels.
-- [x] **E2: fixed 5 tracks × 8 steps.** 16 steps is the genre standard; make
-      `StepCount` a runtime pattern length (1–16) rather than a compile-time constant.
-- [x] **E3: bulk pattern API.** Only per-cell `setCell` exists. Add `setPattern`/
-      `getPattern` (bit-packed) so the UI can re-sync state cheaply (needed by C1) and
-      presets/persistence become trivial (§7).
-- [x] **E4: migrate `math/rand` → `math/rand/v2`** (current API, faster). Keeping fixed
-      per-voice seeds for reproducibility is fine.
-- [x] **E5: voice parameters are hardcoded** (pitch sweep, filter freqs). Expose tune/
-      snap per voice later; at minimum lift magic numbers into named consts.
-- [ ] **E6: reverb tail cutoff on stop** — `SetRunning(false)` stops triggers but voices
-      and reverb keep ringing (good); however Stop also resets to step 0, so there is no
-      pause. Consider separate stop vs. pause semantics.
-- [x] **E7: master output clips — the limiter isn't limiting.** Measured at runtime
-      (analyser tapped on the ScriptProcessor output): peak **1.86** with an ordinary
-      bass/snare/hat pattern, despite `Limiter` at −0.1 dB threshold — samples beyond ±1.0
-      are hard-clipped by the browser at the destination. Likely attack overshoot without
-      lookahead, or a threshold/units mismatch in the algo-dsp limiter usage. Investigate,
-      and until fixed add headroom (scale the voice mix down ~6 dB).
+- [ ] **C20: one validated-parameter boundary.** Replace the hand-rolled clamps in every
+      setter with a single `validFloat(name, v, lo, hi)` helper that rejects NaN/Inf and
+      clamps in one place. C10, C12 and the C4-era
+      clamps all collapse into it, and the next parameter inherits the policy for free.
+- [ ] **C21: fuzz the public API.** A Go fuzz target that drives arbitrary setter
+      sequences then asserts `Render` output is finite and within ±1.0 would have found
+      C10 on its own. Cheap to write against `internal/drum` (pure Go, no WASM needed)
+      and it runs in the existing `go test` job via `-fuzztime`.
+- [ ] **C22: define the out-of-range contract.** `SetCell`/`SetVolume` silently no-op on
+      a bad track/step index (`engine.go:231`, `:265`), so a UI bug looks like a dead
+      pad. Decide — and document — whether these clamp, error to JS, or panic in dev
+      builds; today the answer differs per method.
+- [ ] **C23: an engine self-check.** A `Validate()` (or a build-tagged assertion in
+      `Render`) verifying the invariants the tests already assume — `stepLen` positive
+      and finite, `currentStep < stepCount`, no active pending trigger past its deadline
+      — turns silent corruption like C11 into a loud failure.
 
-## 4. Architecture & state management — 5/10
+## 2. Audio pipeline & WASM bridge — 7/10
 
-- [x] **A1: single source of truth for the pattern.** Today React state and the Go engine
-      each hold a copy with no reconciliation (root cause of C1). Decide: engine owns
-      state, UI mirrors it (recommended), with a full-state sync on init/reset.
-      ✔ 2026-07-10 — the engine owns the pattern: the worker echoes the authoritative
-      copy after every `setCell`/`setPattern`, and `patternMirror.ts` reconciles echoes
-      with in-flight optimistic edits before updating the React mirror (`onPattern`).
-      The UI's mount-time `setPattern` push doubles as the full sync on init.
-- [x] **A2: typed message layer** — replace the loose `window.AlgoDrum` global surface
-      with a small versioned command interface (also what an AudioWorklet port needs, B1).
-- [x] **A3: parameter smoothing** — volume/decay changes apply instantly per-sample; add
-      short ramps to avoid zipper noise when twisting knobs during playback.
+The architecture is right and the 07-09 migration holds up: engine in a dedicated Worker,
+AudioWorklet pulling over a direct `MessageChannel`, ~43 ms latency, `js.CopyBytesToJS`
+instead of per-sample `SetIndex`, reused render buffers, an `instantiateStreaming`
+fallback, and a genuinely nice `REQUIRED_METHODS` runtime assertion against a stale
+`.wasm`. The weakness is that the pull protocol is a bare credit counter.
 
-## 5. Frontend code quality — 5/10
+- [ ] **B7 (high): a dropped `need` deadlocks audio permanently.** `audioWorker.ts:150`
+      returns early and silently when `!engineReady`, while `worklet.js:45` only requests
+      more when `queued + pendingRequests*512 < 2048`. Four lost requests pin
+      `pendingRequests` at 4, the condition never becomes true again, and audio stops
+      forever with no error. Same outcome if the render call throws — there is no
+      `try`/`finally` decrement and no timeout.
+- [ ] **B8: underruns are invisible.** `worklet.js:83` fills the tail with silence (the
+      comment is honest) but there is no counter, no message to the main thread and no
+      adaptive queue growth, so a Go GC pause is an unreported audible dropout.
+- [ ] **B9: per-chunk garbage.** `audioWorker.ts:157` allocates a fresh 2 KB
+      `Float32Array` per chunk (~94/s) to have something transferable and never recycles
+      the transferred buffer back. A return pool — or a SharedArrayBuffer ring, which
+      would delete the credit protocol entirely — is the obvious next step.
+- [ ] **B10: rendering never stops.** Stop only sets `running=false` (`engine.go:155`);
+      the worklet keeps pulling and the engine keeps running all five voices + reverb +
+      limiter forever. Nothing suspends the AudioContext. Continuous idle CPU/battery.
+- [ ] **B11: stale comment** — `worklet.js:12` claims `CHUNK_SAMPLES` "must match the
+      worker's render chunk size"; the worker renders whatever `samples` says.
 
-- [x] **F1: fix the build script.** `"build": "tsc -b && vite build"` with a tsconfig
-      lacking `noEmit` is what emitted `.js` files *next to the sources* (now committed,
-      see H1). Set `"noEmit": true` and use `tsc --noEmit` (or `-b` with proper project
-      refs) — Vite does the transpiling.
-- [x] **F2: split `DrumMachine.tsx`** (640 lines: painting helpers + layout math + state +
-      controls). Extract drawing, hit-testing, and control panels into modules — or make
-      it moot via the DOM rewrite (§6).
-- [x] **F3: move styling out of inline objects** — every component styles via large
-      inline `style` props; introduce CSS modules (or plain CSS custom properties for the
-      panel theme).
-- [x] **F4: add ESLint** (typescript-eslint + react-hooks) — currently only prettier via
-      treefmt; hook rules would have flagged several issues here.
-- [x] **F5: error handling** — no React error boundary; the WASM load error renders raw
-      `String(e)`. Add a boundary and a friendly retry UI.
-- [x] **F6: upgrade React 18 → 19** (already on Vite 7 / TS 5.6; low risk at this size).
+## 3. Go engine / DSP — 7/10
 
-## 6. UI / UX — 5/10 (rewrite recommended — see plan below)
+The strongest area: idiomatic, well-commented, magic numbers lifted into documented
+constants (`voices.go:22-79`), `math/rand/v2` with fixed per-voice seeds, an
+allocation-free `Render` with a test asserting it, and coverage of clamping, swing
+bar-length, velocity and humanize bounds. Gain staging is the outstanding problem.
 
-The canvas approach is the root of most UI problems: blurry rendering, fragile overlays,
-zero accessibility, constant repaints.
+- [ ] **E6: stop vs. pause semantics.** Still open and unchanged. `SetRunning(false)`
+      (`engine.go:155`) resets `currentStep`/`stepSamples` and clears pending triggers;
+      there is no `Pause()` in Go, no `pause()` in `wasmEngine.ts`, and
+      `DrumMachine.tsx:249` is a binary toggle. Voices and reverb _do_ ring on after stop.
+- [ ] **E7 (re-opened): the limiter still isn't limiting.** Previously marked closed.
+      Output is now _guaranteed_ bounded by the hard clamp (`engine.go:410`), but that
+      clamp — not the limiter — is doing the work: verified **16 samples clipped in 3 s**
+      on an ordinary bass/snare/hat pattern at reverb 0.3, with the pre-limiter mix
+      peaking around 1.8 despite `mixHeadroom = 0.5` (`engine.go:21`) and a −1 dBFS
+      threshold (`engine.go:124`). `TestRenderOutputBoundedAndFinite` only asserts the
+      clamp works, so it can never fail. Fix the gain staging (`hatGain 1.5`,
+      `cymGain 1.2`) or the limiter usage, and add a test that asserts _no clipping_.
+- [ ] **E8: reverb bypass is a discontinuity.** `engine.go:402` skips `ProcessSample`
+      entirely at `reverbAmount == 0`, truncating the tail with a click and later dumping
+      stale delay-line contents back out. `SetWet(0)` (`:288`) already mutes correctly.
+- [ ] **E9: `firePending` is O(32) per sample** (`engine.go:360`) ≈ 1.5 M iterations/s,
+      almost always all-inactive. An active count or free-list head makes it near-free.
+- [ ] **E10: `Pattern()` allocates per call and is not rare.** `engine.go:253` allocates a
+      fresh slice and `cmd/wasm/main.go:108` a `Float32Array` plus 80 `SetIndex` calls.
+      The "called rarely (state sync)" comment (`main.go:106`) is stale — the pattern echo
+      calls it on **every cell click** (`audioWorker.ts:188`). Reuse a persistent buffer.
+- [ ] **E11: `SetPattern` is asymmetric** — a short slice leaves untouched cells alone
+      (`engine.go:241`) while `getPattern` always returns 80, so partial set + get is a
+      merge, not a replace.
+- [ ] **E12: `Voice.IsActive()` is dead outside tests** (`voices.go:17`). Either use it to
+      skip `Tick()` on inactive voices — a real saving — or drop it from the interface.
+- [ ] **E13: `stepLen` truncation has no error accumulator** (`engine.go:148`), dropping
+      up to ~0.5 samples/step at non-integer BPM. Irrelevant standalone; matters the
+      moment anything external syncs to it.
 
-- [x] **U1: canvas is not DPR-aware** — fixed 1020×700 backing store CSS-scaled up ⇒
-      visibly blurry on any hi-DPI display.
-- [x] **U2: full-scene redraw at 60 fps forever**, even when idle/stopped — wasted CPU
-      and battery, on the same thread as audio (B1).
-- [x] **U3: HTML controls absolutely positioned by magic percentages over the canvas** —
-      already caused two "fix positioning" commits; breaks whenever geometry changes.
-- [x] **U4: knob interaction is drag-only** — add mouse wheel, double-click-to-default,
-      and fine-adjust (shift-drag); show the value while dragging.
-- [x] **U5: no keyboard shortcuts** — at minimum Space = play/stop.
-- [x] **U6: no visual feedback for "loading" beyond a text swap**; the machine renders
-      dead-looking until WASM arrives.
+## 4. Architecture & state management — 6/10
 
-### UI rewrite plan (replace canvas with DOM/CSS)
+`PatternMirror` is small, isolated, unit-tested, and the `WorkerCommand`/`WorkerResponse`
+discriminated unions with the `AssertNever` guard are the best code in the repo. But
+"single source of truth" currently holds for **one of ten** pieces of state, so two
+contradictory state disciplines now sit side by side.
 
-- [x] Rebuild the sequencer as a CSS-grid of real `<button>` cells: free hit-testing,
-      focus, hover, keyboard, ARIA; LEDs via `box-shadow` glow; the skeuomorphic panel
-      (bevels, grooves, brushed gradients) is straightforward CSS.
-- [x] Only the playhead column changes per step — drive it with a CSS class toggle from a
-      lightweight rAF (or `requestAnimationFrame` only while playing), not full repaints.
-- [x] Keep the SVG `Knob` (it's good), fixing C7/U4 and adding `role="slider"` +
-      `aria-valuenow` + arrow-key support.
-- [x] 16-step grid with 4-step bar shading (depends on E2); per-track row = mute LED,
-      name, cells, volume, decay — no more overlay math.
-- [x] Responsive: grid scales via container queries; controls wrap below on narrow
-      screens (manifest currently claims `portrait`, see P4).
-- [x] `prefers-reduced-motion` support for LED pulse/glow animations.
+- [ ] **A4 (high): only the pattern is engine-owned.** Tempo, swing, step count, reverb,
+      probability, humanize, volumes, decays and mute are still UI-owned and fired
+      one-way with no echo, no clamp feedback and no reconciliation — so the engine's
+      clamping (e.g. tempo 30–300) is invisible to the UI. Either extend the echo
+      protocol to a full state snapshot or document the split deliberately.
+- [ ] **A5: the typed command layer has a hole at its constructor.**
+      `wasmEngine.ts:67` is `command(name: string, ...args: unknown[])` with an
+      `as WorkerCommand` cast, so `command("setTemp", 120)` compiles despite
+      `WorkerCommand` declaring `name: keyof AlgoDrumApi`. Typing the parameter is a
+      one-word fix; per-method arg tuples close it fully.
+- [ ] **A6: echo length is never validated.** `patternMirror.ts:35` rejects only
+      `length === 0`, and `flatToVisual` pads with `?? 0`, so a version-skewed engine
+      returning a short array silently wipes tracks.
+- [ ] **A7: `playing` has no owner** — set optimistically (`DrumMachine.tsx:253`), faked
+      locally (`wasmEngine.ts:189`), with no `onRunning`. A dead worker leaves the UI
+      showing "playing".
+- [ ] **A8: persistence mixes two coordinate systems.** `buildState`
+      (`DrumMachine.tsx:170`) converts the pattern to engine-major but writes
+      `volumes`/`decays`/`muted` in **visual** order, documented only as "length 5"
+      (`persistence.ts:33`). Reordering `TRACKS` silently corrupts every saved blob and
+      shared link with no version bump to catch it.
+- [ ] **A9: the share format encodes knob positions, not semantics.** Tempo is stored
+      normalized (`persistence.ts:91`), so changing `BPM_MIN`/`BPM_MAX` reinterprets every
+      existing v1 link; `FORMAT_VERSION` guards byte layout only.
+- [ ] **A10: `getShareUrl` mutates history as a side effect of a getter**
+      (`persistence.ts:198` calls `history.replaceState`).
+- [ ] **A11: a load error unmounts the whole machine.** `App.tsx:57` renders
+      `DrumMachine` only when `status !== "error"`, so Retry discards all UI state and
+      re-reads persistence, losing up to 300 ms of debounced edits.
+- [ ] **A12: `startAudio` has no error handling** (`wasmEngine.ts:146`); a rejecting
+      `addModule` propagates into `handlePlayStop` (`DrumMachine.tsx:249`, no catch) with
+      nothing shown to the user.
 
-## 7. Feature depth — 3/10 ("algo" is missing from algo-drum)
+### To raise this score — architecture
 
-- [x] **G1: Euclidean rhythm generator** per track (classic, cheap, immediately
-      "algorithmic": E(3,8), E(5,16)…).
-- [x] **G2: per-step probability / humanize** (chance a hit fires, timing jitter).
-- [x] **G3: pattern mutate / evolve button** (small random walk on the current pattern).
-- [x] **G4: preset patterns** (rock, house, breakbeat…) + Clear button.
-- [x] **G5: persistence** — save pattern+params to `localStorage`; encode in the URL
-      hash for shareable links.
-- [x] **G6: tap tempo.**
-- [ ] **G7 (later): accent row, open hi-hat track (C9), master volume.**
+A4 and A8 are the same bug wearing two hats: **there is no shared definition of "the
+state"**, so the engine, the echo protocol, the React tree and the persistence blob each
+describe it differently. One type fixes the category rather than the instances.
 
-## 8. Accessibility — 1/10
+- [ ] **A13: a single `EngineState` shape.** Define the full parameter set once and have
+      the engine snapshot echo it, the mount-time seed push it, and persistence serialise
+      it — replacing today's three independent orderings. Removes A4's split ownership and
+      A8's engine-major/visual-order mismatch by construction, and gives A9 a place to
+      store tempo as BPM rather than a knob position.
+- [ ] **A14: collapse the eight push-effects into one state → command mapping.**
+      `DrumMachine.tsx:113-167` is eight `useEffect`s that each mirror one value to the
+      engine. A reducer whose actions map to commands makes the set exhaustive (a new
+      parameter cannot be forgotten), makes A7's `playing` an ordinary reducer field, and
+      is the precondition for F7's component split.
+- [ ] **A15: version the worker protocol, not just its method list.** `REQUIRED_METHODS`
+      checks that method _names_ exist; it cannot detect changed semantics or argument
+      order. Send a `protocolVersion` in the `ready` message and refuse to run on
+      mismatch — the failure mode today is a silently wrong-sounding engine.
+- [ ] **A16: give the transport a single owner.** `playing` (UI), `currentStep` (worklet)
+      and `running` (Go) are three views of one state machine with no arbiter. Model it
+      explicitly — `stopped | starting | playing` owned by the engine and echoed like the
+      pattern — which also resolves C17's backwards flash and A7.
 
-- [x] **X1: the entire sequencer is a `<canvas>`** — no semantics, no focus, no screen
-      reader access, no keyboard operation. Fixed structurally by the §6 rewrite.
-- [x] **X2: mute button is an 11×11 px target** with color-only state — enlarge to ≥24 px
-      hit area and add `aria-pressed` + label.
-- [x] **X3: low-contrast labels** (e.g. `rgba(195,185,165,0.60)` 9 px text) — check
-      WCAG AA and bump sizes/contrast.
-- [x] **X4: knobs need `role="slider"`, ARIA values, and keyboard** (see rewrite plan).
+## 5. Frontend code quality — 7/10
 
-## 9. Testing — 0/10
+`bunx tsc --noEmit` and `eslint .` both pass with zero warnings, there is no `any`, the
+two casts are defensible, and the pure algo modules are well tested. The weaknesses are
+structural rather than sloppy.
 
-- [x] **T1: Go unit tests** for the engine: step timing math (incl. swing sums to
-      constant bar length), tempo/decay/volume clamping (C3/C4), trigger-on-step
-      behavior, stop-resets-to-zero.
-- [x] **T2: Go voice tests**: envelopes decay monotonically to inactive, no NaN/Inf
-      output, peak levels bounded, deterministic with fixed seeds.
-- [x] **T3: golden render test** — render N buffers of a known pattern, assert RMS/peak
-      per step window (guards DSP regressions without brittle sample equality).
-- [x] **T4: frontend unit tests (Vitest)** — Knob value/angle math, drag delta logic,
-      pattern state reducers.
-- [x] **T5: e2e smoke (Playwright)** — page loads, WASM initializes, Play toggles,
-      toggling a cell before Play still produces audible output (regression test for C1;
-      assert via `OfflineAudioContext` or engine state).
-- [x] **T6: run T1–T4 in CI** (see CI1). Note: engine tests need a non-WASM build —
-      `internal/drum` is pure Go, so plain `go test ./internal/...` works.
+- [ ] **F7: `DrumMachine.tsx` is a 502-line god component** — persistence restore, eight
+      parameter-push effects, engine seeding, mirror subscription, tap tempo, the global
+      keybinding, grid, track strips, transport and share plumbing, with ~210 lines of
+      unbroken JSX. Seams: a `useEngineSync` hook for `:113-167`, and
+      `<StepGrid>` / `<TrackStrip>` / `<Transport>` for `:311-398` and `:409-499`.
+- [ ] **F8: pure logic trapped in the component.** `cycleVelocity`, `velocityName`,
+      `visualToFlat`, `flatToVisual`, `snapVelocity`, `visualPatternsEqual`
+      (`DrumMachine.tsx:27-69`) are pure, untested, and belong beside `algo/pattern.ts`.
+- [ ] **F9: duplicated constants** — `DrumMachine.tsx:17-22` redefines `COLS`, `ROWS`,
+      `VEL_NORMAL`, `VEL_ACCENT`, which already exist in `algo/pattern.ts:8-17` where they
+      define the persistence byte format.
+- [ ] **F10: ~45 lines of dead code.** Verified zero callers for `getPattern()`
+      (`wasmEngine.ts:223`), `nextRequestId`/`patternResolvers` (`:73`),
+      `settlePendingPatternRequests` (`:78`), the worker's `"getPattern"` case
+      (`audioWorker.ts:197`) and the `"pattern"` response variant (`:94`).
+      `currentStep()` (`:256`) is unused too — the UI uses `onStep`.
+- [ ] **F11: the whole machine re-renders per playhead tick.** `currentStep`
+      (`DrumMachine.tsx:108`) lives in the top component, so ~8×/s React re-renders 80
+      buttons, 16 step numbers, 10 SVG knobs and `AlgoPanel`. Nothing is memoized, and
+      `getShareUrl` (`:203`) changes identity on every edit.
+- [ ] **F12: `AlgoPanel` leaks a timer** — `copiedTimer` (`AlgoPanel.tsx:32`) is never
+      cleared on unmount; the component has no `useEffect` at all.
+- [ ] **F13: `Knob` listener churn** — the non-passive wheel listener re-registers on
+      every render (`Knob.tsx:112`, deps `[value, onChange]`), and pointer capture
+      (`:76`) is never released.
+- [ ] **F14: no CSS token layer.** Three custom properties exist (`DrumMachine.css:5-8`)
+      while the palette repeats as raw hex across 870 lines; the accent colour lives in
+      four places (`DrumMachine.css:5`, `DrumMachine.tsx:24`, `Knob.tsx:52`, and a fifth
+      mismatched background in `index.html` vs `App.css:13`).
+- [ ] **F15: tsconfig strictness gaps** — `noUncheckedIndexedAccess` is **off** despite
+      pervasive raw indexing (`pattern[row][col]`, `bytes[offset++]`); that is the single
+      highest-value flag here. Also missing `exactOptionalPropertyTypes`,
+      `verbatimModuleSyntax`, `isolatedModules`. `include: ["src"]` means
+      `vite.config.ts` / `vitest.config.ts` / `playwright.config.ts` are never typechecked.
+- [ ] **F16: ESLint coverage gaps** — no `eslint-plugin-jsx-a11y` despite heavily
+      hand-rolled ARIA; `recommendedTypeChecked` rather than `strictTypeChecked`; and
+      `react-hooks/exhaustive-deps` is `warn` with no `--max-warnings 0`, so a deps
+      regression would not fail CI.
 
-## 10. CI/CD & tooling — 4/10
+## 6. UI / UX — 6/10
 
-- [x] **CI1: add a CI workflow** (PRs + pushes) running `just ci` — format check, lint,
-      `go mod tidy` check, typecheck — plus `go test` and a WASM compile check. Today the
-      only workflow is deploy-on-main; nothing gates a PR.
-- [x] **CI2: fix `.golangci.yml`** — it declares `version: "2"` but uses v1 keys
-      (`linters-settings:`, `issues.exclude-use-default`, `run.timeout`), which v2 ignores
-      or rejects; move settings under `linters.settings`, verify with
-      `golangci-lint config verify`.
-- [x] **CI3: deploy workflow polish** — cache bun store, add `workflow` path filters,
-      and build with `-ldflags="-s -w"` (plus optional `wasm-opt -Oz`) to cut the
-      multi-MB WASM payload; report the size in the job summary.
-- [x] **CI4: treefmt lists gofumpt/gci/shellcheck/shfmt/prettier but nothing installs
-      them in CI** — the `ci` recipe will no-op with `--allow-missing-formatter`. Pin and
-      install formatters in the CI job so format checks actually check.
+The rewrite delivered real DOM, real focus rings, a well-built knob (pointer capture,
+shift-fine, wheel, double-click reset, drag readout, `touch-action: none`), tap tempo,
+share, and `prefers-reduced-motion` in all four stylesheets. The playhead is a cheap
+per-cell attribute toggle — the right mechanism. Layout and feedback are what hurt.
 
-## 11. Repo hygiene — 4/10
+- [ ] **U7 (high): the grid does not fit a phone.** `DrumMachine.css:76` and `:399` keep
+      `repeat(16, minmax(0, 1fr))` at **every** width; verified no container queries and
+      no overflow wrapper anywhere. At a 390 px viewport ~120 px is left for 16 cells →
+      **~7.5 px each**. The app's primary interaction surface is unusable below ~725 px.
+      Needs an overflow-scroll wrapper, an 8+8 split, or a page-1/page-2 toggle.
+- [ ] **U8: breakpoint discontinuity** — 620 px yields ~21.8 px cells, 621 px yields
+      **~17.5 px**. `DrumMachine.css:393` should be `min-width`-driven.
+- [ ] **U9: the playhead is near-invisible** — `rgba(200,140,40,0.07)` tint is **1.09:1**
+      (`DrumMachine.css:214`) and the marker line **1.95:1** (`:222`). On a sparse track
+      it cannot be followed at all. Same for the bar-group aids (1.12:1, 1.09:1).
+- [ ] **U10: no value readout outside dragging.** `Knob.tsx:150` renders `.knob-readout`
+      only while `dragging`, so keyboard and wheel changes to SWING/STEPS/PROB/HUMAN/
+      REVERB/volumes/decays show **no number**. Only tempo embeds its value in the label.
+- [ ] **U11: the wheel handler hijacks page scroll unconditionally** (`Knob.tsx:112`
+      always `preventDefault()`s, focused or not) — scrolling with the cursor over a knob
+      silently changes the value.
+- [ ] **U12: one keyboard shortcut.** `DrumMachine.tsx:261` handles Space and nothing
+      else — no arrow navigation, no clear/mutate/preset keys, no `1`–`5` track mute.
+- [ ] **U13: no drag-paint on the grid** (`DrumMachine.tsx:337` is a per-cell `onClick`),
+      and clearing an accent takes two taps. Standard sequencer affordances are absent.
+- [ ] **U14: stale/awkward panel state** — the preset name persists after hand-edits
+      (`AlgoPanel.tsx:103`), and `.dm-algo-num` (`:162`) clamps mid-typing under the cursor.
+- [ ] **U15: bare loading state** — `App.tsx:55` is a plain `<p>`; the engine LED carries
+      "Engine ready" only in a `title` on an `aria-hidden` span. The error/retry panels,
+      by contrast, are good.
 
-- [x] **H1: remove committed build artifacts** — `web/src/**/*.js` (App.js, main.js,
-      DrumMachine.js, Knob.js, wasmEngine.js) and `web/tsconfig.tsbuildinfo` are compiler
-      output sitting next to the sources (dead code; `index.html` loads `main.tsx`).
-      Delete, and gitignore `*.tsbuildinfo` (root cause fixed by F1).
-- [x] **H2: add a LICENSE** — the project is public with a live demo and README, but has
-      no license, which legally means "all rights reserved". MIT/Apache-2.0 recommended.
-- [x] **H3: add `.editorconfig`** so Go tabs / TS spaces don't churn across editors.
+### To raise this score — UI/UX
 
-## 12. Documentation — 5/10
+Beyond the defects above, the machine is missing the everyday affordances a step
+sequencer is judged by: editing is strictly one cell at a time, and the interface never
+tells you what it can do.
 
-- [x] **D1: AGENTS.md is stale in at least four places**: says algo-dsp **v0.2.0**
-      (go.mod: v0.5.0); says the mix is "soft-clip"ped (it's FDN reverb + limiter); the
-      `window.AlgoDrum` API table omits `setDecay` and `setReverb`; the DrumMachine
-      description omits decay knobs, mute, and reverb.
-- [x] **D2: README gaps** — feature list omits decay/mute; add a screenshot or GIF of
-      the UI; document browser requirements (WebAssembly + Web Audio).
-- [x] **D3: document the voice architecture** (one short doc: per-voice synthesis recipe,
-      parameter ranges) — invaluable once voice params become editable (E5).
+- [ ] **U16: per-row operations.** There is no clear-row, shift-row-left/right,
+      duplicate-row, or copy-bar-to-bar anywhere — rotation exists only inside the
+      Euclidean fill (`AlgoPanel.tsx:64`). These are a handful of pure array functions
+      next to `algo/mutate.ts` plus a row context menu, and they change how the machine
+      feels to use far more than their cost suggests.
+- [ ] **U17: accent is conveyed by LED brightness alone.** Normal and accent hits differ
+      only in glow intensity, which is hard to scan at a glance and disappears entirely
+      under X12's forced-colors gap. Differentiate by size or shape as well.
+- [ ] **U18: no shortcut discovery.** Space is the only binding and nothing advertises it.
+      A `?` overlay listing the keys — worth doing together with U12, since shortcuts
+      nobody can find are shortcuts nobody uses.
+- [ ] **U19: no first-run guidance.** A new visitor gets an empty grid and a disabled Play
+      button with no hint that presets exist. Seed a default pattern on first load (no
+      saved state, no URL hash) so the machine makes a sound within one click.
+- [ ] **U20: no count-in or metronome**, which makes tap tempo and humanize hard to judge
+      by ear.
+- [ ] **U21: the panel does not scale as a unit.** Sizes are fixed px throughout
+      (`Knob size={42}`, 9–11 px labels), so there is no way to make the whole machine
+      bigger on a large display or smaller on a cramped one. A single `--dm-scale`
+      custom property driving `rem`-based sizing would also give U7 a lever to pull.
 
-## 13. PWA & deployment — 5/10
+## 7. Accessibility — 6/10
 
-- [x] **P1: service worker staleness** — `CACHE_VERSION` is a hardcoded `"algo-drum-v1"`
-      that never changes across deploys, and `algo_drum.wasm` is un-hashed and served
-      cache-first: after a deploy, returning visitors get the **old** WASM with new JS for
-      one visit (stale-while-revalidate lag), and mismatches are possible. Inject a build
-      hash into the SW at build time, or serve `.wasm` network-first, or move the WASM
-      through Vite's hashed asset pipeline.
-- [x] **P2: COOP/COEP headers exist only in the dev server** (`vite.config.ts`) — GitHub
-      Pages cannot send them. They're unnecessary today (no SharedArrayBuffer); remove
-      them, or keep with a comment noting the B1 ring-buffer design will need the
-      `coi-serviceworker` workaround on Pages.
-- [x] **P3: hardcoded `base: "/algo-drum/"`** breaks forks/renames — derive from an env
-      var with the current value as default.
-- [x] **P4: manifest tweaks** — `orientation: "portrait"` contradicts the landscape
-      layout; add a `maskable` purpose icon variant.
+The fundamentals are done properly and the contrast pass was real: **every text colour
+checked passes AA** (5.0:1 on step numbers up to 12.2:1 in inputs; the one sub-4.5 value
+is 21 px/600 large text where 3:1 applies). Cells are real `<button>`s with `aria-pressed`,
+the knob is a textbook `role="slider"` with `aria-valuetext` and full Arrow/Page/Home/End
+support, focus-visible rings exist everywhere, both failure panels use `role="alert"`.
+The gaps are structural.
+
+- [ ] **X5 (high): 80 flat tab stops, no grid semantics.** `DrumMachine.tsx:322` emits 80
+      tabbable buttons with the _primary_ control (Play, `:410`) last in the DOM — no
+      `role="grid"`/`gridcell`, no roving `tabindex`, no arrow-key movement. Reaching the
+      transport by keyboard costs ~95 Tab presses.
+- [ ] **X6: a tri-state control forced into a boolean toggle.** `DrumMachine.tsx:335` sets
+      `aria-pressed={velocity > 0}` and encodes off/on/accent in the label, so accent and
+      normal announce the same role state and the accessible _name_ mutates on every
+      activation.
+- [ ] **X7: the playhead is invisible to AT.** `data-playhead` (`:332`, `:353`) is purely
+      presentational — no `aria-current`, no live region. Combined with U9, low-vision
+      users have no playhead at all.
+- [ ] **X8: no live regions for state changes.** Space toggles playback with **zero
+      announcement** (the Play label flips but it isn't focused), and PRESET / MUTATE /
+      CLEAR / FILL rewrite up to 80 cells silently. Only the SHARE toast has
+      `role="status"` (`AlgoPanel.tsx:214`). The loading→ready transition isn't announced
+      either, while Play is `disabled` and so cannot explain why.
+- [ ] **X9: target size (SC 2.5.8) fails below ~725 px**, and `.dm-tap` fails at every
+      width — `font-size: 9px` + `padding: 3px 10px` ≈ **17 px** high
+      (`DrumMachine.css:314`). `.dm-mute` and the algo controls sit at 26 px: over the
+      24 px floor, well under the 44 px touch guidance, with no `@media (pointer: coarse)`.
+- [ ] **X10: non-text contrast (SC 1.4.11) failures** — playhead marker 1.95:1, playhead
+      tint 1.09:1, bar divider 1.12:1, bar tint 1.09:1, all below the 3:1 required of
+      meaningful UI indicators.
+- [ ] **X11: "beyond step count" is conveyed by opacity alone** (`DrumMachine.css:155`),
+      so a screen-reader user editing step 13 of an 8-step pattern gets no signal that it
+      will never fire. `aria-disabled` or a name suffix would fix it.
+- [ ] **X12: no forced-colors / prefers-contrast support** anywhere in `src/`. Every state
+      is a background, box-shadow or gradient — all stripped in Windows High Contrast,
+      leaving 80 identical empty buttons.
+- [ ] **X13: dead accessible-name plumbing** — `DrumMachine.tsx:316` assigns
+      `id={dm-track-…}` to each track label and nothing ever references it.
+
+### To raise this score — accessibility
+
+The ARIA here was written carefully by hand and is largely correct, but nothing
+_verifies_ it, so the next refactor can quietly undo it. Add enforcement, then close the
+remaining "can a screen-reader user actually operate this?" gaps.
+
+- [ ] **X14: enforce accessibility automatically.** Nothing checks any of this today —
+      verified no `axe-core`, `eslint-plugin-jsx-a11y`, `jsdom` or Testing Library in
+      `web/package.json`. Add `eslint-plugin-jsx-a11y` (static, free) and an `axe-core`
+      scan in the Playwright run (runtime, catches contrast and name/role/value). This is
+      the item that keeps X5–X13 fixed once they are fixed.
+- [ ] **X15: a text alternative for the pattern.** The grid is 80 controls with no
+      summary; an sr-only, `aria-live="polite"` description per track ("Bass drum: steps
+      1, 5, 9, 13") makes the pattern comprehensible without 80 Tab presses, and doubles
+      as the announcement channel X8 needs for bulk edits.
+- [ ] **X16: focus management for bulk actions.** After PRESET / CLEAR / MUTATE / FILL the
+      grid is rewritten under the user's feet; focus should stay put and the change be
+      announced, rather than the current silent swap.
+- [ ] **X17: a skip link to the transport.** Directly addresses X5's ~95-Tab journey and
+      is a few lines, independent of the roving-tabindex work.
+- [ ] **X18: state a target and test against it.** No conformance level is claimed
+      anywhere. Commit to WCAG 2.2 AA, list the known exceptions, and record one manual
+      screen-reader pass (NVDA or VoiceOver) — automation catches perhaps half of what
+      X6/X7 are about.
+
+## 8. Testing — 7/10
+
+The Go engine is genuinely well tested: 34 test functions, **98.8 %** statement coverage,
+asserting real invariants (swing preserves bar length, clamping on every setter, output
+bounded and finite, humanize bounds, allocation-free render via `AllocsPerRun`). The
+frontend's pure modules are equally solid at **67 passing tests**. Everything _between_
+those two islands is untested.
+
+- [ ] **T7: `cmd/wasm/main.go` is invisible to the test runner.** Its `js && wasm` build
+      tag means `go test ./...` never even compiles it, so the arg marshalling,
+      clamping, `unsafe` buffer reuse and pre-init gating — the entire API surface the
+      frontend depends on — are 0 % covered. This is where C13 and C19 live.
+- [ ] **T8: no golden render test.** `engine_test.go:608` builds two engines in the same
+      process and compares them, which proves determinism but not stability — any DSP
+      change passes silently. Commit a reference checksum/RMS-per-step-window instead.
+- [ ] **T9: the bridge is untested** — `wasmEngine.ts` (258 lines) and `audioWorker.ts`
+      (206 lines): worker spawn, MessageChannel wiring, command dispatch, chunking, step
+      tagging, echo-after-edit and the new API-compat checks have no unit test. C14–C16
+      all live here.
+- [ ] **T10: no component tests at all**, and currently impossible: `vitest.config.ts:9`
+      sets `environment: "node"` with no jsdom/happy-dom or Testing Library in
+      `package.json`. Adding them would let X5–X8 be regression-tested.
+- [ ] **T11: e2e is two tests wide.** The assertions are real (aria-pressed flip, name
+      cycling off→on→accent, playhead appear/clear, Space transport) but nothing covers
+      preset load, MUTATE, Euclid fill, SHARE/URL restore, localStorage, knob drag, mute,
+      STEPS/PROB/HUMAN or reverb.
+- [ ] **T12: no coverage measurement or threshold in CI** for either language, and no
+      `coverage` block in `vitest.config.ts`.
+
+## 9. CI/CD & tooling — 7/10
+
+`ci.yml` gates PRs on all four axes — Go test + WASM build + tidy + lint, treefmt with
+every formatter genuinely installed (checksum-verified download), typecheck + eslint +
+vitest + vite build, and a real Playwright run against the production build. `golangci-lint
+config verify` is clean under v2.12.2. Two structural holes remain.
+
+- [ ] **CI5 (high): CI never lints `cmd/wasm`.** `ci.yml:33` runs
+      `golangci-lint-action@v8` with the host GOOS, where `./cmd/...` resolves to
+      `no go files to analyze` (verified). `justfile:23` correctly sets
+      `GOOS=js GOARCH=wasm` — which currently reports **3 real issues** in
+      `cmd/wasm/main.go` (2 × varnamelen, 1 × wsl_v5) that CI cannot see. Set the env on
+      the action.
+- [ ] **CI6: `deploy.yml` does not depend on CI.** No `needs:`, and its own steps are
+      only `bun run build` — so a push to `main` deploys in parallel with the test run
+      and can publish a build whose unit or e2e tests are red.
+- [ ] **CI7: `--allow-missing-formatter` is still passed in CI** (`ci.yml:86`) despite the
+      comment at `:39` claiming all formatters are installed. If any install step
+      degrades — e.g. the `bun pm bin -g` path drift at `:70` for prettier, which owns
+      _every_ `.ts/.tsx/.md/.yml/.json/.css` file — the check passes green having
+      formatted nothing. Drop the flag so the claim is enforceable.
+- [ ] **CI8: unpinned tool versions** — `golangci-lint: latest` (`ci.yml:35`) and
+      `bun-version: latest` in both workflows make builds non-reproducible and let an
+      upstream release break CI with no repo change.
+- [ ] **CI9: no `concurrency` group on `ci.yml`**, so rapid pushes run redundant full
+      matrices; and no bun-store cache in `ci.yml` (`deploy.yml:49` has one) nor a
+      `~/.cache/ms-playwright` cache, so Chromium is re-downloaded every run.
+- [ ] **CI10: e2e artifacts are discarded.** `playwright.config.ts:25` produces traces on
+      retry and nothing uploads them; add `actions/upload-artifact` with `if: failure()`.
+- [ ] **CI11: WASM size is reported but never budgeted** (`deploy.yml:35`) — 4,188,961
+      bytes today, and only post-merge, never on a PR. No `wasm-opt -Oz` pass exists
+      (binaryen isn't installed anywhere); it typically takes another 10–20 % off.
+- [ ] **CI12: `just ci` and the CI workflow have diverged** — the recipe is
+      `check-formatted lint check-tidy web-typecheck` with **no tests**, so a green local
+      `just ci` says less than it appears to.
+
+## 10. Repo hygiene — 8/10
+
+`git status` is clean, nothing stray is tracked, `LICENSE` (MIT) is present and excluded
+from formatting, and `.gitignore` is thorough enough to document _why_ `/wasm` is ignored.
+No dead files; `docs/voices.md` is linked from the README.
+
+- [ ] **H4: the `.trunk` decision lives on one machine.** `/.trunk` is excluded via
+      `.git/info/exclude`, which isn't shared — a teammate running `trunk init` (or an IDE
+      extension) would see it as untracked and could commit a second tool stack. The local
+      config pins `go@1.21.0` against a `go 1.25.0` module and duplicates
+      gofmt/prettier/shellcheck/shfmt, which `treefmt.toml:45-84` already owns. Decide:
+      commit the ignore rule, or commit `.trunk/trunk.yaml` deliberately.
+- [ ] **H5: dependencies are three majors behind** — `vite` 7.3.1 → 8.1.5,
+      `@vitejs/plugin-react` 4.7.0 → 6.0.4, `typescript` 5.9.3 → 7.0.2, plus minor drift
+      in `@playwright/test`, `eslint`, `typescript-eslint`, `react`/`react-dom`.
+- [ ] **H6: no `dependabot.yml` or Renovate config**, so nothing keeps the above or
+      `go.mod` current.
+- [ ] **H7: `.editorconfig` is advisory only** — no `editorconfig-checker` in CI, and
+      `justfile` recipe bodies already contradict its global `indent_size = 2`.
+
+## 11. Documentation — 7/10
+
+The load-bearing content is now accurate: all 15 `api.Set(...)` registrations were checked
+against the API table — every documented method exists, none is missing, and every
+documented clamp is real (tempo 30–300, swing 0–0.5, steps 1–16, ~8 ms volume ramp,
+humanize ≤15 ms / ±20 %). The track table, reverse UI order, signal-flow numbers (512-sample
+chunks, ~2048 buffered, 48 kHz) and dependency versions all match the code.
+
+- [ ] **D4: `AGENTS.md:7` is stale and self-contradicting** — "exposes a global
+      `window.AlgoDrum` API". There is no `window.AlgoDrum` on the main thread, as
+      `AGENTS.md:47` and `:81` themselves say.
+- [ ] **D5: the architecture list has fallen ~8 files behind** (`AGENTS.md:46-63`) —
+      missing `main.tsx`, `ErrorBoundary.tsx`, `knobMath.ts`, `sw.js`, `site.webmanifest`,
+      `e2e/smoke.spec.ts`, the five `*.test.ts` files, `docs/voices.md` and `PLAN.md`.
+- [ ] **D6: the toolchain is undocumented.** `AGENTS.md:9-42` never mentions the
+      `justfile` — the actual dev interface — nor any test command (`go test ./...`,
+      `bun run test`, `bun run test:e2e`, `bun run lint`). An agent reading it would not
+      know the test suite exists.
+- [ ] **D7: Key Dependencies omits React 19.2.7** — the primary runtime dependency —
+      along with TypeScript 5.9, Vitest 4, Playwright 1.61, ESLint 10, treefmt,
+      golangci-lint (`AGENTS.md:101-105`).
+- [ ] **D8: `README.md:27` is false** — "the step grid and knobs are focusable and respond
+      to arrow keys". Knobs do; grid cells are plain buttons with no arrow handling (X5).
+- [ ] **D9: two overstated README claims** — "Installable / offline-capable" (`:28`) is
+      contradicted by P5, and `:74` gives the dev URL as `localhost:5173` when `base`
+      puts the app at `/algo-drum/`.
+- [ ] **D10: `.claude/skills/verify/SKILL.md:36` says "steps 1–8"** — the grid is 16.
+- [ ] **D11: `docs/voices.md:20` treats E5 as future work** while this plan marks it done;
+      voice params are indeed still hardcoded and unexposed. Reconcile the two.
+
+## 12. PWA & deployment — 6/10
+
+The P1–P4 fixes are real: the cache version is genuinely stamped at build time
+(`deploy.yml:68` seds in the 12-char SHA), so a returning visitor gets a byte-different SW
+→ install → `skipWaiting` → old caches dropped → `clients.claim()`; combined with
+network-first navigations and network-first `.wasm`, the stale-WASM bug is fixed. `base`
+is env-configurable, COOP/COEP were removed with a correct explanatory comment, and
+`start_url`/`scope` are relative. Offline is the gap.
+
+- [ ] **P5 (high): the app bundle is never precached, so offline does not work.**
+      `sw.js:16-29` lists no `assets/index-*.js|css`. The SW registers on `load`
+      (`main.tsx:12`), so the first visit's bundle is fetched before the SW controls the
+      page and never cached: offline reload → cached `index.html` → bundle request →
+      miss → blank app. Worse, the activate handler deletes the previous SHA-named cache,
+      so **every deploy resets offline capability** until another online visit. Needs a
+      build-time asset manifest, or generating `sw.js` from the Vite build.
+- [ ] **P6: the maskable icon is the same edge-to-edge artwork** as the `any` icon
+      (`site.webmanifest:29`); Android's adaptive mask crops to the central 80 % circle,
+      so the braces clip and the transparent corners are filled by the launcher. Needs a
+      separate ~40 %-inset icon on an opaque background.
+- [ ] **P7: the cache-version `sed` is unverified** (`deploy.yml:70`) — a silent no-op if
+      `sw.js:6` is ever renamed or reworded. Add
+      `grep -q "algo-drum-${GITHUB_SHA::12}" web/dist/sw.js`.
+- [ ] **P8: SW cache writes are not awaited** — background `caches.put` is fired with
+      `void` instead of `event.waitUntil` (`sw.js:94`, `:107`), so termination can lose
+      entries; and in the SWR branch `networkFetch` is created eagerly with its rejection
+      unhandled, giving an unhandled rejection per asset on every offline load.
+- [ ] **P9: `respondWith(undefined)` is reachable** — `sw.js:82` matches `index.html` from
+      a deliberately fail-soft precache (`:46`), producing a hard network error rather
+      than falling through.
+- [ ] **P10: manifest gaps** — no `id` (stable PWA identity), no explicit `orientation`
+      (P4 removed the wrong `portrait` without adding `any`), no `screenshots` /
+      `display_override`.
+- [ ] **P11: `deploy.yml:17` uses `cancel-in-progress: true`** on the pages concurrency
+      group, which can cancel an in-flight _deployment_; GitHub's guidance for deploy
+      workflows is `false`.
+
+### To raise this score — PWA
+
+P5, P7, P8 and P9 are all consequences of hand-maintaining a service worker whose
+precache list has to be kept in sync with a hashed build by hand. That is the thing to
+change.
+
+- [ ] **P12: generate the service worker from the build.** Adopting `vite-plugin-pwa`
+      (Workbox) produces the precache manifest from the actual emitted assets, which
+      closes P5 (bundle never precached), P7 (unverified `sed`) and P8 (unawaited cache
+      writes) structurally, and gives P10's manifest fields a single source. Keep the
+      hand-written routing rules for `.wasm` if the network-first behaviour is wanted.
+- [ ] **P13: no update-available UX.** Registration is fire-and-forget (`main.tsx:11-17`)
+      — no `updatefound` or `waiting` handling — while the SW calls `skipWaiting()` and
+      `clients.claim()`. A new version therefore takes over _mid-session_ and can serve
+      the new bundle to an already-running page. Either prompt ("new version — reload") or
+      drop `skipWaiting` and activate on next load.
+- [ ] **P14: route the WASM through Vite's hashed asset pipeline.** A content-hashed
+      `algo_drum.wasm` can be cached immutably (cache-first, forever) instead of the
+      current network-first revalidation of a 4.2 MB unhashed file on every visit — it is
+      both the largest asset and the one currently costing a round-trip.
+- [ ] **P15: verify the PWA claims in CI.** Nothing checks installability or offline
+      behaviour, which is how P5 shipped while the README advertised it. A Lighthouse
+      PWA/performance budget on the deploy build, or a Playwright test that loads the app
+      offline after one online visit, makes the claim testable.
+
+## 13. Feature depth vs. the name — 6/10
+
+The "algo" arrived and it is real work: a correct Bjorklund with rotation
+(`euclid.ts:11`), a musically-biased random walk that protects the downbeat and never
+empties the pattern (`mutate.ts:71`), a probability gate and humanize in the Go engine
+(`engine.go:307`), six presets, a compact versioned share format, and tap tempo — all
+pure, all unit-tested. What holds the score is that **every algorithmic control is global
+and one-shot**: one probability knob for all 80 cells, one humanize, one length, one
+pattern. It is an excellent generative-_assist_ step sequencer, not yet an algorithmic
+drum machine.
+
+- [ ] **G7: accent row / open hi-hat / master volume.** Partly superseded — accent shipped
+      as a per-cell 3-state cycle, which is better than a separate row. Still open: the
+      6th voice (open hat + choke group; `TrackCount = 5`, `engine.go:12`) and master
+      volume (only a fixed `mixHeadroom` exists, `engine.go:21`).
+- [ ] **G8 (high): probability and humanize are global, not per-step.** `engine.go:76`
+      holds one scalar applied to every hit on every track. The original G2 asked for
+      _per-step_ probability — this is the single biggest gap against the product name.
+      Humanize is also strictly _late_ (`engine.go:328`), so the groove drags as it rises.
+- [ ] **G9: no per-track length / polymeter.** One `stepCount` (`engine.go:71`) wraps all
+      voices together (`:385`). Table stakes for algorithmic drums.
+- [ ] **G10: no pattern banks, song or chain mode.** Exactly one pattern exists in the
+      engine (`engine.go:63`) and the UI — no A/B, copy, queueing or chaining.
+- [ ] **G11: no undo/redo.** MUTATE, CLEAR, preset load and Euclid FILL all destroy the
+      current pattern irreversibly.
+- [ ] **G12: no export or sync** — no offline WAV render, no MIDI export, no MIDI clock or
+      input. Notable for an app whose engine is already a deterministic `Render(buf)`.
+- [ ] **G13: Euclid is shallow** — `n` is forced to the global step count
+      (`AlgoPanel.tsx:64`), fills at `VEL_NORMAL` only (`:68`), overwrites in one shot,
+      and the k/rotation settings are neither persisted nor shared.
+- [ ] **G14: the Tom track appears in zero presets** (verified across all six in
+      `presets.ts:25-75`) — one of five voices is invisible to anyone exploring presets.
+- [ ] **G15: swing is global and fixed-shape** (`engine.go:142`) — no per-track swing, no
+      swing-8 vs swing-16 choice.
+
+### To raise this score — feature depth
+
+G8–G10 are the structural gaps. These are the features that would make the name earned
+rather than aspirational, roughly in order of impact per unit of work — and all of them
+build on an engine that already stores continuous per-cell velocity and renders
+deterministically.
+
+- [ ] **G16: conditional trigs.** Per-step conditions — every 2nd/3rd/4th pass, first-loop
+      only, fill-only, not-if-previous-fired — are the single highest-value algorithmic
+      feature per line of code, and the engine already has the per-step data structure to
+      hang them on. This is what makes a pattern evolve without the user touching it.
+- [ ] **G17: ratcheting / sub-step retrigger.** A per-step repeat count (2–4 hits inside
+      one step, optionally with a velocity ramp) reuses the existing pending-trigger list
+      (`engine.go:360`) and is the other classic generative gesture.
+- [ ] **G18: expose continuous velocity.** The engine accepts any 0–1 value per cell, but
+      the UI quantises to exactly three (`cycleVelocity`, `DrumMachine.tsx:27`). Let a
+      drag or modifier set velocity freely — depth already paid for in the engine and
+      currently thrown away at the UI layer.
+- [ ] **G19: a density/seed generator.** One control pair — density plus a visible seed —
+      that fills a track reproducibly would tie euclid, mutate and probability into a
+      coherent generative story, and make shared links reproduce a _generator_ rather
+      than a frozen snapshot.
+- [ ] **G20: expose per-voice tuning.** `docs/voices.md` documents the pitch/filter
+      constants per voice but only `setDecay` is on the API. Tune and snap per voice
+      multiply the range of every other feature here (and close out D11).
+- [ ] **G21: a demo that plays itself.** The landing experience is a silent empty grid
+      (see U19). Given presets, mutate and a share format already exist, an autoplaying
+      demo pattern is nearly free and is what communicates "algorithmic" in five seconds.
 
 ---
 
 ## Suggested execution order
 
-**P0 — correctness (small, high value):** C1 (+A1/E3 state sync), C2, C3, C4, C5, C6, C7, H1, F1, H2, D1.
-✔ Done 2026-07-09 — C1 fixed by creating the engine at WASM load (the AudioContext is created later at the same fixed 48 kHz rate), which also resolves C5 since the UI pushes its defaults once loaded; A1 (engine-owned state) and E3 (bulk pattern API) remain open for the AudioWorklet migration.
+Where a structural item subsumes several defects, it is listed instead of them — fixing
+C20 closes C10 and C12, P12 closes P5/P7/P8, and so on.
 
-**P1 — foundations:** CI1 + CI2 + T1–T3 (tests before refactors), then B1/B2/B3 (AudioWorklet migration), then the §6 DOM UI rewrite (fixes U1–U6, X1–X4 structurally).
-✔ CI, tests, and the audio migration landed 2026-07-09: the engine now renders in a Web Worker, an AudioWorklet consumes chunks over a direct MessageChannel (~43 ms buffer vs ~85 ms+), and the playhead follows the audible step (C8). E7 note: the lookahead limiter controls sustained level but its smoothed detector misses single-sample noise transients; the hard clamp in Render is the guaranteed brick wall for those (~13 samples per 3 s, inaudible).
+**P3 — hardening (small, high value):** C20 (one validated boundary → closes C10, C12),
+C11 (odd-step swing), C13 (arg validation), C14–C16 (bridge lifecycle), CI5 (lint the
+WASM target — it already has 3 findings), E7 (re-opened: fix gain staging, add a
+no-clipping test), B7 (protocol recovery), C21 + T7/T9 (fuzz and tests for exactly the
+code these defects live in).
 
-**P2 — the "algo" in algo-drum:** E1, E2, G1–G6, C8, P1, remaining polish (F6, P2–P4, D2–D3, T4–T5).
-✔ Largely done 2026-07-10 — velocity/accent + 16-step runtime patterns + bulk pattern API
-(E1–E5), euclid/probability/humanize/mutate/presets/persistence/tap-tempo (G1–G6), CI
-format gate + deploy polish (CI3/CI4), PWA fixes (P1–P4), docs (D2/D3, `docs/voices.md`),
-`.editorconfig` (H3), dead-code and error-logging cleanups (C9/B5), volume smoothing (A3).
-Also landed the same day: ESLint + error boundary + React 19 (F4/F5/F6), WCAG-AA
-contrast pass (X3), Vitest unit suite and Playwright e2e smoke in CI (T4/T5).
-Still open: E6 (pause semantics), G7 (accent row/open-hat/master volume), optional
-wasm-opt from CI3. A1 (engine-owned pattern state) closed 2026-07-10 via worker pattern
-echo + mirror reconciliation.
+**P4 — reach:** U7/U8 (mobile grid, with U21's scale lever), X14 (a11y enforcement first,
+so the rest stays fixed), X5/X17 (roving tabindex + skip link), X7/X8/X15 (playhead and
+live regions), X9 (targets), P12 (generated SW → closes P5/P7/P8) and P13 (update UX),
+D4–D9 (docs that are currently wrong), CI6 (deploy behind CI).
+
+**P5 — depth:** A13/A14/A16 (one state shape and one owner → closes A4, A7, A8), then
+G8 (per-step probability), G16 (conditional trigs), G9 (per-track length), G10 (pattern
+banks), G11 (undo), G18 (continuous velocity — already in the engine), F7 (split
+`DrumMachine.tsx` once its state model settles).
+
+**Quick wins, any time:** G14 (Tom absent from every preset), G21 + U19 (a default
+pattern so the app makes a sound on first click), U18 (`?` shortcut overlay), X17 (skip
+link), D10 (stale `verify` skill), CI8 (pin tool versions).
