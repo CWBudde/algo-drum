@@ -23,9 +23,12 @@ No plugins, no backend — just a `.wasm` file and a browser.
 - Shareable patterns: state round-trips through a URL hash and
   `localStorage`, so reloading or sending a link restores the pattern, tempo,
   and knobs
-- Fully keyboard-operable (Space = play/stop; the step grid and knobs are
-  focusable and respond to arrow keys)
-- Installable / offline-capable (PWA with a service worker and app manifest)
+- Keyboard-accessible: Space toggles play/stop, every grid cell and button is
+  focusable and activates with Enter/Space, and the knobs are ARIA sliders that
+  respond to arrow keys, Page Up/Down, Home/End, and Escape to reset
+- Installable as a PWA: a web app manifest plus a service worker that caches
+  the app shell, the WASM engine, and the audio worklet (a fully offline reload
+  isn't guaranteed yet — the hashed JS/CSS bundle is not precached)
 - Runs entirely client-side
 
 ## How it works
@@ -71,7 +74,7 @@ bash scripts/build-wasm.sh
 cd web && bun install && bun run dev
 ```
 
-The dev server runs at `http://localhost:5173`. WASM must be built before starting the frontend — the dev server serves `web/public/` as static assets.
+The dev server serves the app at `http://localhost:5173/algo-drum/` — Vite's `base` is `/algo-drum/` to match the GitHub Pages path, and opening `http://localhost:5173/` redirects there. WASM must be built before starting the frontend — the dev server serves `web/public/` as static assets.
 
 ```bash
 # Production build → web/dist/
