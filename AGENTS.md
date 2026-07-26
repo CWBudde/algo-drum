@@ -4,9 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-algo-drum is an algorithmic drum machine built with a **Go WASM audio engine** and a **React/TypeScript frontend**. The Go code compiles to WebAssembly, exposes a global `window.AlgoDrum` API, and React renders the UI while feeding audio through the Web Audio API.
+algo-drum is an algorithmic drum machine built with a **Go WASM audio engine** and a **React/TypeScript frontend**. The Go code compiles to WebAssembly and runs inside a **Web Worker**, where it registers an `AlgoDrum` API on the _worker's_ global scope (there is no `window.AlgoDrum` on the main thread). React renders the UI on the main thread and talks to the worker by message; rendered audio reaches the speakers through an `AudioWorklet`.
 
 ## Build Commands
+
+### just — the primary dev interface
+
+The `justfile` wraps every workflow below; `just` (or `just --list`) prints the
+current recipe list. The ones that matter:
+
+```bash
+just build-wasm      # Go → web/public/algo_drum.wasm (+ wasm_exec.js)
+just dev             # build-wasm, then the Vite dev server
+just build           # build-wasm, then the production bundle → web/dist/
+just preview         # build, then serve web/dist/ locally
+just test            # Go test suite
+just web-test        # frontend unit tests (Vitest)
+just fmt             # format everything via treefmt (gofumpt, gci, shfmt, prettier)
+just lint            # golangci-lint against the js/wasm target
+just fix             # lint --fix, then fmt
+just ci              # the full local gate — run this before pushing
+```
+
+`just ci` is meant to mirror `.github/workflows/ci.yml`; treat a green `just ci`
+as the bar, and check the justfile rather than this list for its exact steps.
 
 ### WASM Engine (Go)
 
@@ -27,7 +48,27 @@ bun install          # Install dependencies
 bun run dev          # Dev server (Vite) — requires WASM built first
 bun run build        # Type-check + production build → web/dist/
 bun run preview      # Preview the production build
+bun run lint         # ESLint
+bun run test         # Vitest unit tests (web/src/**/*.test.ts)
+bun run test:e2e     # Playwright smoke test (see below)
 ```
+
+### Tests
+
+There is a real test suite; run it before claiming a change works.
+
+```bash
+go test ./...        # Go engine + voice tests (host arch — cmd/wasm is js/wasm-only)
+
+cd web
+bun run test         # Vitest: the pure algo/, knobMath and patternMirror modules
+bun run test:e2e     # Playwright: builds WASM + a production bundle, serves it on
+                     # :4173, then drives the real app in headless Chromium
+```
+
+`bun run test:e2e` deliberately runs against the **production** build — worker
+and worklet bundling differ between dev and prod. CI runs all three suites plus
+type-check, lint and a treefmt check on every PR.
 
 ### Full Development Workflow
 
@@ -39,7 +80,7 @@ bash scripts/build-wasm.sh
 cd web && bun run dev
 ```
 
-Vite serves `web/public/` as static assets, so `algo_drum.wasm` and `wasm_exec.js` are available at runtime.
+Vite serves `web/public/` as static assets, so `algo_drum.wasm` and `wasm_exec.js` are available at runtime. Vite's `base` is `/algo-drum/`, so the dev server serves the app at `http://localhost:5173/algo-drum/`.
 
 ## Architecture
 
@@ -47,6 +88,7 @@ Vite serves `web/public/` as static assets, so `algo_drum.wasm` and `wasm_exec.j
 cmd/wasm/main.go          — WASM entry point; registers the AlgoDrum JS API (worker global scope)
 internal/drum/engine.go   — Sequencer: velocity pattern grid (5×16), runtime step count, tempo/swing, probability + humanize (allocation-free pending-trigger list), smoothed per-track volumes, Render()
 internal/drum/voices.go   — Drum synthesizer voices (BassDrum, Snare, HiHat, Tom, Cymbal)
+internal/drum/*_test.go   — Go unit tests: sequencing, clamping, bit-exact render determinism, per-voice envelopes
 web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands, exposes onPattern (engine-owned pattern snapshots)
 web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; renders audio chunks on demand, echoes the authoritative pattern after each edit
 web/src/engine/patternMirror.ts — Reconciles the engine's pattern echoes with in-flight optimistic UI edits (engine = single source of truth)
@@ -54,12 +96,21 @@ web/public/worklet.js         — AudioWorkletProcessor: consumes chunks, report
 web/src/components/DrumMachine.tsx — Main UI: 5×16 step grid (DOM/CSS; clicking a cell cycles off → on → accent) mirroring the engine-owned pattern, transport (play, tempo + TAP, swing, STEPS, PROB, HUMAN, reverb), per-track volume/decay knobs + mute LEDs; persistence/share wiring
 web/src/components/AlgoPanel.tsx    — Algorithmic tools panel: preset selector, CLEAR, MUTATE, per-track Euclidean fill (E(k,n) + rotation), SHARE (copy link)
 web/src/components/Knob.tsx        — Reusable rotary knob (SVG; drag, wheel, and keyboard accessible)
+web/src/components/knobMath.ts     — Pure knob math extracted from Knob.tsx: value↔angle, drag/wheel/key deltas (unit-tested without a DOM)
+web/src/components/ErrorBoundary.tsx — App-wide React error boundary; a render crash shows a themed panel instead of a blank page
 web/src/algo/euclid.ts     — Pure Bjorklund/Euclidean E(pulses, steps) rhythm generator with rotation
 web/src/algo/mutate.ts     — Pure musical random-walk mutation of a flat pattern
 web/src/algo/presets.ts    — Classic 16-step preset patterns (rock, house, breakbeat, hip-hop, techno, funk) + Clear
 web/src/algo/persistence.ts — Pure versioned encode/decode of full state → base64url; localStorage + URL-hash glue
 web/src/algo/pattern.ts    — Shared pattern constants (dims, velocities, flat-index helper) for the algo modules
-web/src/App.tsx           — Root: loads WASM on mount, renders DrumMachine
+web/src/App.tsx           — Root: loads WASM on mount, renders DrumMachine inside the ErrorBoundary, shows a retryable fault panel if the engine fails
+web/src/main.tsx          — Browser entry: mounts App and registers the service worker (production builds only)
+web/src/**/*.test.ts      — Vitest unit tests, colocated with the pure modules they cover (algo/, knobMath, patternMirror)
+web/e2e/smoke.spec.ts     — Playwright smoke test against the production build: engine ready, cell toggles, Space plays, playhead advances
+web/public/sw.js          — Service worker: precaches the app shell + WASM, network-first for algo_drum.wasm / wasm_exec.js and navigations
+web/public/site.webmanifest — PWA manifest (name, icons, standalone display, relative start_url/scope)
+docs/voices.md            — Per-voice synthesis reference: recipes, named constants, master chain, determinism
+PLAN.md                   — Point-in-time review backlog (numbered items); referenced from code comments and docs
 ```
 
 ### Audio Signal Flow
@@ -100,9 +151,24 @@ UI displays tracks in **reverse order** (Cymbal on top, Bass on bottom).
 
 ## Key Dependencies
 
+Versions below are the pinned ones in `go.mod` / `web/package.json` — check those files rather than trusting this list after a bump.
+
+**Runtime**
+
+- **Go 1.25** — toolchain for the engine (`go.mod`)
 - **[algo-dsp](https://github.com/cwbudde/algo-dsp) v0.5.0** — DSP library used for biquad filters in voices (`biquad.Section`, `design.Highpass`, `design.Bandpass`) plus master effects (`reverb.FDNReverb`, `dynamics.Limiter`)
+- **React 19.2.7** (`react` + `react-dom`) — the only runtime npm dependencies; everything else is a devDependency
+
+**Build & tooling**
+
 - **bun** — package manager and script runner for the frontend
-- **Vite 7** — frontend bundler; configured with `@vitejs/plugin-react`
+- **Vite 7.3.1** — frontend bundler; configured with `@vitejs/plugin-react` 4.7.0
+- **TypeScript 5.9.3** — type-check via `tsc --noEmit` (Vite does not type-check on its own)
+- **Vitest 4.1.10** — unit tests (`bun run test`, config in `web/vitest.config.ts`)
+- **Playwright 1.61.1** (`@playwright/test`) — e2e smoke test (`bun run test:e2e`, config in `web/playwright.config.ts`)
+- **ESLint 10.6.0** with `typescript-eslint` 8.63.0 — frontend linting (`bun run lint`, flat config in `web/eslint.config.js`)
+- **treefmt** — multi-language formatter runner (`treefmt.toml`: gofumpt, gci, shellcheck, shfmt, prettier); note it deliberately excludes `AGENTS.md` and `PLAN.md`
+- **golangci-lint** (v2 config schema, `.golangci.yml`) — Go linting; always run against the `js/wasm` target, since `cmd/wasm/main.go` is invisible on the host GOOS
 
 ## Deployment
 

@@ -3,10 +3,22 @@
 package main
 
 import (
+	"math"
 	"syscall/js"
 	"unsafe"
 
 	"github.com/cwbudde/algo-drum/internal/drum"
+)
+
+const (
+	// defaultSampleRate is used when init() is called without a usable
+	// sample rate.
+	defaultSampleRate = 48000.0
+
+	// maxRenderSamples caps a single render() call. The worklet asks for
+	// 512-sample chunks, so this is a generous ceiling that still keeps a
+	// hostile or buggy caller from requesting an unbounded allocation.
+	maxRenderSamples = 65536
 )
 
 var (
@@ -16,6 +28,10 @@ var (
 	// warnedBeforeInit gates the "API used before init" console warning so
 	// a burst of early calls logs once instead of spamming.
 	warnedBeforeInit bool
+
+	// warnedBadArg does the same for calls made with missing or
+	// wrong-typed JS arguments.
+	warnedBadArg bool
 
 	// Persistent render buffers, grown on demand — render() is called for
 	// every audio chunk, so per-call allocation would churn both GCs.
@@ -28,9 +44,14 @@ func main() {
 	api := js.Global().Get("Object").New()
 
 	api.Set("init", export(func(args []js.Value) any {
-		sr := 48000.0
+		// A missing or unusable sample rate falls back to the default
+		// rather than leaving the engine uninitialized.
+		sr := defaultSampleRate
+
 		if len(args) > 0 {
-			sr = args[0].Float()
+			if rate, ok := argFloat(args, 0, "init"); ok && rate > 0 {
+				sr = rate
+			}
 		}
 
 		engine = drum.NewEngine(sr)
@@ -39,40 +60,64 @@ func main() {
 	}))
 
 	api.Set("setRunning", export(func(args []js.Value) any {
-		if ready() && len(args) > 0 {
-			engine.SetRunning(args[0].Bool())
+		if !ready() {
+			return js.Null()
+		}
+
+		if running, ok := argBool(args, 0, "setRunning"); ok {
+			engine.SetRunning(running)
 		}
 
 		return js.Null()
 	}))
 
 	api.Set("setTempo", export(func(args []js.Value) any {
-		if ready() && len(args) > 0 {
-			engine.SetTempo(args[0].Float())
+		if !ready() {
+			return js.Null()
+		}
+
+		if bpm, ok := argFloat(args, 0, "setTempo"); ok {
+			engine.SetTempo(bpm)
 		}
 
 		return js.Null()
 	}))
 
 	api.Set("setSwing", export(func(args []js.Value) any {
-		if ready() && len(args) > 0 {
-			engine.SetSwing(args[0].Float())
+		if !ready() {
+			return js.Null()
+		}
+
+		if swing, ok := argFloat(args, 0, "setSwing"); ok {
+			engine.SetSwing(swing)
 		}
 
 		return js.Null()
 	}))
 
 	api.Set("setStepCount", export(func(args []js.Value) any {
-		if ready() && len(args) > 0 {
-			engine.SetStepCount(args[0].Int())
+		if !ready() {
+			return js.Null()
+		}
+
+		if steps, ok := argInt(args, 0, "setStepCount"); ok {
+			engine.SetStepCount(steps)
 		}
 
 		return js.Null()
 	}))
 
 	api.Set("setCell", export(func(args []js.Value) any {
-		if ready() && len(args) >= 3 {
-			engine.SetCell(args[0].Int(), args[1].Int(), args[2].Float())
+		if !ready() {
+			return js.Null()
+		}
+
+		track, trackOK := argInt(args, 0, "setCell")
+		step, stepOK := argInt(args, 1, "setCell")
+		velocity, velOK := argFloat(args, 2, "setCell")
+
+		if trackOK && stepOK && velOK {
+			engine.SetCell(track, step, velocity)
 		}
 
 		return js.Null()
@@ -86,15 +131,50 @@ func main() {
 		}
 
 		arr := args[0]
+		if arr.Type() != js.TypeObject {
+			warnBadArg("setPattern")
 
-		n := arr.Get("length").Int()
-		if n > drum.TrackCount*drum.MaxSteps {
-			n = drum.TrackCount * drum.MaxSteps
+			return js.Null()
 		}
 
-		velocities := make([]float64, n)
+		// Typed arrays and plain arrays both expose a numeric length;
+		// anything else is not something we can read velocities from.
+		length := arr.Get("length")
+		if length.Type() != js.TypeNumber {
+			warnBadArg("setPattern")
+
+			return js.Null()
+		}
+
+		count := length.Int()
+		if count < 0 {
+			warnBadArg("setPattern")
+
+			return js.Null()
+		}
+
+		if count > drum.TrackCount*drum.MaxSteps {
+			count = drum.TrackCount * drum.MaxSteps
+		}
+
+		velocities := make([]float64, count)
+
 		for i := range velocities {
-			velocities[i] = arr.Index(i).Float()
+			elem := arr.Index(i)
+			if elem.Type() != js.TypeNumber {
+				warnBadArg("setPattern")
+
+				return js.Null()
+			}
+
+			vel := elem.Float()
+			if math.IsNaN(vel) || math.IsInf(vel, 0) {
+				warnBadArg("setPattern")
+
+				return js.Null()
+			}
+
+			velocities[i] = vel
 		}
 
 		engine.SetPattern(velocities)
@@ -121,64 +201,98 @@ func main() {
 	}))
 
 	api.Set("setVolume", export(func(args []js.Value) any {
-		if ready() && len(args) >= 2 {
-			engine.SetVolume(args[0].Int(), args[1].Float())
+		if !ready() {
+			return js.Null()
+		}
+
+		track, trackOK := argInt(args, 0, "setVolume")
+		volume, volOK := argFloat(args, 1, "setVolume")
+
+		if trackOK && volOK {
+			engine.SetVolume(track, volume)
 		}
 
 		return js.Null()
 	}))
 
 	api.Set("setDecay", export(func(args []js.Value) any {
-		if ready() && len(args) >= 2 {
-			engine.SetDecay(args[0].Int(), args[1].Float())
+		if !ready() {
+			return js.Null()
+		}
+
+		track, trackOK := argInt(args, 0, "setDecay")
+		decay, decayOK := argFloat(args, 1, "setDecay")
+
+		if trackOK && decayOK {
+			engine.SetDecay(track, decay)
 		}
 
 		return js.Null()
 	}))
 
 	api.Set("setReverb", export(func(args []js.Value) any {
-		if ready() && len(args) > 0 {
-			engine.SetReverb(args[0].Float())
+		if !ready() {
+			return js.Null()
+		}
+
+		if amount, ok := argFloat(args, 0, "setReverb"); ok {
+			engine.SetReverb(amount)
 		}
 
 		return js.Null()
 	}))
 
 	api.Set("setProbability", export(func(args []js.Value) any {
-		if ready() && len(args) > 0 {
-			engine.SetProbability(args[0].Float())
+		if !ready() {
+			return js.Null()
+		}
+
+		if prob, ok := argFloat(args, 0, "setProbability"); ok {
+			engine.SetProbability(prob)
 		}
 
 		return js.Null()
 	}))
 
 	api.Set("setHumanize", export(func(args []js.Value) any {
-		if ready() && len(args) > 0 {
-			engine.SetHumanize(args[0].Float())
+		if !ready() {
+			return js.Null()
+		}
+
+		if amount, ok := argFloat(args, 0, "setHumanize"); ok {
+			engine.SetHumanize(amount)
 		}
 
 		return js.Null()
 	}))
 
 	api.Set("render", export(func(args []js.Value) any {
-		if !ready() || len(args) < 1 {
+		if !ready() {
 			return js.Global().Get("Float32Array").New(0)
 		}
 
-		n := args[0].Int()
-		if n <= 0 {
+		sampleCount, ok := argInt(args, 0, "render")
+		if !ok || sampleCount <= 0 {
 			return js.Global().Get("Float32Array").New(0)
 		}
 
-		ensureRenderBuffers(n)
-		buf := renderBuf[:n]
+		// Cap the request so a single call cannot ask for an arbitrarily
+		// large Go slice plus JS ArrayBuffer.
+		if sampleCount > maxRenderSamples {
+			sampleCount = maxRenderSamples
+		}
+
+		ensureRenderBuffers(sampleCount)
+
+		buf := renderBuf[:sampleCount]
 		engine.Render(buf)
 
-		// One bulk copy across the JS boundary instead of n SetIndex calls.
-		bytes := unsafe.Slice((*byte)(unsafe.Pointer(&buf[0])), n*4)
+		// One bulk copy across the JS boundary instead of one SetIndex
+		// call per sample.
+		bytes := unsafe.Slice((*byte)(unsafe.Pointer(&buf[0])), sampleCount*4)
 		js.CopyBytesToJS(jsBytes, bytes)
 
-		return jsFloats.Call("subarray", 0, n)
+		return jsFloats.Call("subarray", 0, sampleCount)
 	}))
 
 	api.Set("currentStep", export(func(args []js.Value) any {
@@ -203,21 +317,87 @@ func ready() bool {
 
 	if !warnedBeforeInit {
 		warnedBeforeInit = true
+
 		println("algo-drum: API called before init — call ignored")
 	}
 
 	return false
 }
 
-// ensureRenderBuffers grows the shared Go and JS render buffers so they can
-// hold at least n float32 samples.
-func ensureRenderBuffers(n int) {
-	if n <= len(renderBuf) {
+// warnBadArg logs a single warning the first time the API is called with a
+// missing or wrong-typed argument. JS is untyped at the call site, so a bad
+// argument must never reach syscall/js conversions like Float() or Bool():
+// those panic, which would tear down the whole engine.
+func warnBadArg(name string) {
+	if warnedBadArg {
 		return
 	}
 
-	renderBuf = make([]float32, n)
-	arrayBuf := js.Global().Get("ArrayBuffer").New(n * 4)
+	warnedBadArg = true
+
+	println("algo-drum:", name, "called with an invalid argument — call ignored")
+}
+
+// argFloat reads a finite number from args[i], reporting false (and warning
+// once) when the argument is missing, not a number, or NaN/Inf.
+func argFloat(args []js.Value, i int, name string) (float64, bool) {
+	if i >= len(args) || args[i].Type() != js.TypeNumber {
+		warnBadArg(name)
+
+		return 0, false
+	}
+
+	val := args[i].Float()
+	if math.IsNaN(val) || math.IsInf(val, 0) {
+		warnBadArg(name)
+
+		return 0, false
+	}
+
+	return val, true
+}
+
+// argInt reads an integer from args[i] with the same guarantees as argFloat,
+// additionally rejecting values that do not fit in an int32 and values with a
+// fractional part. Truncating (7.9 -> 7) would silently reinterpret a caller
+// bug as a valid step, track or sample count, so a non-integer is treated like
+// any other invalid argument: warn once and leave engine state untouched.
+func argInt(args []js.Value, i int, name string) (int, bool) {
+	val, ok := argFloat(args, i, name)
+	if !ok {
+		return 0, false
+	}
+
+	if val > math.MaxInt32 || val < math.MinInt32 || math.Trunc(val) != val {
+		warnBadArg(name)
+
+		return 0, false
+	}
+
+	return int(val), true
+}
+
+// argBool reads a boolean from args[i]. JS truthiness is deliberately not
+// applied: only an actual boolean is accepted.
+func argBool(args []js.Value, i int, name string) (bool, bool) {
+	if i >= len(args) || args[i].Type() != js.TypeBoolean {
+		warnBadArg(name)
+
+		return false, false
+	}
+
+	return args[i].Bool(), true
+}
+
+// ensureRenderBuffers grows the shared Go and JS render buffers so they can
+// hold at least sampleCount float32 samples.
+func ensureRenderBuffers(sampleCount int) {
+	if sampleCount <= len(renderBuf) {
+		return
+	}
+
+	renderBuf = make([]float32, sampleCount)
+	arrayBuf := js.Global().Get("ArrayBuffer").New(sampleCount * 4)
 	jsBytes = js.Global().Get("Uint8Array").New(arrayBuf)
 	jsFloats = js.Global().Get("Float32Array").New(arrayBuf)
 }

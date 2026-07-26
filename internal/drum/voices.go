@@ -78,16 +78,18 @@ const (
 	cymSeed       = 999
 )
 
+// clamp01 limits a voice-level value to [0, 1]. Non-finite input becomes 0:
+// bare `<`/`>` comparisons are false for NaN, so it would otherwise pass
+// straight through into an envelope and turn the voice permanently silent-but-
+// NaN. Engine parameters are already rejected at the setters (validFloat);
+// this is the same policy applied inside the voices.
 func clamp01(v float64) float64 {
-	if v < 0 {
+	val, ok := validFloat(v, 0, 1)
+	if !ok {
 		return 0
 	}
 
-	if v > 1 {
-		return 1
-	}
-
-	return v
+	return val
 }
 
 func decayCoef(sr, decayS float64) float64 {

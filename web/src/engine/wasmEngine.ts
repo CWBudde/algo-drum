@@ -5,10 +5,16 @@
 // direct MessageChannel. This module only sends control commands and mirrors
 // the audible sequencer step reported back by the worklet.
 
-import type { WorkerCommand, WorkerResponse } from "./audioWorker";
+import type { AlgoDrumApi, WorkerCommand, WorkerResponse } from "./audioWorker";
 import { PatternMirror } from "./patternMirror";
 
 const SAMPLE_RATE = 48000;
+
+// Upper bound on how long the worker may take to report the engine ready.
+// A worker that neither answers nor errors (a stalled fetch, a runtime that
+// never reaches its entry point) would otherwise leave the app on "Loading
+// engine…" forever, with no path to the Retry button.
+const LOAD_TIMEOUT_MS = 30000;
 
 let worker: Worker | null = null;
 let audioCtx: AudioContext | null = null;
@@ -64,64 +70,115 @@ function post(command: WorkerCommand): void {
   send(command);
 }
 
-function command(name: string, ...args: unknown[]): void {
-  post({ type: "cmd", name, args } as WorkerCommand);
+// command sends one engine call. Typing the name against AlgoDrumApi (and the
+// arguments against that method's signature) makes a typo or a wrong argument
+// a compile error here rather than a silent no-op in the worker.
+function command<K extends keyof AlgoDrumApi>(
+  name: K,
+  ...args: Parameters<AlgoDrumApi[K]>
+): void {
+  post({ type: "cmd", name, args });
 }
 
-// getPattern is fire-and-forget on the command channel, so pattern reads go
-// through a small request/reply keyed by id.
-let nextRequestId = 1;
-const patternResolvers = new Map<number, (pattern: Float32Array) => void>();
+// isPatternEdit reports whether a queued command mutates the engine's pattern
+// and will therefore be echoed back once it is finally sent.
+function isPatternEdit(cmd: WorkerCommand): boolean {
+  return (
+    cmd.type === "cmd" && (cmd.name === "setCell" || cmd.name === "setPattern")
+  );
+}
 
-// settlePendingPatternRequests resolves every in-flight getPattern() with an
-// empty pattern so callers never hang when the worker dies or fails to load.
-function settlePendingPatternRequests(): void {
-  for (const resolve of patternResolvers.values()) {
-    resolve(new Float32Array(0));
+// teardownWorker drops a worker from a failed attempt so a retry starts clean
+// and we don't leak workers.
+function teardownWorker(): void {
+  if (!worker) return;
+
+  worker.terminate();
+  worker = null;
+
+  // Edits already sent to the dead worker will never be echoed, but the ones
+  // still queued here will be replayed to the replacement worker. Re-base the
+  // mirror on that count: any mismatch makes it publish a stale echo as
+  // authoritative and revert newer edits.
+  patternMirror.reset(pendingCommands.filter(isPatternEdit).length);
+}
+
+// One shared load attempt. React StrictMode invokes the mount effect twice and
+// the Retry button can be double-clicked; without this, the second call would
+// terminate the first call's worker and leave its promise pending forever.
+let loadAttempt: Promise<void> | null = null;
+
+export function loadWasm(): Promise<void> {
+  if (wasmReady) return Promise.resolve();
+
+  if (!loadAttempt) {
+    const attempt = attemptLoad();
+    loadAttempt = attempt;
+
+    // Forget a settled attempt so a failure can be retried; a success is
+    // short-circuited by wasmReady above. The extra catch only keeps this
+    // bookkeeping chain from surfacing as a second, unhandled rejection —
+    // callers still see the original one.
+    void attempt
+      .catch(() => undefined)
+      .finally(() => {
+        if (loadAttempt === attempt) loadAttempt = null;
+      });
   }
-  patternResolvers.clear();
+
+  return loadAttempt;
 }
 
-export async function loadWasm(): Promise<void> {
-  if (wasmReady) return;
-
+async function attemptLoad(): Promise<void> {
   // A previous attempt may have left a worker running (e.g. the WASM fetch
-  // failed after the worker spawned). Tear it down so Retry starts clean and
-  // we don't leak workers.
-  if (worker) {
-    worker.terminate();
-    worker = null;
-    settlePendingPatternRequests();
-    patternMirror.reset(); // edits sent to the dead worker won't be echoed
-  }
+  // failed after the worker spawned).
+  teardownWorker();
 
-  worker = new Worker(new URL("./audioWorker.ts", import.meta.url), {
+  const active = new Worker(new URL("./audioWorker.ts", import.meta.url), {
     type: "module",
   });
+  worker = active;
+
+  let timeout: ReturnType<typeof setTimeout> | undefined;
 
   const ready = new Promise<void>((resolve, reject) => {
-    if (!worker) return;
-    worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+    active.onmessage = (event: MessageEvent<WorkerResponse>) => {
       const data = event.data;
       switch (data.type) {
         case "ready":
           resolve();
           break;
         case "error":
-          settlePendingPatternRequests();
+          // Before readiness this settles the load and the app renders the
+          // message. Afterwards it is a per-command failure and this reject
+          // is a no-op, so log it or it would vanish silently.
+          if (wasmReady) console.error("Audio engine error:", data.error);
           reject(new Error(data.error));
           break;
-        case "pattern": {
-          const resolvePattern = patternResolvers.get(data.id);
-          patternResolvers.delete(data.id);
-          resolvePattern?.(data.pattern);
-          break;
-        }
         case "patternSync":
           patternMirror.receiveSync(data.pattern);
           break;
       }
     };
+
+    // A worker can also fail without ever sending a message: a module that
+    // 404s, or a throw at its top level. Without these handlers the load
+    // promise would never settle and the UI would hang on "Loading engine…".
+    active.onerror = (event) => {
+      // message is empty for cross-origin failures.
+      reject(new Error(event.message || "Audio engine worker failed to start"));
+    };
+    active.onmessageerror = () => {
+      reject(new Error("Audio engine worker sent an undeliverable message"));
+    };
+
+    timeout = setTimeout(() => {
+      reject(
+        new Error(
+          `Audio engine did not start within ${LOAD_TIMEOUT_MS / 1000}s`,
+        ),
+      );
+    }, LOAD_TIMEOUT_MS);
   });
 
   // Create the engine immediately so pattern and parameter edits made before
@@ -135,7 +192,21 @@ export async function loadWasm(): Promise<void> {
     sampleRate: SAMPLE_RATE,
   });
 
-  await ready;
+  try {
+    await ready;
+  } catch (error) {
+    // Don't let a failed attempt's worker outlive it. Teardown otherwise only
+    // runs at the start of the *next* attempt, so a worker that errored or
+    // timed out would keep running until the user hits Retry — or forever if
+    // they never do. This also clears the module-level reference, so nothing
+    // can post to it afterwards.
+    teardownWorker();
+
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+
   wasmReady = true;
 
   for (const cmd of pendingCommands.splice(0)) {
@@ -143,33 +214,68 @@ export async function loadWasm(): Promise<void> {
   }
 }
 
+function describeError(error: unknown): string {
+  return error instanceof Error && error.message
+    ? error.message
+    : String(error);
+}
+
+// teardownAudio tears the audio graph down so the next play() can rebuild it.
+function teardownAudio(): void {
+  workletNode?.disconnect();
+  workletNode = null;
+
+  // close() is fire-and-forget here: we are already on an error path and a
+  // context that refuses to close is being dropped anyway.
+  void audioCtx?.close().catch(() => undefined);
+  audioCtx = null;
+}
+
 async function startAudio(): Promise<void> {
   if (audioCtx || !worker) return;
 
-  audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
-  await audioCtx.audioWorklet.addModule(
-    import.meta.env.BASE_URL + "worklet.js",
-  );
+  try {
+    const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
+    audioCtx = ctx;
 
-  workletNode = new AudioWorkletNode(audioCtx, "algo-drum", {
-    numberOfInputs: 0,
-    outputChannelCount: [1],
-  });
+    await ctx.audioWorklet.addModule(import.meta.env.BASE_URL + "worklet.js");
 
-  // Direct worker <-> worklet channel for audio chunks.
-  const channel = new MessageChannel();
-  send({ type: "connect" }, [channel.port1]);
-  workletNode.port.postMessage({ type: "workerPort" }, [channel.port2]);
+    const node = new AudioWorkletNode(ctx, "algo-drum", {
+      numberOfInputs: 0,
+      outputChannelCount: [1],
+    });
+    workletNode = node;
 
-  // The worklet reports the step each playing chunk starts on, so the UI
-  // playhead follows what is audible rather than what was rendered ahead.
-  workletNode.port.onmessage = (
-    event: MessageEvent<{ type: string; step: number }>,
-  ) => {
-    if (event.data.type === "step") notifyStep(event.data.step);
-  };
+    // Direct worker <-> worklet channel for audio chunks.
+    const channel = new MessageChannel();
+    send({ type: "connect" }, [channel.port1]);
+    node.port.postMessage({ type: "workerPort" }, [channel.port2]);
 
-  workletNode.connect(audioCtx.destination);
+    // The worklet reports the step each playing chunk starts on, so the UI
+    // playhead follows what is audible rather than what was rendered ahead.
+    node.port.onmessage = (
+      event: MessageEvent<{ type: string; step: number }>,
+    ) => {
+      if (event.data.type === "step") notifyStep(event.data.step);
+    };
+
+    node.connect(ctx.destination);
+  } catch (error) {
+    // Constructing the context or loading the worklet module can fail (an
+    // exhausted/blocked AudioContext, a worklet.js that 404s or throws). Drop
+    // the half-built graph so a later play() retries from scratch instead of
+    // returning early on a dead context, and reject with something the caller
+    // can show the user.
+    teardownAudio();
+
+    // tsconfig targets the ES2020 lib, which predates the Error options bag,
+    // so the cause is attached after construction.
+    const failure: Error & { cause?: unknown } = new Error(
+      `Audio output could not be started: ${describeError(error)}`,
+    );
+    failure.cause = error;
+    throw failure;
+  }
 }
 
 export async function play(): Promise<void> {
@@ -218,19 +324,6 @@ export function setPattern(pattern: Float32Array): void {
   command("setPattern", pattern);
 }
 
-// getPattern resolves with the engine's pattern in the same flat layout
-// setPattern accepts (empty before the engine has loaded).
-export function getPattern(): Promise<Float32Array> {
-  const id = nextRequestId++;
-  const result = new Promise<Float32Array>((resolve) => {
-    patternResolvers.set(id, resolve);
-  });
-
-  post({ type: "getPattern", id });
-
-  return result;
-}
-
 export function setVolume(track: number, vol: number): void {
   command("setVolume", track, vol);
 }
@@ -251,8 +344,4 @@ export function setProbability(p: number): void {
 // setHumanize sets the timing/velocity randomization amount in [0, 1].
 export function setHumanize(h: number): void {
   command("setHumanize", h);
-}
-
-export function currentStep(): number {
-  return audibleStep;
 }

@@ -1,0 +1,60 @@
+version: 2
+
+updates:
+  # Go module (algo-dsp and friends)
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+      - go
+
+  # Frontend. The lockfile lives in web/, not the repo root. Major bumps are
+  # deliberately included: the frontend has drifted several majors behind in
+  # the past (vite, @vitejs/plugin-react, typescript) and this is what keeps
+  # that from recurring.
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    versioning-strategy: increase
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+      - frontend
+    groups:
+      # One PR for the lint toolchain and one for the test toolchain keeps
+      # review load sane without hiding majors.
+      eslint:
+        patterns:
+          - "eslint"
+          - "@eslint/*"
+          - "eslint-plugin-*"
+          - "typescript-eslint"
+      testing:
+        patterns:
+          - "vitest"
+          - "@playwright/test"
+
+  # Workflow actions (actions/checkout, setup-go, setup-bun, golangci-lint,
+  # deploy-pages, ...) — pinned versions only stay current if something bumps
+  # them.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+    labels:
+      - dependencies
+      - github-actions
