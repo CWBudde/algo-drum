@@ -22,6 +22,61 @@ interface AlgoDrumApi {
   currentStep: () => number;
 }
 
+// Every method this worker calls on the engine. AlgoDrumApi is only a
+// compile-time contract, so without a runtime check a stale algo_drum.wasm
+// (it is a gitignored, unhashed build artifact, and caches version it
+// independently of the hashed JS bundle) loads happily and then throws a
+// cryptic "AlgoDrum.<name> is not a function" on some later user action —
+// e.g. an engine predating the bulk pattern API still has setCell, so the
+// failure only surfaced as the pattern echo after the first cell edit.
+const REQUIRED_METHODS = [
+  "init",
+  "setRunning",
+  "setTempo",
+  "setSwing",
+  "setStepCount",
+  "setCell",
+  "setPattern",
+  "getPattern",
+  "setVolume",
+  "setDecay",
+  "setReverb",
+  "setProbability",
+  "setHumanize",
+  "render",
+  "currentStep",
+] as const satisfies readonly (keyof AlgoDrumApi)[];
+
+// Compile error if a method is added to AlgoDrumApi but not to
+// REQUIRED_METHODS, so the runtime check can never silently fall behind.
+type AssertNever<T extends never> = T;
+export type _AllMethodsListed = AssertNever<
+  Exclude<keyof AlgoDrumApi, (typeof REQUIRED_METHODS)[number]>
+>;
+
+// assertEngineApi fails the load when the instantiated WASM does not expose
+// the API this bundle was built against, turning a silent version skew into
+// an actionable error surfaced by the app's load-fault UI.
+function assertEngineApi(api: AlgoDrumApi | undefined): void {
+  if (!api) {
+    throw new Error(
+      "WASM engine loaded but did not register the AlgoDrum API — " +
+        "algo_drum.wasm is not an algo-drum build.",
+    );
+  }
+
+  const missing = REQUIRED_METHODS.filter(
+    (name) => typeof api[name] !== "function",
+  );
+
+  if (missing.length > 0) {
+    throw new Error(
+      `WASM engine is out of date: algo_drum.wasm is missing ${missing.join(", ")}. ` +
+        "Rebuild it with `bash scripts/build-wasm.sh` (or hard-reload to bypass a cached engine).",
+    );
+  }
+}
+
 interface GoRuntime {
   importObject: WebAssembly.Imports;
   run(instance: WebAssembly.Instance): Promise<void>;
@@ -80,6 +135,10 @@ async function load(
   const go = new workerScope.Go();
   const result = await instantiate(wasmUrl, go.importObject);
   void go.run(result.instance); // runs forever via select{}
+
+  // go.run() executes Go's main synchronously up to its select{}, so the
+  // API registration has already happened by the time it returns.
+  assertEngineApi(workerScope.AlgoDrum);
 
   workerScope.AlgoDrum.init(sampleRate);
   engineReady = true;

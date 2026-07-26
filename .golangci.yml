@@ -3,11 +3,19 @@ version: "2"
 linters:
   default: standard # errcheck, govet, ineffassign, staticcheck, unused
   enable:
+    - revive
     - thelper
     - tparallel
     - varnamelen
     - wsl_v5
   settings:
+    revive:
+      rules:
+        - name: file-length-limit
+          arguments:
+            - max: 1500
+              skip-comments: false
+              skip-blank-lines: false
     varnamelen:
       # Short names that are idiomatic in DSP / Go code
       ignore-names:
@@ -18,6 +26,12 @@ linters:
         - v # voice / value
         - ok # Go error-check idiom
   exclusions:
+    paths:
+      # Third-party Go sources vendored inside npm packages (e.g. flatted,
+      # a vitest dependency). `./...` only picks these up once
+      # web/node_modules is installed, so without this the linter is green
+      # on a clean checkout and red after `bun install`.
+      - web/node_modules
     rules:
       # Tests favour readable inline literals and t.Fatalf blocks.
       - path: _test\.go
@@ -28,3 +42,6 @@ linters:
 formatters:
   enable:
     - gofmt
+  exclusions:
+    paths:
+      - web/node_modules
