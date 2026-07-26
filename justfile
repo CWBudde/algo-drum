@@ -26,6 +26,10 @@ lint:
 lint-fix:
     GOOS=js GOARCH=wasm GOCACHE="${GOCACHE:-/tmp/gocache}" GOMODCACHE="${GOMODCACHE:-/tmp/gomodcache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/golangci-lint-cache}" golangci-lint run --fix --timeout=2m ./...
 
+# Run the Go test suite
+test:
+    go test ./...
+
 # Ensure go.mod / go.sum are tidy
 check-tidy:
     GOARCH=wasm GOOS=js go mod tidy
@@ -45,6 +49,10 @@ web-install:
 web-typecheck:
     cd web && bun run tsc --noEmit
 
+# Run the frontend unit tests (vitest)
+web-test:
+    cd web && bun run test
+
 # Run the Vite dev server (WASM must be built first)
 dev: build-wasm
     cd web && bun run dev
@@ -59,8 +67,8 @@ preview: build
 
 # ── Quality gates ────────────────────────────────────────────────────────────
 
-# Run all CI checks: formatting, linting, tidy, typecheck
-ci: check-formatted lint check-tidy web-typecheck
+# Run all CI checks, mirroring .github/workflows/ci.yml (a green `just ci` must mean the same as a green CI run)
+ci: check-formatted lint check-tidy test web-typecheck web-test
 
 # ── Housekeeping ─────────────────────────────────────────────────────────────
 
