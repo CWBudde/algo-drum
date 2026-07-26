@@ -117,6 +117,40 @@ describe("loadWasm", () => {
     await expect(retry).resolves.toBeUndefined();
   });
 
+  it.each([
+    [
+      "an error response",
+      (w: FakeWorker) => w.emit({ type: "error", error: "wasm fetch failed" }),
+    ],
+    ["onerror", (w: FakeWorker) => w.fail("boom")],
+    [
+      "onmessageerror",
+      (w: FakeWorker) => w.onmessageerror?.({} as MessageEvent),
+    ],
+  ])("terminates the worker when a load fails via %s", async (_label, fail) => {
+    const engine = await importEngine();
+
+    const load = engine.loadWasm();
+    fail(workers()[0]);
+    await expect(load).rejects.toThrow();
+
+    // Teardown must happen with the failure, not lazily at the start of the
+    // next attempt: a user who never retries would otherwise leave a broken
+    // worker running for the life of the page.
+    expect(workers()[0].terminated).toBe(true);
+  });
+
+  it("terminates the worker when the load times out", async () => {
+    vi.useFakeTimers();
+    const engine = await importEngine();
+
+    const load = engine.loadWasm();
+    vi.advanceTimersByTime(30000);
+    await expect(load).rejects.toThrow(/did not start within/);
+
+    expect(workers()[0].terminated).toBe(true);
+  });
+
   it("rejects when the worker errors without sending a message", async () => {
     const engine = await importEngine();
 
