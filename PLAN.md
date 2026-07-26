@@ -1,90 +1,100 @@
 # algo-drum — Repository Review & Improvement Plan
 
-Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `main` (commit `81dae31`).
+Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pass: **2026-07-26**.
 
-> The 2026-07-09 review found 13 categories of problems and drove three implementation
-> passes (07-09, 07-10, 07-26). Its completed items have been removed from this document;
-> `git log` and the review commits are the record. **Everything below is open work.**
+> The 2026-07-09 review drove three implementation passes; its items are closed and
+> removed (`git log` is the record). The 07-26 re-review below replaced it, and a
+> hardening pass has since closed 33 of its items — those stay listed but ticked, with
+> their original diagnosis intact, so the fix has a rationale attached. Unchecked items
+> are open.
 
 ## Scorecard
 
-| #   | Category                  |  Score   | Δ   | Verdict                                                                                      |
-| --- | ------------------------- | :------: | --- | -------------------------------------------------------------------------------------------- |
-| 1   | Correctness & robustness  | **6/10** | +3  | Sequencer core is sound; NaN walks through every clamp and swing is wrong at odd step counts |
-| 2   | Audio pipeline & WASM     | **7/10** | +4  | Right architecture, ~43 ms latency; the pull protocol has no recovery path                   |
-| 3   | Go engine / DSP           | **7/10** | +1  | Idiomatic, tested, allocation-free render; gain staging still lets transients hit the clamp  |
-| 4   | Architecture & state      | **6/10** | +1  | Pattern is engine-owned and reconciled — the other nine parameters are not                   |
-| 5   | Frontend code quality     | **7/10** | +2  | Lint/typecheck clean, zero `any`; one 502-line god component and no CSS token layer          |
-| 6   | UI / UX                   | **6/10** | +1  | Good knob and playhead mechanics; the grid is unusable below ~725 px                         |
-| 7   | Accessibility             | **6/10** | +5  | Real buttons, real sliders, AA text contrast; 80 flat tab stops and no AT playhead           |
-| 8   | Testing                   | **7/10** | +7  | 98.8 % Go coverage, 67 frontend tests; bridge, worker and components untested                |
-| 9   | CI/CD & tooling           | **7/10** | +3  | Four real gates on every PR; lint silently skips `cmd/wasm`, deploy doesn't wait for CI      |
-| 10  | Repo hygiene              | **8/10** | +4  | Clean tree, LICENSE, thorough gitignore; deps three majors behind, no update bot             |
-| 11  | Documentation             | **7/10** | +2  | API table and signal flow verified accurate; toolchain undocumented, two false claims        |
-| 12  | PWA & deployment          | **6/10** | +1  | Cache busting genuinely works; the app bundle is never precached, so offline is broken       |
-| 13  | Feature depth vs the name | **6/10** | +3  | The "algo" arrived — but every algorithmic control is global and one-shot                    |
+Δ is the change from the 07-26 re-review baseline, i.e. what the hardening pass moved.
 
-**Overall: 6.6/10** (was 4/10) — the skeleton became a real product: the audio path is
-off the main thread, the UI is accessible DOM, and four CI gates guard every PR. What
-remains is a different class of problem than last time — hardening (NaN, protocol
-recovery, lint blind spots) and reach (mobile layout, offline, per-step algorithms)
-rather than foundational defects.
+| #   | Category                  |  Score   | Δ   | Verdict                                                                                     |
+| --- | ------------------------- | :------: | --- | ------------------------------------------------------------------------------------------- |
+| 1   | Correctness & robustness  | **8/10** | +2  | Non-finite input rejected, swing fixed at every step count, bridge load recoverable         |
+| 2   | Audio pipeline & WASM     | **7/10** | —   | Right architecture, ~43 ms latency; the pull protocol still has no recovery path            |
+| 3   | Go engine / DSP           | **7/10** | —   | Idiomatic, tested, allocation-free render; gain staging still lets transients hit the clamp |
+| 4   | Architecture & state      | **7/10** | +1  | Command layer fully typed and echoes validated; nine parameters still UI-owned              |
+| 5   | Frontend code quality     | **7/10** | —   | Dead bridge plumbing gone; the 502-line component and missing CSS tokens remain             |
+| 6   | UI / UX                   | **6/10** | —   | Good knob and playhead mechanics; the grid is still unusable below ~725 px                  |
+| 7   | Accessibility             | **6/10** | —   | Real buttons, real sliders, AA text contrast; 80 flat tab stops and no AT playhead          |
+| 8   | Testing                   | **8/10** | +1  | Fuzzed engine + a fake-Worker bridge suite; components still untestable (no DOM env)        |
+| 9   | CI/CD & tooling           | **9/10** | +2  | Lints the WASM target, deploy gated on CI, tools pinned, caches and artifacts in place      |
+| 10  | Repo hygiene              | **8/10** | —   | Clean tree and dependabot now watching; the deps themselves are still three majors behind   |
+| 11  | Documentation             | **9/10** | +2  | Every verified-stale claim corrected; the toolchain and test suite are finally documented   |
+| 12  | PWA & deployment          | **6/10** | —   | Stamp verified and deploy no longer races CI; the bundle is still never precached           |
+| 13  | Feature depth vs the name | **6/10** | —   | The "algo" arrived — but every algorithmic control is global and one-shot                   |
 
-### Verified this pass
+**Overall: 7.2/10** (was 6.6 at re-review, 4.0 at first review). The hardening pass closed
+the correctness and tooling gaps; what is left is mostly reach — mobile layout, offline,
+accessibility depth, and the per-step algorithms the name promises.
 
-Measurements reproduced directly against the working tree, not taken on trust:
+### Verified after the hardening pass
 
-| Probe                                               | Result                                              |
-| --------------------------------------------------- | --------------------------------------------------- |
-| `go test ./internal/...`                            | pass, **98.8 %** statement coverage                 |
-| `bunx tsc --noEmit` · `bun run lint` · `vitest run` | pass · pass (0 warnings) · **67/67**                |
-| `SetCell(0,0,NaN)` → `Render`                       | **1024/1024 samples NaN**                           |
-| `SetTempo(NaN)`                                     | `stepLen[0] = -9223372036854775808`                 |
-| `SetSwing(0.5)` + `SetStepCount(7)`                 | loop 45000 vs 42000 samples → **+7.14 % tempo err** |
-| 3 s rock pattern, reverb 0.3                        | **16 samples** hard-clipped at ±1.0                 |
-| `golangci-lint run ./cmd/...` (host GOOS)           | `no go files to analyze` — **CI never lints it**    |
-| `GOOS=js GOARCH=wasm golangci-lint run ./...`       | **3 real issues** in `cmd/wasm/main.go`             |
+Every defect below was reproduced before the fix and re-checked after, with independent
+probes rather than the implementation's own tests:
+
+| Probe                                         | Before                         | After                            |
+| --------------------------------------------- | ------------------------------ | -------------------------------- |
+| `SetCell(0,0,NaN)` → `Render`                 | 1024/1024 samples NaN          | **no NaN; state unchanged**      |
+| `SetTempo(NaN)`                               | `stepLen[0] = INT64_MIN`       | **rejected, step lengths sane**  |
+| `SetSwing(0.5)` + `SetStepCount(7)`           | 45000 vs 42000 (+7.14 %)       | **exact at counts 1–16**         |
+| `NewEngine(0 / NaN / ±Inf)`                   | nil-deref panic                | **no panic, degrades to bypass** |
+| `golangci-lint run ./...` (WASM target)       | 3 issues in `cmd/wasm/main.go` | **0 issues**                     |
+| `go test ./internal/...`                      | 34 tests, 98.8 %               | **44 tests + fuzz, 98.0 %**      |
+| `bun run test`                                | 67 passing                     | **80 passing**                   |
+| `bun run test:e2e` (real production build)    | 2 passing                      | **2 passing**                    |
+| `treefmt --fail-on-change` · `tsc` · `eslint` | clean                          | **clean (0 warnings)**           |
+
+Still measured open: an ordinary 3 s pattern hard-clips **16 samples** at ±1.0, so the
+clamp rather than the limiter is enforcing the ceiling (**E7**).
 
 ---
 
-## 1. Correctness & robustness — 6/10
+## 1. Correctness & robustness — 8/10
 
 The sequencer core is genuinely correct — step _k_ occupies exactly `stepLen[k]` samples
 with no off-by-one, the probability gate short-circuits at `prob==1`, and pending
-humanize triggers are cleared on stop. Every guard, however, is a `<`/`>` comparison.
+humanize triggers are cleared on stop. Every guard used to be a `<`/`>` comparison, which
+is false for NaN — that whole class is now closed by a single `validFloat` boundary, and
+the JS bridge validates argument types before converting. What remains is lifecycle:
+teardown and the stop-time playhead race.
 
-- [ ] **C10 (high): NaN defeats every clamp.** `clamp01` (`internal/drum/voices.go:81`)
+- [x] **C10 (high): NaN defeats every clamp.** `clamp01` (`internal/drum/voices.go:81`)
       and the manual clamps in `SetTempo` (`engine.go:183`) / `SetSwing` (`engine.go:196`)
       use `<`/`>`, which are false for NaN. Verified: `SetCell(NaN)` → 100 % NaN output;
       `SetTempo(NaN)` → `stepLen[0] = INT64_MIN`, advancing a step per sample. The final
       clamp (`engine.go:410`) is also `>`/`<`, so nothing sanitises it and the Web Audio
       graph is dead until reload. Add an `IsNaN` rejection at the API boundary.
-- [ ] **C11 (high): swing is wrong for odd step counts.** `recomputeStepLengths`
+- [x] **C11 (high): swing is wrong for odd step counts.** `recomputeStepLengths`
       (`engine.go:142`) assigns long/short by absolute step-index parity, but
       `SetStepCount` (`engine.go:212`) allows any end index. Verified: a 7-step loop at
       swing 0.5 runs **7.14 % slow** with two long steps back-to-back across the wrap.
       `SetStepCount` also leaves `stepSamples` untouched when it wraps `currentStep`, so
       the in-flight step plays out with another step's length.
-- [ ] **C12: nil-deref on an invalid sample rate.** `engine.go:115` calls `rev.SetWet(0)`
+- [x] **C12: nil-deref on an invalid sample rate.** `engine.go:115` calls `rev.SetWet(0)`
       unconditionally after `reverb.NewFDNReverb`, which returns `(nil, err)` for
       `sr<=0`/NaN/Inf; the argument is evaluated before `logErr` runs. Same shape at
       `engine.go:124` for the limiter. `cmd/wasm/main.go:30` passes `args[0].Float()`
       straight through, so `AlgoDrum.init(0)` kills the runtime.
-- [ ] **C13: non-numeric JS args panic the engine.** `.Float()`/`.Int()`/`.Bool()` panic
+- [x] **C13: non-numeric JS args panic the engine.** `.Float()`/`.Int()`/`.Bool()` panic
       on a wrong-typed `js.Value` (`cmd/wasm/main.go:43,52,59,67,75,125,133,141,149,157,168`);
       `setPattern` calls `arr.Get("length").Int()` (`:90`) and panics on any non-array. A
       panic here takes the whole engine down with nothing reported to the app.
-- [ ] **C14 (high): the pattern mirror mis-reconciles after a retry.**
+- [x] **C14 (high): the pattern mirror mis-reconciles after a retry.**
       `wasmEngine.ts:91-96` calls `patternMirror.reset()` on teardown but never clears
       `pendingCommands` (`:56`), so edits queued against the dead worker are flushed at
       `:141` with `inFlight` back at 0 — every intermediate echo is then published as
       authoritative (`patternMirror.ts:34`), reverting newer edits. This is precisely the
       scenario the mirror exists to prevent.
-- [ ] **C15: `loadWasm()` has no in-flight guard.** `wasmEngine.ts:86` checks only
+- [x] **C15: `loadWasm()` has no in-flight guard.** `wasmEngine.ts:86` checks only
       `wasmReady`. Under StrictMode the App effect (`App.tsx:31`) invokes it twice: call
       #1 binds its `ready` handler to worker W1, call #2 terminates W1 — P1 **never
       settles**. Double-clicking Retry does the same.
-- [ ] **C16 (high): no `worker.onerror` / `onmessageerror`.** `wasmEngine.ts:104` wires
+- [x] **C16 (high): no `worker.onerror` / `onmessageerror`.** `wasmEngine.ts:104` wires
       only `onmessage`, and `audioWorker.ts:176` dispatches `AlgoDrum[name](...)` with no
       `try`/`catch` and no callable check. A post-load throw leaves the UI showing a
       "ready" machine that makes no sound, with no timeout and no Retry path.
@@ -93,7 +103,7 @@ humanize triggers are cleared on stop. Every guard, however, is a `<`/`>` compar
       numbers drain; `worklet.js:63` reports them and re-lights the LED for ~43 ms.
 - [ ] **C18: no teardown.** Nothing calls `audioCtx.close()`, `workletNode.disconnect()`
       or `worker.terminate()` outside the retry path.
-- [ ] **C19: unbounded allocation from a JS arg.** `cmd/wasm/main.go:168` accepts any
+- [x] **C19: unbounded allocation from a JS arg.** `cmd/wasm/main.go:168` accepts any
       positive `n`; `ensureRenderBuffers` allocates `n` floats + an `n*4` ArrayBuffer.
 
 ### To raise this score — correctness
@@ -102,15 +112,15 @@ The defects above are symptoms of one root cause: **validation is re-implemented
 per setter**, so each new parameter is a fresh chance to forget a case. Fix the
 structure, not just the ten instances.
 
-- [ ] **C20: one validated-parameter boundary.** Replace the hand-rolled clamps in every
+- [x] **C20: one validated-parameter boundary.** Replace the hand-rolled clamps in every
       setter with a single `validFloat(name, v, lo, hi)` helper that rejects NaN/Inf and
       clamps in one place. C10, C12 and the C4-era
       clamps all collapse into it, and the next parameter inherits the policy for free.
-- [ ] **C21: fuzz the public API.** A Go fuzz target that drives arbitrary setter
+- [x] **C21: fuzz the public API.** A Go fuzz target that drives arbitrary setter
       sequences then asserts `Render` output is finite and within ±1.0 would have found
       C10 on its own. Cheap to write against `internal/drum` (pure Go, no WASM needed)
       and it runs in the existing `go test` job via `-fuzztime`.
-- [ ] **C22: define the out-of-range contract.** `SetCell`/`SetVolume` silently no-op on
+- [x] **C22: define the out-of-range contract.** `SetCell`/`SetVolume` silently no-op on
       a bad track/step index (`engine.go:231`, `:265`), so a UI bug looks like a dead
       pad. Decide — and document — whether these clamp, error to JS, or panic in dev
       builds; today the answer differs per method.
@@ -183,24 +193,25 @@ bar-length, velocity and humanize bounds. Gain staging is the outstanding proble
       up to ~0.5 samples/step at non-integer BPM. Irrelevant standalone; matters the
       moment anything external syncs to it.
 
-## 4. Architecture & state management — 6/10
+## 4. Architecture & state management — 7/10
 
 `PatternMirror` is small, isolated, unit-tested, and the `WorkerCommand`/`WorkerResponse`
-discriminated unions with the `AssertNever` guard are the best code in the repo. But
-"single source of truth" currently holds for **one of ten** pieces of state, so two
-contradictory state disciplines now sit side by side.
+discriminated unions with the `AssertNever` guard are the best code in the repo, and the
+command layer is now typed end to end with echoes validated against the expected size. But
+"single source of truth" still holds for **one of ten** pieces of state, so two
+contradictory state disciplines sit side by side.
 
 - [ ] **A4 (high): only the pattern is engine-owned.** Tempo, swing, step count, reverb,
       probability, humanize, volumes, decays and mute are still UI-owned and fired
       one-way with no echo, no clamp feedback and no reconciliation — so the engine's
       clamping (e.g. tempo 30–300) is invisible to the UI. Either extend the echo
       protocol to a full state snapshot or document the split deliberately.
-- [ ] **A5: the typed command layer has a hole at its constructor.**
+- [x] **A5: the typed command layer has a hole at its constructor.**
       `wasmEngine.ts:67` is `command(name: string, ...args: unknown[])` with an
       `as WorkerCommand` cast, so `command("setTemp", 120)` compiles despite
       `WorkerCommand` declaring `name: keyof AlgoDrumApi`. Typing the parameter is a
       one-word fix; per-method arg tuples close it fully.
-- [ ] **A6: echo length is never validated.** `patternMirror.ts:35` rejects only
+- [x] **A6: echo length is never validated.** `patternMirror.ts:35` rejects only
       `length === 0`, and `flatToVisual` pads with `?? 0`, so a version-skewed engine
       returning a short array silently wipes tracks.
 - [ ] **A7: `playing` has no owner** — set optimistically (`DrumMachine.tsx:253`), faked
@@ -219,7 +230,7 @@ contradictory state disciplines now sit side by side.
 - [ ] **A11: a load error unmounts the whole machine.** `App.tsx:57` renders
       `DrumMachine` only when `status !== "error"`, so Retry discards all UI state and
       re-reads persistence, losing up to 300 ms of debounced edits.
-- [ ] **A12: `startAudio` has no error handling** (`wasmEngine.ts:146`); a rejecting
+- [x] **A12: `startAudio` has no error handling** (`wasmEngine.ts:146`); a rejecting
       `addModule` propagates into `handlePlayStop` (`DrumMachine.tsx:249`, no catch) with
       nothing shown to the user.
 
@@ -265,7 +276,7 @@ structural rather than sloppy.
 - [ ] **F9: duplicated constants** — `DrumMachine.tsx:17-22` redefines `COLS`, `ROWS`,
       `VEL_NORMAL`, `VEL_ACCENT`, which already exist in `algo/pattern.ts:8-17` where they
       define the persistence byte format.
-- [ ] **F10: ~45 lines of dead code.** Verified zero callers for `getPattern()`
+- [x] **F10: ~45 lines of dead code.** Verified zero callers for `getPattern()`
       (`wasmEngine.ts:223`), `nextRequestId`/`patternResolvers` (`:73`),
       `settlePendingPatternRequests` (`:78`), the worker's `"getPattern"` case
       (`audioWorker.ts:197`) and the `"pattern"` response variant (`:94`).
@@ -419,13 +430,14 @@ remaining "can a screen-reader user actually operate this?" gaps.
       screen-reader pass (NVDA or VoiceOver) — automation catches perhaps half of what
       X6/X7 are about.
 
-## 8. Testing — 7/10
+## 8. Testing — 8/10
 
-The Go engine is genuinely well tested: 34 test functions, **98.8 %** statement coverage,
+The Go engine is genuinely well tested: 44 test functions plus a fuzz target, **98.0 %**
+statement coverage,
 asserting real invariants (swing preserves bar length, clamping on every setter, output
 bounded and finite, humanize bounds, allocation-free render via `AllocsPerRun`). The
-frontend's pure modules are equally solid at **67 passing tests**. Everything _between_
-those two islands is untested.
+frontend's tests are up to **80 passing**, now including a fake-Worker suite for the
+main-thread bridge. The remaining island is the UI itself.
 
 - [ ] **T7: `cmd/wasm/main.go` is invisible to the test runner.** Its `js && wasm` build
       tag means `go test ./...` never even compiles it, so the arg marshalling,
@@ -448,39 +460,41 @@ those two islands is untested.
 - [ ] **T12: no coverage measurement or threshold in CI** for either language, and no
       `coverage` block in `vitest.config.ts`.
 
-## 9. CI/CD & tooling — 7/10
+## 9. CI/CD & tooling — 9/10
 
 `ci.yml` gates PRs on all four axes — Go test + WASM build + tidy + lint, treefmt with
 every formatter genuinely installed (checksum-verified download), typecheck + eslint +
 vitest + vite build, and a real Playwright run against the production build. `golangci-lint
-config verify` is clean under v2.12.2. Two structural holes remain.
+config verify` is clean under v2.12.2, tools are pinned, caches and failure artifacts are
+in place, and the deploy now runs only after a green CI on the exact commit it builds. The
+remaining gap is payload size: the WASM is reported but never budgeted.
 
-- [ ] **CI5 (high): CI never lints `cmd/wasm`.** `ci.yml:33` runs
+- [x] **CI5 (high): CI never lints `cmd/wasm`.** `ci.yml:33` runs
       `golangci-lint-action@v8` with the host GOOS, where `./cmd/...` resolves to
       `no go files to analyze` (verified). `justfile:23` correctly sets
       `GOOS=js GOARCH=wasm` — which currently reports **3 real issues** in
       `cmd/wasm/main.go` (2 × varnamelen, 1 × wsl_v5) that CI cannot see. Set the env on
       the action.
-- [ ] **CI6: `deploy.yml` does not depend on CI.** No `needs:`, and its own steps are
+- [x] **CI6: `deploy.yml` does not depend on CI.** No `needs:`, and its own steps are
       only `bun run build` — so a push to `main` deploys in parallel with the test run
       and can publish a build whose unit or e2e tests are red.
-- [ ] **CI7: `--allow-missing-formatter` is still passed in CI** (`ci.yml:86`) despite the
+- [x] **CI7: `--allow-missing-formatter` is still passed in CI** (`ci.yml:86`) despite the
       comment at `:39` claiming all formatters are installed. If any install step
       degrades — e.g. the `bun pm bin -g` path drift at `:70` for prettier, which owns
       _every_ `.ts/.tsx/.md/.yml/.json/.css` file — the check passes green having
       formatted nothing. Drop the flag so the claim is enforceable.
-- [ ] **CI8: unpinned tool versions** — `golangci-lint: latest` (`ci.yml:35`) and
+- [x] **CI8: unpinned tool versions** — `golangci-lint: latest` (`ci.yml:35`) and
       `bun-version: latest` in both workflows make builds non-reproducible and let an
       upstream release break CI with no repo change.
-- [ ] **CI9: no `concurrency` group on `ci.yml`**, so rapid pushes run redundant full
+- [x] **CI9: no `concurrency` group on `ci.yml`**, so rapid pushes run redundant full
       matrices; and no bun-store cache in `ci.yml` (`deploy.yml:49` has one) nor a
       `~/.cache/ms-playwright` cache, so Chromium is re-downloaded every run.
-- [ ] **CI10: e2e artifacts are discarded.** `playwright.config.ts:25` produces traces on
+- [x] **CI10: e2e artifacts are discarded.** `playwright.config.ts:25` produces traces on
       retry and nothing uploads them; add `actions/upload-artifact` with `if: failure()`.
 - [ ] **CI11: WASM size is reported but never budgeted** (`deploy.yml:35`) — 4,188,961
       bytes today, and only post-merge, never on a PR. No `wasm-opt -Oz` pass exists
       (binaryen isn't installed anywhere); it typically takes another 10–20 % off.
-- [ ] **CI12: `just ci` and the CI workflow have diverged** — the recipe is
+- [x] **CI12: `just ci` and the CI workflow have diverged** — the recipe is
       `check-formatted lint check-tidy web-typecheck` with **no tests**, so a green local
       `just ci` says less than it appears to.
 
@@ -499,39 +513,41 @@ No dead files; `docs/voices.md` is linked from the README.
 - [ ] **H5: dependencies are three majors behind** — `vite` 7.3.1 → 8.1.5,
       `@vitejs/plugin-react` 4.7.0 → 6.0.4, `typescript` 5.9.3 → 7.0.2, plus minor drift
       in `@playwright/test`, `eslint`, `typescript-eslint`, `react`/`react-dom`.
-- [ ] **H6: no `dependabot.yml` or Renovate config**, so nothing keeps the above or
+- [x] **H6: no `dependabot.yml` or Renovate config**, so nothing keeps the above or
       `go.mod` current.
 - [ ] **H7: `.editorconfig` is advisory only** — no `editorconfig-checker` in CI, and
       `justfile` recipe bodies already contradict its global `indent_size = 2`.
 
-## 11. Documentation — 7/10
+## 11. Documentation — 9/10
 
 The load-bearing content is now accurate: all 15 `api.Set(...)` registrations were checked
 against the API table — every documented method exists, none is missing, and every
 documented clamp is real (tempo 30–300, swing 0–0.5, steps 1–16, ~8 ms volume ramp,
 humanize ≤15 ms / ±20 %). The track table, reverse UI order, signal-flow numbers (512-sample
-chunks, ~2048 buffered, 48 kHz) and dependency versions all match the code.
+chunks, ~2048 buffered, 48 kHz) and dependency versions all match the code. Every stale
+claim the re-review found has been corrected, and the toolchain — the `justfile` and all
+three test suites — is documented for the first time.
 
-- [ ] **D4: `AGENTS.md:7` is stale and self-contradicting** — "exposes a global
+- [x] **D4: `AGENTS.md:7` is stale and self-contradicting** — "exposes a global
       `window.AlgoDrum` API". There is no `window.AlgoDrum` on the main thread, as
       `AGENTS.md:47` and `:81` themselves say.
-- [ ] **D5: the architecture list has fallen ~8 files behind** (`AGENTS.md:46-63`) —
+- [x] **D5: the architecture list has fallen ~8 files behind** (`AGENTS.md:46-63`) —
       missing `main.tsx`, `ErrorBoundary.tsx`, `knobMath.ts`, `sw.js`, `site.webmanifest`,
       `e2e/smoke.spec.ts`, the five `*.test.ts` files, `docs/voices.md` and `PLAN.md`.
-- [ ] **D6: the toolchain is undocumented.** `AGENTS.md:9-42` never mentions the
+- [x] **D6: the toolchain is undocumented.** `AGENTS.md:9-42` never mentions the
       `justfile` — the actual dev interface — nor any test command (`go test ./...`,
       `bun run test`, `bun run test:e2e`, `bun run lint`). An agent reading it would not
       know the test suite exists.
-- [ ] **D7: Key Dependencies omits React 19.2.7** — the primary runtime dependency —
+- [x] **D7: Key Dependencies omits React 19.2.7** — the primary runtime dependency —
       along with TypeScript 5.9, Vitest 4, Playwright 1.61, ESLint 10, treefmt,
       golangci-lint (`AGENTS.md:101-105`).
-- [ ] **D8: `README.md:27` is false** — "the step grid and knobs are focusable and respond
+- [x] **D8: `README.md:27` is false** — "the step grid and knobs are focusable and respond
       to arrow keys". Knobs do; grid cells are plain buttons with no arrow handling (X5).
-- [ ] **D9: two overstated README claims** — "Installable / offline-capable" (`:28`) is
+- [x] **D9: two overstated README claims** — "Installable / offline-capable" (`:28`) is
       contradicted by P5, and `:74` gives the dev URL as `localhost:5173` when `base`
       puts the app at `/algo-drum/`.
-- [ ] **D10: `.claude/skills/verify/SKILL.md:36` says "steps 1–8"** — the grid is 16.
-- [ ] **D11: `docs/voices.md:20` treats E5 as future work** while this plan marks it done;
+- [x] **D10: `.claude/skills/verify/SKILL.md:36` says "steps 1–8"** — the grid is 16.
+- [x] **D11: `docs/voices.md:20` treats E5 as future work** while this plan marks it done;
       voice params are indeed still hardcoded and unexposed. Reconcile the two.
 
 ## 12. PWA & deployment — 6/10
@@ -554,7 +570,7 @@ is env-configurable, COOP/COEP were removed with a correct explanatory comment, 
       (`site.webmanifest:29`); Android's adaptive mask crops to the central 80 % circle,
       so the braces clip and the transparent corners are filled by the launcher. Needs a
       separate ~40 %-inset icon on an opaque background.
-- [ ] **P7: the cache-version `sed` is unverified** (`deploy.yml:70`) — a silent no-op if
+- [x] **P7: the cache-version `sed` is unverified** (`deploy.yml:70`) — a silent no-op if
       `sw.js:6` is ever renamed or reworded. Add
       `grep -q "algo-drum-${GITHUB_SHA::12}" web/dist/sw.js`.
 - [ ] **P8: SW cache writes are not awaited** — background `caches.put` is fired with
@@ -567,7 +583,7 @@ is env-configurable, COOP/COEP were removed with a correct explanatory comment, 
 - [ ] **P10: manifest gaps** — no `id` (stable PWA identity), no explicit `orientation`
       (P4 removed the wrong `portrait` without adding `any`), no `screenshots` /
       `display_override`.
-- [ ] **P11: `deploy.yml:17` uses `cancel-in-progress: true`** on the pages concurrency
+- [x] **P11: `deploy.yml:17` uses `cancel-in-progress: true`** on the pages concurrency
       group, which can cancel an in-flight _deployment_; GitHub's guidance for deploy
       workflows is `false`.
 
@@ -664,19 +680,22 @@ deterministically.
 
 ## Suggested execution order
 
-Where a structural item subsumes several defects, it is listed instead of them — fixing
-C20 closes C10 and C12, P12 closes P5/P7/P8, and so on.
+Where a structural item subsumes several defects, it is listed instead of them — P12
+closes P5/P7-partial/P8, A13 closes A4/A8, and so on.
 
-**P3 — hardening (small, high value):** C20 (one validated boundary → closes C10, C12),
-C11 (odd-step swing), C13 (arg validation), C14–C16 (bridge lifecycle), CI5 (lint the
-WASM target — it already has 3 findings), E7 (re-opened: fix gain staging, add a
-no-clipping test), B7 (protocol recovery), C21 + T7/T9 (fuzz and tests for exactly the
-code these defects live in).
+**P3 — hardening.** ✔ Done 2026-07-26: C20 (one validated boundary, closing C10/C12), C11
+(odd-step swing), C13/C19 (JS arg validation), C14–C16 (bridge lifecycle), A5/A6/A12,
+F10, C21 (fuzz), CI5–CI12, P7/P11, H6, D4–D11.
+Still open from this phase: **E7** (re-opened — gain staging still lets an ordinary
+pattern hard-clip 16 samples per 3 s; fix it and add a no-clipping test that can actually
+fail), **B7** (a dropped `need` message deadlocks audio permanently), **C17/C18**
+(stop-time playhead race, teardown), **T7/T9** (`cmd/wasm` is still never compiled by
+`go test`; `audioWorker.ts` still has no direct test).
 
 **P4 — reach:** U7/U8 (mobile grid, with U21's scale lever), X14 (a11y enforcement first,
 so the rest stays fixed), X5/X17 (roving tabindex + skip link), X7/X8/X15 (playhead and
-live regions), X9 (targets), P12 (generated SW → closes P5/P7/P8) and P13 (update UX),
-D4–D9 (docs that are currently wrong), CI6 (deploy behind CI).
+live regions), X9 (targets), P12 (generated SW → closes P5/P8) and P13 (update UX),
+T10 (a DOM test environment — the precondition for testing any of the above).
 
 **P5 — depth:** A13/A14/A16 (one state shape and one owner → closes A4, A7, A8), then
 G8 (per-step probability), G16 (conditional trigs), G9 (per-track length), G10 (pattern
@@ -684,5 +703,5 @@ banks), G11 (undo), G18 (continuous velocity — already in the engine), F7 (spl
 `DrumMachine.tsx` once its state model settles).
 
 **Quick wins, any time:** G14 (Tom absent from every preset), G21 + U19 (a default
-pattern so the app makes a sound on first click), U18 (`?` shortcut overlay), X17 (skip
-link), D10 (stale `verify` skill), CI8 (pin tool versions).
+pattern so the app makes a sound on first click), U18 (`?` shortcut overlay), CI11 (a
+WASM size budget), H5 (take dependabot's first PRs).
