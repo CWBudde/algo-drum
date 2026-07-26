@@ -30,6 +30,12 @@ lint-fix:
 test:
     go test ./...
 
+# Run the Go test suite with the engine self-check compiled into Render
+# (internal/drum/assert_debug.go); a broken invariant panics where it happens
+# instead of surfacing as plausible-sounding audio.
+test-assert:
+    go test -tags drumassert ./...
+
 # Ensure go.mod / go.sum are tidy
 check-tidy:
     GOARCH=wasm GOOS=js go mod tidy
@@ -77,7 +83,7 @@ preview: build
 # ── Quality gates ────────────────────────────────────────────────────────────
 
 # Run all CI checks, mirroring .github/workflows/ci.yml (a green `just ci` must mean the same as a green CI run)
-ci: check-formatted lint check-tidy check-params test web-typecheck web-test
+ci: check-formatted lint check-tidy check-params test test-assert web-typecheck web-test
 
 # ── Housekeeping ─────────────────────────────────────────────────────────────
 

@@ -19,6 +19,7 @@ just dev             # build-wasm, then the Vite dev server
 just build           # build-wasm, then the production bundle → web/dist/
 just preview         # build, then serve web/dist/ locally
 just test            # Go test suite
+just test-assert     # Go test suite with the engine self-check compiled into Render
 just web-test        # frontend unit tests (Vitest)
 just fmt             # format everything via treefmt (gofumpt, gci, shfmt, prettier)
 just lint            # golangci-lint against the js/wasm target
@@ -90,6 +91,8 @@ cmd/wasm/main.go          — WASM entry point; registers the AlgoDrum JS API (w
 internal/drum/engine.go   — Sequencer: velocity pattern grid (5×16), runtime step count, tempo/swing, probability + humanize (allocation-free pending-trigger list), smoothed per-track volumes, Render()
 internal/drum/voices.go   — Drum synthesizer voices (BassDrum, Snare, HiHat, Tom, Cymbal); all tuning is runtime-settable
 internal/drum/params.go   — Per-voice synthesis parameter specs (ranges, curves, defaults) + the normalized→engineering mapping
+internal/drum/validate.go — Engine.Validate(): every invariant Render relies on (step lengths, playhead, pending triggers, gains, voice params), joined into one error
+internal/drum/assert.go   — assertValid(): a no-op in shipped builds; `-tags drumassert` (assert_debug.go) makes Render panic on a broken invariant (`just test-assert`)
 cmd/gen-voiceparams/      — Generates web/src/engine/voiceParams.generated.ts from params.go (`just gen-params`; CI diffs it)
 internal/drum/*_test.go   — Go unit tests: sequencing, clamping, bit-exact render determinism, per-voice envelopes
 web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands, exposes onPattern (engine-owned pattern snapshots) and dispose() (tears the worker + audio graph down)

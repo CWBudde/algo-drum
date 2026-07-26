@@ -29,6 +29,14 @@ jobs:
       - name: Test
         run: go test ./...
 
+      - name: Test with the engine self-check enabled
+        # -tags drumassert compiles Engine.Validate into Render
+        # (internal/drum/assert_debug.go), so the same suite fails on corrupt
+        # engine state — a wrong step length, a playhead outside the loop — at
+        # the render that produced it, instead of only on the audio it happens
+        # to make. The shipped build compiles the check away.
+        run: go test -tags drumassert ./...
+
       - name: Build WASM
         run: GOOS=js GOARCH=wasm go build ./...
 
