@@ -3,6 +3,10 @@ import "./ErrorBoundary.css";
 
 interface Props {
   children: ReactNode;
+
+  // Called once a crash has been caught, so the owner can shut down whatever
+  // the unmounted subtree was driving (see App: the audio engine).
+  onError?: (error: Error, info: ErrorInfo) => void;
 }
 
 interface State {
@@ -23,6 +27,8 @@ export default class ErrorBoundary extends Component<Props, State> {
     // Surface the component stack in the console for debugging; the UI keeps
     // the message human-readable.
     console.error("Unexpected UI error:", error, info.componentStack);
+
+    this.props.onError?.(error, info);
   }
 
   render(): ReactNode {

@@ -98,10 +98,10 @@ teardown and the stop-time playhead race.
       only `onmessage`, and `audioWorker.ts:176` dispatches `AlgoDrum[name](...)` with no
       `try`/`catch` and no callable check. A post-load throw leaves the UI showing a
       "ready" machine that makes no sound, with no timeout and no Retry path.
-- [ ] **C17: playhead flashes backwards on Stop.** `stop()` fires `notifyStep(-1)`
+- [x] **C17: playhead flashes backwards on Stop.** `stop()` fires `notifyStep(-1)`
       (`wasmEngine.ts:187`) while ~2048 already-rendered samples carrying pre-stop step
       numbers drain; `worklet.js:63` reports them and re-lights the LED for ~43 ms.
-- [ ] **C18: no teardown.** Nothing calls `audioCtx.close()`, `workletNode.disconnect()`
+- [x] **C18: no teardown.** Nothing calls `audioCtx.close()`, `workletNode.disconnect()`
       or `worker.terminate()` outside the retry path.
 - [x] **C19: unbounded allocation from a JS arg.** `cmd/wasm/main.go:168` accepts any
       positive `n`; `ensureRenderBuffers` allocates `n` floats + an `n*4` ArrayBuffer.
@@ -257,7 +257,8 @@ describe it differently. One type fixes the category rather than the instances.
 - [ ] **A16: give the transport a single owner.** `playing` (UI), `currentStep` (worklet)
       and `running` (Go) are three views of one state machine with no arbiter. Model it
       explicitly — `stopped | starting | playing` owned by the engine and echoed like the
-      pattern — which also resolves C17's backwards flash and A7.
+      pattern — which subsumes A7 and C17's stop-drain suppression (fixed pointwise in
+      `wasmEngine.ts`, but only because the bridge knows -1 means "stopped").
 
 ## 5. Frontend code quality — 7/10
 
@@ -694,9 +695,9 @@ closes P5/P7-partial/P8, A13 closes A4/A8, and so on.
 F10, C21 (fuzz), CI5–CI12, P7/P11, H6, D4–D11.
 Still open from this phase: **E7** (re-opened — gain staging still lets an ordinary
 pattern hard-clip 16 samples per 3 s; fix it and add a no-clipping test that can actually
-fail), **B7** (a dropped `need` message deadlocks audio permanently), **C17/C18**
-(stop-time playhead race, teardown), **T7/T9** (`cmd/wasm` is still never compiled by
-`go test`; `audioWorker.ts` still has no direct test).
+fail), **B7** (a dropped `need` message deadlocks audio permanently), **T7/T9**
+(`cmd/wasm` is still never compiled by `go test`; `audioWorker.ts` still has no direct
+test). C17/C18 closed 2026-07-26 (stop-drain suppression + `dispose()`).
 
 **P4 — reach:** U7/U8 (mobile grid, with U21's scale lever), X14 (a11y enforcement first,
 so the rest stays fixed), X5/X17 (roving tabindex + skip link), X7/X8/X15 (playhead and
