@@ -16,10 +16,15 @@ type Voice interface {
 ```
 
 Nothing here reads from disk or a network — every voice is procedural
-(oscillator or noise generator + envelope + optional biquad filter). This
-doc exists so that when voice parameters become user-editable (PLAN.md
-**E5**), whoever wires up a "tune"/"snap" control knows exactly which
-constant it should replace and what range makes sense.
+(oscillator or noise generator + envelope + optional biquad filter).
+
+Every tuning value below is already a **named constant** rather than a magic
+number in the signal path — that part is done (PLAN.md **E5**). What is still
+missing is any way to change them at runtime: `SetDecay` is the only per-voice
+parameter on the JS API, so pitch, filter and gain constants remain
+compile-time. Exposing them ("tune"/"snap" per voice) is tracked as PLAN.md
+**G20**. The per-voice notes below therefore say which constant a future
+control should drive and what range makes sense.
 
 ## Shared building blocks
 
