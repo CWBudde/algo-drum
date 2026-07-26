@@ -358,14 +358,17 @@ func argFloat(args []js.Value, i int, name string) (float64, bool) {
 }
 
 // argInt reads an integer from args[i] with the same guarantees as argFloat,
-// additionally rejecting values that do not fit in an int32.
+// additionally rejecting values that do not fit in an int32 and values with a
+// fractional part. Truncating (7.9 -> 7) would silently reinterpret a caller
+// bug as a valid step, track or sample count, so a non-integer is treated like
+// any other invalid argument: warn once and leave engine state untouched.
 func argInt(args []js.Value, i int, name string) (int, bool) {
 	val, ok := argFloat(args, i, name)
 	if !ok {
 		return 0, false
 	}
 
-	if val > math.MaxInt32 || val < math.MinInt32 {
+	if val > math.MaxInt32 || val < math.MinInt32 || math.Trunc(val) != val {
 		warnBadArg(name)
 
 		return 0, false

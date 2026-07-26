@@ -194,6 +194,15 @@ async function attemptLoad(): Promise<void> {
 
   try {
     await ready;
+  } catch (error) {
+    // Don't let a failed attempt's worker outlive it. Teardown otherwise only
+    // runs at the start of the *next* attempt, so a worker that errored or
+    // timed out would keep running until the user hits Retry — or forever if
+    // they never do. This also clears the module-level reference, so nothing
+    // can post to it afterwards.
+    teardownWorker();
+
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
