@@ -182,7 +182,9 @@ test("Tom can select, audition, and persist the physical model", async ({
   const physical = dialog.getByRole("radio", { name: /Physical/ });
   await expect(algorithmic).toBeChecked();
 
-  await physical.check();
+  // The native radio is visually hidden; click its visible label just as a
+  // user does instead of asking Playwright to click the transparent input.
+  await dialog.getByText("Physical", { exact: false }).click();
   await expect(physical).toBeChecked();
   await expect(dialog.getByText("Single circular head")).toBeVisible();
   await expect(dialog.getByRole("slider")).toHaveCount(0);
