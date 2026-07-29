@@ -146,6 +146,16 @@ func (v *physicalTom) reconfigure() error {
 	config.Pickup.AngleRad = v.params.value(physicalTomParamPickupAngle) *
 		math.Pi / 180
 
+	splitRatio := v.params.value(physicalTomParamAsymmetry) / 100
+	asymmetryAxis := v.params.value(physicalTomParamAsymmetryAxis) *
+		math.Pi / 180
+	config.Batter.TensionAsymmetry.SplitRatio = splitRatio
+	config.Batter.TensionAsymmetry.PrincipalAxisAngleRad = asymmetryAxis
+	// The thinner resonant head keeps a slightly smaller default departure,
+	// while the UI presents one comprehensible "amount" for the instrument.
+	config.Resonant.TensionAsymmetry.SplitRatio = splitRatio * 0.75
+	config.Resonant.TensionAsymmetry.PrincipalAxisAngleRad = asymmetryAxis
+
 	switch int(v.params.value(physicalTomParamQuality)) {
 	case 0:
 		config.Quality = physical.QualityDraft

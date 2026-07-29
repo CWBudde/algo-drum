@@ -71,6 +71,11 @@ func GenerateReferenceSuite() (ReferenceSuite, error) {
 
 	for _, specification := range referenceCases {
 		config := physical.DefaultPhysicalDrum()
+		// This v1 fixture anchors the ideal circular P2 head. Later physical
+		// departures have their own focused tests; silently enabling them here
+		// would reinterpret the historical calibration target.
+		config.Batter.TensionAsymmetry = physical.TensionAsymmetry{}
+		config.Resonant.TensionAsymmetry = physical.TensionAsymmetry{}
 		config.Strike.Radius01 = specification.strikeRadius
 		config.Pickup.Radius01 = specification.pickupRadius
 		config.Pickup.AngleRad = specification.pickupAngle

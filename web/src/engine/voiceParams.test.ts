@@ -27,6 +27,12 @@ describe("the generated voice parameter table", () => {
     expect(PHYSICAL_TOM_PARAMS.map((spec) => spec.id)).toContain(
       "physicalTom.quality",
     );
+    expect(PHYSICAL_TOM_PARAMS.map((spec) => spec.id)).toContain(
+      "physicalTom.asymmetry",
+    );
+    expect(PHYSICAL_TOM_PARAMS.map((spec) => spec.id)).toContain(
+      "physicalTom.asymmetryAxis",
+    );
   });
 
   it("stays within the persistence capacity", () => {
@@ -67,7 +73,7 @@ describe("mapParam", () => {
   // The detent's whole reason for existing: persistence quantizes to a byte, so
   // a default of 0.4648 comes back as 0.4667 and would retune the voice.
   it("still returns the shipped constant after a byte round-trip", () => {
-    for (const params of VOICE_PARAMS) {
+    for (const params of [...VOICE_PARAMS, PHYSICAL_TOM_PARAMS]) {
       for (const spec of params) {
         const quantised = Math.round(spec.default * 255) / 255;
         expect(mapParam(spec, quantised)).toBe(spec.shipped);

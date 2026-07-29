@@ -1098,6 +1098,37 @@ func TestPhysicalTomParametersAreIndependentAndSurviveModelSwitch(t *testing.T) 
 	}
 }
 
+func TestPhysicalTomAsymmetryParametersMapToBothHeads(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetPhysicalTomParam(physicalTomParamAsymmetry, 0.75)
+	engine.SetPhysicalTomParam(physicalTomParamAsymmetryAxis, 0.25)
+
+	config := engine.physicalTom.config
+	wantSplit := physicalTomSpecs[physicalTomParamAsymmetry].Map(0.75) / 100
+	wantAxis := physicalTomSpecs[physicalTomParamAsymmetryAxis].Map(0.25) *
+		math.Pi / 180
+
+	if config.Batter.TensionAsymmetry.SplitRatio != wantSplit ||
+		config.Resonant.TensionAsymmetry.SplitRatio != wantSplit*0.75 {
+		t.Fatalf(
+			"head split ratios = batter %v, resonant %v; want %v and %v",
+			config.Batter.TensionAsymmetry.SplitRatio,
+			config.Resonant.TensionAsymmetry.SplitRatio,
+			wantSplit,
+			wantSplit*0.75,
+		)
+	}
+	if config.Batter.TensionAsymmetry.PrincipalAxisAngleRad != wantAxis ||
+		config.Resonant.TensionAsymmetry.PrincipalAxisAngleRad != wantAxis {
+		t.Fatalf(
+			"head axes = batter %v, resonant %v; want %v",
+			config.Batter.TensionAsymmetry.PrincipalAxisAngleRad,
+			config.Resonant.TensionAsymmetry.PrincipalAxisAngleRad,
+			wantAxis,
+		)
+	}
+}
+
 func TestPhysicalTomParameterRejectsInvalidInput(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	engine.SetPhysicalTomParam(physicalTomParamHardness, 0.4)

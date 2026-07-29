@@ -518,6 +518,30 @@ export const PHYSICAL_TOM_PARAMS: readonly VoiceParamSpec[] = [
     default: 0.5,
     digits: 0,
   },
+  {
+    id: "physicalTom.asymmetry",
+    label: "ASYM",
+    name: "degenerate mode split",
+    unit: "%",
+    kind: "lin",
+    min: 0,
+    max: 2,
+    shipped: 0.40000000000000002,
+    default: 0.20000000000000001,
+    digits: 2,
+  },
+  {
+    id: "physicalTom.asymmetryAxis",
+    label: "AXIS",
+    name: "tension asymmetry axis",
+    unit: "°",
+    kind: "lin",
+    min: -90,
+    max: 90,
+    shipped: 0,
+    default: 0.5,
+    digits: 0,
+  },
 ];
 
-export const PHYSICAL_TOM_PARAM_CAPACITY = 13;
+export const PHYSICAL_TOM_PARAM_CAPACITY = 15;

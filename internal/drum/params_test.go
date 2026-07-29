@@ -55,9 +55,9 @@ func TestParamSpecsWellFormed(t *testing.T) {
 }
 
 func TestPhysicalTomParamSpecsWellFormed(t *testing.T) {
-	if len(physicalTomSpecs) != physicalTomParamQuality+1 {
+	if len(physicalTomSpecs) != physicalTomParamAsymmetryAxis+1 {
 		t.Fatalf("physical Tom has %d specs, want %d",
-			len(physicalTomSpecs), physicalTomParamQuality+1)
+			len(physicalTomSpecs), physicalTomParamAsymmetryAxis+1)
 	}
 
 	seen := make(map[string]bool, len(physicalTomSpecs))
@@ -96,6 +96,8 @@ func TestPhysicalTomParamIDsAreStable(t *testing.T) {
 		"physicalTom.pickupRadius",
 		"physicalTom.pickupAngle",
 		"physicalTom.quality",
+		"physicalTom.asymmetry",
+		"physicalTom.asymmetryAxis",
 	}
 
 	for index, id := range want {
@@ -129,6 +131,14 @@ func TestParamSpecSnapSurvivesByteQuantisation(t *testing.T) {
 				t.Errorf("%s: Map(%v) = %v after byte round-trip, want Shipped %v",
 					spec.ID, quantised, got, spec.Shipped)
 			}
+		}
+	}
+
+	for _, spec := range physicalTomSpecs {
+		quantised := math.Round(spec.Default*255) / 255
+		if got := spec.Map(quantised); got != spec.Shipped {
+			t.Errorf("%s: Map(%v) = %v after byte round-trip, want Shipped %v",
+				spec.ID, quantised, got, spec.Shipped)
 		}
 	}
 }

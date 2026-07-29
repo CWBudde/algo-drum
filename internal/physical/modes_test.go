@@ -3,6 +3,7 @@ package physical
 import (
 	"errors"
 	"math"
+	"reflect"
 	"testing"
 )
 
@@ -178,6 +179,7 @@ func TestGenerateModesOrderingPairsAndNormalization(t *testing.T) {
 	t.Parallel()
 
 	config := DefaultPhysicalDrum()
+	config.Batter.TensionAsymmetry = TensionAsymmetry{}
 	modes, err := GenerateModes(config)
 	if err != nil {
 		t.Fatalf("GenerateModes() error = %v", err)
@@ -231,6 +233,67 @@ func TestGenerateModesOrderingPairsAndNormalization(t *testing.T) {
 			partner.ModalMassKg != mode.ModalMassKg {
 			t.Errorf("mode %d cosine/sine pair mismatch: %#v and %#v", index, mode, partner)
 		}
+	}
+}
+
+func TestTensionAsymmetrySplitsAndRotatesDegenerateModes(t *testing.T) {
+	t.Parallel()
+
+	idealConfig := DefaultPhysicalDrum()
+	idealConfig.Batter.TensionAsymmetry = TensionAsymmetry{}
+	idealModes, err := GenerateModes(idealConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		splitRatio = 0.01
+		axisAngle  = 0.37
+	)
+	splitConfig := idealConfig
+	splitConfig.Batter.TensionAsymmetry = TensionAsymmetry{
+		SplitRatio:            splitRatio,
+		PrincipalAxisAngleRad: axisAngle,
+	}
+	splitConfig.Strike.AngleRad = axisAngle
+	splitModes, err := GenerateModes(splitConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	idealAxisymmetric := findMode(t, idealModes, 0, 1, OrientationCosine)
+	splitAxisymmetric := findMode(t, splitModes, 0, 1, OrientationCosine)
+	if splitAxisymmetric.FrequencyHz != idealAxisymmetric.FrequencyHz {
+		t.Fatalf(
+			"axisymmetric frequency changed from %v to %v",
+			idealAxisymmetric.FrequencyHz,
+			splitAxisymmetric.FrequencyHz,
+		)
+	}
+
+	ideal := findMode(t, idealModes, 1, 1, OrientationCosine)
+	low := findMode(t, splitModes, 1, 1, OrientationCosine)
+	high := findMode(t, splitModes, 1, 1, OrientationSine)
+
+	if got := (high.FrequencyHz - low.FrequencyHz) / ideal.FrequencyHz; math.Abs(got-splitRatio) > 1e-14 {
+		t.Fatalf("relative pair separation = %.15g, want %.15g", got, splitRatio)
+	}
+	if got := (high.FrequencyHz + low.FrequencyHz) / 2; math.Abs(got-ideal.FrequencyHz) > 1e-12 {
+		t.Fatalf("split midpoint = %.15g Hz, ideal %.15g Hz", got, ideal.FrequencyHz)
+	}
+	if math.Abs(high.StrikeAccelerationPerN) > 1e-14 {
+		t.Fatalf("strike on principal axis excited orthogonal mode by %v", high.StrikeAccelerationPerN)
+	}
+	if low.StrikeAccelerationPerN == 0 {
+		t.Fatal("strike on principal axis did not excite aligned mode")
+	}
+
+	repeated, err := GenerateModes(splitConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(repeated, splitModes) {
+		t.Fatal("asymmetric mode generation is not deterministic")
 	}
 }
 
@@ -328,4 +391,30 @@ func relativeDifference(left, right float64) float64 {
 	}
 
 	return math.Abs(left-right) / scale
+}
+
+func findMode(
+	t *testing.T,
+	modes []Mode,
+	azimuthalOrder, radialOrder int,
+	orientation Orientation,
+) Mode {
+	t.Helper()
+
+	for _, mode := range modes {
+		if mode.AzimuthalOrder == azimuthalOrder &&
+			mode.RadialOrder == radialOrder &&
+			mode.Orientation == orientation {
+			return mode
+		}
+	}
+
+	t.Fatalf(
+		"mode (%d,%d,%s) not found",
+		azimuthalOrder,
+		radialOrder,
+		orientation,
+	)
+
+	return Mode{}
 }

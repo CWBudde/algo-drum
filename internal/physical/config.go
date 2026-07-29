@@ -16,8 +16,9 @@ const (
 	legacyConfigVersion           = 1
 	linearDoubleHeadConfigVersion = 2
 	nonlinearConfigVersion        = 3
+	fullCouplingConfigVersion     = 4
 	// ConfigVersion is the physical-drum JSON schema emitted by EncodeConfig.
-	ConfigVersion = 4
+	ConfigVersion = 5
 
 	minSampleRateHz = 8_000.0
 	maxSampleRateHz = 384_000.0
@@ -73,6 +74,7 @@ type Head struct {
 	RadiusM                  float64               `json:"radiusM"`
 	SurfaceDensityKgPerM2    float64               `json:"surfaceDensityKgPerM2"`
 	TensionNPerM             float64               `json:"tensionNPerM"`
+	TensionAsymmetry         TensionAsymmetry      `json:"tensionAsymmetry"`
 	BendingStiffnessNM       float64               `json:"bendingStiffnessNM"`
 	Loss0PerSecond           float64               `json:"loss0PerSecond"`
 	Loss2M2PerSecond         float64               `json:"loss2M2PerSecond"`
@@ -80,6 +82,16 @@ type Head struct {
 	ModeDecayCorrections     []ModeDecayCorrection `json:"modeDecayCorrections,omitempty"`
 	FrequencyLimitFraction   float64               `json:"frequencyLimitFraction"`
 	InactiveEnergyThresholdJ float64               `json:"inactiveEnergyThresholdJ"`
+}
+
+// TensionAsymmetry is a reduced, deterministic representation of non-uniform
+// rim tension. SplitRatio is the full relative frequency separation of each
+// non-axisymmetric cosine/sine pair around its ideal circular-head frequency.
+// PrincipalAxisAngleRad rotates the pair's mode shapes into the measured or
+// deliberately selected tension axis. Axisymmetric modes are unchanged.
+type TensionAsymmetry struct {
+	SplitRatio            float64 `json:"splitRatio"`
+	PrincipalAxisAngleRad float64 `json:"principalAxisAngleRad"`
 }
 
 // ModeDecayCorrection adds a measured residual to the two-parameter loss law.
@@ -158,10 +170,14 @@ type Pickup struct {
 // configuration.
 func DefaultPhysicalDrum() PhysicalDrum {
 	head := Head{
-		Enabled:                  true,
-		RadiusM:                  0.1524,
-		SurfaceDensityKgPerM2:    0.35,
-		TensionNPerM:             600,
+		Enabled:               true,
+		RadiusM:               0.1524,
+		SurfaceDensityKgPerM2: 0.35,
+		TensionNPerM:          600,
+		TensionAsymmetry: TensionAsymmetry{
+			SplitRatio:            0.004,
+			PrincipalAxisAngleRad: 0,
+		},
 		BendingStiffnessNM:       0.001,
 		Loss0PerSecond:           3,
 		Loss2M2PerSecond:         2e-5,
@@ -176,10 +192,14 @@ func DefaultPhysicalDrum() PhysicalDrum {
 		Quality:      QualityStandard,
 		Batter:       head,
 		Resonant: Head{
-			Enabled:                  true,
-			RadiusM:                  head.RadiusM,
-			SurfaceDensityKgPerM2:    0.25,
-			TensionNPerM:             500,
+			Enabled:               true,
+			RadiusM:               head.RadiusM,
+			SurfaceDensityKgPerM2: 0.25,
+			TensionNPerM:          500,
+			TensionAsymmetry: TensionAsymmetry{
+				SplitRatio:            0.003,
+				PrincipalAxisAngleRad: 0,
+			},
 			BendingStiffnessNM:       0.0007,
 			Loss0PerSecond:           4,
 			Loss2M2PerSecond:         2e-5,
@@ -346,6 +366,10 @@ func DecodeConfig(data []byte) (PhysicalDrum, error) {
 		migrateV3Config(&config)
 	}
 
+	if config.Version == fullCouplingConfigVersion {
+		migrateV4Config(&config)
+	}
+
 	if err := config.Validate(); err != nil {
 		return PhysicalDrum{}, err
 	}
@@ -376,9 +400,18 @@ func migrateV2Config(config *PhysicalDrum) {
 }
 
 func migrateV3Config(config *PhysicalDrum) {
-	config.Version = ConfigVersion
+	config.Version = fullCouplingConfigVersion
 	// Version 3 coupled the full analytic swept head area into the cavity.
 	config.Cavity.Coupling01 = 1
+}
+
+func migrateV4Config(config *PhysicalDrum) {
+	config.Version = ConfigVersion
+	// Version 4 was the ideal circular-head model. Zero-valued asymmetry is an
+	// exact compatibility mode, so decoding an old configuration does not
+	// introduce beating or rotate its mode shapes.
+	config.Batter.TensionAsymmetry = TensionAsymmetry{}
+	config.Resonant.TensionAsymmetry = TensionAsymmetry{}
 }
 
 func validateNonlinearity(config PhysicalDrum) error {
@@ -478,6 +511,24 @@ func validateHead(name string, head Head, required bool) error {
 		if err := finiteRange(name+"."+check.field, check.value, check.minValue, check.maxValue); err != nil {
 			return err
 		}
+	}
+
+	if err := finiteRange(
+		name+".tensionAsymmetry.splitRatio",
+		head.TensionAsymmetry.SplitRatio,
+		0,
+		0.02,
+	); err != nil {
+		return err
+	}
+
+	if err := finiteRange(
+		name+".tensionAsymmetry.principalAxisAngleRad",
+		head.TensionAsymmetry.PrincipalAxisAngleRad,
+		-math.Pi,
+		math.Pi,
+	); err != nil {
+		return err
 	}
 
 	seenCorrections := make(map[[2]int]struct{}, len(head.ModeDecayCorrections))

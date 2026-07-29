@@ -187,7 +187,7 @@ test("Tom can select, audition, and persist the physical model", async ({
   await dialog.getByText("Physical", { exact: false }).click();
   await expect(physical).toBeChecked();
   await expect(dialog.getByText("Double-headed physical drum")).toBeVisible();
-  await expect(dialog.getByRole("slider")).toHaveCount(13);
+  await expect(dialog.getByRole("slider")).toHaveCount(15);
 
   const tuning = dialog.getByRole("slider", {
     name: "Tom batter head tension",

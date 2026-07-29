@@ -124,6 +124,32 @@ func TestDecodeConfigMigratesVersionThreeWithFullCavityCoupling(t *testing.T) {
 	}
 }
 
+func TestDecodeConfigMigratesVersionFourWithoutAddingAsymmetry(t *testing.T) {
+	t.Parallel()
+
+	legacy := DefaultPhysicalDrum()
+	legacy.Version = fullCouplingConfigVersion
+	legacy.Batter.TensionAsymmetry = TensionAsymmetry{}
+	legacy.Resonant.TensionAsymmetry = TensionAsymmetry{}
+	encoded, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decoded, err := DecodeConfig(encoded)
+	if err != nil {
+		t.Fatalf("DecodeConfig(v4) error = %v", err)
+	}
+	if decoded.Version != ConfigVersion ||
+		decoded.Batter.TensionAsymmetry != (TensionAsymmetry{}) ||
+		decoded.Resonant.TensionAsymmetry != (TensionAsymmetry{}) {
+		t.Fatalf("migrated v4 asymmetry = batter %#v, resonant %#v, version %d",
+			decoded.Batter.TensionAsymmetry,
+			decoded.Resonant.TensionAsymmetry,
+			decoded.Version)
+	}
+}
+
 func TestConfigRejectsInvalidCavityCoupling(t *testing.T) {
 	t.Parallel()
 
@@ -132,6 +158,36 @@ func TestConfigRejectsInvalidCavityCoupling(t *testing.T) {
 
 	if err := config.Validate(); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("Validate() error = %v, want ErrInvalidConfig", err)
+	}
+}
+
+func TestConfigRejectsInvalidTensionAsymmetry(t *testing.T) {
+	t.Parallel()
+
+	for name, mutate := range map[string]func(*PhysicalDrum){
+		"split above bound": func(config *PhysicalDrum) {
+			config.Batter.TensionAsymmetry.SplitRatio = 0.021
+		},
+		"negative split": func(config *PhysicalDrum) {
+			config.Resonant.TensionAsymmetry.SplitRatio = -0.001
+		},
+		"non-finite axis": func(config *PhysicalDrum) {
+			config.Batter.TensionAsymmetry.PrincipalAxisAngleRad = math.NaN()
+		},
+		"axis above pi": func(config *PhysicalDrum) {
+			config.Resonant.TensionAsymmetry.PrincipalAxisAngleRad = math.Pi + 0.01
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			config := DefaultPhysicalDrum()
+			mutate(&config)
+
+			if err := config.Validate(); !errors.Is(err, ErrInvalidConfig) {
+				t.Fatalf("Validate() error = %v, want ErrInvalidConfig", err)
+			}
+		})
 	}
 }
 

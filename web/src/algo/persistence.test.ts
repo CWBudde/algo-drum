@@ -15,6 +15,8 @@ import {
 const V1_BYTES = 38;
 const V2_BYTES = V1_BYTES + TRACK_COUNT * VOICE_PARAM_CAPACITY;
 const V3_BYTES = V2_BYTES + 1;
+const V4_PHYSICAL_TOM_PARAM_CAPACITY = 13;
+const V4_BYTES = V3_BYTES + V4_PHYSICAL_TOM_PARAM_CAPACITY;
 const TOTAL_BYTES = V3_BYTES + PHYSICAL_TOM_PARAM_CAPACITY;
 
 // Scalars are stored as one byte, so only multiples of 1/255 survive a
@@ -108,6 +110,12 @@ function encodeV2(state: PersistedState): string {
 function encodeV3(state: PersistedState): string {
   const bytes = toBytes(encodeState(state)).slice(0, V3_BYTES);
   bytes[0] = 3;
+  return toB64Url(bytes);
+}
+
+function encodeV4(state: PersistedState): string {
+  const bytes = toBytes(encodeState(state)).slice(0, V4_BYTES);
+  bytes[0] = 4;
   return toB64Url(bytes);
 }
 
@@ -227,7 +235,7 @@ describe("persistence encode/decode", () => {
     });
   });
 
-  describe("backward compatibility with v1/v2/v3 blobs", () => {
+  describe("backward compatibility with v1/v2/v3/v4 blobs", () => {
     it("decodes a v1 blob and leaves voiceParams unset", () => {
       const state = makeState();
       const decoded = decodeState(encodeV1(state));
@@ -262,12 +270,21 @@ describe("persistence encode/decode", () => {
       expect(decoded?.physicalTomParams).toBeUndefined();
     });
 
-    it("re-encodes a decoded v1 state as v4 (one-way upgrade)", () => {
+    it("decodes a v4 blob and leaves appended asymmetry controls unset", () => {
+      const state = makeState();
+      const decoded = decodeState(encodeV4(state));
+
+      expect(decoded?.physicalTomParams).toEqual(
+        state.physicalTomParams?.slice(0, V4_PHYSICAL_TOM_PARAM_CAPACITY),
+      );
+    });
+
+    it("re-encodes a decoded v1 state as v5 (one-way upgrade)", () => {
       const decoded = decodeState(encodeV1(makeState()));
       const bytes = toBytes(encodeState(decoded!));
 
       expect(bytes).toHaveLength(TOTAL_BYTES);
-      expect(bytes[0]).toBe(4);
+      expect(bytes[0]).toBe(5);
     });
 
     it("rejects a v1-length blob whose version byte claims v2", () => {
@@ -284,7 +301,7 @@ describe("persistence encode/decode", () => {
 
     it("rejects an unknown future version at the right length", () => {
       const bytes = toBytes(encodeState(makeState()));
-      bytes[0] = 5;
+      bytes[0] = 6;
       expect(decodeState(toB64Url(bytes))).toBeNull();
     });
   });

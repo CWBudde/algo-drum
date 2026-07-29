@@ -32,11 +32,12 @@ T_{60,i} = \frac{\ln(1000)}{\gamma_i}.
 
 The default 12-inch head's lowest mode is 104.00 Hz with a 2.21 s analytic
 amplitude \(T_{60}\). These are model targets, not claims about a commercial
-drum. The physical configuration schema is version 4. Version-1
+drum. The physical configuration schema is version 5. Version-1
 configurations are migrated by filling the P2 radiation and microphone
 defaults; version-2 linear double-head configurations migrate with P4
 nonlinearity disabled so their sound is unchanged; version 3 migrates with
-full cavity coupling, preserving its previous equations.
+full cavity coupling, preserving its previous equations; version 4 migrates
+with zero tension asymmetry, preserving its ideal circular-head modes exactly.
 
 ## Radiation and microphone response
 
@@ -112,7 +113,9 @@ Recording/simulation conditions:
 - three microphone projections/distances: center/0.10 m,
   radius 0.32/0.30 m, and radius 0.65/1.00 m;
 - no room, background noise, normalization, cavity coupling, resonant head, or
-  nonlinear tension modulation.
+  nonlinear tension modulation;
+- zero P6 tension asymmetry: this version-1 fixture remains the ideal circular
+  P2 head, while P6 splitting has separate analytic regression tests.
 
 This set catches deterministic changes and anchors analytic targets. It is not
 an acoustic validation recording and must not be described as one. A measured

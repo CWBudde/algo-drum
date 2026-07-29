@@ -20,10 +20,10 @@ import {
 import type { TomModel } from "../engine/tomModel";
 
 // Bump when the byte layout changes. Every version is a strict append, so old
-// offsets and meanings stay fixed: v2 added voice parameters and v3 adds the
-// Tom model selector and v4 adds the physical Tom parameter bank. Older links
-// still decode with their new fields unset.
-const FORMAT_VERSION = 4;
+// offsets and meanings stay fixed: v2 added voice parameters, v3 the Tom model
+// selector, v4 the original 13-slot physical Tom bank, and v5 appends the two
+// tension-asymmetry controls. Older links still decode with new fields unset.
+const FORMAT_VERSION = 5;
 
 // Byte layout: version, 6 scalar knobs, 5 volumes, 5 decays, 1 mute mask,
 // then the 80-cell pattern packed 2 bits per cell (20 bytes)...
@@ -40,7 +40,13 @@ const V2_BYTES = V1_BYTES + VOICE_PARAM_BYTES;
 // v3 appends one byte for the explicitly selected Tom implementation.
 const V3_BYTES = V2_BYTES + 1;
 
-// v4 appends the independent physical-model parameter bank.
+// v4 appended the original independent physical-model parameter bank. Keep
+// its width explicit: the generated capacity grows append-only, while old v4
+// links must continue to decode at their original length.
+const V4_PHYSICAL_TOM_PARAM_CAPACITY = 13;
+const V4_BYTES = V3_BYTES + V4_PHYSICAL_TOM_PARAM_CAPACITY;
+
+// v5 extends that bank with the P6 asymmetry amount and principal axis.
 const TOTAL_BYTES = V3_BYTES + PHYSICAL_TOM_PARAM_CAPACITY;
 
 // Names the storage slot, not the blob version — it never tracked
@@ -182,9 +188,11 @@ export function decodeState(text: string): PersistedState | null {
         ? V2_BYTES
         : version === 3
           ? V3_BYTES
-          : version === FORMAT_VERSION
-            ? TOTAL_BYTES
-            : -1;
+          : version === 4
+            ? V4_BYTES
+            : version === FORMAT_VERSION
+              ? TOTAL_BYTES
+              : -1;
   if (bytes.length !== expected) return null;
 
   let offset = 1;
@@ -251,7 +259,11 @@ export function decodeState(text: string): PersistedState | null {
   if (version === 3) return stateWithModel;
 
   const physicalTomParams: number[] = [];
-  for (let i = 0; i < PHYSICAL_TOM_PARAM_CAPACITY; i++) {
+  const physicalParamCount =
+    version === 4
+      ? V4_PHYSICAL_TOM_PARAM_CAPACITY
+      : PHYSICAL_TOM_PARAM_CAPACITY;
+  for (let i = 0; i < physicalParamCount; i++) {
     physicalTomParams.push(fromByte(bytes[offset++]));
   }
 

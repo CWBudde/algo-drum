@@ -861,13 +861,25 @@ and production-browser coverage are documented in
 
 ### P6 — Real-instrument departures
 
-- [ ] Add deterministic degenerate-mode splitting/non-uniform tension.
-- [ ] Evaluate a small shell/hardware modal bank and bearing-edge/vent
-      corrections, accepting each only when measurements justify it.
+- [x] Add deterministic degenerate-mode splitting/non-uniform tension.
+- [x] Evaluate a small shell/hardware modal bank and bearing-edge/vent
+      corrections, accepting each only when measurements justify it. None were
+      accepted without an instrument-specific measurement residual; the
+      acceptance gate is documented in
+      [`docs/physical-real-instrument-departures.md`](docs/physical-real-instrument-departures.md).
 - [ ] Fit documented presets from measurement while preserving the underlying
       SI parameters and provenance.
-- [ ] Consider measured modal transfer functions as an optional calibration
-      layer, not a replacement for the physical state.
+- [x] Consider measured modal transfer functions as an optional calibration
+      layer, not a replacement for the physical state. The documented decision
+      is to fit interpretable modal residuals first and require phase-coherent,
+      held-out evidence before adding a real-time transfer layer.
+
+Implemented 2026-07-29: physical-config v5 adds bounded, deterministic
+cosine/sine pair splitting and a rotated principal tension axis, with exact
+zero-asymmetry migration for v4 configs. The generated physical Tom bank adds
+append-only ASYM/AXIS controls and app-state v5 preserves v4 links. The
+measurement-fit preset and the phase exit criterion remain open because the
+repository contains no identified real-tom recording set.
 
 Exit: a measured tom can be matched within documented tolerances for modal
 frequency, decay, and spectrum across more than one hit.

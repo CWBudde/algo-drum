@@ -68,7 +68,13 @@ func generateHeadModes(config PhysicalDrum, head Head) ([]Mode, error) {
 			wavenumber := zero / head.RadiusM
 
 			angularFreq := naturalAngularFrequency(head, wavenumber)
-			if angularFreq/(2*math.Pi) > frequencyLimit {
+
+			highestAngularFreq := angularFreq
+			if azimuthalOrder > 0 {
+				highestAngularFreq *= 1 + head.TensionAsymmetry.SplitRatio/2
+			}
+
+			if highestAngularFreq/(2*math.Pi) > frequencyLimit {
 				break
 			}
 
@@ -130,6 +136,13 @@ func generateHeadModes(config PhysicalDrum, head Head) ([]Mode, error) {
 		return nil, fmt.Errorf("%w: no modes below frequency limit", ErrInvalidConfig)
 	}
 
+	// A large allowed split can move one member across a nearby mode. Preserve
+	// the API's frequency-order guarantee; stable sorting keeps ideal
+	// zero-split cosine/sine pairs in their original orientation order.
+	sort.SliceStable(modes, func(first, second int) bool {
+		return modes[first].FrequencyHz < modes[second].FrequencyHz
+	})
+
 	return modes, nil
 }
 
@@ -155,6 +168,12 @@ func buildMode(
 	orientation Orientation,
 ) (Mode, error) {
 	azimuthalOrder := candidate.azimuthalOrder
+	angularFrequency := splitAngularFrequency(
+		candidate.angularFreq,
+		azimuthalOrder,
+		orientation,
+		head.TensionAsymmetry.SplitRatio,
+	)
 
 	angularIntegral := math.Pi
 	if azimuthalOrder == 0 {
@@ -170,7 +189,7 @@ func buildMode(
 		candidate.besselZero,
 		orientation,
 		config.Strike.Radius01,
-		config.Strike.AngleRad,
+		config.Strike.AngleRad-head.TensionAsymmetry.PrincipalAxisAngleRad,
 	)
 	footprint := circularFootprint(
 		candidate.wavenumber * config.Strike.ContactRadiusM,
@@ -180,10 +199,10 @@ func buildMode(
 		candidate.besselZero,
 		orientation,
 		config.Pickup.Radius01,
-		config.Pickup.AngleRad,
+		config.Pickup.AngleRad-head.TensionAsymmetry.PrincipalAxisAngleRad,
 	)
 	radiationAmplitude := modalRadiationAmplitude(
-		candidate.angularFreq,
+		angularFrequency,
 		azimuthalOrder,
 		head.RadiusM,
 		config.Cavity.SoundSpeedMPerS,
@@ -221,8 +240,8 @@ func buildMode(
 		Orientation:              orientation,
 		BesselZero:               candidate.besselZero,
 		WavenumberPerM:           candidate.wavenumber,
-		FrequencyHz:              candidate.angularFreq / (2 * math.Pi),
-		AngularFrequency:         candidate.angularFreq,
+		FrequencyHz:              angularFrequency / (2 * math.Pi),
+		AngularFrequency:         angularFrequency,
 		StructuralDecayPerSecond: structuralDecay,
 		RadiationDecayPerSecond:  radiationDecay,
 		DecayCorrectionPerSecond: decayCorrection,
@@ -233,6 +252,24 @@ func buildMode(
 		RadiationWeight:          pickupShape * radiationAmplitude * distanceGain,
 		SweptAreaM2:              sweptArea,
 	}, nil
+}
+
+func splitAngularFrequency(
+	idealAngularFrequency float64,
+	azimuthalOrder int,
+	orientation Orientation,
+	splitRatio float64,
+) float64 {
+	if azimuthalOrder == 0 || splitRatio == 0 {
+		return idealAngularFrequency
+	}
+
+	multiplier := 1 - splitRatio/2
+	if orientation == OrientationSine {
+		multiplier = 1 + splitRatio/2
+	}
+
+	return idealAngularFrequency * multiplier
 }
 
 // ModalDecayRatePerSecond evaluates the two-parameter structural loss law

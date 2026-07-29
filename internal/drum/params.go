@@ -287,6 +287,8 @@ const (
 	physicalTomParamPickupRadius
 	physicalTomParamPickupAngle
 	physicalTomParamQuality
+	physicalTomParamAsymmetry
+	physicalTomParamAsymmetryAxis
 )
 
 var physicalTomSpecs = []ParamSpec{
@@ -303,6 +305,8 @@ var physicalTomSpecs = []ParamSpec{
 	physicalTomParamPickupRadius:    linSpec("physicalTom.pickupRadius", "MIC.R", "pickup radius", "", 0, 0.95, 0.32, 2),
 	physicalTomParamPickupAngle:     linSpec("physicalTom.pickupAngle", "MIC.A", "pickup angle", "°", -180, 180, 0.6*180/math.Pi, 0),
 	physicalTomParamQuality:         choiceSpec("physicalTom.quality", "QUAL", "quality tier", []string{"Draft", "Standard", "High"}, 1),
+	physicalTomParamAsymmetry:       linSpec("physicalTom.asymmetry", "ASYM", "degenerate mode split", "%", 0, 2, 0.4, 2),
+	physicalTomParamAsymmetryAxis:   linSpec("physicalTom.asymmetryAxis", "AXIS", "tension asymmetry axis", "°", -90, 90, 0, 0),
 }
 
 // voiceNames labels each track for the editor UI, in engine track order.
