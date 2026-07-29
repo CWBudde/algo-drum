@@ -63,7 +63,7 @@ jobs:
         # so a failing run produces traces/screenshots — keep them instead of
         # discarding them with the runner.
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-artifacts
           path: |
