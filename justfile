@@ -50,9 +50,17 @@ gen-params:
     go run ./cmd/gen-voiceparams -o web/src/engine/voiceParams.generated.ts
     cd web && bunx prettier --write src/engine/voiceParams.generated.ts
 
+# Regenerate the deterministic physical-model calibration metrics
+gen-physical-reference:
+    go run ./cmd/analyze-physical -suite -o testdata/physical-reference-v1.json
+
 # Fail if the generated voice parameter table is stale (Go table changed without `just gen-params`)
 check-params: gen-params
     git diff --exit-code web/src/engine/voiceParams.generated.ts
+
+# Fail if the physical-model calibration metrics are stale
+check-physical-reference: gen-physical-reference
+    git diff --exit-code testdata/physical-reference-v1.json
 
 # ── Frontend ─────────────────────────────────────────────────────────────────
 
@@ -83,7 +91,7 @@ preview: build
 # ── Quality gates ────────────────────────────────────────────────────────────
 
 # Run all CI checks, mirroring .github/workflows/ci.yml (a green `just ci` must mean the same as a green CI run)
-ci: check-formatted lint check-tidy check-params test test-assert web-typecheck web-test
+ci: check-formatted lint check-tidy check-params check-physical-reference test test-assert web-typecheck web-test
 
 # ── Housekeeping ─────────────────────────────────────────────────────────────
 

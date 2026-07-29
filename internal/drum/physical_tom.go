@@ -15,11 +15,12 @@ const (
 )
 
 type physicalTom struct {
-	config      physical.PhysicalDrum
-	model       *physical.SingleHead
-	decayAmount float64
-	baseLoss0   float64
-	baseLoss2   float64
+	config            physical.PhysicalDrum
+	model             *physical.SingleHead
+	decayAmount       float64
+	baseLoss0         float64
+	baseLoss2         float64
+	baseRadiationLoss float64
 }
 
 func newPhysicalTom(sampleRate float64) (*physicalTom, error) {
@@ -32,11 +33,12 @@ func newPhysicalTom(sampleRate float64) (*physicalTom, error) {
 	}
 
 	return &physicalTom{
-		config:      config,
-		model:       model,
-		decayAmount: 0.5,
-		baseLoss0:   config.Batter.Loss0PerSecond,
-		baseLoss2:   config.Batter.Loss2M2PerSecond,
+		config:            config,
+		model:             model,
+		decayAmount:       0.5,
+		baseLoss0:         config.Batter.Loss0PerSecond,
+		baseLoss2:         config.Batter.Loss2M2PerSecond,
+		baseRadiationLoss: config.Batter.RadiationLossPerSecond,
 	}, nil
 }
 
@@ -73,6 +75,7 @@ func (v *physicalTom) SetDecay(amount float64) {
 	config := v.config
 	config.Batter.Loss0PerSecond = v.baseLoss0 * lossScale
 	config.Batter.Loss2M2PerSecond = v.baseLoss2 * lossScale
+	config.Batter.RadiationLossPerSecond = v.baseRadiationLoss * lossScale
 
 	model, err := physical.NewSingleHead(config)
 	if err != nil {

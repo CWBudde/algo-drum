@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
+
+	"github.com/cwbudde/algo-dsp/dsp/filter/biquad"
+	"github.com/cwbudde/algo-dsp/dsp/filter/design"
 )
 
 const (
@@ -13,16 +16,17 @@ const (
 
 var ErrInvalidVelocity = errors.New("physical strike velocity must be finite and in [0,1]")
 
-// Output exposes diagnostic head motion separately from the provisional
-// radiated pickup signal.
+// Output exposes point-pickup head motion, the unfiltered modal radiation sum,
+// and the filtered microphone signal separately.
 type Output struct {
 	DisplacementM     float64
 	VelocityMPerS     float64
+	RawRadiated       float64
 	Radiated          float64
 	MechanicalEnergyJ float64
 }
 
-// SingleHead is the P1 real-time modal prototype. It owns all working memory;
+// SingleHead is the P2 real-time modal prototype. It owns all working memory;
 // Trigger, Tick, Reset, and Render perform no allocations.
 type SingleHead struct {
 	config PhysicalDrum
@@ -34,6 +38,8 @@ type SingleHead struct {
 	matrix12     []float64
 	matrix21     []float64
 	matrix22     []float64
+	radiationHP  biquad.Section
+	radiationLP  biquad.Section
 
 	pulse          []float64
 	pendingForce   []float64
@@ -61,6 +67,16 @@ func NewSingleHead(config PhysicalDrum) (*SingleHead, error) {
 		matrix12:     make([]float64, modeCount),
 		matrix21:     make([]float64, modeCount),
 		matrix22:     make([]float64, modeCount),
+		radiationHP: biquad.Section{Coefficients: design.Highpass(
+			min(config.Pickup.HighpassHz, config.SampleRateHz*0.45),
+			1/math.Sqrt2,
+			config.SampleRateHz,
+		)},
+		radiationLP: biquad.Section{Coefficients: design.Lowpass(
+			min(config.Pickup.LowpassHz, config.SampleRateHz*0.45),
+			1/math.Sqrt2,
+			config.SampleRateHz,
+		)},
 	}
 	for index, mode := range modes {
 		matrix11, matrix12, matrix21, matrix22, matrixErr := stateTransition(
@@ -133,6 +149,8 @@ func (s *SingleHead) Reset() {
 	s.pendingIndex = 0
 	s.pendingSamples = 0
 	s.energy = 0
+	s.radiationHP.Reset()
+	s.radiationLP.Reset()
 }
 
 // IsActive reports whether contact is pending or mechanical energy is above
@@ -175,18 +193,21 @@ func (s *SingleHead) Tick() Output {
 
 		output.DisplacementM += mode.PickupShape * newDisplacement
 		output.VelocityMPerS += mode.PickupShape * newVelocity
+		output.RawRadiated += mode.RadiationWeight * newVelocity
 		output.MechanicalEnergyJ += 0.5 * mode.ModalMassKg *
 			(newVelocity*newVelocity +
 				mode.AngularFrequency*mode.AngularFrequency*newDisplacement*newDisplacement)
 	}
 
-	output.Radiated = s.config.Pickup.OutputGain * output.VelocityMPerS
+	radiated := s.radiationHP.ProcessSample(output.RawRadiated)
+	radiated = s.radiationLP.ProcessSample(radiated)
+	output.Radiated = s.config.Pickup.OutputGain * radiated
 	s.energy = output.MechanicalEnergyJ
 
 	return output
 }
 
-// Render writes the provisional radiated signal into dst.
+// Render writes the filtered radiated microphone signal into dst.
 func (s *SingleHead) Render(dst []float64) {
 	for index := range dst {
 		dst[index] = s.Tick().Radiated

@@ -110,7 +110,12 @@ func GenerateModes(config PhysicalDrum) ([]Mode, error) {
 		}
 
 		for _, orientation := range orientations[:orientationCount] {
-			modes = append(modes, buildMode(config, candidate, orientation))
+			mode, err := buildMode(config, candidate, orientation)
+			if err != nil {
+				return nil, err
+			}
+
+			modes = append(modes, mode)
 		}
 
 		if len(modes) == limit {
@@ -140,7 +145,11 @@ func naturalAngularFrequency(head Head, wavenumber float64) float64 {
 	return math.Sqrt(angularFreqSquared)
 }
 
-func buildMode(config PhysicalDrum, candidate eigenmode, orientation Orientation) Mode {
+func buildMode(
+	config PhysicalDrum,
+	candidate eigenmode,
+	orientation Orientation,
+) (Mode, error) {
 	head := config.Batter
 	azimuthalOrder := candidate.azimuthalOrder
 
@@ -170,22 +179,82 @@ func buildMode(config PhysicalDrum, candidate eigenmode, orientation Orientation
 		config.Pickup.Radius01,
 		config.Pickup.AngleRad,
 	)
-	decayRate := head.Loss0PerSecond +
-		head.Loss2M2PerSecond*candidate.wavenumber*candidate.wavenumber
+	radiationAmplitude := modalRadiationAmplitude(
+		candidate.angularFreq,
+		azimuthalOrder,
+		head.RadiusM,
+		config.Cavity.SoundSpeedMPerS,
+	)
+	distanceGain := 1 / (1 + config.Pickup.DistanceM/head.RadiusM)
+	structuralDecay := ModalDecayRatePerSecond(head, candidate.wavenumber)
+	radiationDecay := head.RadiationLossPerSecond *
+		radiationAmplitude * radiationAmplitude
+	decayCorrection := modeDecayCorrection(
+		head,
+		candidate.azimuthalOrder,
+		candidate.radialOrder,
+	)
+
+	decayRate := structuralDecay + radiationDecay + decayCorrection
+	if decayRate < 0 {
+		return Mode{}, fmt.Errorf(
+			"%w: mode (%d,%d) decay rate %v is negative",
+			ErrInvalidConfig,
+			candidate.azimuthalOrder,
+			candidate.radialOrder,
+			decayRate,
+		)
+	}
 
 	return Mode{
-		AzimuthalOrder:         azimuthalOrder,
-		RadialOrder:            candidate.radialOrder,
-		Orientation:            orientation,
-		BesselZero:             candidate.besselZero,
-		WavenumberPerM:         candidate.wavenumber,
-		FrequencyHz:            candidate.angularFreq / (2 * math.Pi),
-		AngularFrequency:       candidate.angularFreq,
-		DecayRatePerSecond:     decayRate,
-		ModalMassKg:            modalMass,
-		StrikeAccelerationPerN: strikeShape * footprint / modalMass,
-		PickupShape:            pickupShape,
+		AzimuthalOrder:           azimuthalOrder,
+		RadialOrder:              candidate.radialOrder,
+		Orientation:              orientation,
+		BesselZero:               candidate.besselZero,
+		WavenumberPerM:           candidate.wavenumber,
+		FrequencyHz:              candidate.angularFreq / (2 * math.Pi),
+		AngularFrequency:         candidate.angularFreq,
+		StructuralDecayPerSecond: structuralDecay,
+		RadiationDecayPerSecond:  radiationDecay,
+		DecayCorrectionPerSecond: decayCorrection,
+		DecayRatePerSecond:       decayRate,
+		ModalMassKg:              modalMass,
+		StrikeAccelerationPerN:   strikeShape * footprint / modalMass,
+		PickupShape:              pickupShape,
+		RadiationWeight:          pickupShape * radiationAmplitude * distanceGain,
+	}, nil
+}
+
+// ModalDecayRatePerSecond evaluates the two-parameter structural loss law
+// d(k) = d0 + d2*k². Radiation loss and optional measured residuals remain
+// separate in Mode so calibration can distinguish their causes.
+func ModalDecayRatePerSecond(head Head, wavenumberPerM float64) float64 {
+	return head.Loss0PerSecond +
+		head.Loss2M2PerSecond*wavenumberPerM*wavenumberPerM
+}
+
+func modalRadiationAmplitude(
+	angularFrequency float64,
+	azimuthalOrder int,
+	radiusM, soundSpeedMPerS float64,
+) float64 {
+	ka := angularFrequency * radiusM / soundSpeedMPerS
+	base := ka / math.Sqrt(1+ka*ka)
+
+	// Every azimuthal order adds one multipole cancellation. This tends to
+	// zero for acoustically small heads and to one as ka grows.
+	return math.Pow(base, float64(azimuthalOrder+1))
+}
+
+func modeDecayCorrection(head Head, azimuthalOrder, radialOrder int) float64 {
+	for _, correction := range head.ModeDecayCorrections {
+		if correction.AzimuthalOrder == azimuthalOrder &&
+			correction.RadialOrder == radialOrder {
+			return correction.DecayRatePerSecond
+		}
 	}
+
+	return 0
 }
 
 // circularFootprint is the spatial low-pass response of a uniformly loaded

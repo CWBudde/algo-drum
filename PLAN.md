@@ -779,15 +779,15 @@ predictably with physical parameters and strike position.
 
 ### P2 — Loss, radiation, and calibration
 
-- [ ] Replace the provisional uniform decay with a two-parameter
+- [x] Replace the provisional uniform decay with a two-parameter
       frequency-dependent modal decay law; retain room for measured per-mode
       corrections.
-- [ ] Add mode-dependent radiation weights and a compact radiation/microphone
+- [x] Add mode-dependent radiation weights and a compact radiation/microphone
       filter using `algo-dsp`.
-- [ ] Add offline analysis tooling for modal peaks, decay times, pitch-glide
+- [x] Add offline analysis tooling for modal peaks, decay times, pitch-glide
       tracks, spectra, and waveform/spectrum regression metrics using
       `algo-fft`/`algo-dsp`.
-- [ ] Define an openly licensed or locally measured reference set: multiple
+- [x] Define an openly licensed or locally measured reference set: multiple
       velocities, strike radii, and microphone positions, with provenance and
       recording conditions.
 
