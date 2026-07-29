@@ -3,6 +3,7 @@ import { mutate } from "./mutate";
 import {
   BASS_TRACK,
   PATTERN_SIZE,
+  TRACK_COUNT,
   VEL_ACCENT,
   VEL_NORMAL,
   VEL_OFF,
@@ -101,7 +102,7 @@ describe("mutate", () => {
       // hits already sit within 0..15 but the seed pattern here is all < 16,
       // and mutation only touches steps < stepCount, so no new hit appears at
       // step >= stepCount on an initially-clear column beyond the window.
-      for (let track = 0; track < 5; track++) {
+      for (let track = 0; track < TRACK_COUNT; track++) {
         for (let step = stepCount; step < 16; step++) {
           // seedPattern places hats up to step 14; only assert on tracks/steps
           // the seed leaves off within the beyond-window region.

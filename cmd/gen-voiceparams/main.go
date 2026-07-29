@@ -87,7 +87,8 @@ export interface VoiceParamSpec {
 
 	fmt.Fprintf(&out, "/** Widest voice's parameter count; also the per-voice persistence slot count. */\nexport const VOICE_PARAM_CAPACITY = %d;\n\n", maxParams())
 
-	out.WriteString("/** Display names, in engine track order (0 = Bass Drum … 4 = Cymbal). */\nexport const VOICE_NAMES: readonly string[] = [\n")
+	fmt.Fprintf(&out, "/** Display names, in engine track order (0 = Bass Drum … %d = %s). */\nexport const VOICE_NAMES: readonly string[] = [\n",
+		drum.TrackCount-1, drum.VoiceName(drum.TrackCount-1))
 
 	for track := range drum.TrackCount {
 		fmt.Fprintf(&out, "  %s,\n", quote(drum.VoiceName(track)))

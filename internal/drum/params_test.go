@@ -206,6 +206,11 @@ func TestParamSpecIDsAreStable(t *testing.T) {
 			"tom.sweepRate", "tom.decay", "tom.gain",
 		},
 		{"cym.bpHz", "cym.bpQ", "cym.decay", "cym.gain"},
+		{
+			"tom2.pitchFrom", "tom2.pitchTo", "tom2.sweepTime",
+			"tom2.sweepRate", "tom2.decay", "tom2.gain",
+		},
+		{"perc.pitch", "perc.ratio", "perc.decay", "perc.click", "perc.gain"},
 	}
 
 	for track := range TrackCount {

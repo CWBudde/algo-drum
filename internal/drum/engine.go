@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	TrackCount = 5
+	TrackCount = 7
 
 	// MaxSteps is the pattern capacity; the active length is set at runtime
 	// via SetStepCount (1–MaxSteps). Steps are 16th notes, so 16 steps span
@@ -144,6 +144,8 @@ func NewEngine(sr float64) *Engine {
 	e.voices[tomTrackIndex] = e.proceduralTom
 
 	e.voices[4] = NewCymbal(sr)
+	e.voices[5] = NewTom2(sr)
+	e.voices[6] = NewPercussion(sr)
 	for i := range e.voices {
 		e.voices[i].SetDecay(e.decays[i])
 	}

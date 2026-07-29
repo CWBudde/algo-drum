@@ -394,7 +394,7 @@ export function setCell(track: number, step: number, velocity: number): void {
 }
 
 // setPattern replaces the whole pattern: a flat track-major Float32Array of
-// TrackCount×MaxSteps (5×16) velocities in [0, 1], index = track*16 + step.
+// TrackCount×MaxSteps (7×16) velocities in [0, 1], index = track*16 + step.
 // The engine echoes its authoritative pattern back to onPattern subscribers.
 export function setPattern(pattern: Float32Array): void {
   patternMirror.beginMutation();

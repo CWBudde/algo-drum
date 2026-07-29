@@ -84,6 +84,16 @@ const (
 	tomGain        = 0.9
 )
 
+// Second tom tuning. It shares the synthesis recipe with Tom but owns a
+// separate parameter bank and ships higher, forming a useful two-tom pair.
+const (
+	tom2PitchFromHz = 220.0
+	tom2PitchToHz   = 110.0
+	tom2PitchTCS    = 0.075
+	tom2BaseDecayS  = 0.28
+	tom2Gain        = 0.85
+)
+
 // Cymbal tuning.
 const (
 	cymBPHz       = 7000.0
@@ -91,6 +101,17 @@ const (
 	cymBaseDecayS = 1.2
 	cymGain       = 1.2
 	cymSeed       = 999
+)
+
+// Metallic percussion tuning: two inharmonic oscillators and a very short
+// noise transient make a compact cowbell/woodblock-like voice.
+const (
+	percPitchHz   = 420.0
+	percRatio     = 1.48
+	percBaseDecay = 0.12
+	percClick     = 0.25
+	percGain      = 0.8
+	percSeed      = 2027
 )
 
 // clamp01 limits a voice-level value to [0, 1]. Non-finite input becomes 0:
@@ -440,8 +461,17 @@ type Tom struct {
 }
 
 func NewTom(sr float64) *Tom {
+	return newTom(sr, tomSpecs)
+}
+
+// NewTom2 creates the higher-pitched second tom with its own editable bank.
+func NewTom2(sr float64) *Tom {
+	return newTom(sr, tom2Specs)
+}
+
+func newTom(sr float64, specs []ParamSpec) *Tom {
 	v := &Tom{
-		paramBank:   newParamBank(tomSpecs),
+		paramBank:   newParamBank(specs),
 		sr:          sr,
 		decayAmount: 0.5,
 	}
@@ -516,6 +546,103 @@ func (v *Tom) Tick() float64 {
 	v.age++
 
 	return sample * v.gain
+}
+
+// ── Percussion ─────────────────────────────────────────────────────────────
+
+type Percussion struct {
+	paramBank
+
+	sr       float64
+	active   bool
+	phaseA   float64
+	phaseB   float64
+	env      float64
+	clickEnv float64
+	envDecay float64
+	rng      *rand.Rand
+
+	pitch       float64
+	ratio       float64
+	baseDecayS  float64
+	clickAmount float64
+	gain        float64
+	decayAmount float64
+}
+
+func NewPercussion(sr float64) *Percussion {
+	v := &Percussion{
+		paramBank:   newParamBank(percSpecs),
+		sr:          sr,
+		rng:         newVoiceRng(percSeed),
+		decayAmount: 0.5,
+	}
+	v.applyParams()
+
+	return v
+}
+
+func (v *Percussion) Trigger(velocity float64) {
+	v.active = true
+	v.phaseA = 0
+	v.phaseB = 0
+	v.env = clamp01(velocity)
+	v.clickEnv = v.env
+}
+
+func (v *Percussion) IsActive() bool { return v.active }
+
+func (v *Percussion) SetDecay(amount float64) {
+	v.decayAmount = clamp01(amount)
+	v.applyDecay()
+}
+
+func (v *Percussion) SetParam(index int, value01 float64) {
+	if !v.set(index, value01) {
+		return
+	}
+
+	v.applyParams()
+}
+
+func (v *Percussion) applyParams() {
+	v.pitch = v.value(percParamPitch)
+	v.ratio = v.value(percParamRatio)
+	v.baseDecayS = v.value(percParamDecay)
+	v.clickAmount = v.value(percParamClick)
+	v.gain = v.value(percParamGain)
+	v.applyDecay()
+}
+
+func (v *Percussion) applyDecay() {
+	v.envDecay = decayCoef(v.sr, v.baseDecayS*(decayScaleMin+v.decayAmount))
+}
+
+func (v *Percussion) Tick() float64 {
+	if !v.active {
+		return 0
+	}
+
+	v.phaseA += 2 * math.Pi * v.pitch / v.sr
+	v.phaseB += 2 * math.Pi * v.pitch * v.ratio / v.sr
+	if v.phaseA > 2*math.Pi {
+		v.phaseA -= 2 * math.Pi
+	}
+	if v.phaseB > 2*math.Pi {
+		v.phaseB -= 2 * math.Pi
+	}
+
+	body := (math.Sin(v.phaseA) + 0.55*math.Sin(v.phaseB)) / 1.55
+	click := (v.rng.Float64()*2 - 1) * v.clickEnv * v.clickAmount
+	sample := (body*v.env + click) * v.gain
+
+	v.env *= v.envDecay
+	v.clickEnv *= decayCoef(v.sr, 0.006)
+	if v.env < envSilence {
+		v.active = false
+	}
+
+	return sample
 }
 
 // ── Cymbal ─────────────────────────────────────────────────────────────────

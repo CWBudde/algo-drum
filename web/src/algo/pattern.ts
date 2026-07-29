@@ -4,7 +4,7 @@
 // and each value is a velocity in [0, 1]. This mirrors the Go engine's
 // setPattern/getPattern layout so the flat form round-trips without conversion.
 
-export const TRACK_COUNT = 5;
+export const TRACK_COUNT = 7;
 export const STEP_CAPACITY = 16;
 export const PATTERN_SIZE = TRACK_COUNT * STEP_CAPACITY;
 

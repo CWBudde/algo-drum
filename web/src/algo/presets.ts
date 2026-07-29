@@ -2,8 +2,9 @@
 //
 // Each preset is written as one 16-character string per voice: '.' = off,
 // 'x' = normal hit, 'X' = accent. Voices are keyed by engine track index
-// (0 Bass, 1 Snare, 2 HiHat, 3 Tom, 4 Cymbal). Patterns compile to the flat,
-// engine-major velocity array the engine consumes. Pure and dependency-free.
+// (0 Bass, 1 Snare, 2 HiHat, 3 Tom, 4 Cymbal, 5 Tom 2, 6 Percussion).
+// Patterns compile to the flat, engine-major velocity array the engine
+// consumes. Pure and dependency-free.
 
 import {
   PATTERN_SIZE,
@@ -21,7 +22,7 @@ export interface Preset {
   rows: VoiceRows;
 }
 
-// Track order per row string: Bass, Snare, HiHat, Tom, Cymbal.
+// Track order per row string: Bass, Snare, HiHat, Tom, Cymbal, Tom 2, Perc.
 export const PRESETS: Preset[] = [
   {
     name: "Rock",
@@ -45,6 +46,8 @@ export const PRESETS: Preset[] = [
       0: "X.....x...X.....",
       1: "....X..x....X.x.",
       2: "x.xxx.x.x.xxx.x.",
+      5: "..............x.",
+      6: "...x.......x....",
     },
   },
   {
@@ -62,6 +65,7 @@ export const PRESETS: Preset[] = [
       1: "....x.......x...",
       2: "..x...x...x...x.",
       4: "........X.......",
+      6: ".x...x...x...x..",
     },
   },
   {
@@ -70,6 +74,8 @@ export const PRESETS: Preset[] = [
       0: "X..x..X...x..X..",
       1: "....X.......X..x",
       2: "xxxxxxxxxxxxxxxx",
+      5: "..............x.",
+      6: "..x....x..x....x",
     },
   },
 ];

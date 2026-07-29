@@ -19,12 +19,12 @@ import {
 } from "../algo/persistence";
 import "./DrumMachine.css";
 
-// Visual order: Cymbal on top, Bass on bottom
-const TRACKS = ["Cymbal", "Tom", "HiHat", "Snare", "Bass"];
-// Maps visual row index → engine track index (engine: 0=Bass,1=Snare,2=HiHat,3=Tom,4=Cymbal)
-const TRACK_INDEX = [4, 3, 2, 1, 0];
+// Visual order: Percussion on top, Bass on bottom.
+const TRACKS = ["Perc", "Tom 2", "Cymbal", "Tom", "HiHat", "Snare", "Bass"];
+// Maps visual row index → engine track index (the UI reverses engine order).
+const TRACK_INDEX = [6, 5, 4, 3, 2, 1, 0];
 const COLS = 16;
-const ROWS = 5;
+const ROWS = 7;
 
 // Clicking a cell cycles off → normal hit → accent → off.
 const VEL_NORMAL = 0.7;
@@ -108,18 +108,18 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   const [tomModel, setTomModel] = useState<TomModel>(
     initial?.tomModel ?? DEFAULT_TOM_MODEL,
   );
-  const [volumes, setVolumes] = useState<number[]>(
-    () => initial?.volumes ?? Array<number>(ROWS).fill(0.75),
+  const [volumes, setVolumes] = useState<number[]>(() =>
+    Array.from({ length: ROWS }, (_, row) => initial?.volumes?.[row] ?? 0.75),
   );
-  const [decays, setDecays] = useState<number[]>(
-    () => initial?.decays ?? Array<number>(ROWS).fill(0.5),
+  const [decays, setDecays] = useState<number[]>(() =>
+    Array.from({ length: ROWS }, (_, row) => initial?.decays?.[row] ?? 0.5),
   );
-  const [muted, setMuted] = useState<boolean[]>(
-    () => initial?.muted ?? Array<boolean>(ROWS).fill(false),
+  const [muted, setMuted] = useState<boolean[]>(() =>
+    Array.from({ length: ROWS }, (_, row) => initial?.muted?.[row] ?? false),
   );
   // Per-track state comes in two flavours; do not mix them up:
-  //   pattern / volumes / decays / muted — indexed by VISUAL ROW (0 = Cymbal … 4 = Bass)
-  //   voiceParamsByEngineTrack          — indexed by ENGINE TRACK (0 = Bass … 4 = Cymbal)
+  //   pattern / volumes / decays / muted — indexed by VISUAL ROW (0 = Perc … 6 = Bass)
+  //   voiceParamsByEngineTrack          — indexed by ENGINE TRACK (0 = Bass … 6 = Perc)
   // TRACK_INDEX converts either way (it is a reversal, so it is its own inverse).
   // The voice parameters follow the engine's order because the generated
   // descriptor table, the persisted tail and setVoiceParam all do.
@@ -273,8 +273,8 @@ export default function DrumMachine({ wasmLoaded }: Props) {
 
   const flatPattern = useMemo(() => visualToFlat(pattern), [pattern]);
 
-  // applyFlatPattern replaces the whole pattern (presets, clear, mutate,
-  // Euclid) in both the UI and the engine.
+  // applyFlatPattern replaces the whole pattern (presets and mutation) in both
+  // the UI and the engine.
   const applyFlatPattern = useCallback((flat: number[]) => {
     setPattern(flatToVisual(flat));
     engine.setPattern(Float32Array.from(flat));
@@ -445,6 +445,13 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           title={wasmLoaded ? "Engine ready" : "Loading engine"}
           aria-hidden="true"
         />
+        <AlgoPanel
+          disabled={!wasmLoaded}
+          pattern={flatPattern}
+          stepCount={stepCount}
+          onApplyPattern={applyFlatPattern}
+          getShareUrl={getShareUrl}
+        />
       </header>
 
       <div className="dm-board">
@@ -610,14 +617,6 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           onRequestClose={closeEditor}
         />
       )}
-
-      <AlgoPanel
-        disabled={!wasmLoaded}
-        pattern={flatPattern}
-        stepCount={stepCount}
-        onApplyPattern={applyFlatPattern}
-        getShareUrl={getShareUrl}
-      />
 
       <footer className="dm-transport">
         <button

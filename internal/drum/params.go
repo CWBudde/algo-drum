@@ -256,6 +256,15 @@ var tomSpecs = []ParamSpec{
 	tomParamGain:      linSpec("tom.gain", "LVL", "output level", "", 0, 2, tomGain, 2),
 }
 
+var tom2Specs = []ParamSpec{
+	tomParamPitchFrom: expSpec("tom2.pitchFrom", "ATK", "attack pitch", "Hz", 60, 600, tom2PitchFromHz, 0),
+	tomParamPitchTo:   expSpec("tom2.pitchTo", "TUNE", "body pitch", "Hz", 30, 300, tom2PitchToHz, 1),
+	tomParamSweepTime: expSpec("tom2.sweepTime", "SWP", "pitch sweep time", "s", 0.005, 0.5, tom2PitchTCS, 3),
+	tomParamSweepRate: expSpec("tom2.sweepRate", "SNAP", "pitch sweep rate", "", 1, 20, pitchSweepRate, 2),
+	tomParamDecay:     expSpec("tom2.decay", "TIME", "base decay time", "s", 0.05, 2.0, tom2BaseDecayS, 3),
+	tomParamGain:      linSpec("tom2.gain", "LVL", "output level", "", 0, 2, tom2Gain, 2),
+}
+
 const (
 	cymParamBPHz = iota
 	cymParamBPQ
@@ -268,6 +277,22 @@ var cymSpecs = []ParamSpec{
 	cymParamBPQ:   expSpec("cym.bpQ", "RES", "bandpass resonance", "", 0.3, 6, cymBPQ, 2),
 	cymParamDecay: expSpec("cym.decay", "TIME", "base decay time", "s", 0.1, 4.0, cymBaseDecayS, 3),
 	cymParamGain:  linSpec("cym.gain", "LVL", "make-up gain", "", 0, 2, cymGain, 2),
+}
+
+const (
+	percParamPitch = iota
+	percParamRatio
+	percParamDecay
+	percParamClick
+	percParamGain
+)
+
+var percSpecs = []ParamSpec{
+	percParamPitch: expSpec("perc.pitch", "TUNE", "body pitch", "Hz", 120, 1600, percPitchHz, 0),
+	percParamRatio: expSpec("perc.ratio", "METAL", "oscillator ratio", "", 1.05, 3.0, percRatio, 2),
+	percParamDecay: expSpec("perc.decay", "TIME", "base decay time", "s", 0.02, 1.0, percBaseDecay, 3),
+	percParamClick: linSpec("perc.click", "CLICK", "attack noise", "", 0, 1, percClick, 2),
+	percParamGain:  linSpec("perc.gain", "LVL", "output level", "", 0, 2, percGain, 2),
 }
 
 // Physical Tom parameters use their own persistence bank, separate from the
@@ -310,11 +335,13 @@ var physicalTomSpecs = []ParamSpec{
 }
 
 // voiceNames labels each track for the editor UI, in engine track order.
-var voiceNames = [TrackCount]string{"Bass Drum", "Snare", "Hi-Hat", "Tom", "Cymbal"}
+var voiceNames = [TrackCount]string{
+	"Bass Drum", "Snare", "Hi-Hat", "Tom", "Cymbal", "Tom 2", "Percussion",
+}
 
 // voiceSpecs holds every voice's parameter table, in engine track order.
 var voiceSpecs = [TrackCount][]ParamSpec{
-	bassSpecs, snareSpecs, hatSpecs, tomSpecs, cymSpecs,
+	bassSpecs, snareSpecs, hatSpecs, tomSpecs, cymSpecs, tom2Specs, percSpecs,
 }
 
 // SpecsForTrack returns the parameter descriptors of one voice, or nil for an

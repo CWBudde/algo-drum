@@ -94,7 +94,7 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 			corrupt: func(engine *Engine) {
 				engine.pending[0] = pendingTrigger{countdown: 10, track: TrackCount, velocity: 0.7, active: true}
 			},
-			want: "pending trigger 0 targets invalid track 5",
+			want: "pending trigger 0 targets invalid track 7",
 		},
 		{
 			name: "pending trigger with a non-finite velocity",

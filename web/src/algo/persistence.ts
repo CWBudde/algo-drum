@@ -23,21 +23,24 @@ import type { TomModel } from "../engine/tomModel";
 // Bump when the byte layout changes. Every version is a strict append, so old
 // offsets and meanings stay fixed: v2 added voice parameters, v3 the Tom model
 // selector, v4 the original 13-slot physical Tom bank, v5 the two
-// tension-asymmetry controls, and v6 the corrected central-hit default.
-// Older links still decode with new fields unset.
-const FORMAT_VERSION = 6;
+// tension-asymmetry controls, v6 the corrected central-hit default, and v7
+// the second Tom and Percussion tracks. Older links still decode with the two
+// new rows initialized to defaults.
+const FORMAT_VERSION = 7;
 
 // Byte layout: version, 6 scalar knobs, 5 volumes, 5 decays, 1 mute mask,
 // then the 80-cell pattern packed 2 bits per cell (20 bytes)...
-const HEADER_BYTES = 1 + 6 + 5 + 5 + 1;
-const PATTERN_BYTES = PATTERN_SIZE / 4;
-const V1_BYTES = HEADER_BYTES + PATTERN_BYTES;
+const LEGACY_TRACK_COUNT = 5;
+const LEGACY_PATTERN_SIZE = LEGACY_TRACK_COUNT * 16;
+const LEGACY_HEADER_BYTES = 1 + 6 + 5 + 5 + 1;
+const LEGACY_PATTERN_BYTES = LEGACY_PATTERN_SIZE / 4;
+const V1_BYTES = LEGACY_HEADER_BYTES + LEGACY_PATTERN_BYTES;
 
 // ...then, in v2, the per-voice synthesis parameters: one byte per slot,
 // engine-major, at V1_BYTES + track*VOICE_PARAM_CAPACITY + index. Voices with
 // fewer parameters than the capacity leave their trailing slots at 0.
-const VOICE_PARAM_BYTES = TRACK_COUNT * VOICE_PARAM_CAPACITY;
-const V2_BYTES = V1_BYTES + VOICE_PARAM_BYTES;
+const LEGACY_VOICE_PARAM_BYTES = LEGACY_TRACK_COUNT * VOICE_PARAM_CAPACITY;
+const V2_BYTES = V1_BYTES + LEGACY_VOICE_PARAM_BYTES;
 
 // v3 appends one byte for the explicitly selected Tom implementation.
 const V3_BYTES = V2_BYTES + 1;
@@ -50,7 +53,18 @@ const V4_BYTES = V3_BYTES + V4_PHYSICAL_TOM_PARAM_CAPACITY;
 
 // v5 extends that bank with the P6 asymmetry amount and principal axis. v6 has
 // the same width and migrates only the former shipped strike-radius position.
-const TOTAL_BYTES = V3_BYTES + PHYSICAL_TOM_PARAM_CAPACITY;
+const V6_BYTES = V3_BYTES + PHYSICAL_TOM_PARAM_CAPACITY;
+
+// v7 appends all state belonging to engine tracks 5 and 6. The original five
+// tracks keep byte-for-byte v1–v6 offsets, so existing links remain decodable.
+const EXTRA_TRACK_COUNT = TRACK_COUNT - LEGACY_TRACK_COUNT;
+const EXTRA_PATTERN_BYTES = (PATTERN_SIZE - LEGACY_PATTERN_SIZE) / 4;
+const V7_EXTRA_BYTES =
+  EXTRA_TRACK_COUNT * 2 + // volumes and decays
+  1 + // mute mask
+  EXTRA_PATTERN_BYTES +
+  EXTRA_TRACK_COUNT * VOICE_PARAM_CAPACITY;
+const TOTAL_BYTES = V6_BYTES + V7_EXTRA_BYTES;
 
 const PHYSICAL_STRIKE_RADIUS_INDEX = 4;
 const OLD_PHYSICAL_STRIKE_RADIUS_DEFAULT =
@@ -71,9 +85,9 @@ export interface PersistedState {
   reverb: number;
   prob: number;
   humanize: number;
-  volumes: number[]; // length 5
-  decays: number[]; // length 5
-  muted: boolean[]; // length 5
+  volumes: number[]; // visual row order, length TRACK_COUNT
+  decays: number[]; // visual row order, length TRACK_COUNT
+  muted: boolean[]; // visual row order, length TRACK_COUNT
   // Per-voice synthesis parameters, engine-major, TRACK_COUNT rows of
   // VOICE_PARAM_CAPACITY normalized positions. Absent from v1 blobs — callers
   // fall back to the per-voice defaults in engine/voiceParams.ts.
@@ -105,6 +119,12 @@ function velToCode(v: number): number {
 function codeToVel(code: number): number {
   if (code === 2) return VEL_ACCENT;
   return code === 1 ? VEL_NORMAL : VEL_OFF;
+}
+
+// The mixer strips are displayed in reverse engine order. Legacy blobs stored
+// the old five visual rows; their values now live after the two new top rows.
+function visualIndexForEngineTrack(track: number): number {
+  return TRACK_COUNT - 1 - track;
 }
 
 function bytesToBase64Url(bytes: Uint8Array): string {
@@ -144,15 +164,18 @@ export function encodeState(state: PersistedState): string {
   bytes[offset++] = toByte(state.prob);
   bytes[offset++] = toByte(state.humanize);
 
-  for (let i = 0; i < 5; i++) bytes[offset++] = toByte(state.volumes[i] ?? 0);
-  for (let i = 0; i < 5; i++) bytes[offset++] = toByte(state.decays[i] ?? 0);
+  for (let i = 0; i < LEGACY_TRACK_COUNT; i++)
+    bytes[offset++] = toByte(state.volumes[EXTRA_TRACK_COUNT + i] ?? 0);
+  for (let i = 0; i < LEGACY_TRACK_COUNT; i++)
+    bytes[offset++] = toByte(state.decays[EXTRA_TRACK_COUNT + i] ?? 0);
 
   let muteMask = 0;
-  for (let i = 0; i < 5; i++) if (state.muted[i]) muteMask |= 1 << i;
+  for (let i = 0; i < LEGACY_TRACK_COUNT; i++)
+    if (state.muted[EXTRA_TRACK_COUNT + i]) muteMask |= 1 << i;
   bytes[offset++] = muteMask;
 
   // Pack four 2-bit cell codes into each pattern byte.
-  for (let i = 0; i < PATTERN_BYTES; i++) {
+  for (let i = 0; i < LEGACY_PATTERN_BYTES; i++) {
     let packed = 0;
     for (let j = 0; j < 4; j++) {
       const code = velToCode(state.pattern[i * 4 + j] ?? VEL_OFF);
@@ -163,7 +186,7 @@ export function encodeState(state: PersistedState): string {
 
   // Rows are padded and truncated to the capacity so the record stays fixed
   // width no matter how many parameters a voice actually exposes.
-  for (let track = 0; track < TRACK_COUNT; track++) {
+  for (let track = 0; track < LEGACY_TRACK_COUNT; track++) {
     for (let i = 0; i < VOICE_PARAM_CAPACITY; i++) {
       bytes[offset++] = toByte(state.voiceParams?.[track]?.[i] ?? 0);
     }
@@ -173,6 +196,39 @@ export function encodeState(state: PersistedState): string {
 
   for (let i = 0; i < PHYSICAL_TOM_PARAM_CAPACITY; i++) {
     bytes[offset++] = toByte(state.physicalTomParams?.[i] ?? 0);
+  }
+
+  for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
+    bytes[offset++] = toByte(
+      state.volumes[visualIndexForEngineTrack(track)] ?? 0,
+    );
+  }
+  for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
+    bytes[offset++] = toByte(
+      state.decays[visualIndexForEngineTrack(track)] ?? 0,
+    );
+  }
+
+  let extraMuteMask = 0;
+  for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
+    if (state.muted[visualIndexForEngineTrack(track)])
+      extraMuteMask |= 1 << (track - LEGACY_TRACK_COUNT);
+  }
+  bytes[offset++] = extraMuteMask;
+
+  for (let i = 0; i < EXTRA_PATTERN_BYTES; i++) {
+    let packed = 0;
+    for (let j = 0; j < 4; j++) {
+      const patternIndex = LEGACY_PATTERN_SIZE + i * 4 + j;
+      packed |= velToCode(state.pattern[patternIndex] ?? VEL_OFF) << (j * 2);
+    }
+    bytes[offset++] = packed;
+  }
+
+  for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
+    for (let i = 0; i < VOICE_PARAM_CAPACITY; i++) {
+      bytes[offset++] = toByte(state.voiceParams?.[track]?.[i] ?? 0);
+    }
   }
 
   return bytesToBase64Url(bytes);
@@ -197,9 +253,11 @@ export function decodeState(text: string): PersistedState | null {
           ? V3_BYTES
           : version === 4
             ? V4_BYTES
-            : version === 5 || version === FORMAT_VERSION
-              ? TOTAL_BYTES
-              : -1;
+            : version === 5 || version === 6
+              ? V6_BYTES
+              : version === FORMAT_VERSION
+                ? TOTAL_BYTES
+                : -1;
   if (bytes.length !== expected) return null;
 
   let offset = 1;
@@ -211,18 +269,21 @@ export function decodeState(text: string): PersistedState | null {
   const prob = fromByte(bytes[offset++]);
   const humanize = fromByte(bytes[offset++]);
 
-  const volumes: number[] = [];
-  for (let i = 0; i < 5; i++) volumes.push(fromByte(bytes[offset++]));
+  const legacyVolumes: number[] = [];
+  for (let i = 0; i < LEGACY_TRACK_COUNT; i++)
+    legacyVolumes.push(fromByte(bytes[offset++]));
 
-  const decays: number[] = [];
-  for (let i = 0; i < 5; i++) decays.push(fromByte(bytes[offset++]));
+  const legacyDecays: number[] = [];
+  for (let i = 0; i < LEGACY_TRACK_COUNT; i++)
+    legacyDecays.push(fromByte(bytes[offset++]));
 
   const muteMask = bytes[offset++];
-  const muted: boolean[] = [];
-  for (let i = 0; i < 5; i++) muted.push((muteMask & (1 << i)) !== 0);
+  const legacyMuted: boolean[] = [];
+  for (let i = 0; i < LEGACY_TRACK_COUNT; i++)
+    legacyMuted.push((muteMask & (1 << i)) !== 0);
 
   const pattern = new Array<number>(PATTERN_SIZE).fill(VEL_OFF);
-  for (let i = 0; i < PATTERN_BYTES; i++) {
+  for (let i = 0; i < LEGACY_PATTERN_BYTES; i++) {
     const packed = bytes[offset++];
     for (let j = 0; j < 4; j++) {
       pattern[i * 4 + j] = codeToVel((packed >> (j * 2)) & 0b11);
@@ -237,15 +298,24 @@ export function decodeState(text: string): PersistedState | null {
     reverb,
     prob,
     humanize,
-    volumes,
-    decays,
-    muted,
+    volumes: [
+      ...new Array<number>(EXTRA_TRACK_COUNT).fill(0.75),
+      ...legacyVolumes,
+    ],
+    decays: [
+      ...new Array<number>(EXTRA_TRACK_COUNT).fill(0.5),
+      ...legacyDecays,
+    ],
+    muted: [
+      ...new Array<boolean>(EXTRA_TRACK_COUNT).fill(false),
+      ...legacyMuted,
+    ],
   };
 
   if (version === 1) return state;
 
   const voiceParams: number[][] = [];
-  for (let track = 0; track < TRACK_COUNT; track++) {
+  for (let track = 0; track < LEGACY_TRACK_COUNT; track++) {
     const row: number[] = [];
     for (let i = 0; i < VOICE_PARAM_CAPACITY; i++)
       row.push(fromByte(bytes[offset++]));
@@ -279,7 +349,7 @@ export function decodeState(text: string): PersistedState | null {
   // edited position, but move the exact old detent to the corrected central
   // default when upgrading v4/v5 state.
   if (
-    version < FORMAT_VERSION &&
+    version < 6 &&
     physicalTomParams[PHYSICAL_STRIKE_RADIUS_INDEX] ===
       OLD_PHYSICAL_STRIKE_RADIUS_DEFAULT
   ) {
@@ -287,7 +357,43 @@ export function decodeState(text: string): PersistedState | null {
       PHYSICAL_TOM_PARAMS[PHYSICAL_STRIKE_RADIUS_INDEX].default;
   }
 
-  return { ...stateWithModel, physicalTomParams };
+  const stateWithPhysical = { ...stateWithModel, physicalTomParams };
+  if (version < FORMAT_VERSION) return stateWithPhysical;
+
+  for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
+    stateWithPhysical.volumes[visualIndexForEngineTrack(track)] = fromByte(
+      bytes[offset++],
+    );
+  }
+  for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
+    stateWithPhysical.decays[visualIndexForEngineTrack(track)] = fromByte(
+      bytes[offset++],
+    );
+  }
+
+  const extraMuteMask = bytes[offset++];
+  for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
+    stateWithPhysical.muted[visualIndexForEngineTrack(track)] =
+      (extraMuteMask & (1 << (track - LEGACY_TRACK_COUNT))) !== 0;
+  }
+
+  for (let i = 0; i < EXTRA_PATTERN_BYTES; i++) {
+    const packed = bytes[offset++];
+    for (let j = 0; j < 4; j++) {
+      pattern[LEGACY_PATTERN_SIZE + i * 4 + j] = codeToVel(
+        (packed >> (j * 2)) & 0b11,
+      );
+    }
+  }
+
+  for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
+    const row: number[] = [];
+    for (let i = 0; i < VOICE_PARAM_CAPACITY; i++)
+      row.push(fromByte(bytes[offset++]));
+    voiceParams.push(row);
+  }
+
+  return stateWithPhysical;
 }
 
 // ── localStorage + URL hash glue (fail-soft) ────────────────────────────────

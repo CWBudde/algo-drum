@@ -12,6 +12,8 @@ func newTestVoices() map[string]Voice {
 		"HiHat":    NewHiHat(testSampleRate),
 		"Tom":      NewTom(testSampleRate),
 		"Cymbal":   NewCymbal(testSampleRate),
+		"Tom2":     NewTom2(testSampleRate),
+		"Perc":     NewPercussion(testSampleRate),
 	}
 }
 

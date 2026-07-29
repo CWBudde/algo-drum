@@ -27,11 +27,12 @@
 .dm-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 10px;
+  margin-bottom: 18px;
 }
 
 .dm-title {
+  flex: none;
   margin: 0;
   font-size: 21px;
   font-weight: 600;
@@ -48,6 +49,7 @@
 }
 
 .dm-status {
+  flex: none;
   width: 9px;
   height: 9px;
   border-radius: 50%;
@@ -80,7 +82,7 @@
 }
 
 .dm-screen {
-  grid-row: 1 / 6;
+  grid-row: 1 / 8;
   grid-column: 2 / 18;
   align-self: stretch;
   justify-self: stretch;
@@ -437,6 +439,14 @@
 @media (max-width: 620px) {
   .dm-machine {
     padding: 14px 14px 18px;
+  }
+
+  .dm-header {
+    gap: 6px;
+  }
+
+  .dm-title {
+    font-size: 18px;
   }
 
   .dm-board {
