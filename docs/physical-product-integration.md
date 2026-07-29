@@ -55,12 +55,17 @@ The physical bank is separate from the procedural Tom bank throughout:
 
 App-state format version 4 appended the original thirteen quantized physical
 positions after the version-3 Tom selector. Version 5 appends ASYM and AXIS;
-the original indices remain unchanged. Versions 1 and 2 still decode without a
-selector and therefore choose Algorithmic at the call site. Version 3 retains
-its stored model selection and receives generated physical defaults. Version 4
-restores its thirteen positions and receives generated defaults for the two P6
-controls. Reload and share-link browser coverage exercises both the selected
-model and an edited physical tuning control.
+the original indices remain unchanged. Version 6 keeps the same width and
+migrates only the exact former shipped HIT.R detent from the peripheral 0.45
+radius to the corrected central 0.12 radius. User-edited hit positions remain
+unchanged.
+
+Versions 1 and 2 still decode without a selector and therefore choose
+Algorithmic at the call site. Version 3 retains its stored model selection and
+receives generated physical defaults. Version 4 restores its thirteen
+positions and receives generated defaults for the two P6 controls. Reload and
+share-link browser coverage exercises both the selected model and an edited
+physical tuning control.
 
 All controls use the existing keyboard-accessible slider implementation,
 formatted live readouts, focus-safe modal dialog, reset announcement, and

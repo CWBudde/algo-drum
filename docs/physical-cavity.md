@@ -70,9 +70,18 @@ storage.
 ## Output and parameter updates
 
 `DoubleHeadOutput` keeps batter and resonant point motion and radiation
-separate, then exposes their combined raw and microphone-filtered radiation.
-It also reports swept volume, cavity pressure, head energy, cavity energy, and
-total energy for validation.
+separate. The configured pickup is on the batter side, so `RawRadiated` and
+the microphone-filtered output use the batter contribution. The resonant head
+still changes that signal through the passive cavity coupling and remains
+available as `ResonantRawRadiated` for diagnostics.
+
+The earlier implementation added both outward-radiation signals directly as
+if the heads occupied the same point with the same orientation, distance,
+delay, and polarity. With a realistic stick pulse this nearly cancelled the
+108 Hz coupled fundamental. Direct resonant-head radiation must remain
+separate until a propagation/diffraction transfer around the shell is
+available. The output also reports swept volume, cavity pressure, head energy,
+cavity energy, and total energy for validation.
 
 All P3 parameters remain SI-valued fields of `PhysicalDrum`:
 

@@ -725,7 +725,7 @@ sources.
 
 - [x] Add a **parallel, explicitly selected physical model**. Preserve the
       existing procedural voices, their parameter meanings, and old share links.
-- [ ] Target a **double-headed tom first**. It covers circular head modes,
+- [x] Target a **double-headed tom first**. It covers circular head modes,
       strike position/contact, frequency-dependent loss, radiation, enclosed-air
       coupling, and nonlinear tension without making snare collision a
       prerequisite.
@@ -822,17 +822,18 @@ results are documented in
       parameter bounds; add an oversampled or high-precision reference test.
 - [x] Verify velocity-dependent attack spectrum and downward modal-frequency
       glides without runaway energy or aliasing.
-- [x] Evaluate the provisional force pulse; replace it with a bounded-iteration
-      mallet/contact model only if comparison shows an audible, measurable
-      benefit.
+- [x] Evaluate the provisional force pulse against measured contact durations.
+      Its original 0.71 ms default was wrong by nearly an order of magnitude;
+      replace it with a bounded, velocity- and hardness-dependent 5.5–8 ms
+      half-sine contact while retaining the allocation-free real-time contract.
 
 Exit: louder hits produce a controlled, reference-comparable pitch glide and
 attack change while all fuzz/finite/energy tests remain green.
 
 Completed 2026-07-29. The bounded Berger potential, discrete-gradient
 passivity argument, anti-alias parameter bound, oversampled reference,
-velocity/glide measurements, active native/WASM benchmarks, and evidence-based
-decision to retain the existing force pulse are documented in
+velocity/glide measurements, active native/WASM benchmarks, and the corrected
+measurement-bounded contact pulse are documented in
 [`docs/physical-nonlinearity.md`](docs/physical-nonlinearity.md).
 
 ### P5 — Product integration
@@ -880,6 +881,13 @@ zero-asymmetry migration for v4 configs. The generated physical Tom bank adds
 append-only ASYM/AXIS controls and app-state v5 preserves v4 links. The
 measurement-fit preset and the phase exit criterion remain open because the
 repository contains no identified real-tom recording set.
+
+Sound re-audit 2026-07-29: corrected the default hit from peripheral to central,
+replaced the erroneous sub-millisecond contact, and removed an unevidenced
+equal-phase sum of opposite-side head radiation that cancelled the coupled
+fundamental. App-state v6 migrates only the former shipped HIT.R detent. The
+mechanical, observation, persistence, and regression audit is recorded in
+[`docs/physical-sound-audit.md`](docs/physical-sound-audit.md).
 
 Exit: a measured tom can be matched within documented tolerances for modal
 frequency, decay, and spectrum across more than one hit.

@@ -6,7 +6,7 @@ import (
 	"github.com/cwbudde/algo-drum/internal/physical"
 )
 
-const ReferenceSchemaVersion = 1
+const ReferenceSchemaVersion = 2
 
 // ReferenceSuite is a compact, deterministic calibration set. It stores
 // derived metrics rather than generated audio so provenance is reviewable and
@@ -59,13 +59,14 @@ func GenerateReferenceSuite() (ReferenceSuite, error) {
 
 	suite := ReferenceSuite{
 		SchemaVersion: ReferenceSchemaVersion,
-		Name:          "algo-drum physical calibration v1",
+		Name:          "algo-drum physical calibration v2",
 		License:       "MIT; see repository LICENSE",
 		SourceType:    "deterministic synthetic calibration",
 		Provenance: "Generated from DefaultPhysicalDrum by " +
-			"go run ./cmd/analyze-physical -suite -o testdata/physical-reference-v1.json",
+			"go run ./cmd/analyze-physical -suite -o testdata/physical-reference-v2.json",
 		Conditions: "48 kHz mono; no room, noise, normalization, cavity coupling, " +
-			"or nonlinear pitch modulation; algo-drum P2 single-head model",
+			"or nonlinear pitch modulation; ideal circular P2 single-head modes; " +
+			"measured-range velocity-dependent stick contact",
 		Cases: make([]ReferenceCase, 0, len(referenceCases)),
 	}
 

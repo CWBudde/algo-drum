@@ -1,5 +1,6 @@
-// Command render-physical renders the experimental single-head physical drum
-// to a mono 16-bit PCM WAV file for offline auditioning.
+// Command render-physical renders the experimental double-headed physical tom
+// through its batter-side pickup to a mono 16-bit PCM WAV file for offline
+// auditioning.
 package main
 
 import (
@@ -24,11 +25,20 @@ const (
 var errInvalidRenderOption = errors.New("invalid physical render option")
 
 func main() {
+	defaults := physical.DefaultPhysicalDrum()
 	outputPath := flag.String("o", "physical-drum.wav", "output mono PCM WAV file")
 	duration := flag.Duration("duration", 3*time.Second, "render duration")
 	velocity := flag.Float64("velocity", 0.8, "normalized strike velocity [0,1]")
-	strikeRadius := flag.Float64("strike-radius", 0.45, "normalized strike radius [0,1]")
-	hardness := flag.Float64("hardness", 0.7, "normalized mallet hardness [0,1]")
+	strikeRadius := flag.Float64(
+		"strike-radius",
+		defaults.Strike.Radius01,
+		"normalized strike radius [0,1]",
+	)
+	hardness := flag.Float64(
+		"hardness",
+		defaults.Strike.Hardness01,
+		"normalized mallet hardness [0,1]",
+	)
 
 	flag.Parse()
 

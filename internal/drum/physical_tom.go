@@ -6,7 +6,11 @@ import (
 	"github.com/cwbudde/algo-drum/internal/physical"
 )
 
-const physicalTomOutputGain = 0.25
+// The corrected 5.5–8 ms stick contact transfers far less broadband energy
+// than the former 0.7 ms pulse. This gain restores product level after the
+// physical model's batter-side microphone filter; it is not part of the
+// mechanical state or its energy balance.
+const physicalTomOutputGain = 4
 
 // TomModel selects the implementation used by the Tom track.
 type TomModel uint8

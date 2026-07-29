@@ -24,14 +24,32 @@ func run(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("analyze-physical", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 
+	defaults := physical.DefaultPhysicalDrum()
+
 	outputPath := flags.String("o", "-", "JSON output path, or - for stdout")
 	suite := flags.Bool("suite", false, "generate the committed multi-condition reference suite")
 	duration := flags.Float64("duration", 2, "render duration in seconds")
 	velocity := flags.Float64("velocity", 0.8, "normalized strike velocity [0,1]")
-	strikeRadius := flags.Float64("strike-radius", 0.45, "normalized strike radius [0,1]")
-	pickupRadius := flags.Float64("pickup-radius", 0.32, "normalized microphone projection radius [0,1]")
-	pickupAngle := flags.Float64("pickup-angle", 0.6, "microphone projection angle in radians")
-	pickupDistance := flags.Float64("pickup-distance", 0.30, "microphone distance in metres")
+	strikeRadius := flags.Float64(
+		"strike-radius",
+		defaults.Strike.Radius01,
+		"normalized strike radius [0,1]",
+	)
+	pickupRadius := flags.Float64(
+		"pickup-radius",
+		defaults.Pickup.Radius01,
+		"normalized microphone projection radius [0,1]",
+	)
+	pickupAngle := flags.Float64(
+		"pickup-angle",
+		defaults.Pickup.AngleRad,
+		"microphone projection angle in radians",
+	)
+	pickupDistance := flags.Float64(
+		"pickup-distance",
+		defaults.Pickup.DistanceM,
+		"microphone distance in metres",
+	)
 	fftSize := flags.Int("fft-size", 16_384, "waveform FFT size")
 	pitchFrame := flags.Int("pitch-frame", 4096, "pitch-track FFT frame size")
 	pitchHop := flags.Int("pitch-hop", 1024, "pitch-track hop size")

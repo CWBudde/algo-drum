@@ -50,11 +50,12 @@ The synthesizer voices are purely procedural — no samples. Each voice uses an 
 
 ### Experimental physical model
 
-An independent, work-in-progress physical path now contains a linear
-single-head modal prototype. It uses circular Fourier–Bessel modes, an exact
-damped state update, finite circular strike contact, a two-parameter loss law,
-mode-dependent radiation, and a compact filtered microphone response. In the
-web demo, open the Tom voice settings and select
+An independent, work-in-progress physical path contains a double-headed,
+cavity-coupled modal tom. It uses circular Fourier–Bessel modes, a passive
+damped/nonlinear state update, measured-range velocity-dependent stick
+contact, frequency-dependent loss, mode-dependent radiation, and a
+batter-side filtered microphone response. In the web demo, open the Tom voice
+settings and select
 **Physical — Experimental** to A/B it against the unchanged algorithmic Tom.
 Algorithmic remains the default, and older saved patterns and share links
 continue to select it.

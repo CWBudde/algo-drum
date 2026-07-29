@@ -117,10 +117,10 @@ checks that the top one percent below Nyquist remains negligible.
 The deterministic P4 suite covers:
 
 - velocity-dependent first-mode glide: with the isolated default batter
-  fixture, velocity 0.2 measures about 105.3 to 104.0 Hz, while velocity 1.0
-  measures about 113.5 to 104.0 Hz;
+  fixture, velocity 0.2 measures about 104.1 to 104.0 Hz, while velocity 1.0
+  measures about 106.3 to 104.0 Hz;
 - attack-spectrum change: its normalized raw-radiation centroid rises from
-  about 475 Hz to 517 Hz between those velocities;
+  about 126 Hz to 142 Hz between those velocities;
 - a 48 kHz trajectory against the same nonlinear system oversampled at
   192 kHz (0.08 percent maximum displacement error in the test fixture);
 - lossless nonlinear energy conservation for both the isolated head and the
@@ -134,18 +134,28 @@ active. On the 2026-07-29 development machine it measured 103 ksamples/s
 (2.14 times real time) on Linux/amd64 and 71 ksamples/s (1.48 times real time)
 on `js/wasm` under Node, with zero allocations.
 
-## Contact-model decision
+## Contact-model correction
 
-P4 retains the normalized raised-sine force pulse. The repository's current
-reference set is a deterministic linear synthesis fixture, not a measured
-mallet/head force or recording, so it cannot establish that a power-law,
-bounded-iteration contact model is more accurate. The reduced tension model
-already creates measurable velocity-dependent attack and glide while the
-existing pulse remains finite, normalized, deterministic, and inexpensive.
+The original P4 decision retained a hardness-only raised-sine force pulse
+without checking its shipped duration. That was an error: HARD 0.7 produced
+0.71 ms of contact and heavily excited the 300–650 Hz modes. Measurements on a
+12-inch tom report approximately 8 ms for a quiet central hit and 5.5 ms for a
+loud one:
 
-Adding a second strong nonlinearity without a contact-force or recorded-hit
-target would add cost and parameters without evidence of benefit. A future
-contact model should enter only with force/displacement or multi-velocity
-recordings and should use an energy-based collision update. This follows the
-evidence gate in the [physical-model research notes](physical-model-research.md)
-and leaves the contact change open for a calibrated later phase.
+- S. Dahl, [“Spectral changes in the tom-tom related to striking
+  force”](https://www.speech.kth.se/qpsr/1997/1997_38_1_059-065.pdf),
+  TMH-QPSR 38(1), 1997.
+
+The corrected prescribed-force model interpolates between those measured
+velocity endpoints. HARD scales the duration around the shipped stick
+hardness, while the normalized pulse keeps total prescribed impulse fixed.
+Coefficients are written directly into preallocated pending-force storage, so
+Trigger and Render remain allocation-free. Louder strikes now shorten contact
+and brighten the attack as observed, instead of velocity changing amplitude
+alone.
+
+This is still not a unilateral stick/head collision solve. A future
+mass-contact model should enter only with force/displacement or multi-velocity
+recordings and should use an energy-based update. The corrected prescribed
+pulse is intentionally bounded and measurement-anchored rather than presented
+as a complete contact simulation.

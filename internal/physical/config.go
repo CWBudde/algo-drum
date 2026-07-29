@@ -208,7 +208,7 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			InactiveEnergyThresholdJ: head.InactiveEnergyThresholdJ,
 		},
 		Strike: Strike{
-			Radius01:       0.45,
+			Radius01:       0.12,
 			AngleRad:       0.2,
 			ContactRadiusM: 0.01,
 			MalletMassKg:   0.015,

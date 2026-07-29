@@ -20,7 +20,7 @@ func TestNonlinearTensionProducesVelocityDependentPitchGlide(t *testing.T) {
 		loudLate,
 	)
 
-	if loudEarly <= loudLate*1.025 {
+	if loudEarly <= loudLate*1.015 {
 		t.Fatalf(
 			"loud frequency did not glide down enough: %.3f -> %.3f Hz",
 			loudEarly,

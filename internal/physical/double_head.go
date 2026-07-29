@@ -8,8 +8,9 @@ import (
 	"github.com/cwbudde/algo-dsp/dsp/filter/design"
 )
 
-// DoubleHeadOutput exposes the two head pickups, their radiated contributions,
-// and the energy stored in the heads and enclosed air.
+// DoubleHeadOutput exposes the two head pickups, their separate radiated
+// contributions, the batter-side microphone signal, and the energy stored in
+// the heads and enclosed air.
 type DoubleHeadOutput struct {
 	BatterDisplacementM          float64
 	BatterVelocityMPerS          float64
@@ -58,10 +59,10 @@ type DoubleHead struct {
 	radiationHP      biquad.Section
 	radiationLP      biquad.Section
 
-	pulse          []float64
 	pendingForce   []float64
 	pendingIndex   int
 	pendingSamples int
+	contactSamples int
 
 	cavityVolumeM3             float64
 	cavityBulkStiffnessPaPerM3 float64
@@ -185,8 +186,10 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 				model.cavityVolumeM3
 	}
 
-	model.pulse = contactPulse(config.SampleRateHz, config.Strike.Hardness01)
-	model.pendingForce = make([]float64, len(model.pulse))
+	model.pendingForce = make(
+		[]float64,
+		contactSampleCount(config.SampleRateHz, config.Strike.Hardness01, 0),
+	)
 
 	return model, nil
 }
@@ -236,8 +239,8 @@ func (d *DoubleHead) ResonantMode(index int) (Mode, bool) {
 	return d.modes[absoluteIndex], true
 }
 
-// PulseSamples reports the precomputed strike-contact duration.
-func (d *DoubleHead) PulseSamples() int { return len(d.pulse) }
+// PulseSamples reports the most recently triggered strike-contact duration.
+func (d *DoubleHead) PulseSamples() int { return d.contactSamples }
 
 // CavityVolumeM3 reports the ideal cylindrical cavity volume.
 func (d *DoubleHead) CavityVolumeM3() float64 { return d.cavityVolumeM3 }
@@ -257,13 +260,20 @@ func (d *DoubleHead) Trigger(velocity01 float64) error {
 	impulseKgMPerS := d.config.Strike.MalletMassKg *
 		d.config.Strike.VelocityMPerS * velocity01
 
+	sampleCount := contactSampleCount(
+		d.config.SampleRateHz,
+		d.config.Strike.Hardness01,
+		velocity01,
+	)
 	pulseScale := impulseKgMPerS * d.config.SampleRateHz
-	for pulseIndex, sample := range d.pulse {
-		pendingIndex := (d.pendingIndex + pulseIndex) % len(d.pendingForce)
-		d.pendingForce[pendingIndex] += pulseScale * sample
-	}
-
-	d.pendingSamples = len(d.pulse)
+	addContactPulse(
+		d.pendingForce,
+		d.pendingIndex,
+		sampleCount,
+		pulseScale,
+	)
+	d.pendingSamples = max(d.pendingSamples, sampleCount)
+	d.contactSamples = sampleCount
 
 	return nil
 }
@@ -276,6 +286,7 @@ func (d *DoubleHead) Reset() {
 	clear(d.pendingForce)
 	d.pendingIndex = 0
 	d.pendingSamples = 0
+	d.contactSamples = 0
 	d.cavityPressurePa = 0
 	d.batterNonlinear.strainMeasureM2 = 0
 	d.resonantNonlinear.strainMeasureM2 = 0
@@ -307,7 +318,7 @@ func (d *DoubleHead) Tick() DoubleHeadOutput {
 	return d.tickCoupled(forceN)
 }
 
-// Render writes the filtered combined radiation signal into dst.
+// Render writes the filtered batter-side microphone signal into dst.
 func (d *DoubleHead) Render(dst []float64) {
 	for index := range dst {
 		dst[index] = d.Tick().Radiated
@@ -549,8 +560,12 @@ func (d *DoubleHead) observe() DoubleHeadOutput {
 	output.TotalMechanicalEnergyJ = output.HeadMechanicalEnergyJ +
 		output.CavityMechanicalEnergyJ
 	output.CavityPressurePa = d.cavityPressurePa
-	output.RawRadiated = output.BatterRawRadiated +
-		output.ResonantRawRadiated
+	// Pickup describes a batter-side microphone projection. The resonant head
+	// remains fully coupled into the batter dynamics, but its outward
+	// radiation leaves the opposite side of the shell and cannot be added at
+	// the same point, phase, distance, and polarity. Keep its raw diagnostic
+	// separate until a propagation/diffraction model supplies that transfer.
+	output.RawRadiated = output.BatterRawRadiated
 
 	radiated := d.radiationHP.ProcessSample(output.RawRadiated)
 	radiated = d.radiationLP.ProcessSample(radiated)

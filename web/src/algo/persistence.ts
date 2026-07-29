@@ -8,6 +8,7 @@
 
 import {
   PHYSICAL_TOM_PARAM_CAPACITY,
+  PHYSICAL_TOM_PARAMS,
   VOICE_PARAM_CAPACITY,
 } from "../engine/voiceParams";
 import {
@@ -21,9 +22,10 @@ import type { TomModel } from "../engine/tomModel";
 
 // Bump when the byte layout changes. Every version is a strict append, so old
 // offsets and meanings stay fixed: v2 added voice parameters, v3 the Tom model
-// selector, v4 the original 13-slot physical Tom bank, and v5 appends the two
-// tension-asymmetry controls. Older links still decode with new fields unset.
-const FORMAT_VERSION = 5;
+// selector, v4 the original 13-slot physical Tom bank, v5 the two
+// tension-asymmetry controls, and v6 the corrected central-hit default.
+// Older links still decode with new fields unset.
+const FORMAT_VERSION = 6;
 
 // Byte layout: version, 6 scalar knobs, 5 volumes, 5 decays, 1 mute mask,
 // then the 80-cell pattern packed 2 bits per cell (20 bytes)...
@@ -46,8 +48,13 @@ const V3_BYTES = V2_BYTES + 1;
 const V4_PHYSICAL_TOM_PARAM_CAPACITY = 13;
 const V4_BYTES = V3_BYTES + V4_PHYSICAL_TOM_PARAM_CAPACITY;
 
-// v5 extends that bank with the P6 asymmetry amount and principal axis.
+// v5 extends that bank with the P6 asymmetry amount and principal axis. v6 has
+// the same width and migrates only the former shipped strike-radius position.
 const TOTAL_BYTES = V3_BYTES + PHYSICAL_TOM_PARAM_CAPACITY;
+
+const PHYSICAL_STRIKE_RADIUS_INDEX = 4;
+const OLD_PHYSICAL_STRIKE_RADIUS_DEFAULT =
+  Math.round((0.45 / 0.95) * 255) / 255;
 
 // Names the storage slot, not the blob version — it never tracked
 // FORMAT_VERSION, and the decoder is version-tolerant. Bumping it would orphan
@@ -190,7 +197,7 @@ export function decodeState(text: string): PersistedState | null {
           ? V3_BYTES
           : version === 4
             ? V4_BYTES
-            : version === FORMAT_VERSION
+            : version === 5 || version === FORMAT_VERSION
               ? TOTAL_BYTES
               : -1;
   if (bytes.length !== expected) return null;
@@ -265,6 +272,19 @@ export function decodeState(text: string): PersistedState | null {
       : PHYSICAL_TOM_PARAM_CAPACITY;
   for (let i = 0; i < physicalParamCount; i++) {
     physicalTomParams.push(fromByte(bytes[offset++]));
+  }
+
+  // The former shipped hit was 45% from center, which is a peripheral tom
+  // stroke and was one cause of the overly metallic default. Preserve every
+  // edited position, but move the exact old detent to the corrected central
+  // default when upgrading v4/v5 state.
+  if (
+    version < FORMAT_VERSION &&
+    physicalTomParams[PHYSICAL_STRIKE_RADIUS_INDEX] ===
+      OLD_PHYSICAL_STRIKE_RADIUS_DEFAULT
+  ) {
+    physicalTomParams[PHYSICAL_STRIKE_RADIUS_INDEX] =
+      PHYSICAL_TOM_PARAMS[PHYSICAL_STRIKE_RADIUS_INDEX].default;
   }
 
   return { ...stateWithModel, physicalTomParams };

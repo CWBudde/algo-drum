@@ -296,7 +296,7 @@ var physicalTomSpecs = []ParamSpec{
 	physicalTomParamBatterTension:   expSpec("physicalTom.batterTension", "B.TUNE", "batter head tension", "N/m", 150, 1400, 600, 0),
 	physicalTomParamResonantTension: expSpec("physicalTom.resonantTension", "R.TUNE", "resonant head tension", "N/m", 150, 1400, 500, 0),
 	physicalTomParamDamping:         expSpec("physicalTom.damping", "DAMP", "head damping", "/s", 0.75, 12, 3, 2),
-	physicalTomParamStrikeRadius:    linSpec("physicalTom.strikeRadius", "HIT.R", "strike radius", "", 0, 0.95, 0.45, 2),
+	physicalTomParamStrikeRadius:    linSpec("physicalTom.strikeRadius", "HIT.R", "strike radius", "", 0, 0.95, 0.12, 2),
 	physicalTomParamStrikeAngle:     linSpec("physicalTom.strikeAngle", "HIT.A", "strike angle", "°", -180, 180, 0.2*180/math.Pi, 0),
 	physicalTomParamHardness:        linSpec("physicalTom.hardness", "HARD", "mallet hardness", "", 0, 1, 0.7, 2),
 	physicalTomParamShellDepth:      expSpec("physicalTom.shellDepth", "DEPTH", "shell depth", "m", 0.05, 0.60, 0.20, 3),

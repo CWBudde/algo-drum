@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	softContactSeconds = 0.008
-	hardContactSeconds = 0.00025
+	quietStickContactSeconds = 0.008
+	loudStickContactSeconds  = 0.0055
+	referenceStickHardness   = 0.7
 )
 
 var ErrInvalidVelocity = errors.New("physical strike velocity must be finite and in [0,1]")
@@ -41,15 +42,15 @@ type SingleHead struct {
 	radiationHP  biquad.Section
 	radiationLP  biquad.Section
 
-	pulse          []float64
 	pendingForce   []float64
 	pendingIndex   int
 	pendingSamples int
+	contactSamples int
 	energy         float64
 }
 
 // NewSingleHead precomputes the circular modes, exact damped state-transition
-// matrices, strike projection, pickup weights, and normalized contact pulse.
+// matrices, strike projection, pickup weights, and maximum contact storage.
 func NewSingleHead(config PhysicalDrum) (*SingleHead, error) {
 	modes, err := GenerateModes(config)
 	if err != nil {
@@ -100,8 +101,10 @@ func NewSingleHead(config PhysicalDrum) (*SingleHead, error) {
 		model.matrix22[index] = matrix22
 	}
 
-	model.pulse = contactPulse(config.SampleRateHz, config.Strike.Hardness01)
-	model.pendingForce = make([]float64, len(model.pulse))
+	model.pendingForce = make(
+		[]float64,
+		contactSampleCount(config.SampleRateHz, config.Strike.Hardness01, 0),
+	)
 
 	return model, nil
 }
@@ -118,11 +121,12 @@ func (s *SingleHead) Mode(index int) (Mode, bool) {
 	return s.modes[index], true
 }
 
-// PulseSamples reports the precomputed strike-contact duration.
-func (s *SingleHead) PulseSamples() int { return len(s.pulse) }
+// PulseSamples reports the most recently triggered strike-contact duration.
+func (s *SingleHead) PulseSamples() int { return s.contactSamples }
 
-// Trigger starts a finite contact pulse. Existing modal motion is retained, so
-// closely spaced hits superpose instead of restarting the drum.
+// Trigger starts a finite, velocity- and hardness-dependent contact pulse.
+// Existing modal motion is retained, so closely spaced hits superpose instead
+// of restarting the drum.
 func (s *SingleHead) Trigger(velocity01 float64) error {
 	if math.IsNaN(velocity01) || math.IsInf(velocity01, 0) || velocity01 < 0 || velocity01 > 1 {
 		return ErrInvalidVelocity
@@ -130,13 +134,20 @@ func (s *SingleHead) Trigger(velocity01 float64) error {
 
 	impulseKgMPerS := s.config.Strike.MalletMassKg * s.config.Strike.VelocityMPerS * velocity01
 
+	sampleCount := contactSampleCount(
+		s.config.SampleRateHz,
+		s.config.Strike.Hardness01,
+		velocity01,
+	)
 	pulseScale := impulseKgMPerS * s.config.SampleRateHz
-	for pulseIndex, sample := range s.pulse {
-		pendingIndex := (s.pendingIndex + pulseIndex) % len(s.pendingForce)
-		s.pendingForce[pendingIndex] += pulseScale * sample
-	}
-
-	s.pendingSamples = len(s.pulse)
+	addContactPulse(
+		s.pendingForce,
+		s.pendingIndex,
+		sampleCount,
+		pulseScale,
+	)
+	s.pendingSamples = max(s.pendingSamples, sampleCount)
+	s.contactSamples = sampleCount
 
 	return nil
 }
@@ -148,6 +159,7 @@ func (s *SingleHead) Reset() {
 	clear(s.pendingForce)
 	s.pendingIndex = 0
 	s.pendingSamples = 0
+	s.contactSamples = 0
 	s.energy = 0
 	s.radiationHP.Reset()
 	s.radiationLP.Reset()
@@ -258,21 +270,29 @@ func stateTransition(
 		nil
 }
 
-func contactPulse(sampleRate, hardness01 float64) []float64 {
-	duration := softContactSeconds *
-		math.Pow(hardContactSeconds/softContactSeconds, hardness01)
-	sampleCount := max(2, int(math.Round(duration*sampleRate)))
-	pulse := make([]float64, sampleCount)
-	sum := 0.0
+func contactSampleCount(sampleRate, hardness01, velocity01 float64) int {
+	stickDuration := quietStickContactSeconds +
+		(loudStickContactSeconds-quietStickContactSeconds)*velocity01
+	hardnessScale := math.Exp2(referenceStickHardness - hardness01)
 
-	for index := range pulse {
-		pulse[index] = math.Sin(math.Pi * (float64(index) + 0.5) / float64(sampleCount))
-		sum += pulse[index]
+	return max(2, int(math.Round(stickDuration*hardnessScale*sampleRate)))
+}
+
+func addContactPulse(
+	pending []float64,
+	start, sampleCount int,
+	scale float64,
+) {
+	// The exact sum of sin(pi*(k+1/2)/N), k=0..N-1, is
+	// 1/sin(pi/(2N)). This keeps the prescribed impulse invariant while
+	// allowing velocity-dependent contact duration without allocation.
+	normalizer := math.Sin(math.Pi / (2 * float64(sampleCount)))
+
+	for index := range sampleCount {
+		sample := math.Sin(
+			math.Pi*(float64(index)+0.5)/float64(sampleCount),
+		) * normalizer
+		pendingIndex := (start + index) % len(pending)
+		pending[pendingIndex] += scale * sample
 	}
-
-	for index := range pulse {
-		pulse[index] /= sum
-	}
-
-	return pulse
 }

@@ -52,7 +52,7 @@ gen-params:
 
 # Regenerate the deterministic physical-model calibration metrics
 gen-physical-reference:
-    go run ./cmd/analyze-physical -suite -o testdata/physical-reference-v1.json
+    go run ./cmd/analyze-physical -suite -o testdata/physical-reference-v2.json
 
 # Fail if the generated voice parameter table is stale (Go table changed without `just gen-params`)
 check-params: gen-params
@@ -60,7 +60,7 @@ check-params: gen-params
 
 # Fail if the physical-model calibration metrics are stale
 check-physical-reference: gen-physical-reference
-    git diff --exit-code testdata/physical-reference-v1.json
+    git diff --exit-code testdata/physical-reference-v2.json
 
 # ── Frontend ─────────────────────────────────────────────────────────────────
 

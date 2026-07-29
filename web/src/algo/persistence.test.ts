@@ -9,6 +9,7 @@ import {
 } from "./pattern";
 import {
   PHYSICAL_TOM_PARAM_CAPACITY,
+  PHYSICAL_TOM_PARAMS,
   VOICE_PARAM_CAPACITY,
 } from "../engine/voiceParams";
 
@@ -116,6 +117,12 @@ function encodeV3(state: PersistedState): string {
 function encodeV4(state: PersistedState): string {
   const bytes = toBytes(encodeState(state)).slice(0, V4_BYTES);
   bytes[0] = 4;
+  return toB64Url(bytes);
+}
+
+function encodeV5(state: PersistedState): string {
+  const bytes = toBytes(encodeState(state));
+  bytes[0] = 5;
   return toB64Url(bytes);
 }
 
@@ -235,7 +242,7 @@ describe("persistence encode/decode", () => {
     });
   });
 
-  describe("backward compatibility with v1/v2/v3/v4 blobs", () => {
+  describe("backward compatibility with v1/v2/v3/v4/v5 blobs", () => {
     it("decodes a v1 blob and leaves voiceParams unset", () => {
       const state = makeState();
       const decoded = decodeState(encodeV1(state));
@@ -279,12 +286,31 @@ describe("persistence encode/decode", () => {
       );
     });
 
-    it("re-encodes a decoded v1 state as v5 (one-way upgrade)", () => {
+    it("moves the old shipped strike radius to the corrected default", () => {
+      const state = makeState();
+      state.physicalTomParams![4] = q(0.45 / 0.95);
+
+      for (const encoded of [encodeV4(state), encodeV5(state)]) {
+        const decoded = decodeState(encoded);
+        expect(decoded?.physicalTomParams?.[4]).toBe(
+          PHYSICAL_TOM_PARAMS[4].default,
+        );
+      }
+    });
+
+    it("preserves an edited legacy strike radius", () => {
+      const state = makeState();
+      state.physicalTomParams![4] = q(0.8);
+
+      expect(decodeState(encodeV5(state))?.physicalTomParams?.[4]).toBe(q(0.8));
+    });
+
+    it("re-encodes a decoded v1 state as v6 (one-way upgrade)", () => {
       const decoded = decodeState(encodeV1(makeState()));
       const bytes = toBytes(encodeState(decoded!));
 
       expect(bytes).toHaveLength(TOTAL_BYTES);
-      expect(bytes[0]).toBe(5);
+      expect(bytes[0]).toBe(6);
     });
 
     it("rejects a v1-length blob whose version byte claims v2", () => {
@@ -301,7 +327,7 @@ describe("persistence encode/decode", () => {
 
     it("rejects an unknown future version at the right length", () => {
       const bytes = toBytes(encodeState(makeState()));
-      bytes[0] = 6;
+      bytes[0] = 7;
       expect(decodeState(toB64Url(bytes))).toBeNull();
     });
   });

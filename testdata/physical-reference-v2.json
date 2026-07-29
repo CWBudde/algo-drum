@@ -1,0 +1,4251 @@
+{
+  "schemaVersion": 2,
+  "name": "algo-drum physical calibration v2",
+  "license": "MIT; see repository LICENSE",
+  "sourceType": "deterministic synthetic calibration",
+  "provenance": "Generated from DefaultPhysicalDrum by go run ./cmd/analyze-physical -suite -o testdata/physical-reference-v2.json",
+  "conditions": "48 kHz mono; no room, noise, normalization, cavity coupling, or nonlinear pitch modulation; ideal circular P2 single-head modes; measured-range velocity-dependent stick contact",
+  "modeTargets": [
+    {
+      "azimuthalOrder": 0,
+      "radialOrder": 1,
+      "orientation": "cos",
+      "frequencyHz": 104.00409598776875,
+      "structuralDecayPerSecond": 3.0049799756502664,
+      "radiationDecayPerSecond": 0.11662266798019671,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.121602643630463,
+      "t60Seconds": 2.2128874387895605,
+      "radiationWeight": 0.08053074512769604
+    },
+    {
+      "azimuthalOrder": 1,
+      "radialOrder": 1,
+      "orientation": "cos",
+      "frequencyHz": 165.766818607133,
+      "structuralDecayPerSecond": 3.0126428333386066,
+      "radiationDecayPerSecond": 0.046667366741859596,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.0593102000804664,
+      "t60Seconds": 2.257945362585477,
+      "radiationWeight": 0.024758247644481365
+    },
+    {
+      "azimuthalOrder": 1,
+      "radialOrder": 1,
+      "orientation": "sin",
+      "frequencyHz": 165.766818607133,
+      "structuralDecayPerSecond": 3.0126428333386066,
+      "radiationDecayPerSecond": 0.046667366741859596,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.0593102000804664,
+      "t60Seconds": 2.257945362585477,
+      "radiationWeight": 0.0169380285236287
+    },
+    {
+      "azimuthalOrder": 2,
+      "radialOrder": 1,
+      "orientation": "cos",
+      "frequencyHz": 222.26978737311663,
+      "structuralDecayPerSecond": 3.0227115206797652,
+      "radiationDecayPerSecond": 0.03222657619754606,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.0549380968773114,
+      "t60Seconds": 2.261176842189728,
+      "radiationWeight": 0.004790552433566136
+    },
+    {
+      "azimuthalOrder": 2,
+      "radialOrder": 1,
+      "orientation": "sin",
+      "frequencyHz": 222.26978737311663,
+      "structuralDecayPerSecond": 3.0227115206797652,
+      "radiationDecayPerSecond": 0.03222657619754606,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.0549380968773114,
+      "t60Seconds": 2.261176842189728,
+      "radiationWeight": 0.01232202721287832
+    },
+    {
+      "azimuthalOrder": 0,
+      "radialOrder": 2,
+      "orientation": "cos",
+      "frequencyHz": 238.94408629617564,
+      "structuralDecayPerSecond": 3.0262391950520993,
+      "radiationDecayPerSecond": 0.4619185727173871,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.4881577677694864,
+      "t60Seconds": 1.980344852176604,
+      "radiationWeight": 0.06720425816800105
+    },
+    {
+      "azimuthalOrder": 3,
+      "radialOrder": 1,
+      "orientation": "cos",
+      "frequencyHz": 276.27516358039344,
+      "structuralDecayPerSecond": 3.035052860115837,
+      "radiationDecayPerSecond": 0.029032606606093796,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.064085466721931,
+      "t60Seconds": 2.254426436209138,
+      "radiationWeight": -0.001444445461586888
+    },
+    {
+      "azimuthalOrder": 3,
+      "radialOrder": 1,
+      "orientation": "sin",
+      "frequencyHz": 276.27516358039344,
+      "structuralDecayPerSecond": 3.035052860115837,
+      "radiationDecayPerSecond": 0.029032606606093796,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.064085466721931,
+      "t60Seconds": 2.254426436209138,
+      "radiationWeight": 0.0061912712230903265
+    },
+    {
+      "azimuthalOrder": 1,
+      "radialOrder": 2,
+      "orientation": "cos",
+      "frequencyHz": 303.88296152187314,
+      "structuralDecayPerSecond": 3.0423826443756368,
+      "radiationDecayPerSecond": 0.26271927604269346,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.30510192041833,
+      "t60Seconds": 2.090027916024997,
+      "radiationWeight": 0.06390111830649427
+    },
+    {
+      "azimuthalOrder": 1,
+      "radialOrder": 2,
+      "orientation": "sin",
+      "frequencyHz": 303.88296152187314,
+      "structuralDecayPerSecond": 3.0423826443756368,
+      "radiationDecayPerSecond": 0.26271927604269346,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.30510192041833,
+      "t60Seconds": 2.090027916024997,
+      "radiationWeight": 0.04371710712766988
+    },
+    {
+      "azimuthalOrder": 4,
+      "radialOrder": 1,
+      "orientation": "cos",
+      "frequencyHz": 328.79039172509556,
+      "structuralDecayPerSecond": 3.049585409393097,
+      "radiationDecayPerSecond": 0.02998677767716066,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.0795721870702577,
+      "t60Seconds": 2.243089253755669,
+      "radiationWeight": -0.002349960481829282
+    },
+    {
+      "azimuthalOrder": 4,
+      "radialOrder": 1,
+      "orientation": "sin",
+      "frequencyHz": 328.79039172509556,
+      "structuralDecayPerSecond": 3.049585409393097,
+      "radiationDecayPerSecond": 0.02998677767716066,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.0795721870702577,
+      "t60Seconds": 2.243089253755669,
+      "radiationWeight": 0.0021525973815234357
+    },
+    {
+      "azimuthalOrder": 2,
+      "radialOrder": 2,
+      "orientation": "cos",
+      "frequencyHz": 364.8781897196791,
+      "structuralDecayPerSecond": 3.06100984331113,
+      "radiationDecayPerSecond": 0.1980774635023382,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.2590873068134685,
+      "t60Seconds": 2.1195367379513708,
+      "radiationWeight": 0.02080161033926362
+    },
+    {
+      "azimuthalOrder": 2,
+      "radialOrder": 2,
+      "orientation": "sin",
+      "frequencyHz": 364.8781897196791,
+      "structuralDecayPerSecond": 3.06100984331113,
+      "radiationDecayPerSecond": 0.1980774635023382,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.2590873068134685,
+      "t60Seconds": 2.1195367379513708,
+      "radiationWeight": 0.05350489577697652
+    },
+    {
+      "azimuthalOrder": 0,
+      "radialOrder": 3,
+      "orientation": "cos",
+      "frequencyHz": 375.18355623843195,
+      "structuralDecayPerSecond": 3.064486162597646,
+      "radiationDecayPerSecond": 0.7847117131290053,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.8491978757266514,
+      "t60Seconds": 1.7945960436440518,
+      "radiationWeight": -0.04197118918998074
+    },
+    {
+      "azimuthalOrder": 5,
+      "radialOrder": 1,
+      "orientation": "cos",
+      "frequencyHz": 380.3167265902627,
+      "structuralDecayPerSecond": 3.0662530985712824,
+      "radiationDecayPerSecond": 0.033215094051286365,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.099468192622569,
+      "t60Seconds": 2.228690488072808,
+      "radiationWeight": -0.0016083980853891717
+    },
+    {
+      "azimuthalOrder": 5,
+      "radialOrder": 1,
+      "orientation": "sin",
+      "frequencyHz": 380.3167265902627,
+      "structuralDecayPerSecond": 3.0662530985712824,
+      "radiationDecayPerSecond": 0.033215094051286365,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.099468192622569,
+      "t60Seconds": 2.228690488072808,
+      "radiationWeight": 0.00022927158695951349
+    },
+    {
+      "azimuthalOrder": 3,
+      "radialOrder": 2,
+      "orientation": "cos",
+      "frequencyHz": 423.4983341244973,
+      "structuralDecayPerSecond": 3.0820447404468463,
+      "radiationDecayPerSecond": 0.17322846555675503,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.255273206003601,
+      "t60Seconds": 2.122020132209602,
+      "radiationWeight": -0.008594400871020931
+    },
+    {
+      "azimuthalOrder": 3,
+      "radialOrder": 2,
+      "orientation": "sin",
+      "frequencyHz": 423.4983341244973,
+      "structuralDecayPerSecond": 3.0820447404468463,
+      "radiationDecayPerSecond": 0.17322846555675503,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.255273206003601,
+      "t60Seconds": 2.122020132209602,
+      "radiationWeight": 0.036837851069847084
+    },
+    {
+      "azimuthalOrder": 6,
+      "radialOrder": 1,
+      "orientation": "cos",
+      "frequencyHz": 431.14772798912077,
+      "structuralDecayPerSecond": 3.085014460217663,
+      "radiationDecayPerSecond": 0.038057020897529374,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.123071481115192,
+      "t60Seconds": 2.211846677462375,
+      "radiationWeight": -0.00074550158788604
+    },
+    {
+      "azimuthalOrder": 6,
+      "radialOrder": 1,
+      "orientation": "sin",
+      "frequencyHz": 431.14772798912077,
+      "structuralDecayPerSecond": 3.085014460217663,
+      "radiationDecayPerSecond": 0.038057020897529374,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.123071481115192,
+      "t60Seconds": 2.211846677462375,
+      "radiationWeight": -0.0003678802307726771
+    },
+    {
+      "azimuthalOrder": 1,
+      "radialOrder": 3,
+      "orientation": "cos",
+      "frequencyHz": 441.5222585154964,
+      "structuralDecayPerSecond": 3.0891247079924504,
+      "radiationDecayPerSecond": 0.5455329925388608,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.634657700531311,
+      "t60Seconds": 1.900524299158176,
+      "radiationWeight": 0.04005258670842535
+    },
+    {
+      "azimuthalOrder": 1,
+      "radialOrder": 3,
+      "orientation": "sin",
+      "frequencyHz": 441.5222585154964,
+      "structuralDecayPerSecond": 3.0891247079924504,
+      "radiationDecayPerSecond": 0.5455329925388608,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.634657700531311,
+      "t60Seconds": 1.900524299158176,
+      "radiationWeight": 0.027401448836531003
+    },
+    {
+      "azimuthalOrder": 4,
+      "radialOrder": 2,
+      "orientation": "cos",
+      "frequencyHz": 480.52519730982846,
+      "structuralDecayPerSecond": 3.1054241463486476,
+      "radiationDecayPerSecond": 0.16462177804837727,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.270045924397025,
+      "t60Seconds": 2.112433720714758,
+      "radiationWeight": -0.017335277695665726
+    },
+    {
+      "azimuthalOrder": 4,
+      "radialOrder": 2,
+      "orientation": "sin",
+      "frequencyHz": 480.52519730982846,
+      "structuralDecayPerSecond": 3.1054241463486476,
+      "radiationDecayPerSecond": 0.16462177804837727,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.270045924397025,
+      "t60Seconds": 2.112433720714758,
+      "radiationWeight": 0.01587936208468656
+    },
+    {
+      "azimuthalOrder": 7,
+      "radialOrder": 1,
+      "orientation": "cos",
+      "frequencyHz": 481.47410082177123,
+      "structuralDecayPerSecond": 3.10583731184996,
+      "radiationDecayPerSecond": 0.04421964121337706,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.150056953063337,
+      "t60Seconds": 2.192898535458081,
+      "radiationWeight": -0.00020789022282529315
+    },
+    {
+      "azimuthalOrder": 7,
+      "radialOrder": 1,
+      "orientation": "sin",
+      "frequencyHz": 481.47410082177123,
+      "structuralDecayPerSecond": 3.10583731184996,
+      "radiationDecayPerSecond": 0.04421964121337706,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.150056953063337,
+      "t60Seconds": 2.192898535458081,
+      "radiationWeight": -0.00036958303345694245
+    },
+    {
+      "azimuthalOrder": 2,
+      "radialOrder": 3,
+      "orientation": "cos",
+      "frequencyHz": 504.859779331618,
+      "structuralDecayPerSecond": 3.116268065170716,
+      "radiationDecayPerSecond": 0.44143197929244465,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.557700044463161,
+      "t60Seconds": 1.941635099263823,
+      "radiationWeight": 0.02814504545012682
+    },
+    {
+      "azimuthalOrder": 2,
+      "radialOrder": 3,
+      "orientation": "sin",
+      "frequencyHz": 504.859779331618,
+      "structuralDecayPerSecond": 3.116268065170716,
+      "radiationDecayPerSecond": 0.44143197929244465,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.557700044463161,
+      "t60Seconds": 1.941635099263823,
+      "radiationWeight": 0.07239332430936267
+    },
+    {
+      "azimuthalOrder": 0,
+      "radialOrder": 4,
+      "orientation": "cos",
+      "frequencyHz": 512.3926950562596,
+      "structuralDecayPerSecond": 3.1197293732704203,
+      "radiationDecayPerSecond": 1.0075826163554304,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 4.12731198962585,
+      "t60Seconds": 1.673669278296633,
+      "radiationWeight": -0.11100883525867816
+    },
+    {
+      "azimuthalOrder": 8,
+      "radialOrder": 1,
+      "orientation": "cos",
+      "frequencyHz": 531.4291122186206,
+      "structuralDecayPerSecond": 3.128695793690649,
+      "radiationDecayPerSecond": 0.05153882527981918,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.180234618970468,
+      "t60Seconds": 2.1720898319188704,
+      "radiationWeight": 0.000018800919006840584
+    },
+    {
+      "azimuthalOrder": 8,
+      "radialOrder": 1,
+      "orientation": "sin",
+      "frequencyHz": 531.4291122186206,
+      "structuralDecayPerSecond": 3.128695793690649,
+      "radiationDecayPerSecond": 0.05153882527981918,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.180234618970468,
+      "t60Seconds": 2.1720898319188704,
+      "radiationWeight": -0.00021404603107377733
+    },
+    {
+      "azimuthalOrder": 5,
+      "radialOrder": 2,
+      "orientation": "cos",
+      "frequencyHz": 536.4166034634801,
+      "structuralDecayPerSecond": 3.131096811076795,
+      "radiationDecayPerSecond": 0.1641462106153097,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.2952430216921047,
+      "t60Seconds": 2.0962809824675723,
+      "radiationWeight": -0.013917836377767938
+    },
+    {
+      "azimuthalOrder": 5,
+      "radialOrder": 2,
+      "orientation": "sin",
+      "frequencyHz": 536.4166034634801,
+      "structuralDecayPerSecond": 3.131096811076795,
+      "radiationDecayPerSecond": 0.1641462106153097,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.2952430216921047,
+      "t60Seconds": 2.0962809824675723,
+      "radiationWeight": 0.001983939462724248
+    },
+    {
+      "azimuthalOrder": 3,
+      "radialOrder": 3,
+      "orientation": "cos",
+      "frequencyHz": 566.1758020432499,
+      "structuralDecayPerSecond": 3.1458685957541106,
+      "radiationDecayPerSecond": 0.3901582391137063,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.5360268348678168,
+      "t60Seconds": 1.953535875595345,
+      "radiationWeight": -0.016950937207182274
+    },
+    {
+      "azimuthalOrder": 3,
+      "radialOrder": 3,
+      "orientation": "sin",
+      "frequencyHz": 566.1758020432499,
+      "structuralDecayPerSecond": 3.1458685957541106,
+      "radiationDecayPerSecond": 0.3901582391137063,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.5360268348678168,
+      "t60Seconds": 1.953535875595345,
+      "radiationWeight": 0.0726561525001723
+    },
+    {
+      "azimuthalOrder": 1,
+      "radialOrder": 4,
+      "orientation": "cos",
+      "frequencyHz": 579.7624336656824,
+      "structuralDecayPerSecond": 3.152865410487153,
+      "radiationDecayPerSecond": 0.7856763955527584,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.938541806039911,
+      "t60Seconds": 1.7538864938259175,
+      "radiationWeight": -0.032205012195444326
+    },
+    {
+      "azimuthalOrder": 1,
+      "radialOrder": 4,
+      "orientation": "sin",
+      "frequencyHz": 579.7624336656824,
+      "structuralDecayPerSecond": 3.152865410487153,
+      "radiationDecayPerSecond": 0.7856763955527584,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.938541806039911,
+      "t60Seconds": 1.7538864938259175,
+      "radiationWeight": -0.022032634255996563
+    },
+    {
+      "azimuthalOrder": 9,
+      "radialOrder": 1,
+      "orientation": "cos",
+      "frequencyHz": 581.1111336990497,
+      "structuralDecayPerSecond": 3.153568573206327,
+      "radiationDecayPerSecond": 0.05989905250403437,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.2134676257103614,
+      "t60Seconds": 2.1496265354330824,
+      "radiationWeight": 0.00006854639471277562
+    },
+    {
+      "azimuthalOrder": 9,
+      "radialOrder": 1,
+      "orientation": "sin",
+      "frequencyHz": 581.1111336990497,
+      "structuralDecayPerSecond": 3.153568573206327,
+      "radiationDecayPerSecond": 0.05989905250403437,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.2134676257103614,
+      "t60Seconds": 2.1496265354330824,
+      "radiationWeight": -0.00008345803394335907
+    },
+    {
+      "azimuthalOrder": 6,
+      "radialOrder": 2,
+      "orientation": "cos",
+      "frequencyHz": 591.4693105038598,
+      "structuralDecayPerSecond": 3.159020679916755,
+      "radiationDecayPerSecond": 0.16835366266972648,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.3273743425864812,
+      "t60Seconds": 2.0760379109050002,
+      "radiationWeight": -0.00732248572025828
+    },
+    {
+      "azimuthalOrder": 6,
+      "radialOrder": 2,
+      "orientation": "sin",
+      "frequencyHz": 591.4693105038598,
+      "structuralDecayPerSecond": 3.159020679916755,
+      "radiationDecayPerSecond": 0.16835366266972648,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.3273743425864812,
+      "t60Seconds": 2.0760379109050002,
+      "radiationWeight": -0.0036134030837370037
+    },
+    {
+      "azimuthalOrder": 4,
+      "radialOrder": 3,
+      "orientation": "cos",
+      "frequencyHz": 626.0448015168911,
+      "structuralDecayPerSecond": 3.177879914695573,
+      "radiationDecayPerSecond": 0.3640158878276671,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.54189580252324,
+      "t60Seconds": 1.9502988411068063,
+      "radiationWeight": -0.04397097908067746
+    },
+    {
+      "azimuthalOrder": 4,
+      "radialOrder": 3,
+      "orientation": "sin",
+      "frequencyHz": 626.0448015168911,
+      "structuralDecayPerSecond": 3.177879914695573,
+      "radiationDecayPerSecond": 0.3640158878276671,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.54189580252324,
+      "t60Seconds": 1.9502988411068063,
+      "radiationWeight": 0.04027804516883116
+    },
+    {
+      "azimuthalOrder": 10,
+      "radialOrder": 1,
+      "orientation": "cos",
+      "frequencyHz": 630.5959629268838,
+      "structuralDecayPerSecond": 3.1804376865398085,
+      "radiationDecayPerSecond": 0.06920399112644135,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.24964167766625,
+      "t60Seconds": 2.1256975273479948,
+      "radiationWeight": 0.00005167524592679401
+    },
+    {
+      "azimuthalOrder": 10,
+      "radialOrder": 1,
+      "orientation": "sin",
+      "frequencyHz": 630.5959629268838,
+      "structuralDecayPerSecond": 3.1804376865398085,
+      "radiationDecayPerSecond": 0.06920399112644135,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.24964167766625,
+      "t60Seconds": 2.1256975273479948,
+      "radiationWeight": -0.000015037816506026594
+    },
+    {
+      "azimuthalOrder": 2,
+      "radialOrder": 4,
+      "orientation": "cos",
+      "frequencyHz": 644.7694469003053,
+      "structuralDecayPerSecond": 3.1885149843498457,
+      "radiationDecayPerSecond": 0.6693179681709205,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.8578329525207664,
+      "t60Seconds": 1.7905791577804075,
+      "radiationWeight": 0.011304339461245632
+    },
+    {
+      "azimuthalOrder": 2,
+      "radialOrder": 4,
+      "orientation": "sin",
+      "frequencyHz": 644.7694469003053,
+      "structuralDecayPerSecond": 3.1885149843498457,
+      "radiationDecayPerSecond": 0.6693179681709205,
+      "decayCorrectionPerSecond": 0,
+      "decayRatePerSecond": 3.8578329525207664,
+      "t60Seconds": 1.7905791577804075,
+      "radiationWeight": 0.02907647508230951
+    }
+  ],
+  "cases": [
+    {
+      "id": "soft-center-near",
+      "report": {
+        "sampleRateHz": 48000,
+        "sampleCount": 72000,
+        "velocity01": 0.35,
+        "strikeRadius01": 0,
+        "pickupRadius01": 0,
+        "pickupAngleRad": 0,
+        "pickupDistanceM": 0.1,
+        "waveform": {
+          "peak": 0.23595951235625795,
+          "rms": 0.03480944285403645,
+          "energy": 87.24220645020692,
+          "crestFactor": 6.778606407051311
+        },
+        "decay": {
+          "RT60": 2.127576062119,
+          "EDT": 2.145849511672792,
+          "T20": 2.1564605121451237,
+          "T30": 2.127576062119,
+          "C50": -4.236724705268694,
+          "C80": -1.7658078322704085,
+          "D50": 0.2737772602284235,
+          "D80": 0.39972950946323127,
+          "CenterTime": 0.15484624929174423,
+          "PeakIndex": 1061
+        },
+        "spectrum": {
+          "centroidHz": 211.85608672621342,
+          "rolloffHz": 240.234375,
+          "bandwidthHz": 5.101738691229571,
+          "flatness": 0.0000011649041052198788
+        },
+        "spectralPeaks": [
+          {
+            "frequencyHz": 104.00224733532217,
+            "magnitude": 277.6817532538894
+          },
+          {
+            "frequencyHz": 238.92168585920794,
+            "magnitude": 122.03211821100147
+          },
+          {
+            "frequencyHz": 375.1963035841005,
+            "magnitude": 87.3061630588193
+          },
+          {
+            "frequencyHz": 512.3718806061091,
+            "magnitude": 57.77918787147689
+          },
+          {
+            "frequencyHz": 32.210405966471065,
+            "magnitude": 0.21378764771743497
+          },
+          {
+            "frequencyHz": 22486.17331404952,
+            "magnitude": 1.4826686685642332e-10
+          },
+          {
+            "frequencyHz": 22631.904871477087,
+            "magnitude": 1.1092437056720812e-10
+          },
+          {
+            "frequencyHz": 22775.28642485116,
+            "magnitude": 8.07369754066684e-11
+          }
+        ],
+        "pitchTrack": [
+          {
+            "timeSeconds": 0.042666666666666665,
+            "frequencyHz": 103.81401719167519,
+            "magnitude": 117.88055198138049
+          },
+          {
+            "timeSeconds": 0.064,
+            "frequencyHz": 103.8908415187292,
+            "magnitude": 110.74046510983955
+          },
+          {
+            "timeSeconds": 0.08533333333333333,
+            "frequencyHz": 103.89064430733372,
+            "magnitude": 103.60370266192767
+          },
+          {
+            "timeSeconds": 0.10666666666666667,
+            "frequencyHz": 103.89033904168816,
+            "magnitude": 96.92887210656995
+          },
+          {
+            "timeSeconds": 0.128,
+            "frequencyHz": 103.89053645012228,
+            "magnitude": 90.69309715227166
+          },
+          {
+            "timeSeconds": 0.14933333333333335,
+            "frequencyHz": 103.89022363002753,
+            "magnitude": 84.85137306373474
+          },
+          {
+            "timeSeconds": 0.17066666666666666,
+            "frequencyHz": 103.89052332668919,
+            "magnitude": 79.3907203826411
+          },
+          {
+            "timeSeconds": 0.192,
+            "frequencyHz": 103.89047679777137,
+            "magnitude": 74.27249240503053
+          },
+          {
+            "timeSeconds": 0.21333333333333335,
+            "frequencyHz": 103.89051503711143,
+            "magnitude": 69.48369587449439
+          },
+          {
+            "timeSeconds": 0.23466666666666666,
+            "frequencyHz": 103.89069540789197,
+            "magnitude": 65.00436409631881
+          },
+          {
+            "timeSeconds": 0.256,
+            "frequencyHz": 103.89044539511193,
+            "magnitude": 60.8126691572783
+          },
+          {
+            "timeSeconds": 0.2773333333333333,
+            "frequencyHz": 103.89059927013875,
+            "magnitude": 56.897302443956946
+          },
+          {
+            "timeSeconds": 0.2986666666666667,
+            "frequencyHz": 103.89026649649801,
+            "magnitude": 53.23251517537997
+          },
+          {
+            "timeSeconds": 0.32,
+            "frequencyHz": 103.89052581553157,
+            "magnitude": 49.80835548903196
+          },
+          {
+            "timeSeconds": 0.3413333333333333,
+            "frequencyHz": 103.8903043569478,
+            "magnitude": 46.599068172123836
+          },
+          {
+            "timeSeconds": 0.3626666666666667,
+            "frequencyHz": 103.89050361581853,
+            "magnitude": 43.5977527171018
+          },
+          {
+            "timeSeconds": 0.384,
+            "frequencyHz": 103.8906019302031,
+            "magnitude": 40.78693064012019
+          },
+          {
+            "timeSeconds": 0.4053333333333333,
+            "frequencyHz": 103.89048732542473,
+            "magnitude": 38.156334248987044
+          },
+          {
+            "timeSeconds": 0.4266666666666667,
+            "frequencyHz": 103.89068752000847,
+            "magnitude": 35.697699624409914
+          },
+          {
+            "timeSeconds": 0.448,
+            "frequencyHz": 103.89037619098033,
+            "magnitude": 33.39673627634781
+          },
+          {
+            "timeSeconds": 0.4693333333333333,
+            "frequencyHz": 103.89055987037919,
+            "magnitude": 31.247612991580652
+          },
+          {
+            "timeSeconds": 0.49066666666666664,
+            "frequencyHz": 103.8902468929361,
+            "magnitude": 29.234965843880598
+          },
+          {
+            "timeSeconds": 0.512,
+            "frequencyHz": 103.89050690430582,
+            "magnitude": 27.353835447641455
+          },
+          {
+            "timeSeconds": 0.5333333333333333,
+            "frequencyHz": 103.89042861059806,
+            "magnitude": 25.590907884734087
+          },
+          {
+            "timeSeconds": 0.5546666666666666,
+            "frequencyHz": 103.89048402425533,
+            "magnitude": 23.94146455841582
+          },
+          {
+            "timeSeconds": 0.576,
+            "frequencyHz": 103.890682164141,
+            "magnitude": 22.398152168956422
+          },
+          {
+            "timeSeconds": 0.5973333333333334,
+            "frequencyHz": 103.89044747423408,
+            "magnitude": 20.95357781244426
+          },
+          {
+            "timeSeconds": 0.6186666666666667,
+            "frequencyHz": 103.89064453067769,
+            "magnitude": 19.604167053316324
+          },
+          {
+            "timeSeconds": 0.64,
+            "frequencyHz": 103.89031470081312,
+            "magnitude": 18.34102782751844
+          },
+          {
+            "timeSeconds": 0.6613333333333333,
+            "frequencyHz": 103.89052759436052,
+            "magnitude": 17.161001451858173
+          },
+          {
+            "timeSeconds": 0.6826666666666666,
+            "frequencyHz": 103.89028947751466,
+            "magnitude": 16.055500830071413
+          },
+          {
+            "timeSeconds": 0.704,
+            "frequencyHz": 103.8904853583165,
+            "magnitude": 15.021806454086914
+          },
+          {
+            "timeSeconds": 0.7253333333333334,
+            "frequencyHz": 103.89056476592089,
+            "magnitude": 14.053551573159002
+          },
+          {
+            "timeSeconds": 0.7466666666666667,
+            "frequencyHz": 103.89045926517142,
+            "magnitude": 13.14723919488564
+          },
+          {
+            "timeSeconds": 0.768,
+            "frequencyHz": 103.89069780883811,
+            "magnitude": 12.300036224976937
+          },
+          {
+            "timeSeconds": 0.7893333333333333,
+            "frequencyHz": 103.89040163135226,
+            "magnitude": 11.506987078455271
+          },
+          {
+            "timeSeconds": 0.8106666666666666,
+            "frequencyHz": 103.89059350725334,
+            "magnitude": 10.766273763639091
+          },
+          {
+            "timeSeconds": 0.832,
+            "frequencyHz": 103.89028032955376,
+            "magnitude": 10.072726495961511
+          },
+          {
+            "timeSeconds": 0.8533333333333334,
+            "frequencyHz": 103.89050237715584,
+            "magnitude": 9.424615749738916
+          },
+          {
+            "timeSeconds": 0.8746666666666667,
+            "frequencyHz": 103.89039440906716,
+            "magnitude": 8.817360070271185
+          },
+          {
+            "timeSeconds": 0.896,
+            "frequencyHz": 103.89045408834305,
+            "magnitude": 8.24924335612968
+          },
+          {
+            "timeSeconds": 0.9173333333333333,
+            "frequencyHz": 103.8906608829527,
+            "magnitude": 7.717575724580392
+          },
+          {
+            "timeSeconds": 0.9386666666666666,
+            "frequencyHz": 103.89043914871152,
+            "magnitude": 7.219783980473284
+          },
+          {
+            "timeSeconds": 0.96,
+            "frequencyHz": 103.89066826641582,
+            "magnitude": 6.754721983495677
+          },
+          {
+            "timeSeconds": 0.9813333333333333,
+            "frequencyHz": 103.89035009532827,
+            "magnitude": 6.319381465585503
+          },
+          {
+            "timeSeconds": 1.0026666666666666,
+            "frequencyHz": 103.89055247422323,
+            "magnitude": 5.912733864144597
+          },
+          {
+            "timeSeconds": 1.024,
+            "frequencyHz": 103.89030253409587,
+            "magnitude": 5.531846066429266
+          },
+          {
+            "timeSeconds": 1.0453333333333332,
+            "frequencyHz": 103.89046529984938,
+            "magnitude": 5.175748674813163
+          },
+          {
+            "timeSeconds": 1.0666666666666667,
+            "frequencyHz": 103.89051993685247,
+            "magnitude": 4.842229875664774
+          },
+          {
+            "timeSeconds": 1.088,
+            "frequencyHz": 103.89043303690511,
+            "magnitude": 4.530036663258943
+          },
+          {
+            "timeSeconds": 1.1093333333333333,
+            "frequencyHz": 103.89069915039862,
+            "magnitude": 4.2381283215443615
+          },
+          {
+            "timeSeconds": 1.1306666666666667,
+            "frequencyHz": 103.89041245211902,
+            "magnitude": 3.964810710613628
+          },
+          {
+            "timeSeconds": 1.152,
+            "frequencyHz": 103.890624527455,
+            "magnitude": 3.709526189879111
+          },
+          {
+            "timeSeconds": 1.1733333333333333,
+            "frequencyHz": 103.89031631413229,
+            "magnitude": 3.4705152882565145
+          },
+          {
+            "timeSeconds": 1.1946666666666668,
+            "frequencyHz": 103.89050618260136,
+            "magnitude": 3.247197703605702
+          },
+          {
+            "timeSeconds": 1.216,
+            "frequencyHz": 103.89037931773039,
+            "magnitude": 3.038010023378717
+          },
+          {
+            "timeSeconds": 1.2373333333333334,
+            "frequencyHz": 103.89043152220172,
+            "magnitude": 2.8423178752657297
+          },
+          {
+            "timeSeconds": 1.2586666666666666,
+            "frequencyHz": 103.89062556739233,
+            "magnitude": 2.6591610243719668
+          },
+          {
+            "timeSeconds": 1.28,
+            "frequencyHz": 103.89042002615665,
+            "magnitude": 2.4876578760195893
+          },
+          {
+            "timeSeconds": 1.3013333333333332,
+            "frequencyHz": 103.8906913899968,
+            "magnitude": 2.3274042835586686
+          },
+          {
+            "timeSeconds": 1.3226666666666667,
+            "frequencyHz": 103.89037996534397,
+            "magnitude": 2.177357759496028
+          },
+          {
+            "timeSeconds": 1.344,
+            "frequencyHz": 103.89057070603612,
+            "magnitude": 2.0372081710364944
+          },
+          {
+            "timeSeconds": 1.3653333333333333,
+            "frequencyHz": 103.89032108995202,
+            "magnitude": 1.9059708848268346
+          },
+          {
+            "timeSeconds": 1.3866666666666667,
+            "frequencyHz": 103.89046055858739,
+            "magnitude": 1.7832927395288602
+          },
+          {
+            "timeSeconds": 1.408,
+            "frequencyHz": 103.8904884472895,
+            "magnitude": 1.6684039270445514
+          },
+          {
+            "timeSeconds": 1.4293333333333333,
+            "frequencyHz": 103.89040730836433,
+            "magnitude": 1.560864340619559
+          },
+          {
+            "timeSeconds": 1.4506666666666668,
+            "frequencyHz": 103.89068788141756,
+            "magnitude": 1.4602944038439256
+          }
+        ]
+      }
+    },
+    {
+      "id": "medium-center-near",
+      "report": {
+        "sampleRateHz": 48000,
+        "sampleCount": 72000,
+        "velocity01": 0.8,
+        "strikeRadius01": 0,
+        "pickupRadius01": 0,
+        "pickupAngleRad": 0,
+        "pickupDistanceM": 0.1,
+        "waveform": {
+          "peak": 0.6282184288388711,
+          "rms": 0.10023156612936318,
+          "energy": 723.3384131096332,
+          "crestFactor": 6.267670486442019
+        },
+        "decay": {
+          "RT60": 2.1053553853597395,
+          "EDT": 2.0772369142779277,
+          "T20": 2.1188902992026977,
+          "T30": 2.1053553853597395,
+          "C50": -4.0193827279637,
+          "C80": -1.554310723094924,
+          "D50": 0.2838391526124495,
+          "D80": 0.4114696413389838,
+          "CenterTime": 0.14992189543015652,
+          "PeakIndex": 599
+        },
+        "spectrum": {
+          "centroidHz": 261.875642808795,
+          "rolloffHz": 377.9296875,
+          "bandwidthHz": 5.102119066827797,
+          "flatness": 9.22366738694412e-7
+        },
+        "spectralPeaks": [
+          {
+            "frequencyHz": 104.00249530621944,
+            "magnitude": 751.7238569241871
+          },
+          {
+            "frequencyHz": 512.3715770447982,
+            "magnitude": 399.1460275896493
+          },
+          {
+            "frequencyHz": 375.1960225233688,
+            "magnitude": 388.00437248107664
+          },
+          {
+            "frequencyHz": 238.9210133067518,
+            "magnitude": 142.37800749973786
+          },
+          {
+            "frequencyHz": 31.621876545408632,
+            "magnitude": 0.4650367416113724
+          },
+          {
+            "frequencyHz": 18962.103833065918,
+            "magnitude": 1.5104095207757794e-8
+          },
+          {
+            "frequencyHz": 19132.467308734012,
+            "magnitude": 1.3470055529137836e-8
+          },
+          {
+            "frequencyHz": 19301.8172687512,
+            "magnitude": 1.1977708348275094e-8
+          }
+        ],
+        "pitchTrack": [
+          {
+            "timeSeconds": 0.042666666666666665,
+            "frequencyHz": 103.84074222070662,
+            "magnitude": 319.2093941592188
+          },
+          {
+            "timeSeconds": 0.064,
+            "frequencyHz": 103.8907042692961,
+            "magnitude": 299.83994488671726
+          },
+          {
+            "timeSeconds": 0.08533333333333333,
+            "frequencyHz": 103.89048708366855,
+            "magnitude": 280.5228177626111
+          },
+          {
+            "timeSeconds": 0.10666666666666667,
+            "frequencyHz": 103.89037805024388,
+            "magnitude": 262.44540924116274
+          },
+          {
+            "timeSeconds": 0.128,
+            "frequencyHz": 103.89063940517714,
+            "magnitude": 245.53908872387782
+          },
+          {
+            "timeSeconds": 0.14933333333333335,
+            "frequencyHz": 103.8903803213244,
+            "magnitude": 229.70534722276068
+          },
+          {
+            "timeSeconds": 0.17066666666666666,
+            "frequencyHz": 103.89067411069107,
+            "magnitude": 214.91208986559607
+          },
+          {
+            "timeSeconds": 0.192,
+            "frequencyHz": 103.89038992241105,
+            "magnitude": 201.0568670670183
+          },
+          {
+            "timeSeconds": 0.21333333333333335,
+            "frequencyHz": 103.89053710515533,
+            "magnitude": 188.1128168978938
+          },
+          {
+            "timeSeconds": 0.23466666666666666,
+            "frequencyHz": 103.89040671486534,
+            "magnitude": 175.994642598681
+          },
+          {
+            "timeSeconds": 0.256,
+            "frequencyHz": 103.89041072273228,
+            "magnitude": 164.66113489065327
+          },
+          {
+            "timeSeconds": 0.2773333333333333,
+            "frequencyHz": 103.89055784066643,
+            "magnitude": 154.0553582394926
+          },
+          {
+            "timeSeconds": 0.2986666666666667,
+            "frequencyHz": 103.89036506256406,
+            "magnitude": 144.12422503562132
+          },
+          {
+            "timeSeconds": 0.32,
+            "frequencyHz": 103.89068631586584,
+            "magnitude": 134.84104327321384
+          },
+          {
+            "timeSeconds": 0.3413333333333333,
+            "frequencyHz": 103.89038776954898,
+            "magnitude": 126.14492850021135
+          },
+          {
+            "timeSeconds": 0.3626666666666667,
+            "frequencyHz": 103.89061224866381,
+            "magnitude": 118.02213737658121
+          },
+          {
+            "timeSeconds": 0.384,
+            "frequencyHz": 103.89039907663566,
+            "magnitude": 110.41656136400366
+          },
+          {
+            "timeSeconds": 0.4053333333333333,
+            "frequencyHz": 103.89047645302895,
+            "magnitude": 103.30742586000325
+          },
+          {
+            "timeSeconds": 0.4266666666666667,
+            "frequencyHz": 103.89046283534299,
+            "magnitude": 96.65305758494391
+          },
+          {
+            "timeSeconds": 0.448,
+            "frequencyHz": 103.89036928254973,
+            "magnitude": 90.42646040569949
+          },
+          {
+            "timeSeconds": 0.4693333333333333,
+            "frequencyHz": 103.89064216653937,
+            "magnitude": 84.60264393360103
+          },
+          {
+            "timeSeconds": 0.49066666666666664,
+            "frequencyHz": 103.89036676339069,
+            "magnitude": 79.14664460480311
+          },
+          {
+            "timeSeconds": 0.512,
+            "frequencyHz": 103.89066281383506,
+            "magnitude": 74.04912023214911
+          },
+          {
+            "timeSeconds": 0.5333333333333333,
+            "frequencyHz": 103.89040075257992,
+            "magnitude": 69.27501093924968
+          },
+          {
+            "timeSeconds": 0.5546666666666666,
+            "frequencyHz": 103.8905529089759,
+            "magnitude": 64.81444830769799
+          },
+          {
+            "timeSeconds": 0.576,
+            "frequencyHz": 103.89041926727836,
+            "magnitude": 60.63871746389766
+          },
+          {
+            "timeSeconds": 0.5973333333333334,
+            "frequencyHz": 103.89041870438386,
+            "magnitude": 56.733971087833226
+          },
+          {
+            "timeSeconds": 0.6186666666666667,
+            "frequencyHz": 103.89055404941791,
+            "magnitude": 53.080051376173046
+          },
+          {
+            "timeSeconds": 0.64,
+            "frequencyHz": 103.89034290931228,
+            "magnitude": 49.65852861817933
+          },
+          {
+            "timeSeconds": 0.6613333333333333,
+            "frequencyHz": 103.89066519248257,
+            "magnitude": 46.46045387880402
+          },
+          {
+            "timeSeconds": 0.6826666666666666,
+            "frequencyHz": 103.89038692901879,
+            "magnitude": 43.4643349421514
+          },
+          {
+            "timeSeconds": 0.704,
+            "frequencyHz": 103.89062476088876,
+            "magnitude": 40.66508494535257
+          },
+          {
+            "timeSeconds": 0.7253333333333334,
+            "frequencyHz": 103.89041070357916,
+            "magnitude": 38.04403257203111
+          },
+          {
+            "timeSeconds": 0.7466666666666667,
+            "frequencyHz": 103.89048949144852,
+            "magnitude": 35.594538980308165
+          },
+          {
+            "timeSeconds": 0.768,
+            "frequencyHz": 103.89047956959364,
+            "magnitude": 33.301886826457036
+          },
+          {
+            "timeSeconds": 0.7893333333333333,
+            "frequencyHz": 103.89036226863638,
+            "magnitude": 31.156482533571467
+          },
+          {
+            "timeSeconds": 0.8106666666666666,
+            "frequencyHz": 103.89061390201577,
+            "magnitude": 29.150061035405233
+          },
+          {
+            "timeSeconds": 0.832,
+            "frequencyHz": 103.89035042212565,
+            "magnitude": 27.27051725402556
+          },
+          {
+            "timeSeconds": 0.8533333333333334,
+            "frequencyHz": 103.89066317105362,
+            "magnitude": 25.514204536632864
+          },
+          {
+            "timeSeconds": 0.8746666666666667,
+            "frequencyHz": 103.89040446448365,
+            "magnitude": 23.869084166487504
+          },
+          {
+            "timeSeconds": 0.896,
+            "frequencyHz": 103.89057032465507,
+            "magnitude": 22.33202175632938
+          },
+          {
+            "timeSeconds": 0.9173333333333333,
+            "frequencyHz": 103.89044488219177,
+            "magnitude": 20.89308020373467
+          },
+          {
+            "timeSeconds": 0.9386666666666666,
+            "frequencyHz": 103.89041625687108,
+            "magnitude": 19.54754942999548
+          },
+          {
+            "timeSeconds": 0.96,
+            "frequencyHz": 103.89053730107058,
+            "magnitude": 18.288740477043724
+          },
+          {
+            "timeSeconds": 0.9813333333333333,
+            "frequencyHz": 103.89033794335818,
+            "magnitude": 17.110090208861934
+          },
+          {
+            "timeSeconds": 1.0026666666666666,
+            "frequencyHz": 103.89065670414277,
+            "magnitude": 16.00822393677997
+          },
+          {
+            "timeSeconds": 1.024,
+            "frequencyHz": 103.89037078284689,
+            "magnitude": 14.975881246080064
+          },
+          {
+            "timeSeconds": 1.0453333333333332,
+            "frequencyHz": 103.89063078604362,
+            "magnitude": 14.011425339003164
+          },
+          {
+            "timeSeconds": 1.0666666666666667,
+            "frequencyHz": 103.89043248367248,
+            "magnitude": 13.108244516263891
+          },
+          {
+            "timeSeconds": 1.088,
+            "frequencyHz": 103.89049635584207,
+            "magnitude": 12.264087368493492
+          },
+          {
+            "timeSeconds": 1.1093333333333333,
+            "frequencyHz": 103.89048281461118,
+            "magnitude": 11.4741151288571
+          },
+          {
+            "timeSeconds": 1.1306666666666667,
+            "frequencyHz": 103.8903643875866,
+            "magnitude": 10.734980338642345
+          },
+          {
+            "timeSeconds": 1.152,
+            "frequencyHz": 103.89060133236197,
+            "magnitude": 10.043728937894297
+          },
+          {
+            "timeSeconds": 1.1733333333333333,
+            "frequencyHz": 103.89033477101464,
+            "magnitude": 9.396205657777271
+          },
+          {
+            "timeSeconds": 1.1946666666666668,
+            "frequencyHz": 103.89066307563353,
+            "magnitude": 8.791115365320014
+          },
+          {
+            "timeSeconds": 1.216,
+            "frequencyHz": 103.89040687102967,
+            "magnitude": 8.224233450264384
+          },
+          {
+            "timeSeconds": 1.2373333333333334,
+            "frequencyHz": 103.89056876153118,
+            "magnitude": 7.69455658007741
+          },
+          {
+            "timeSeconds": 1.2586666666666666,
+            "frequencyHz": 103.8904563847576,
+            "magnitude": 7.19874397081015
+          },
+          {
+            "timeSeconds": 1.28,
+            "frequencyHz": 103.89043190581454,
+            "magnitude": 6.7351223382701155
+          },
+          {
+            "timeSeconds": 1.3013333333333332,
+            "frequencyHz": 103.89054099477987,
+            "magnitude": 6.301379463238115
+          },
+          {
+            "timeSeconds": 1.3226666666666667,
+            "frequencyHz": 103.89032761215016,
+            "magnitude": 5.895301530372913
+          },
+          {
+            "timeSeconds": 1.344,
+            "frequencyHz": 103.89064301156196,
+            "magnitude": 5.515712740921544
+          },
+          {
+            "timeSeconds": 1.3653333333333333,
+            "frequencyHz": 103.89036082441349,
+            "magnitude": 5.160044254868516
+          },
+          {
+            "timeSeconds": 1.3866666666666667,
+            "frequencyHz": 103.89062844928064,
+            "magnitude": 4.827721943539646
+          },
+          {
+            "timeSeconds": 1.408,
+            "frequencyHz": 103.89043860089754,
+            "magnitude": 4.516499140252392
+          },
+          {
+            "timeSeconds": 1.4293333333333333,
+            "frequencyHz": 103.8905069676548,
+            "magnitude": 4.225614398967526
+          },
+          {
+            "timeSeconds": 1.4506666666666668,
+            "frequencyHz": 103.89049594813126,
+            "magnitude": 3.9534095232305284
+          }
+        ]
+      }
+    },
+    {
+      "id": "hard-center-near",
+      "report": {
+        "sampleRateHz": 48000,
+        "sampleCount": 72000,
+        "velocity01": 1,
+        "strikeRadius01": 0,
+        "pickupRadius01": 0,
+        "pickupAngleRad": 0,
+        "pickupDistanceM": 0.1,
+        "waveform": {
+          "peak": 0.9767584922492549,
+          "rms": 0.1567173402846669,
+          "energy": 1768.343381704806,
+          "crestFactor": 6.232612743905916
+        },
+        "decay": {
+          "RT60": 2.060287370617879,
+          "EDT": 2.029652895265045,
+          "T20": 2.0699403181141367,
+          "T30": 2.060287370617879,
+          "C50": -3.9086994473774723,
+          "C80": -1.3829735280055404,
+          "D50": 0.2890481735722658,
+          "D80": 0.42105563190881745,
+          "CenterTime": 0.1463982062001491,
+          "PeakIndex": 1668
+        },
+        "spectrum": {
+          "centroidHz": 267.8271670028659,
+          "rolloffHz": 375,
+          "bandwidthHz": 5.102252024064072,
+          "flatness": 6.671921605713284e-7
+        },
+        "spectralPeaks": [
+          {
+            "frequencyHz": 104.00258681772402,
+            "magnitude": 1001.2018740571697
+          },
+          {
+            "frequencyHz": 375.19609785441463,
+            "magnitude": 810.0058550482754
+          },
+          {
+            "frequencyHz": 238.92147273519814,
+            "magnitude": 578.3281875767117
+          },
+          {
+            "frequencyHz": 512.3716425257478,
+            "magnitude": 515.5831116100552
+          },
+          {
+            "frequencyHz": 31.323971919321895,
+            "magnitude": 0.5674528524970209
+          },
+          {
+            "frequencyHz": 18683.237602127825,
+            "magnitude": 2.2757591245870596e-8
+          },
+          {
+            "frequencyHz": 18868.955278385718,
+            "magnitude": 2.0186374975588964e-8
+          },
+          {
+            "frequencyHz": 19053.630800363706,
+            "magnitude": 1.7850709176311515e-8
+          }
+        ],
+        "pitchTrack": [
+          {
+            "timeSeconds": 0.042666666666666665,
+            "frequencyHz": 103.84998317041583,
+            "magnitude": 425.24326216630817
+          },
+          {
+            "timeSeconds": 0.064,
+            "frequencyHz": 103.89062716440287,
+            "magnitude": 399.3615252752141
+          },
+          {
+            "timeSeconds": 0.08533333333333333,
+            "frequencyHz": 103.89030238579079,
+            "magnitude": 373.64758923374586
+          },
+          {
+            "timeSeconds": 0.10666666666666667,
+            "frequencyHz": 103.89037699834284,
+            "magnitude": 349.58564249618234
+          },
+          {
+            "timeSeconds": 0.128,
+            "frequencyHz": 103.89066230894466,
+            "magnitude": 327.05418873793474
+          },
+          {
+            "timeSeconds": 0.14933333333333335,
+            "frequencyHz": 103.89045641245812,
+            "magnitude": 305.94638794444444
+          },
+          {
+            "timeSeconds": 0.17066666666666666,
+            "frequencyHz": 103.8907701728885,
+            "magnitude": 286.2279931846388
+          },
+          {
+            "timeSeconds": 0.192,
+            "frequencyHz": 103.89045577411007,
+            "magnitude": 267.7692980881799
+          },
+          {
+            "timeSeconds": 0.21333333333333335,
+            "frequencyHz": 103.89054471004755,
+            "magnitude": 250.53359808344405
+          },
+          {
+            "timeSeconds": 0.23466666666666666,
+            "frequencyHz": 103.89026578057127,
+            "magnitude": 234.4036791115491
+          },
+          {
+            "timeSeconds": 0.256,
+            "frequencyHz": 103.89038899754713,
+            "magnitude": 219.3260264108981
+          },
+          {
+            "timeSeconds": 0.2773333333333333,
+            "frequencyHz": 103.89044313054912,
+            "magnitude": 205.20113299870965
+          },
+          {
+            "timeSeconds": 0.2986666666666667,
+            "frequencyHz": 103.89038048085852,
+            "magnitude": 191.97295844673806
+          },
+          {
+            "timeSeconds": 0.32,
+            "frequencyHz": 103.89076656647215,
+            "magnitude": 179.59935064620916
+          },
+          {
+            "timeSeconds": 0.3413333333333333,
+            "frequencyHz": 103.8904807082902,
+            "magnitude": 168.00698436831487
+          },
+          {
+            "timeSeconds": 0.3626666666666667,
+            "frequencyHz": 103.89067374633535,
+            "magnitude": 157.1827758319248
+          },
+          {
+            "timeSeconds": 0.384,
+            "frequencyHz": 103.8903815145552,
+            "magnitude": 147.054943895459
+          },
+          {
+            "timeSeconds": 0.4053333333333333,
+            "frequencyHz": 103.89047891803253,
+            "magnitude": 137.59411576760473
+          },
+          {
+            "timeSeconds": 0.4266666666666667,
+            "frequencyHz": 103.89030277284662,
+            "magnitude": 128.73535263223195
+          },
+          {
+            "timeSeconds": 0.448,
+            "frequencyHz": 103.89034709118327,
+            "magnitude": 120.44862735046758
+          },
+          {
+            "timeSeconds": 0.4693333333333333,
+            "frequencyHz": 103.89060749528308,
+            "magnitude": 112.68991087099259
+          },
+          {
+            "timeSeconds": 0.49066666666666664,
+            "frequencyHz": 103.89041138029377,
+            "magnitude": 105.41913817619952
+          },
+          {
+            "timeSeconds": 0.512,
+            "frequencyHz": 103.8907595221475,
+            "magnitude": 98.62436211543698
+          },
+          {
+            "timeSeconds": 0.5333333333333333,
+            "frequencyHz": 103.890472451765,
+            "magnitude": 92.26218441788416
+          },
+          {
+            "timeSeconds": 0.5546666666666666,
+            "frequencyHz": 103.89059379838605,
+            "magnitude": 86.32125794367836
+          },
+          {
+            "timeSeconds": 0.576,
+            "frequencyHz": 103.89032676968381,
+            "magnitude": 80.76193981430538
+          },
+          {
+            "timeSeconds": 0.5973333333333334,
+            "frequencyHz": 103.89040675864109,
+            "magnitude": 75.56651244393603
+          },
+          {
+            "timeSeconds": 0.6186666666666667,
+            "frequencyHz": 103.89042009570231,
+            "magnitude": 70.70105451940913
+          },
+          {
+            "timeSeconds": 0.64,
+            "frequencyHz": 103.89033399437591,
+            "magnitude": 66.14515321832981
+          },
+          {
+            "timeSeconds": 0.6613333333333333,
+            "frequencyHz": 103.8907023588468,
+            "magnitude": 61.88332661025667
+          },
+          {
+            "timeSeconds": 0.6826666666666666,
+            "frequencyHz": 103.89045241510338,
+            "magnitude": 57.8898619297642
+          },
+          {
+            "timeSeconds": 0.704,
+            "frequencyHz": 103.89071688312838,
+            "magnitude": 54.15947570119267
+          },
+          {
+            "timeSeconds": 0.7253333333333334,
+            "frequencyHz": 103.89043199738352,
+            "magnitude": 50.66781400184151
+          },
+          {
+            "timeSeconds": 0.7466666666666667,
+            "frequencyHz": 103.89050416775488,
+            "magnitude": 47.40682846167162
+          },
+          {
+            "timeSeconds": 0.768,
+            "frequencyHz": 103.89033494753073,
+            "magnitude": 44.354718903440606
+          },
+          {
+            "timeSeconds": 0.7893333333333333,
+            "frequencyHz": 103.89034604241945,
+            "magnitude": 41.49996636649007
+          },
+          {
+            "timeSeconds": 0.8106666666666666,
+            "frequencyHz": 103.89054876436735,
+            "magnitude": 38.82741755576411
+          },
+          {
+            "timeSeconds": 0.832,
+            "frequencyHz": 103.8903616376725,
+            "magnitude": 36.32339669343713
+          },
+          {
+            "timeSeconds": 0.8533333333333334,
+            "frequencyHz": 103.8907459875737,
+            "magnitude": 33.98271964778414
+          },
+          {
+            "timeSeconds": 0.8746666666666667,
+            "frequencyHz": 103.89047185289294,
+            "magnitude": 31.79010581839852
+          },
+          {
+            "timeSeconds": 0.896,
+            "frequencyHz": 103.8906331348982,
+            "magnitude": 29.74242281380397
+          },
+          {
+            "timeSeconds": 0.9173333333333333,
+            "frequencyHz": 103.89039243461795,
+            "magnitude": 27.826207781030284
+          },
+          {
+            "timeSeconds": 0.9386666666666666,
+            "frequencyHz": 103.8904202488979,
+            "magnitude": 26.035564857123937
+          },
+          {
+            "timeSeconds": 0.96,
+            "frequencyHz": 103.8903964048097,
+            "magnitude": 24.359478668371846
+          },
+          {
+            "timeSeconds": 0.9813333333333333,
+            "frequencyHz": 103.89031834190351,
+            "magnitude": 22.79054099103304
+          },
+          {
+            "timeSeconds": 1.0026666666666666,
+            "frequencyHz": 103.89067037911539,
+            "magnitude": 21.322553725949206
+          },
+          {
+            "timeSeconds": 1.024,
+            "frequencyHz": 103.89040764299023,
+            "magnitude": 19.946689105267804
+          },
+          {
+            "timeSeconds": 1.0453333333333332,
+            "frequencyHz": 103.89071445314033,
+            "magnitude": 18.661368554075473
+          },
+          {
+            "timeSeconds": 1.0666666666666667,
+            "frequencyHz": 103.89046576423142,
+            "magnitude": 17.457989105354372
+          },
+          {
+            "timeSeconds": 1.088,
+            "frequencyHz": 103.8905419330699,
+            "magnitude": 16.33390960065693
+          },
+          {
+            "timeSeconds": 1.1093333333333333,
+            "frequencyHz": 103.89037445524843,
+            "magnitude": 15.282047585435178
+          },
+          {
+            "timeSeconds": 1.1306666666666667,
+            "frequencyHz": 103.89035392034135,
+            "magnitude": 14.29848776642205
+          },
+          {
+            "timeSeconds": 1.152,
+            "frequencyHz": 103.89051270406434,
+            "magnitude": 13.377923943874265
+          },
+          {
+            "timeSeconds": 1.1733333333333333,
+            "frequencyHz": 103.89032244102869,
+            "magnitude": 12.515522116482785
+          },
+          {
+            "timeSeconds": 1.1946666666666668,
+            "frequencyHz": 103.89072293029804,
+            "magnitude": 11.709241728932406
+          },
+          {
+            "timeSeconds": 1.216,
+            "frequencyHz": 103.89045713657424,
+            "magnitude": 10.953694771060707
+          },
+          {
+            "timeSeconds": 1.2373333333333334,
+            "frequencyHz": 103.89064554755664,
+            "magnitude": 10.247956612879824
+          },
+          {
+            "timeSeconds": 1.2586666666666666,
+            "frequencyHz": 103.8904337658204,
+            "magnitude": 9.587525927474918
+          },
+          {
+            "timeSeconds": 1.28,
+            "frequencyHz": 103.89045841504598,
+            "magnitude": 8.970416966826054
+          },
+          {
+            "timeSeconds": 1.3013333333333332,
+            "frequencyHz": 103.89041873477721,
+            "magnitude": 8.39288911832286
+          },
+          {
+            "timeSeconds": 1.3226666666666667,
+            "frequencyHz": 103.89030301275197,
+            "magnitude": 7.852393407392198
+          },
+          {
+            "timeSeconds": 1.344,
+            "frequencyHz": 103.89061675854768,
+            "magnitude": 7.346772150531622
+          },
+          {
+            "timeSeconds": 1.3653333333333333,
+            "frequencyHz": 103.89036762459017,
+            "magnitude": 6.872886454480338
+          },
+          {
+            "timeSeconds": 1.3866666666666667,
+            "frequencyHz": 103.89071392375081,
+            "magnitude": 6.430051610228322
+          },
+          {
+            "timeSeconds": 1.408,
+            "frequencyHz": 103.89047776168353,
+            "magnitude": 6.015303638965919
+          },
+          {
+            "timeSeconds": 1.4293333333333333,
+            "frequencyHz": 103.89056788400782,
+            "magnitude": 5.627868837125589
+          },
+          {
+            "timeSeconds": 1.4506666666666668,
+            "frequencyHz": 103.89041956163662,
+            "magnitude": 5.265366290905857
+          }
+        ]
+      }
+    },
+    {
+      "id": "soft-offset-overhead",
+      "report": {
+        "sampleRateHz": 48000,
+        "sampleCount": 72000,
+        "velocity01": 0.35,
+        "strikeRadius01": 0.45,
+        "pickupRadius01": 0.32,
+        "pickupAngleRad": 0.6,
+        "pickupDistanceM": 0.3,
+        "waveform": {
+          "peak": 0.05942234882663669,
+          "rms": 0.011205366882887395,
+          "energy": 9.040337782567887,
+          "crestFactor": 5.3030257239845735
+        },
+        "decay": {
+          "RT60": 2.1607824016272104,
+          "EDT": 2.211274284768447,
+          "T20": 2.201368779386923,
+          "T30": 2.1607824016272104,
+          "C50": -4.269995539556683,
+          "C80": -1.945342752829253,
+          "D50": 0.2722567390773235,
+          "D80": 0.38985262997454384,
+          "CenterTime": 0.1605746033974807,
+          "PeakIndex": 1051
+        },
+        "spectrum": {
+          "centroidHz": 187.68246089638663,
+          "rolloffHz": 105.46875,
+          "bandwidthHz": 5.102365778844515,
+          "flatness": 3.6047619770461963e-7
+        },
+        "spectralPeaks": [
+          {
+            "frequencyHz": 104.00266563996823,
+            "magnitude": 96.67886132514475
+          },
+          {
+            "frequencyHz": 165.7370038116107,
+            "magnitude": 29.744997884216378
+          },
+          {
+            "frequencyHz": 303.8397679639901,
+            "magnitude": 17.83017496357603
+          },
+          {
+            "frequencyHz": 441.4840778780545,
+            "magnitude": 6.347539755734398
+          },
+          {
+            "frequencyHz": 579.7339290530462,
+            "magnitude": 4.148104766124304
+          },
+          {
+            "frequencyHz": 364.8742187872972,
+            "magnitude": 4.024114898808902
+          },
+          {
+            "frequencyHz": 423.46991085413583,
+            "magnitude": 3.998427583833626
+          },
+          {
+            "frequencyHz": 375.13974988378084,
+            "magnitude": 3.3611132519589786
+          }
+        ],
+        "pitchTrack": [
+          {
+            "timeSeconds": 0.042666666666666665,
+            "frequencyHz": 103.85335281434328,
+            "magnitude": 41.075983423367276
+          },
+          {
+            "timeSeconds": 0.064,
+            "frequencyHz": 103.89120872715347,
+            "magnitude": 38.56164091787115
+          },
+          {
+            "timeSeconds": 0.08533333333333333,
+            "frequencyHz": 103.88826118668442,
+            "magnitude": 36.089999200776106
+          },
+          {
+            "timeSeconds": 0.10666666666666667,
+            "frequencyHz": 103.8916606468738,
+            "magnitude": 33.745282709880776
+          },
+          {
+            "timeSeconds": 0.128,
+            "frequencyHz": 103.89192244550583,
+            "magnitude": 31.576135244617237
+          },
+          {
+            "timeSeconds": 0.14933333333333335,
+            "frequencyHz": 103.88798097398582,
+            "magnitude": 29.553694810802522
+          },
+          {
+            "timeSeconds": 0.17066666666666666,
+            "frequencyHz": 103.89123475473508,
+            "magnitude": 27.637399443811407
+          },
+          {
+            "timeSeconds": 0.192,
+            "frequencyHz": 103.8923003731491,
+            "magnitude": 25.85486053889576
+          },
+          {
+            "timeSeconds": 0.21333333333333335,
+            "frequencyHz": 103.88828296658185,
+            "magnitude": 24.20218630765238
+          },
+          {
+            "timeSeconds": 0.23466666666666666,
+            "frequencyHz": 103.89052068513828,
+            "magnitude": 22.634524184835715
+          },
+          {
+            "timeSeconds": 0.256,
+            "frequencyHz": 103.89256200517337,
+            "magnitude": 21.171216135396435
+          },
+          {
+            "timeSeconds": 0.2773333333333333,
+            "frequencyHz": 103.88886963159754,
+            "magnitude": 19.819125366170447
+          },
+          {
+            "timeSeconds": 0.2986666666666667,
+            "frequencyHz": 103.88960516388222,
+            "magnitude": 18.53684134444855
+          },
+          {
+            "timeSeconds": 0.32,
+            "frequencyHz": 103.89299325697517,
+            "magnitude": 17.337119623428205
+          },
+          {
+            "timeSeconds": 0.3413333333333333,
+            "frequencyHz": 103.88916295876187,
+            "magnitude": 16.228351851922575
+          },
+          {
+            "timeSeconds": 0.3626666666666667,
+            "frequencyHz": 103.88915656617887,
+            "magnitude": 15.181882795573877
+          },
+          {
+            "timeSeconds": 0.384,
+            "frequencyHz": 103.89290192669489,
+            "magnitude": 14.197037994413733
+          },
+          {
+            "timeSeconds": 0.4053333333333333,
+            "frequencyHz": 103.88979762539499,
+            "magnitude": 13.288581152660344
+          },
+          {
+            "timeSeconds": 0.4266666666666667,
+            "frequencyHz": 103.8886957455516,
+            "magnitude": 12.433712256410095
+          },
+          {
+            "timeSeconds": 0.448,
+            "frequencyHz": 103.89251873801767,
+            "magnitude": 11.625989787571202
+          },
+          {
+            "timeSeconds": 0.4693333333333333,
+            "frequencyHz": 103.89078117830074,
+            "magnitude": 10.881525096695134
+          },
+          {
+            "timeSeconds": 0.49066666666666664,
+            "frequencyHz": 103.88806597930522,
+            "magnitude": 10.182354315647444
+          },
+          {
+            "timeSeconds": 0.512,
+            "frequencyHz": 103.89230368509645,
+            "magnitude": 9.521244222674472
+          },
+          {
+            "timeSeconds": 0.5333333333333333,
+            "frequencyHz": 103.89132455258759,
+            "magnitude": 8.909786752682516
+          },
+          {
+            "timeSeconds": 0.5546666666666666,
+            "frequencyHz": 103.88802513960994,
+            "magnitude": 8.33899524144655
+          },
+          {
+            "timeSeconds": 0.576,
+            "frequencyHz": 103.89172008993057,
+            "magnitude": 7.797542212070071
+          },
+          {
+            "timeSeconds": 0.5973333333333334,
+            "frequencyHz": 103.89182990923851,
+            "magnitude": 7.295486650208525
+          },
+          {
+            "timeSeconds": 0.6186666666666667,
+            "frequencyHz": 103.88825590766588,
+            "magnitude": 6.829139297166519
+          },
+          {
+            "timeSeconds": 0.64,
+            "frequencyHz": 103.89084983883821,
+            "magnitude": 6.385847415630393
+          },
+          {
+            "timeSeconds": 0.6613333333333333,
+            "frequencyHz": 103.89258776809427,
+            "magnitude": 5.974073144748151
+          },
+          {
+            "timeSeconds": 0.6826666666666666,
+            "frequencyHz": 103.88825328472065,
+            "magnitude": 5.592079170667445
+          },
+          {
+            "timeSeconds": 0.704,
+            "frequencyHz": 103.89030547045915,
+            "magnitude": 5.230090321621127
+          },
+          {
+            "timeSeconds": 0.7253333333333334,
+            "frequencyHz": 103.89286923192509,
+            "magnitude": 4.891832840405726
+          },
+          {
+            "timeSeconds": 0.7466666666666667,
+            "frequencyHz": 103.8886786757279,
+            "magnitude": 4.579233224874887
+          },
+          {
+            "timeSeconds": 0.768,
+            "frequencyHz": 103.88966058454614,
+            "magnitude": 4.283417041169674
+          },
+          {
+            "timeSeconds": 0.7893333333333333,
+            "frequencyHz": 103.8928362639378,
+            "magnitude": 4.005732819606392
+          },
+          {
+            "timeSeconds": 0.8106666666666666,
+            "frequencyHz": 103.88954677602656,
+            "magnitude": 3.749875176548984
+          },
+          {
+            "timeSeconds": 0.832,
+            "frequencyHz": 103.88877072898696,
+            "magnitude": 3.5079234633889738
+          },
+          {
+            "timeSeconds": 0.8533333333333334,
+            "frequencyHz": 103.89296423288577,
+            "magnitude": 3.280383246475825
+          },
+          {
+            "timeSeconds": 0.8746666666666667,
+            "frequencyHz": 103.89007193093691,
+            "magnitude": 3.070429764567558
+          },
+          {
+            "timeSeconds": 0.896,
+            "frequencyHz": 103.88839137064998,
+            "magnitude": 2.8729882720587168
+          },
+          {
+            "timeSeconds": 0.9173333333333333,
+            "frequencyHz": 103.89267972180706,
+            "magnitude": 2.6863732317363964
+          },
+          {
+            "timeSeconds": 0.9386666666666666,
+            "frequencyHz": 103.89067456100726,
+            "magnitude": 2.5141162576720504
+          },
+          {
+            "timeSeconds": 0.96,
+            "frequencyHz": 103.88824400597527,
+            "magnitude": 2.3529178546243443
+          },
+          {
+            "timeSeconds": 0.9813333333333333,
+            "frequencyHz": 103.89200694652483,
+            "magnitude": 2.1999510376543805
+          },
+          {
+            "timeSeconds": 1.0026666666666666,
+            "frequencyHz": 103.89165091893406,
+            "magnitude": 2.0586971191325847
+          },
+          {
+            "timeSeconds": 1.024,
+            "frequencyHz": 103.8878676592799,
+            "magnitude": 1.9268086323409455
+          },
+          {
+            "timeSeconds": 1.0453333333333332,
+            "frequencyHz": 103.89155810762826,
+            "magnitude": 1.8017380896762927
+          },
+          {
+            "timeSeconds": 1.0666666666666667,
+            "frequencyHz": 103.89221327036674,
+            "magnitude": 1.6856984312440892
+          },
+          {
+            "timeSeconds": 1.088,
+            "frequencyHz": 103.88797374742899,
+            "magnitude": 1.5778964627914864
+          },
+          {
+            "timeSeconds": 1.1093333333333333,
+            "frequencyHz": 103.89090952498712,
+            "magnitude": 1.47560743153416
+          },
+          {
+            "timeSeconds": 1.1306666666666667,
+            "frequencyHz": 103.89250910895579,
+            "magnitude": 1.3802900883348026
+          },
+          {
+            "timeSeconds": 1.152,
+            "frequencyHz": 103.88854685925193,
+            "magnitude": 1.2921741427481783
+          },
+          {
+            "timeSeconds": 1.1733333333333333,
+            "frequencyHz": 103.889929877764,
+            "magnitude": 1.208463571593049
+          },
+          {
+            "timeSeconds": 1.1946666666666668,
+            "frequencyHz": 103.89301794817041,
+            "magnitude": 1.1303017578658636
+          },
+          {
+            "timeSeconds": 1.216,
+            "frequencyHz": 103.8888657789891,
+            "magnitude": 1.05808012553746
+          },
+          {
+            "timeSeconds": 1.2373333333333334,
+            "frequencyHz": 103.88932196088355,
+            "magnitude": 0.9897445859286338
+          },
+          {
+            "timeSeconds": 1.2586666666666666,
+            "frequencyHz": 103.89312896787996,
+            "magnitude": 0.9255797728410539
+          },
+          {
+            "timeSeconds": 1.28,
+            "frequencyHz": 103.88938442226376,
+            "magnitude": 0.8663953509306477
+          },
+          {
+            "timeSeconds": 1.3013333333333332,
+            "frequencyHz": 103.88885805393555,
+            "magnitude": 0.8106078578132079
+          },
+          {
+            "timeSeconds": 1.3226666666666667,
+            "frequencyHz": 103.89278127392649,
+            "magnitude": 0.7579410412705361
+          },
+          {
+            "timeSeconds": 1.344,
+            "frequencyHz": 103.89039706280755,
+            "magnitude": 0.7094614881136622
+          },
+          {
+            "timeSeconds": 1.3653333333333333,
+            "frequencyHz": 103.88813765585314,
+            "magnitude": 0.663839928020291
+          },
+          {
+            "timeSeconds": 1.3866666666666667,
+            "frequencyHz": 103.89258571229233,
+            "magnitude": 0.620718656011905
+          },
+          {
+            "timeSeconds": 1.408,
+            "frequencyHz": 103.8910895267954,
+            "magnitude": 0.5809113506384472
+          },
+          {
+            "timeSeconds": 1.4293333333333333,
+            "frequencyHz": 103.88787537971454,
+            "magnitude": 0.5436607750784405
+          },
+          {
+            "timeSeconds": 1.4506666666666668,
+            "frequencyHz": 103.89213212898228,
+            "magnitude": 0.5083452439630126
+          }
+        ]
+      }
+    },
+    {
+      "id": "medium-offset-overhead",
+      "report": {
+        "sampleRateHz": 48000,
+        "sampleCount": 72000,
+        "velocity01": 0.8,
+        "strikeRadius01": 0.45,
+        "pickupRadius01": 0.32,
+        "pickupAngleRad": 0.6,
+        "pickupDistanceM": 0.3,
+        "waveform": {
+          "peak": 0.19647363088941835,
+          "rms": 0.03218723997238093,
+          "energy": 74.59332602685386,
+          "crestFactor": 6.104084446445469
+        },
+        "decay": {
+          "RT60": 2.1636258739201555,
+          "EDT": 2.214576933111016,
+          "T20": 2.2042729954059257,
+          "T30": 2.1636258739201555,
+          "C50": -4.19267064438672,
+          "C80": -1.931602199629518,
+          "D50": 0.2757987096005496,
+          "D80": 0.3906054759466215,
+          "CenterTime": 0.16060236493672606,
+          "PeakIndex": 1000
+        },
+        "spectrum": {
+          "centroidHz": 189.35600995732838,
+          "rolloffHz": 164.0625,
+          "bandwidthHz": 5.102601029455357,
+          "flatness": 2.682493906815941e-7
+        },
+        "spectralPeaks": [
+          {
+            "frequencyHz": 104.00283570176617,
+            "magnitude": 261.7297604446107
+          },
+          {
+            "frequencyHz": 165.7373283569882,
+            "magnitude": 124.76456589667818
+          },
+          {
+            "frequencyHz": 303.84007788762574,
+            "magnitude": 57.468866997550876
+          },
+          {
+            "frequencyHz": 364.8663002800307,
+            "magnitude": 35.22326265629743
+          },
+          {
+            "frequencyHz": 375.085578910777,
+            "magnitude": 14.897292086670742
+          },
+          {
+            "frequencyHz": 222.23954875731647,
+            "magnitude": 11.164441506423547
+          },
+          {
+            "frequencyHz": 441.4804572417615,
+            "magnitude": 10.381500831359183
+          },
+          {
+            "frequencyHz": 644.7856363144798,
+            "magnitude": 8.182548810945882
+          }
+        ],
+        "pitchTrack": [
+          {
+            "timeSeconds": 0.042666666666666665,
+            "frequencyHz": 103.86992717245941,
+            "magnitude": 111.26052370899954
+          },
+          {
+            "timeSeconds": 0.064,
+            "frequencyHz": 103.89080072423721,
+            "magnitude": 104.41093790329963
+          },
+          {
+            "timeSeconds": 0.08533333333333333,
+            "frequencyHz": 103.8870743946791,
+            "magnitude": 97.71633793436953
+          },
+          {
+            "timeSeconds": 0.10666666666666667,
+            "frequencyHz": 103.89307069169024,
+            "magnitude": 91.34266939542032
+          },
+          {
+            "timeSeconds": 0.128,
+            "frequencyHz": 103.89190297185137,
+            "magnitude": 85.49039392404599
+          },
+          {
+            "timeSeconds": 0.14933333333333335,
+            "frequencyHz": 103.8866189791946,
+            "magnitude": 80.02487415931984
+          },
+          {
+            "timeSeconds": 0.17066666666666666,
+            "frequencyHz": 103.89240101676342,
+            "magnitude": 74.81030921134679
+          },
+          {
+            "timeSeconds": 0.192,
+            "frequencyHz": 103.89261177570457,
+            "magnitude": 69.99599043146551
+          },
+          {
+            "timeSeconds": 0.21333333333333335,
+            "frequencyHz": 103.8869708648123,
+            "magnitude": 65.53730087214836
+          },
+          {
+            "timeSeconds": 0.23466666666666666,
+            "frequencyHz": 103.89120887812635,
+            "magnitude": 61.26918769148933
+          },
+          {
+            "timeSeconds": 0.256,
+            "frequencyHz": 103.89343369590853,
+            "magnitude": 57.31355643012547
+          },
+          {
+            "timeSeconds": 0.2773333333333333,
+            "frequencyHz": 103.88734540473496,
+            "magnitude": 53.6670545110502
+          },
+          {
+            "timeSeconds": 0.2986666666666667,
+            "frequencyHz": 103.8900647915506,
+            "magnitude": 50.18126686877623
+          },
+          {
+            "timeSeconds": 0.32,
+            "frequencyHz": 103.89414624711667,
+            "magnitude": 46.93133064334265
+          },
+          {
+            "timeSeconds": 0.3413333333333333,
+            "frequencyHz": 103.88772845812659,
+            "magnitude": 43.94381358468343
+          },
+          {
+            "timeSeconds": 0.3626666666666667,
+            "frequencyHz": 103.88922605488813,
+            "magnitude": 41.10142968659186
+          },
+          {
+            "timeSeconds": 0.384,
+            "frequencyHz": 103.89418937736244,
+            "magnitude": 38.42922811989776
+          },
+          {
+            "timeSeconds": 0.4053333333333333,
+            "frequencyHz": 103.88881510666616,
+            "magnitude": 35.983464845610186
+          },
+          {
+            "timeSeconds": 0.4266666666666667,
+            "frequencyHz": 103.8881262538734,
+            "magnitude": 33.66224756454623
+          },
+          {
+            "timeSeconds": 0.448,
+            "frequencyHz": 103.89406175581635,
+            "magnitude": 31.469423211363193
+          },
+          {
+            "timeSeconds": 0.4693333333333333,
+            "frequencyHz": 103.89001830800144,
+            "magnitude": 29.463887643873168
+          },
+          {
+            "timeSeconds": 0.49066666666666664,
+            "frequencyHz": 103.88719628637885,
+            "magnitude": 27.56923975291331
+          },
+          {
+            "timeSeconds": 0.512,
+            "frequencyHz": 103.89382135665635,
+            "magnitude": 25.772049141243407
+          },
+          {
+            "timeSeconds": 0.5333333333333333,
+            "frequencyHz": 103.89086835185049,
+            "magnitude": 24.12349426941914
+          },
+          {
+            "timeSeconds": 0.5546666666666666,
+            "frequencyHz": 103.88697050225758,
+            "magnitude": 22.580011882677294
+          },
+          {
+            "timeSeconds": 0.576,
+            "frequencyHz": 103.8929709371266,
+            "magnitude": 21.105869016792653
+          },
+          {
+            "timeSeconds": 0.5973333333333334,
+            "frequencyHz": 103.89198773690183,
+            "magnitude": 19.752143211700886
+          },
+          {
+            "timeSeconds": 0.6186666666666667,
+            "frequencyHz": 103.88678077321157,
+            "magnitude": 18.49165629154048
+          },
+          {
+            "timeSeconds": 0.64,
+            "frequencyHz": 103.89196646739121,
+            "magnitude": 17.28574605132434
+          },
+          {
+            "timeSeconds": 0.6613333333333333,
+            "frequencyHz": 103.89315772973603,
+            "magnitude": 16.17325471947265
+          },
+          {
+            "timeSeconds": 0.6826666666666666,
+            "frequencyHz": 103.88664500739762,
+            "magnitude": 15.142552109489584
+          },
+          {
+            "timeSeconds": 0.704,
+            "frequencyHz": 103.89111706045995,
+            "magnitude": 14.15786297064924
+          },
+          {
+            "timeSeconds": 0.7253333333333334,
+            "frequencyHz": 103.89369839834052,
+            "magnitude": 13.242408832401129
+          },
+          {
+            "timeSeconds": 0.7466666666666667,
+            "frequencyHz": 103.88732592634264,
+            "magnitude": 12.400362020676086
+          },
+          {
+            "timeSeconds": 0.768,
+            "frequencyHz": 103.8898630380655,
+            "magnitude": 11.595455058332426
+          },
+          {
+            "timeSeconds": 0.7893333333333333,
+            "frequencyHz": 103.89411952805695,
+            "magnitude": 10.84335848790852
+          },
+          {
+            "timeSeconds": 0.8106666666666666,
+            "frequencyHz": 103.88821361282692,
+            "magnitude": 10.154081458116337
+          },
+          {
+            "timeSeconds": 0.832,
+            "frequencyHz": 103.88862497097382,
+            "magnitude": 9.496945833988844
+          },
+          {
+            "timeSeconds": 0.8533333333333334,
+            "frequencyHz": 103.8944704290212,
+            "magnitude": 8.879520826090307
+          },
+          {
+            "timeSeconds": 0.8746666666666667,
+            "frequencyHz": 103.88889855995694,
+            "magnitude": 8.313984868429431
+          },
+          {
+            "timeSeconds": 0.896,
+            "frequencyHz": 103.8879318063364,
+            "magnitude": 7.778571865919222
+          },
+          {
+            "timeSeconds": 0.9173333333333333,
+            "frequencyHz": 103.89414180301833,
+            "magnitude": 7.2713147200398165
+          },
+          {
+            "timeSeconds": 0.9386666666666666,
+            "frequencyHz": 103.89008099843234,
+            "magnitude": 6.807513373219603
+          },
+          {
+            "timeSeconds": 0.96,
+            "frequencyHz": 103.8871787569619,
+            "magnitude": 6.370664518342398
+          },
+          {
+            "timeSeconds": 0.9813333333333333,
+            "frequencyHz": 103.89353772005589,
+            "magnitude": 5.954729060947508
+          },
+          {
+            "timeSeconds": 1.0026666666666666,
+            "frequencyHz": 103.89145695564306,
+            "magnitude": 5.574034662951999
+          },
+          {
+            "timeSeconds": 1.024,
+            "frequencyHz": 103.88650120631452,
+            "magnitude": 5.217247331386964
+          },
+          {
+            "timeSeconds": 1.0453333333333332,
+            "frequencyHz": 103.89293973781005,
+            "magnitude": 4.876985258791734
+          },
+          {
+            "timeSeconds": 1.0666666666666667,
+            "frequencyHz": 103.8923339734926,
+            "magnitude": 4.563719049542648
+          },
+          {
+            "timeSeconds": 1.088,
+            "frequencyHz": 103.88661566197104,
+            "magnitude": 4.272817113842893
+          },
+          {
+            "timeSeconds": 1.1093333333333333,
+            "frequencyHz": 103.89184604326958,
+            "magnitude": 3.9942008161076945
+          },
+          {
+            "timeSeconds": 1.1306666666666667,
+            "frequencyHz": 103.89319392327147,
+            "magnitude": 3.736732207119277
+          },
+          {
+            "timeSeconds": 1.152,
+            "frequencyHz": 103.88698097751337,
+            "magnitude": 3.499051699919714
+          },
+          {
+            "timeSeconds": 1.1733333333333333,
+            "frequencyHz": 103.89056730037414,
+            "magnitude": 3.2713180034388505
+          },
+          {
+            "timeSeconds": 1.1946666666666668,
+            "frequencyHz": 103.89412874189365,
+            "magnitude": 3.0597912036712414
+          },
+          {
+            "timeSeconds": 1.216,
+            "frequencyHz": 103.8872374960653,
+            "magnitude": 2.865135254830746
+          },
+          {
+            "timeSeconds": 1.2373333333333334,
+            "frequencyHz": 103.88963302252859,
+            "magnitude": 2.679432352470744
+          },
+          {
+            "timeSeconds": 1.2586666666666666,
+            "frequencyHz": 103.89439691927349,
+            "magnitude": 2.505418927111301
+          },
+          {
+            "timeSeconds": 1.28,
+            "frequencyHz": 103.88817770679294,
+            "magnitude": 2.346132004234064
+          },
+          {
+            "timeSeconds": 1.3013333333333332,
+            "frequencyHz": 103.8885054953998,
+            "magnitude": 2.1945255072990983
+          },
+          {
+            "timeSeconds": 1.3226666666666667,
+            "frequencyHz": 103.89432944218805,
+            "magnitude": 2.051600086863533
+          },
+          {
+            "timeSeconds": 1.344,
+            "frequencyHz": 103.88947021992863,
+            "magnitude": 1.9210765299207038
+          },
+          {
+            "timeSeconds": 1.3653333333333333,
+            "frequencyHz": 103.8873555269405,
+            "magnitude": 1.7973317448389587
+          },
+          {
+            "timeSeconds": 1.3866666666666667,
+            "frequencyHz": 103.89423810713724,
+            "magnitude": 1.6801354347451634
+          },
+          {
+            "timeSeconds": 1.408,
+            "frequencyHz": 103.89038843593832,
+            "magnitude": 1.572885063809089
+          },
+          {
+            "timeSeconds": 1.4293333333333333,
+            "frequencyHz": 103.88691574943431,
+            "magnitude": 1.472076954343485
+          },
+          {
+            "timeSeconds": 1.4506666666666668,
+            "frequencyHz": 103.89355087238272,
+            "magnitude": 1.375941567100492
+          }
+        ]
+      }
+    },
+    {
+      "id": "hard-offset-overhead",
+      "report": {
+        "sampleRateHz": 48000,
+        "sampleCount": 72000,
+        "velocity01": 1,
+        "strikeRadius01": 0.45,
+        "pickupRadius01": 0.32,
+        "pickupAngleRad": 0.6,
+        "pickupDistanceM": 0.3,
+        "waveform": {
+          "peak": 0.29323936170478293,
+          "rms": 0.04399758405769261,
+          "energy": 139.3766930097883,
+          "crestFactor": 6.6648969025269125
+        },
+        "decay": {
+          "RT60": 2.1650698556202954,
+          "EDT": 2.21679510307361,
+          "T20": 2.2063877333595805,
+          "T30": 2.1650698556202954,
+          "C50": -4.208543907088943,
+          "C80": -1.936289799785045,
+          "D50": 0.2750692903869926,
+          "D80": 0.39034858322220234,
+          "CenterTime": 0.16073995690496679,
+          "PeakIndex": 984
+        },
+        "spectrum": {
+          "centroidHz": 198.94999912919837,
+          "rolloffHz": 166.9921875,
+          "bandwidthHz": 5.102680747748977,
+          "flatness": 2.3401377520062012e-7
+        },
+        "spectralPeaks": [
+          {
+            "frequencyHz": 104.00289679933545,
+            "magnitude": 348.59440025414733
+          },
+          {
+            "frequencyHz": 165.7374106372425,
+            "magnitude": 190.655500400201
+          },
+          {
+            "frequencyHz": 364.867487130429,
+            "magnitude": 63.887539778290716
+          },
+          {
+            "frequencyHz": 303.8402356852114,
+            "magnitude": 52.34896585251314
+          },
+          {
+            "frequencyHz": 375.1021674052636,
+            "magnitude": 31.14016762558872
+          },
+          {
+            "frequencyHz": 222.2400581979423,
+            "magnitude": 26.264241028164808
+          },
+          {
+            "frequencyHz": 579.7341122603955,
+            "magnitude": 18.12005047668796
+          },
+          {
+            "frequencyHz": 423.47158396615396,
+            "magnitude": 9.986262210214804
+          }
+        ],
+        "pitchTrack": [
+          {
+            "timeSeconds": 0.042666666666666665,
+            "frequencyHz": 103.87542852782757,
+            "magnitude": 148.2227670078434
+          },
+          {
+            "timeSeconds": 0.064,
+            "frequencyHz": 103.89044883999746,
+            "magnitude": 139.0762056083594
+          },
+          {
+            "timeSeconds": 0.08533333333333333,
+            "frequencyHz": 103.88669044812139,
+            "magnitude": 130.15142728118747
+          },
+          {
+            "timeSeconds": 0.10666666666666667,
+            "frequencyHz": 103.8937701654794,
+            "magnitude": 121.6495558925107
+          },
+          {
+            "timeSeconds": 0.128,
+            "frequencyHz": 103.89167697935274,
+            "magnitude": 113.86989605086607
+          },
+          {
+            "timeSeconds": 0.14933333333333335,
+            "frequencyHz": 103.88615124446639,
+            "magnitude": 106.59196768758291
+          },
+          {
+            "timeSeconds": 0.17066666666666666,
+            "frequencyHz": 103.89301728107422,
+            "magnitude": 99.63141022919021
+          },
+          {
+            "timeSeconds": 0.192,
+            "frequencyHz": 103.8925576909214,
+            "magnitude": 93.22998454380891
+          },
+          {
+            "timeSeconds": 0.21333333333333335,
+            "frequencyHz": 103.88641767412803,
+            "magnitude": 87.29675333546665
+          },
+          {
+            "timeSeconds": 0.23466666666666666,
+            "frequencyHz": 103.89169392274839,
+            "magnitude": 81.59766758716479
+          },
+          {
+            "timeSeconds": 0.256,
+            "frequencyHz": 103.89365876123817,
+            "magnitude": 76.33642412462183
+          },
+          {
+            "timeSeconds": 0.2773333333333333,
+            "frequencyHz": 103.88662838320589,
+            "magnitude": 71.48509687211052
+          },
+          {
+            "timeSeconds": 0.2986666666666667,
+            "frequencyHz": 103.89047948628705,
+            "magnitude": 66.83282553676854
+          },
+          {
+            "timeSeconds": 0.32,
+            "frequencyHz": 103.89450603890657,
+            "magnitude": 62.50590245722267
+          },
+          {
+            "timeSeconds": 0.3413333333333333,
+            "frequencyHz": 103.8870424302872,
+            "magnitude": 58.53462112210616
+          },
+          {
+            "timeSeconds": 0.3626666666666667,
+            "frequencyHz": 103.88943115658594,
+            "magnitude": 54.74102076375693
+          },
+          {
+            "timeSeconds": 0.384,
+            "frequencyHz": 103.89467247585097,
+            "magnitude": 51.181122880310994
+          },
+          {
+            "timeSeconds": 0.4053333333333333,
+            "frequencyHz": 103.8882657889111,
+            "magnitude": 47.93145650755343
+          },
+          {
+            "timeSeconds": 0.4266666666666667,
+            "frequencyHz": 103.88806844168779,
+            "magnitude": 44.83392765828178
+          },
+          {
+            "timeSeconds": 0.448,
+            "frequencyHz": 103.89471850526417,
+            "magnitude": 41.91118918055068
+          },
+          {
+            "timeSeconds": 0.4693333333333333,
+            "frequencyHz": 103.88948686738291,
+            "magnitude": 39.24614100013828
+          },
+          {
+            "timeSeconds": 0.49066666666666664,
+            "frequencyHz": 103.88702389397345,
+            "magnitude": 36.72017863301171
+          },
+          {
+            "timeSeconds": 0.512,
+            "frequencyHz": 103.89449952665352,
+            "magnitude": 34.32303091776122
+          },
+          {
+            "timeSeconds": 0.5333333333333333,
+            "frequencyHz": 103.8904791221771,
+            "magnitude": 32.13212798805146
+          },
+          {
+            "timeSeconds": 0.5546666666666666,
+            "frequencyHz": 103.88662245908415,
+            "magnitude": 30.07583073032749
+          },
+          {
+            "timeSeconds": 0.576,
+            "frequencyHz": 103.89362509598796,
+            "magnitude": 28.108302640923664
+          },
+          {
+            "timeSeconds": 0.5973333333333334,
+            "frequencyHz": 103.89186971936833,
+            "magnitude": 26.30936482072908
+          },
+          {
+            "timeSeconds": 0.6186666666666667,
+            "frequencyHz": 103.88618585399314,
+            "magnitude": 24.630381973521324
+          },
+          {
+            "timeSeconds": 0.64,
+            "frequencyHz": 103.89261351262097,
+            "magnitude": 23.020973046755362
+          },
+          {
+            "timeSeconds": 0.6613333333333333,
+            "frequencyHz": 103.8932041168217,
+            "magnitude": 21.54159155610643
+          },
+          {
+            "timeSeconds": 0.6826666666666666,
+            "frequencyHz": 103.88599191281114,
+            "magnitude": 20.170120841744108
+          },
+          {
+            "timeSeconds": 0.704,
+            "frequencyHz": 103.89162452301736,
+            "magnitude": 18.85549240649076
+          },
+          {
+            "timeSeconds": 0.7253333333333334,
+            "frequencyHz": 103.8938993259911,
+            "magnitude": 17.637320695438262
+          },
+          {
+            "timeSeconds": 0.7466666666666667,
+            "frequencyHz": 103.88669795508345,
+            "magnitude": 16.51785595697005
+          },
+          {
+            "timeSeconds": 0.768,
+            "frequencyHz": 103.89015433723797,
+            "magnitude": 15.44300248195652
+          },
+          {
+            "timeSeconds": 0.7893333333333333,
+            "frequencyHz": 103.89456732241399,
+            "magnitude": 14.441807864791054
+          },
+          {
+            "timeSeconds": 0.8106666666666666,
+            "frequencyHz": 103.8875069699118,
+            "magnitude": 13.525483705801161
+          },
+          {
+            "timeSeconds": 0.832,
+            "frequencyHz": 103.8887992842614,
+            "magnitude": 12.648659364694673
+          },
+          {
+            "timeSeconds": 0.8533333333333334,
+            "frequencyHz": 103.89504244717914,
+            "magnitude": 11.825926403517338
+          },
+          {
+            "timeSeconds": 0.8746666666666667,
+            "frequencyHz": 103.88824814870264,
+            "magnitude": 11.074429884047763
+          },
+          {
+            "timeSeconds": 0.896,
+            "frequencyHz": 103.88791044808286,
+            "magnitude": 10.36028136160951
+          },
+          {
+            "timeSeconds": 0.9173333333333333,
+            "frequencyHz": 103.89477386581356,
+            "magnitude": 9.68390948376044
+          },
+          {
+            "timeSeconds": 0.9386666666666666,
+            "frequencyHz": 103.88965371121466,
+            "magnitude": 9.06775505175779
+          },
+          {
+            "timeSeconds": 0.96,
+            "frequencyHz": 103.88685595759138,
+            "magnitude": 8.485207156378156
+          },
+          {
+            "timeSeconds": 0.9813333333333333,
+            "frequencyHz": 103.89427278486882,
+            "magnitude": 7.9304106895406274
+          },
+          {
+            "timeSeconds": 1.0026666666666666,
+            "frequencyHz": 103.89114748383439,
+            "magnitude": 7.424557656908147
+          },
+          {
+            "timeSeconds": 1.024,
+            "frequencyHz": 103.88605972776634,
+            "magnitude": 6.949203640097184
+          },
+          {
+            "timeSeconds": 1.0453333333333332,
+            "frequencyHz": 103.89362843484092,
+            "magnitude": 6.495070156088425
+          },
+          {
+            "timeSeconds": 1.0666666666666667,
+            "frequencyHz": 103.89217795816715,
+            "magnitude": 6.078627165403796
+          },
+          {
+            "timeSeconds": 1.088,
+            "frequencyHz": 103.8860869287188,
+            "magnitude": 5.691455632308065
+          },
+          {
+            "timeSeconds": 1.1093333333333333,
+            "frequencyHz": 103.89241693998946,
+            "magnitude": 5.319389169678381
+          },
+          {
+            "timeSeconds": 1.1306666666666667,
+            "frequencyHz": 103.89331839739336,
+            "magnitude": 4.977034530452937
+          },
+          {
+            "timeSeconds": 1.152,
+            "frequencyHz": 103.88626647939296,
+            "magnitude": 4.660785554949739
+          },
+          {
+            "timeSeconds": 1.1733333333333333,
+            "frequencyHz": 103.89106601161082,
+            "magnitude": 4.35676719539319
+          },
+          {
+            "timeSeconds": 1.1946666666666668,
+            "frequencyHz": 103.89443977517935,
+            "magnitude": 4.075272344727642
+          },
+          {
+            "timeSeconds": 1.216,
+            "frequencyHz": 103.8864878565402,
+            "magnitude": 3.816445239660151
+          },
+          {
+            "timeSeconds": 1.2373333333333334,
+            "frequencyHz": 103.88996122181892,
+            "magnitude": 3.5685788433411747
+          },
+          {
+            "timeSeconds": 1.2586666666666666,
+            "frequencyHz": 103.89483683629963,
+            "magnitude": 3.3368032764488764
+          },
+          {
+            "timeSeconds": 1.28,
+            "frequencyHz": 103.88754959910366,
+            "magnitude": 3.1251696308403396
+          },
+          {
+            "timeSeconds": 1.3013333333333332,
+            "frequencyHz": 103.88855308484052,
+            "magnitude": 2.9227856491524364
+          },
+          {
+            "timeSeconds": 1.3226666666666667,
+            "frequencyHz": 103.89496118280668,
+            "magnitude": 2.7323547241083523
+          },
+          {
+            "timeSeconds": 1.344,
+            "frequencyHz": 103.88887270655816,
+            "magnitude": 2.5589202045251107
+          },
+          {
+            "timeSeconds": 1.3653333333333333,
+            "frequencyHz": 103.8872432854049,
+            "magnitude": 2.393879758157283
+          },
+          {
+            "timeSeconds": 1.3866666666666667,
+            "frequencyHz": 103.89495335937286,
+            "magnitude": 2.237585127945905
+          },
+          {
+            "timeSeconds": 1.408,
+            "frequencyHz": 103.88987865279651,
+            "magnitude": 2.0950882854197177
+          },
+          {
+            "timeSeconds": 1.4293333333333333,
+            "frequencyHz": 103.88665075898787,
+            "magnitude": 1.9607364402256613
+          },
+          {
+            "timeSeconds": 1.4506666666666668,
+            "frequencyHz": 103.89424231484416,
+            "magnitude": 1.8324413379117988
+          }
+        ]
+      }
+    },
+    {
+      "id": "soft-edge-far",
+      "report": {
+        "sampleRateHz": 48000,
+        "sampleCount": 72000,
+        "velocity01": 0.35,
+        "strikeRadius01": 0.7,
+        "pickupRadius01": 0.65,
+        "pickupAngleRad": 1.2,
+        "pickupDistanceM": 1,
+        "waveform": {
+          "peak": 0.012391603919390428,
+          "rms": 0.0015712986465152656,
+          "energy": 0.17776651943093083,
+          "crestFactor": 7.886218159018849
+        },
+        "decay": {
+          "RT60": 2.154490639067576,
+          "EDT": 2.2023663014173875,
+          "T20": 2.1917471927569774,
+          "T30": 2.154490639067576,
+          "C50": -4.194467485746222,
+          "C80": -1.8468207701106418,
+          "D50": 0.2757160798087049,
+          "D80": 0.3952620651963989,
+          "CenterTime": 0.1592485933485774,
+          "PeakIndex": 1041
+        },
+        "spectrum": {
+          "centroidHz": 236.1070114618015,
+          "rolloffHz": 240.234375,
+          "bandwidthHz": 5.102487995939754,
+          "flatness": 4.3239414426981375e-8
+        },
+        "spectralPeaks": [
+          {
+            "frequencyHz": 104.00273885696643,
+            "magnitude": 11.806032097591682
+          },
+          {
+            "frequencyHz": 165.73724865402872,
+            "magnitude": 5.231070826274212
+          },
+          {
+            "frequencyHz": 276.3172642999962,
+            "magnitude": 4.443501284495385
+          },
+          {
+            "frequencyHz": 238.9225153167721,
+            "magnitude": 4.203696822137321
+          },
+          {
+            "frequencyHz": 303.8424287912386,
+            "magnitude": 2.096536418044615
+          },
+          {
+            "frequencyHz": 431.1724332318995,
+            "magnitude": 1.7672148870986994
+          },
+          {
+            "frequencyHz": 566.2122682723026,
+            "magnitude": 1.3750437003397593
+          },
+          {
+            "frequencyHz": 579.9429833767194,
+            "magnitude": 1.154589208371447
+          }
+        ],
+        "pitchTrack": [
+          {
+            "timeSeconds": 0.042666666666666665,
+            "frequencyHz": 103.86076555601764,
+            "magnitude": 5.015471975890156
+          },
+          {
+            "timeSeconds": 0.064,
+            "frequencyHz": 103.8915507983247,
+            "magnitude": 4.708848454487184
+          },
+          {
+            "timeSeconds": 0.08533333333333333,
+            "frequencyHz": 103.88725513861165,
+            "magnitude": 4.407332323987957
+          },
+          {
+            "timeSeconds": 0.10666666666666667,
+            "frequencyHz": 103.8922082685721,
+            "magnitude": 4.120363555777312
+          },
+          {
+            "timeSeconds": 0.128,
+            "frequencyHz": 103.89244925227813,
+            "magnitude": 3.855898756748677
+          },
+          {
+            "timeSeconds": 0.14933333333333335,
+            "frequencyHz": 103.88683121221973,
+            "magnitude": 3.6096398249886836
+          },
+          {
+            "timeSeconds": 0.17066666666666666,
+            "frequencyHz": 103.89147669095267,
+            "magnitude": 3.375076895240944
+          },
+          {
+            "timeSeconds": 0.192,
+            "frequencyHz": 103.89315550126506,
+            "magnitude": 3.1573603878755736
+          },
+          {
+            "timeSeconds": 0.21333333333333335,
+            "frequencyHz": 103.88738286085196,
+            "magnitude": 2.955863068033813
+          },
+          {
+            "timeSeconds": 0.23466666666666666,
+            "frequencyHz": 103.89054107980479,
+            "magnitude": 2.7639007749298803
+          },
+          {
+            "timeSeconds": 0.256,
+            "frequencyHz": 103.89362218038052,
+            "magnitude": 2.5849791826869315
+          },
+          {
+            "timeSeconds": 0.2773333333333333,
+            "frequencyHz": 103.88806682223503,
+            "magnitude": 2.420365523570799
+          },
+          {
+            "timeSeconds": 0.2986666666666667,
+            "frequencyHz": 103.88919588504542,
+            "magnitude": 2.263681243570896
+          },
+          {
+            "timeSeconds": 0.32,
+            "frequencyHz": 103.89398932362417,
+            "magnitude": 2.1170382382169324
+          },
+          {
+            "timeSeconds": 0.3413333333333333,
+            "frequencyHz": 103.88857391584439,
+            "magnitude": 1.9820603981131608
+          },
+          {
+            "timeSeconds": 0.3626666666666667,
+            "frequencyHz": 103.8885239169969,
+            "magnitude": 1.8541905537948409
+          },
+          {
+            "timeSeconds": 0.384,
+            "frequencyHz": 103.89404844874741,
+            "magnitude": 1.733574116674005
+          },
+          {
+            "timeSeconds": 0.4053333333333333,
+            "frequencyHz": 103.88962416376235,
+            "magnitude": 1.622792351041258
+          },
+          {
+            "timeSeconds": 0.4266666666666667,
+            "frequencyHz": 103.8878555418413,
+            "magnitude": 1.518406225936226
+          },
+          {
+            "timeSeconds": 0.448,
+            "frequencyHz": 103.8935074807155,
+            "magnitude": 1.41951147325288
+          },
+          {
+            "timeSeconds": 0.4693333333333333,
+            "frequencyHz": 103.89080433815636,
+            "magnitude": 1.3288078001049453
+          },
+          {
+            "timeSeconds": 0.49066666666666664,
+            "frequencyHz": 103.8869368551876,
+            "magnitude": 1.2436026309665902
+          },
+          {
+            "timeSeconds": 0.512,
+            "frequencyHz": 103.89303608369121,
+            "magnitude": 1.1626961247703713
+          },
+          {
+            "timeSeconds": 0.5333333333333333,
+            "frequencyHz": 103.89173667670886,
+            "magnitude": 1.0880819954379977
+          },
+          {
+            "timeSeconds": 0.5546666666666666,
+            "frequencyHz": 103.88694987865924,
+            "magnitude": 1.0185004985319799
+          },
+          {
+            "timeSeconds": 0.576,
+            "frequencyHz": 103.89232122819037,
+            "magnitude": 0.9521470240945024
+          },
+          {
+            "timeSeconds": 0.5973333333333334,
+            "frequencyHz": 103.89257615963832,
+            "magnitude": 0.890807026628051
+          },
+          {
+            "timeSeconds": 0.6186666666666667,
+            "frequencyHz": 103.88717587260825,
+            "magnitude": 0.8340062957280374
+          },
+          {
+            "timeSeconds": 0.64,
+            "frequencyHz": 103.89102683480544,
+            "magnitude": 0.779787837286831
+          },
+          {
+            "timeSeconds": 0.6613333333333333,
+            "frequencyHz": 103.8934414945959,
+            "magnitude": 0.729478087212017
+          },
+          {
+            "timeSeconds": 0.6826666666666666,
+            "frequencyHz": 103.88718860272725,
+            "magnitude": 0.6830039467060018
+          },
+          {
+            "timeSeconds": 0.704,
+            "frequencyHz": 103.8901960446837,
+            "magnitude": 0.6387393605910834
+          },
+          {
+            "timeSeconds": 0.7253333333333334,
+            "frequencyHz": 103.8939933433786,
+            "magnitude": 0.5973382730700494
+          },
+          {
+            "timeSeconds": 0.7466666666666667,
+            "frequencyHz": 103.88797176575108,
+            "magnitude": 0.5592547728446545
+          },
+          {
+            "timeSeconds": 0.768,
+            "frequencyHz": 103.88928687094561,
+            "magnitude": 0.5230898551010694
+          },
+          {
+            "timeSeconds": 0.7893333333333333,
+            "frequencyHz": 103.89402528463803,
+            "magnitude": 0.4890815212205217
+          },
+          {
+            "timeSeconds": 0.8106666666666666,
+            "frequencyHz": 103.88900680107534,
+            "magnitude": 0.45793408443257355
+          },
+          {
+            "timeSeconds": 0.832,
+            "frequencyHz": 103.88797143821543,
+            "magnitude": 0.42842074910474276
+          },
+          {
+            "timeSeconds": 0.8533333333333334,
+            "frequencyHz": 103.89400564323141,
+            "magnitude": 0.4005588659547693
+          },
+          {
+            "timeSeconds": 0.8746666666666667,
+            "frequencyHz": 103.8898566008929,
+            "magnitude": 0.3749853226835433
+          },
+          {
+            "timeSeconds": 0.896,
+            "frequencyHz": 103.88746950935872,
+            "magnitude": 0.35090283746671935
+          },
+          {
+            "timeSeconds": 0.9173333333333333,
+            "frequencyHz": 103.89373635356799,
+            "magnitude": 0.32802172952025255
+          },
+          {
+            "timeSeconds": 0.9386666666666666,
+            "frequencyHz": 103.89089444205185,
+            "magnitude": 0.3070008347128647
+          },
+          {
+            "timeSeconds": 0.96,
+            "frequencyHz": 103.88718571686799,
+            "magnitude": 0.28736135441777894
+          },
+          {
+            "timeSeconds": 0.9813333333333333,
+            "frequencyHz": 103.89278499014044,
+            "magnitude": 0.26861760449682065
+          },
+          {
+            "timeSeconds": 1.0026666666666666,
+            "frequencyHz": 103.89204582716401,
+            "magnitude": 0.2513846692051859
+          },
+          {
+            "timeSeconds": 1.024,
+            "frequencyHz": 103.88662197230764,
+            "magnitude": 0.2353392901898724
+          },
+          {
+            "timeSeconds": 1.0453333333333332,
+            "frequencyHz": 103.89200500097552,
+            "magnitude": 0.22002598226166636
+          },
+          {
+            "timeSeconds": 1.0666666666666667,
+            "frequencyHz": 103.89299848090182,
+            "magnitude": 0.20584233208146352
+          },
+          {
+            "timeSeconds": 1.088,
+            "frequencyHz": 103.88690450690896,
+            "magnitude": 0.19272307912768505
+          },
+          {
+            "timeSeconds": 1.1093333333333333,
+            "frequencyHz": 103.89116321413377,
+            "magnitude": 0.18019193161842353
+          },
+          {
+            "timeSeconds": 1.1306666666666667,
+            "frequencyHz": 103.89354636038557,
+            "magnitude": 0.16852774268262455
+          },
+          {
+            "timeSeconds": 1.152,
+            "frequencyHz": 103.88757951061908,
+            "magnitude": 0.15781092969452626
+          },
+          {
+            "timeSeconds": 1.1733333333333333,
+            "frequencyHz": 103.8897007726336,
+            "magnitude": 0.14757769118564815
+          },
+          {
+            "timeSeconds": 1.1946666666666668,
+            "frequencyHz": 103.89405520113341,
+            "magnitude": 0.13800990467822608
+          },
+          {
+            "timeSeconds": 1.216,
+            "frequencyHz": 103.88803787783557,
+            "magnitude": 0.12922992934004576
+          },
+          {
+            "timeSeconds": 1.2373333333333334,
+            "frequencyHz": 103.8888289774718,
+            "magnitude": 0.12088162790497395
+          },
+          {
+            "timeSeconds": 1.2586666666666666,
+            "frequencyHz": 103.8943338972841,
+            "magnitude": 0.1130140119969995
+          },
+          {
+            "timeSeconds": 1.28,
+            "frequencyHz": 103.88898914121948,
+            "magnitude": 0.1058084726072176
+          },
+          {
+            "timeSeconds": 1.3013333333333332,
+            "frequencyHz": 103.88814163568033,
+            "magnitude": 0.09899788360091269
+          },
+          {
+            "timeSeconds": 1.3226666666666667,
+            "frequencyHz": 103.89393020272868,
+            "magnitude": 0.09253911022379006
+          },
+          {
+            "timeSeconds": 1.344,
+            "frequencyHz": 103.89021974138238,
+            "magnitude": 0.08663700180257465
+          },
+          {
+            "timeSeconds": 1.3653333333333333,
+            "frequencyHz": 103.88705192758304,
+            "magnitude": 0.08108011279467182
+          },
+          {
+            "timeSeconds": 1.3866666666666667,
+            "frequencyHz": 103.89347957922361,
+            "magnitude": 0.07579247567743905
+          },
+          {
+            "timeSeconds": 1.408,
+            "frequencyHz": 103.89126697226752,
+            "magnitude": 0.0709412962595981
+          },
+          {
+            "timeSeconds": 1.4293333333333333,
+            "frequencyHz": 103.8867724531298,
+            "magnitude": 0.066404578726001
+          },
+          {
+            "timeSeconds": 1.4506666666666668,
+            "frequencyHz": 103.89291592688248,
+            "magnitude": 0.062071218377580756
+          }
+        ]
+      }
+    },
+    {
+      "id": "medium-edge-far",
+      "report": {
+        "sampleRateHz": 48000,
+        "sampleCount": 72000,
+        "velocity01": 0.8,
+        "strikeRadius01": 0.7,
+        "pickupRadius01": 0.65,
+        "pickupAngleRad": 1.2,
+        "pickupDistanceM": 1,
+        "waveform": {
+          "peak": 0.02514463908412274,
+          "rms": 0.004429709449385715,
+          "energy": 1.412807458030351,
+          "crestFactor": 5.6763630597960875
+        },
+        "decay": {
+          "RT60": 2.1679904748828043,
+          "EDT": 2.2178019851866595,
+          "T20": 2.2100912591980917,
+          "T30": 2.1679904748828043,
+          "C50": -4.1698752189260775,
+          "C80": -1.9726064146549867,
+          "D50": 0.2768483131589575,
+          "D80": 0.3883604078894887,
+          "CenterTime": 0.16101064106373472,
+          "PeakIndex": 1016
+        },
+        "spectrum": {
+          "centroidHz": 237.3683908862188,
+          "rolloffHz": 166.9921875,
+          "bandwidthHz": 5.102709387023495,
+          "flatness": 3.360489625217522e-8
+        },
+        "spectralPeaks": [
+          {
+            "frequencyHz": 104.00290333377652,
+            "magnitude": 31.961450746746724
+          },
+          {
+            "frequencyHz": 165.73748909682567,
+            "magnitude": 21.94112515503271
+          },
+          {
+            "frequencyHz": 328.83074598016265,
+            "magnitude": 7.096118666159544
+          },
+          {
+            "frequencyHz": 276.3164026087353,
+            "magnitude": 7.029244918228312
+          },
+          {
+            "frequencyHz": 303.840997842921,
+            "magnitude": 6.755148691669409
+          },
+          {
+            "frequencyHz": 222.23938088535888,
+            "magnitude": 4.983279897495982
+          },
+          {
+            "frequencyHz": 238.92524099189515,
+            "magnitude": 4.907481750303928
+          },
+          {
+            "frequencyHz": 481.4711855428624,
+            "magnitude": 3.2613429281745567
+          }
+        ],
+        "pitchTrack": [
+          {
+            "timeSeconds": 0.042666666666666665,
+            "frequencyHz": 103.8763273480602,
+            "magnitude": 13.585538234592942
+          },
+          {
+            "timeSeconds": 0.064,
+            "frequencyHz": 103.89084271319864,
+            "magnitude": 12.751191195306633
+          },
+          {
+            "timeSeconds": 0.08533333333333333,
+            "frequencyHz": 103.8855270967948,
+            "magnitude": 11.935508646712634
+          },
+          {
+            "timeSeconds": 0.10666666666666667,
+            "frequencyHz": 103.89423480940933,
+            "magnitude": 11.152690707424425
+          },
+          {
+            "timeSeconds": 0.128,
+            "frequencyHz": 103.8925090631,
+            "magnitude": 10.440145119051525
+          },
+          {
+            "timeSeconds": 0.14933333333333335,
+            "frequencyHz": 103.88506388696689,
+            "magnitude": 9.774354495032107
+          },
+          {
+            "timeSeconds": 0.17066666666666666,
+            "frequencyHz": 103.89317558447642,
+            "magnitude": 9.134082225677973
+          },
+          {
+            "timeSeconds": 0.192,
+            "frequencyHz": 103.89364384600341,
+            "magnitude": 8.546858841685834
+          },
+          {
+            "timeSeconds": 0.21333333333333335,
+            "frequencyHz": 103.88535719429144,
+            "magnitude": 8.004935792448842
+          },
+          {
+            "timeSeconds": 0.23466666666666666,
+            "frequencyHz": 103.89149086219528,
+            "magnitude": 7.481366747929207
+          },
+          {
+            "timeSeconds": 0.256,
+            "frequencyHz": 103.89471226684049,
+            "magnitude": 6.998301164790752
+          },
+          {
+            "timeSeconds": 0.2773333333333333,
+            "frequencyHz": 103.88596165020765,
+            "magnitude": 6.555353481668396
+          },
+          {
+            "timeSeconds": 0.2986666666666667,
+            "frequencyHz": 103.88992819760794,
+            "magnitude": 6.127919218999409
+          },
+          {
+            "timeSeconds": 0.32,
+            "frequencyHz": 103.89574575983485,
+            "magnitude": 5.730185226377117
+          },
+          {
+            "timeSeconds": 0.3413333333333333,
+            "frequencyHz": 103.88665046628715,
+            "magnitude": 5.36720019455595
+          },
+          {
+            "timeSeconds": 0.3626666666666667,
+            "frequencyHz": 103.88861068335987,
+            "magnitude": 5.019247037210018
+          },
+          {
+            "timeSeconds": 0.384,
+            "frequencyHz": 103.89583591563196,
+            "magnitude": 4.691849108996483
+          },
+          {
+            "timeSeconds": 0.4053333333333333,
+            "frequencyHz": 103.88804999650934,
+            "magnitude": 4.394878540766069
+          },
+          {
+            "timeSeconds": 0.4266666666666667,
+            "frequencyHz": 103.88701585043997,
+            "magnitude": 4.111174779552686
+          },
+          {
+            "timeSeconds": 0.448,
+            "frequencyHz": 103.89563364296443,
+            "magnitude": 3.8423256884795562
+          },
+          {
+            "timeSeconds": 0.4693333333333333,
+            "frequencyHz": 103.88982323267689,
+            "magnitude": 3.598468836858561
+          },
+          {
+            "timeSeconds": 0.49066666666666664,
+            "frequencyHz": 103.88582863093727,
+            "magnitude": 3.3672242772801013
+          },
+          {
+            "timeSeconds": 0.512,
+            "frequencyHz": 103.89525464656195,
+            "magnitude": 3.1465078150957595
+          },
+          {
+            "timeSeconds": 0.5333333333333333,
+            "frequencyHz": 103.89113199405837,
+            "magnitude": 2.9459490981136813
+          },
+          {
+            "timeSeconds": 0.5546666666666666,
+            "frequencyHz": 103.88538217648455,
+            "magnitude": 2.757855282031082
+          },
+          {
+            "timeSeconds": 0.576,
+            "frequencyHz": 103.89400968166395,
+            "magnitude": 2.57698425590541
+          },
+          {
+            "timeSeconds": 0.5973333333333334,
+            "frequencyHz": 103.89267029566038,
+            "magnitude": 2.4120069122409964
+          },
+          {
+            "timeSeconds": 0.6186666666666667,
+            "frequencyHz": 103.8850564355898,
+            "magnitude": 2.25870983762646
+          },
+          {
+            "timeSeconds": 0.64,
+            "frequencyHz": 103.89267376915804,
+            "magnitude": 2.1106791393624444
+          },
+          {
+            "timeSeconds": 0.6613333333333333,
+            "frequencyHz": 103.8943175750737,
+            "magnitude": 1.9748841638264156
+          },
+          {
+            "timeSeconds": 0.6826666666666666,
+            "frequencyHz": 103.88508659783221,
+            "magnitude": 1.849547913158631
+          },
+          {
+            "timeSeconds": 0.704,
+            "frequencyHz": 103.89132810493832,
+            "magnitude": 1.7287722831621792
+          },
+          {
+            "timeSeconds": 0.7253333333333334,
+            "frequencyHz": 103.89519106010829,
+            "magnitude": 1.616861463513435
+          },
+          {
+            "timeSeconds": 0.7466666666666667,
+            "frequencyHz": 103.88589824151155,
+            "magnitude": 1.5145968255056295
+          },
+          {
+            "timeSeconds": 0.768,
+            "frequencyHz": 103.88952176798878,
+            "magnitude": 1.4160292928328824
+          },
+          {
+            "timeSeconds": 0.7893333333333333,
+            "frequencyHz": 103.89574095810134,
+            "magnitude": 1.3239436513391687
+          },
+          {
+            "timeSeconds": 0.8106666666666666,
+            "frequencyHz": 103.88717252199079,
+            "magnitude": 1.2402407836677538
+          },
+          {
+            "timeSeconds": 0.832,
+            "frequencyHz": 103.88787139305184,
+            "magnitude": 1.1598279017187259
+          },
+          {
+            "timeSeconds": 0.8533333333333334,
+            "frequencyHz": 103.89620296009437,
+            "magnitude": 1.084120826931824
+          },
+          {
+            "timeSeconds": 0.8746666666666667,
+            "frequencyHz": 103.88832185275103,
+            "magnitude": 1.0153814393935405
+          },
+          {
+            "timeSeconds": 0.896,
+            "frequencyHz": 103.88675776200132,
+            "magnitude": 0.9500099783457513
+          },
+          {
+            "timeSeconds": 0.9173333333333333,
+            "frequencyHz": 103.89576624738598,
+            "magnitude": 0.8877559001705475
+          },
+          {
+            "timeSeconds": 0.9386666666666666,
+            "frequencyHz": 103.88989336204492,
+            "magnitude": 0.831376928329519
+          },
+          {
+            "timeSeconds": 0.96,
+            "frequencyHz": 103.88563797746322,
+            "magnitude": 0.778116345278408
+          },
+          {
+            "timeSeconds": 0.9813333333333333,
+            "frequencyHz": 103.89491205167808,
+            "magnitude": 0.7270670660528488
+          },
+          {
+            "timeSeconds": 1.0026666666666666,
+            "frequencyHz": 103.89187484557944,
+            "magnitude": 0.6806884673437744
+          },
+          {
+            "timeSeconds": 1.024,
+            "frequencyHz": 103.88480679122273,
+            "magnitude": 0.6372562618080717
+          },
+          {
+            "timeSeconds": 1.0453333333333332,
+            "frequencyHz": 103.89401239676205,
+            "magnitude": 0.5954590236783892
+          },
+          {
+            "timeSeconds": 1.0666666666666667,
+            "frequencyHz": 103.89321271778368,
+            "magnitude": 0.5572655923683135
+          },
+          {
+            "timeSeconds": 1.088,
+            "frequencyHz": 103.8848963161423,
+            "magnitude": 0.5218963985131637
+          },
+          {
+            "timeSeconds": 1.1093333333333333,
+            "frequencyHz": 103.89238446279269,
+            "magnitude": 0.48771854870948167
+          },
+          {
+            "timeSeconds": 1.1306666666666667,
+            "frequencyHz": 103.89443550097266,
+            "magnitude": 0.4562634494974575
+          },
+          {
+            "timeSeconds": 1.152,
+            "frequencyHz": 103.88531940693953,
+            "magnitude": 0.42740339682742207
+          },
+          {
+            "timeSeconds": 1.1733333333333333,
+            "frequencyHz": 103.89067920248561,
+            "magnitude": 0.3994793730916219
+          },
+          {
+            "timeSeconds": 1.1946666666666668,
+            "frequencyHz": 103.89570275196357,
+            "magnitude": 0.37358666407118185
+          },
+          {
+            "timeSeconds": 1.216,
+            "frequencyHz": 103.88590541158807,
+            "magnitude": 0.34995027163715997
+          },
+          {
+            "timeSeconds": 1.2373333333333334,
+            "frequencyHz": 103.88923055691417,
+            "magnitude": 0.3272095747638075
+          },
+          {
+            "timeSeconds": 1.2586666666666666,
+            "frequencyHz": 103.89615822996142,
+            "magnitude": 0.30588718526962655
+          },
+          {
+            "timeSeconds": 1.28,
+            "frequencyHz": 103.88715206164387,
+            "magnitude": 0.28654770614358116
+          },
+          {
+            "timeSeconds": 1.3013333333333332,
+            "frequencyHz": 103.88756081701479,
+            "magnitude": 0.26802314665426685
+          },
+          {
+            "timeSeconds": 1.3226666666666667,
+            "frequencyHz": 103.89608140609893,
+            "magnitude": 0.2504822177302173
+          },
+          {
+            "timeSeconds": 1.344,
+            "frequencyHz": 103.88893675802021,
+            "magnitude": 0.23462749385569495
+          },
+          {
+            "timeSeconds": 1.3653333333333333,
+            "frequencyHz": 103.88605674732821,
+            "magnitude": 0.21952138596026072
+          },
+          {
+            "timeSeconds": 1.3866666666666667,
+            "frequencyHz": 103.89587606153802,
+            "magnitude": 0.20512820115523264
+          },
+          {
+            "timeSeconds": 1.408,
+            "frequencyHz": 103.89042830013311,
+            "magnitude": 0.19207951226175
+          },
+          {
+            "timeSeconds": 1.4293333333333333,
+            "frequencyHz": 103.88531489844408,
+            "magnitude": 0.17980393147119975
+          },
+          {
+            "timeSeconds": 1.4506666666666668,
+            "frequencyHz": 103.89490803712839,
+            "magnitude": 0.16799105523821584
+          }
+        ]
+      }
+    },
+    {
+      "id": "hard-edge-far",
+      "report": {
+        "sampleRateHz": 48000,
+        "sampleCount": 72000,
+        "velocity01": 1,
+        "strikeRadius01": 0.7,
+        "pickupRadius01": 0.65,
+        "pickupAngleRad": 1.2,
+        "pickupDistanceM": 1,
+        "waveform": {
+          "peak": 0.041324849142194135,
+          "rms": 0.006444545639866581,
+          "energy": 2.9903161323112823,
+          "crestFactor": 6.412375899171949
+        },
+        "decay": {
+          "RT60": 2.1580524698792396,
+          "EDT": 2.2009169807523,
+          "T20": 2.193942243063233,
+          "T30": 2.1580524698792396,
+          "C50": -4.25274690905321,
+          "C80": -1.9567689219787074,
+          "D50": 0.2730443642192591,
+          "D80": 0.38922698860049615,
+          "CenterTime": 0.15735282750849025,
+          "PeakIndex": 810
+        },
+        "spectrum": {
+          "centroidHz": 238.97075886895675,
+          "rolloffHz": 237.3046875,
+          "bandwidthHz": 5.102784541378199,
+          "flatness": 2.8431147240019735e-8
+        },
+        "spectralPeaks": [
+          {
+            "frequencyHz": 104.00296245294327,
+            "magnitude": 42.56906433030017
+          },
+          {
+            "frequencyHz": 165.73754909436838,
+            "magnitude": 33.52851065453815
+          },
+          {
+            "frequencyHz": 238.92385283024,
+            "magnitude": 19.926748589676023
+          },
+          {
+            "frequencyHz": 222.23722236595603,
+            "magnitude": 11.716997105404786
+          },
+          {
+            "frequencyHz": 328.83066449718405,
+            "magnitude": 8.840110200658623
+          },
+          {
+            "frequencyHz": 566.2127799353168,
+            "magnitude": 6.258130440121654
+          },
+          {
+            "frequencyHz": 303.84003207676267,
+            "magnitude": 6.152127554796325
+          },
+          {
+            "frequencyHz": 579.9453488571156,
+            "magnitude": 5.060403513525017
+          }
+        ],
+        "pitchTrack": [
+          {
+            "timeSeconds": 0.042666666666666665,
+            "frequencyHz": 103.8814599573997,
+            "magnitude": 18.09847715456393
+          },
+          {
+            "timeSeconds": 0.064,
+            "frequencyHz": 103.89025753942244,
+            "magnitude": 16.98483902439859
+          },
+          {
+            "timeSeconds": 0.08533333333333333,
+            "frequencyHz": 103.88485209037103,
+            "magnitude": 15.898440550346836
+          },
+          {
+            "timeSeconds": 0.10666666666666667,
+            "frequencyHz": 103.89520026944145,
+            "magnitude": 14.8534449904323
+          },
+          {
+            "timeSeconds": 0.128,
+            "frequencyHz": 103.89219934282639,
+            "magnitude": 13.90665595151155
+          },
+          {
+            "timeSeconds": 0.14933333333333335,
+            "frequencyHz": 103.8844333791069,
+            "magnitude": 13.019726800266987
+          },
+          {
+            "timeSeconds": 0.17066666666666666,
+            "frequencyHz": 103.8941464874887,
+            "magnitude": 12.1637530119551
+          },
+          {
+            "timeSeconds": 0.192,
+            "frequencyHz": 103.89366463465166,
+            "magnitude": 11.383053652462726
+          },
+          {
+            "timeSeconds": 0.21333333333333335,
+            "frequencyHz": 103.88450120707581,
+            "magnitude": 10.662554010865517
+          },
+          {
+            "timeSeconds": 0.23466666666666666,
+            "frequencyHz": 103.89216551174576,
+            "magnitude": 9.963274761812947
+          },
+          {
+            "timeSeconds": 0.256,
+            "frequencyHz": 103.89494113480221,
+            "magnitude": 9.3212429286984
+          },
+          {
+            "timeSeconds": 0.2773333333333333,
+            "frequencyHz": 103.88485906365977,
+            "magnitude": 8.732717647491654
+          },
+          {
+            "timeSeconds": 0.2986666666666667,
+            "frequencyHz": 103.89050875224244,
+            "magnitude": 8.161579557383048
+          },
+          {
+            "timeSeconds": 0.32,
+            "frequencyHz": 103.89633847911094,
+            "magnitude": 7.631726303013831
+          },
+          {
+            "timeSeconds": 0.3413333333333333,
+            "frequencyHz": 103.88573288195445,
+            "magnitude": 7.149350543768356
+          },
+          {
+            "timeSeconds": 0.3626666666666667,
+            "frequencyHz": 103.88895401127616,
+            "magnitude": 6.68449632661231
+          },
+          {
+            "timeSeconds": 0.384,
+            "frequencyHz": 103.89659365192482,
+            "magnitude": 6.248141774042286
+          },
+          {
+            "timeSeconds": 0.4053333333333333,
+            "frequencyHz": 103.88717625278522,
+            "magnitude": 5.85434503354329
+          },
+          {
+            "timeSeconds": 0.4266666666666667,
+            "frequencyHz": 103.88688674277351,
+            "magnitude": 5.475699848584434
+          },
+          {
+            "timeSeconds": 0.448,
+            "frequencyHz": 103.89650380378721,
+            "magnitude": 5.11731390062063
+          },
+          {
+            "timeSeconds": 0.4693333333333333,
+            "frequencyHz": 103.88905005786071,
+            "magnitude": 4.79357166496626
+          },
+          {
+            "timeSeconds": 0.49066666666666664,
+            "frequencyHz": 103.88558722210254,
+            "magnitude": 4.485119531598675
+          },
+          {
+            "timeSeconds": 0.512,
+            "frequencyHz": 103.89632460757858,
+            "magnitude": 4.190169167495553
+          },
+          {
+            "timeSeconds": 0.5333333333333333,
+            "frequencyHz": 103.8906300572761,
+            "magnitude": 3.9238844392997083
+          },
+          {
+            "timeSeconds": 0.5546666666666666,
+            "frequencyHz": 103.88489798049795,
+            "magnitude": 3.673273705464685
+          },
+          {
+            "timeSeconds": 0.576,
+            "frequencyHz": 103.89493354710781,
+            "magnitude": 3.431719274566506
+          },
+          {
+            "timeSeconds": 0.5973333333333334,
+            "frequencyHz": 103.89242631447958,
+            "magnitude": 3.212810537180795
+          },
+          {
+            "timeSeconds": 0.6186666666666667,
+            "frequencyHz": 103.88413977758677,
+            "magnitude": 3.008817185807414
+          },
+          {
+            "timeSeconds": 0.64,
+            "frequencyHz": 103.8935812196313,
+            "magnitude": 2.81098464046481
+          },
+          {
+            "timeSeconds": 0.6613333333333333,
+            "frequencyHz": 103.8943963260664,
+            "magnitude": 2.6304765063026814
+          },
+          {
+            "timeSeconds": 0.6826666666666666,
+            "frequencyHz": 103.88420860697619,
+            "magnitude": 2.4637330448634676
+          },
+          {
+            "timeSeconds": 0.704,
+            "frequencyHz": 103.89210151387573,
+            "magnitude": 2.302175211366001
+          },
+          {
+            "timeSeconds": 0.7253333333333334,
+            "frequencyHz": 103.89553237725364,
+            "magnitude": 2.1533261562212527
+          },
+          {
+            "timeSeconds": 0.7466666666666667,
+            "frequencyHz": 103.88495213258165,
+            "magnitude": 2.0175545995805417
+          },
+          {
+            "timeSeconds": 0.768,
+            "frequencyHz": 103.88991502486851,
+            "magnitude": 1.8858465097330037
+          },
+          {
+            "timeSeconds": 0.7893333333333333,
+            "frequencyHz": 103.89631005786325,
+            "magnitude": 1.7633103446482896
+          },
+          {
+            "timeSeconds": 0.8106666666666666,
+            "frequencyHz": 103.88613740746585,
+            "magnitude": 1.6522255371870331
+          },
+          {
+            "timeSeconds": 0.832,
+            "frequencyHz": 103.88813988452537,
+            "magnitude": 1.5447514865281526
+          },
+          {
+            "timeSeconds": 0.8533333333333334,
+            "frequencyHz": 103.89705873063866,
+            "magnitude": 1.4437991204350795
+          },
+          {
+            "timeSeconds": 0.8746666666666667,
+            "frequencyHz": 103.8874672097181,
+            "magnitude": 1.3525299239640782
+          },
+          {
+            "timeSeconds": 0.896,
+            "frequencyHz": 103.88673337707127,
+            "magnitude": 1.265255032980562
+          },
+          {
+            "timeSeconds": 0.9173333333333333,
+            "frequencyHz": 103.89668966206303,
+            "magnitude": 1.1821928543559743
+          },
+          {
+            "timeSeconds": 0.9386666666666666,
+            "frequencyHz": 103.88920484265137,
+            "magnitude": 1.1074712235039192
+          },
+          {
+            "timeSeconds": 0.96,
+            "frequencyHz": 103.88515980516995,
+            "magnitude": 1.0364218786678545
+          },
+          {
+            "timeSeconds": 0.9813333333333333,
+            "frequencyHz": 103.8958987022801,
+            "magnitude": 0.9682928427067378
+          },
+          {
+            "timeSeconds": 1.0026666666666666,
+            "frequencyHz": 103.89145505944091,
+            "magnitude": 0.9067371894997969
+          },
+          {
+            "timeSeconds": 1.024,
+            "frequencyHz": 103.88420848397058,
+            "magnitude": 0.848840188364638
+          },
+          {
+            "timeSeconds": 1.0453333333333332,
+            "frequencyHz": 103.89503973550855,
+            "magnitude": 0.7929421146930445
+          },
+          {
+            "timeSeconds": 1.0666666666666667,
+            "frequencyHz": 103.89302269063636,
+            "magnitude": 0.7422330670385535
+          },
+          {
+            "timeSeconds": 1.088,
+            "frequencyHz": 103.88413448762073,
+            "magnitude": 0.6951697516516653
+          },
+          {
+            "timeSeconds": 1.1093333333333333,
+            "frequencyHz": 103.89315589080668,
+            "magnitude": 0.6494845819616869
+          },
+          {
+            "timeSeconds": 1.1306666666666667,
+            "frequencyHz": 103.89454792862922,
+            "magnitude": 0.6077264682917592
+          },
+          {
+            "timeSeconds": 1.152,
+            "frequencyHz": 103.88426626978446,
+            "magnitude": 0.5693596966596968
+          },
+          {
+            "timeSeconds": 1.1733333333333333,
+            "frequencyHz": 103.89138183946444,
+            "magnitude": 0.532025404487289
+          },
+          {
+            "timeSeconds": 1.1946666666666668,
+            "frequencyHz": 103.89616961370677,
+            "magnitude": 0.49757720871050354
+          },
+          {
+            "timeSeconds": 1.216,
+            "frequencyHz": 103.88490767105614,
+            "magnitude": 0.46616540780452725
+          },
+          {
+            "timeSeconds": 1.2373333333333334,
+            "frequencyHz": 103.88971316001661,
+            "magnitude": 0.4357503397125167
+          },
+          {
+            "timeSeconds": 1.2586666666666666,
+            "frequencyHz": 103.89680082010699,
+            "magnitude": 0.40736730198555743
+          },
+          {
+            "timeSeconds": 1.28,
+            "frequencyHz": 103.8862197867624,
+            "magnitude": 0.38170919376546014
+          },
+          {
+            "timeSeconds": 1.3013333333333332,
+            "frequencyHz": 103.88757778133746,
+            "magnitude": 0.35696227737262826
+          },
+          {
+            "timeSeconds": 1.3226666666666667,
+            "frequencyHz": 103.89692807540563,
+            "magnitude": 0.33359541352870703
+          },
+          {
+            "timeSeconds": 1.344,
+            "frequencyHz": 103.88808872049249,
+            "magnitude": 0.31256481540516545
+          },
+          {
+            "timeSeconds": 1.3653333333333333,
+            "frequencyHz": 103.88593985865413,
+            "magnitude": 0.2923831737137763
+          },
+          {
+            "timeSeconds": 1.3866666666666667,
+            "frequencyHz": 103.89691708413089,
+            "magnitude": 0.27317544821825535
+          },
+          {
+            "timeSeconds": 1.408,
+            "frequencyHz": 103.88979654886738,
+            "magnitude": 0.25585401466070706
+          },
+          {
+            "timeSeconds": 1.4293333333333333,
+            "frequencyHz": 103.88492175548615,
+            "magnitude": 0.239481888606186
+          },
+          {
+            "timeSeconds": 1.4506666666666668,
+            "frequencyHz": 103.89589125999738,
+            "magnitude": 0.22370641581233894
+          }
+        ]
+      }
+    }
+  ]
+}

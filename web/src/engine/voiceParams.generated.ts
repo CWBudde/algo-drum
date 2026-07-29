@@ -417,8 +417,8 @@ export const PHYSICAL_TOM_PARAMS: readonly VoiceParamSpec[] = [
     kind: "lin",
     min: 0,
     max: 0.94999999999999996,
-    shipped: 0.45000000000000001,
-    default: 0.47368421052631582,
+    shipped: 0.12,
+    default: 0.12631578947368421,
     digits: 2,
   },
   {

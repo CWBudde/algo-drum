@@ -93,8 +93,8 @@ func (d *DoubleHead) ReferenceFrequencyResponse(
 		}
 	}
 
-	response.RawRadiated = response.BatterRawRadiated +
-		response.ResonantRawRadiated
+	// The configured pickup is on the batter side; see DoubleHead.observe.
+	response.RawRadiated = response.BatterRawRadiated
 	response.CavityPressurePa = pressure
 
 	if !finiteComplex(response.RawRadiated) ||
