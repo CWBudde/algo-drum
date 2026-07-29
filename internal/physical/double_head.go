@@ -11,25 +11,29 @@ import (
 // DoubleHeadOutput exposes the two head pickups, their radiated contributions,
 // and the energy stored in the heads and enclosed air.
 type DoubleHeadOutput struct {
-	BatterDisplacementM     float64
-	BatterVelocityMPerS     float64
-	ResonantDisplacementM   float64
-	ResonantVelocityMPerS   float64
-	BatterRawRadiated       float64
-	ResonantRawRadiated     float64
-	RawRadiated             float64
-	Radiated                float64
-	CavityPressurePa        float64
-	SweptVolumeM3           float64
-	HeadMechanicalEnergyJ   float64
-	CavityMechanicalEnergyJ float64
-	TotalMechanicalEnergyJ  float64
+	BatterDisplacementM          float64
+	BatterVelocityMPerS          float64
+	ResonantDisplacementM        float64
+	ResonantVelocityMPerS        float64
+	BatterRawRadiated            float64
+	ResonantRawRadiated          float64
+	RawRadiated                  float64
+	Radiated                     float64
+	CavityPressurePa             float64
+	SweptVolumeM3                float64
+	BatterTensionIncreaseNPerM   float64
+	ResonantTensionIncreaseNPerM float64
+	LinearHeadMechanicalEnergyJ  float64
+	NonlinearPotentialEnergyJ    float64
+	HeadMechanicalEnergyJ        float64
+	CavityMechanicalEnergyJ      float64
+	TotalMechanicalEnergyJ       float64
 }
 
-// DoubleHead is the passive P3 two-head and lumped-cavity model. The coupled
-// update is an implicit-midpoint solve of the complete linear system. This
-// conserves its quadratic energy when all losses are zero and dissipates energy
-// monotonically when head or cavity losses are enabled.
+// DoubleHead is the passive two-head, lumped-cavity, and bounded Berger-tension
+// model. Its implicit-midpoint/discrete-gradient update conserves the complete
+// linear plus nonlinear stored energy when all losses are zero and dissipates
+// energy monotonically when head or cavity losses are enabled.
 //
 // Trigger, Tick, Reset, and Render perform no allocations. Reconfigure
 // validates and builds a complete replacement before installing it as one
@@ -49,6 +53,7 @@ type DoubleHead struct {
 	matrix22         []float64
 	midpointDenom    []float64
 	pressureGain     []float64
+	strainWeight     []float64
 	radiationHP      biquad.Section
 	radiationLP      biquad.Section
 
@@ -60,6 +65,8 @@ type DoubleHead struct {
 	cavityVolumeM3             float64
 	cavityBulkStiffnessPaPerM3 float64
 	cavityPressurePa           float64
+	batterNonlinear            nonlinearHead
+	resonantNonlinear          nonlinearHead
 	energy                     float64
 }
 
@@ -101,6 +108,7 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 		matrix22:         make([]float64, modeCount),
 		midpointDenom:    make([]float64, modeCount),
 		pressureGain:     make([]float64, modeCount),
+		strainWeight:     make([]float64, modeCount),
 		radiationHP: biquad.Section{Coefficients: design.Highpass(
 			min(config.Pickup.HighpassHz, config.SampleRateHz*0.45),
 			1/math.Sqrt2,
@@ -141,7 +149,27 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 		model.midpointDenom[index] = denominator
 		model.pressureGain[index] = mode.SweptAreaM2 /
 			(mode.ModalMassKg * denominator)
+
+		surfaceDensity := config.Batter.SurfaceDensityKgPerM2
+		if index >= len(batterModes) {
+			surfaceDensity = config.Resonant.SurfaceDensityKgPerM2
+		}
+		model.strainWeight[index] = mode.ModalMassKg /
+			surfaceDensity * mode.WavenumberPerM * mode.WavenumberPerM
 	}
+
+	model.batterNonlinear = newNonlinearHead(
+		config.Nonlinearity.Enabled,
+		config.Nonlinearity.BatterTensionCoefficientNPerM3,
+		config.Nonlinearity.MaximumTensionRatio,
+		config.Batter.TensionNPerM,
+	)
+	model.resonantNonlinear = newNonlinearHead(
+		config.Nonlinearity.Enabled && config.Resonant.Enabled,
+		config.Nonlinearity.ResonantTensionCoefficientNPerM3,
+		config.Nonlinearity.MaximumTensionRatio,
+		config.Resonant.TensionNPerM,
+	)
 
 	model.cavityVolumeM3 = math.Pi * config.Batter.RadiusM *
 		config.Batter.RadiusM * config.Cavity.DepthM
@@ -245,6 +273,8 @@ func (d *DoubleHead) Reset() {
 	d.pendingIndex = 0
 	d.pendingSamples = 0
 	d.cavityPressurePa = 0
+	d.batterNonlinear.strainMeasureM2 = 0
+	d.resonantNonlinear.strainMeasureM2 = 0
 	d.energy = 0
 	d.radiationHP.Reset()
 	d.radiationLP.Reset()
@@ -264,7 +294,7 @@ func (d *DoubleHead) IsActive() bool {
 // Tick advances both modal banks and the cavity by one sample.
 func (d *DoubleHead) Tick() DoubleHeadOutput {
 	forceN := d.nextForce()
-	if !d.config.Cavity.Enabled {
+	if !d.config.Cavity.Enabled && !d.config.Nonlinearity.Enabled {
 		return d.tickUncoupled(forceN)
 	}
 
@@ -316,43 +346,137 @@ func (d *DoubleHead) tickUncoupled(forceN float64) DoubleHeadOutput {
 
 func (d *DoubleHead) tickCoupled(forceN float64) DoubleHeadOutput {
 	timeStep := 1 / d.config.SampleRateHz
+	batterTension := d.batterNonlinear.tensionAt(
+		d.batterNonlinear.strainMeasureM2,
+	)
+	resonantTension := d.resonantNonlinear.tensionAt(
+		d.resonantNonlinear.strainMeasureM2,
+	)
+	pressureMidpoint := 0.0
+	batterStrain := d.batterNonlinear.strainMeasureM2
+	resonantStrain := d.resonantNonlinear.strainMeasureM2
+
+	iterationCount := 1
+	if d.config.Nonlinearity.Enabled {
+		iterationCount = nonlinearSolveIterations
+	}
+	for range iterationCount {
+		batterStrain, resonantStrain, pressureMidpoint =
+			d.solveMidpoint(forceN, batterTension, resonantTension)
+		nextBatterTension := d.batterNonlinear.discreteTension(
+			d.batterNonlinear.strainMeasureM2,
+			batterStrain,
+		)
+		nextResonantTension := d.resonantNonlinear.discreteTension(
+			d.resonantNonlinear.strainMeasureM2,
+			resonantStrain,
+		)
+		if tensionConverged(
+			batterTension,
+			nextBatterTension,
+			d.batterNonlinear.maxTensionNPerM,
+		) && tensionConverged(
+			resonantTension,
+			nextResonantTension,
+			d.resonantNonlinear.maxTensionNPerM,
+		) {
+			batterTension = nextBatterTension
+			resonantTension = nextResonantTension
+
+			break
+		}
+		batterTension = nextBatterTension
+		resonantTension = nextResonantTension
+	}
+
+	for index := range d.modes {
+		midpointVelocity := d.midpointVelocity[index]
+		d.displacement[index] += timeStep * midpointVelocity
+		d.velocity[index] = 2*midpointVelocity - d.velocity[index]
+	}
+
+	if d.config.Cavity.Enabled {
+		d.cavityPressurePa = 2*pressureMidpoint - d.cavityPressurePa
+	}
+	d.batterNonlinear.strainMeasureM2 = batterStrain
+	d.resonantNonlinear.strainMeasureM2 = resonantStrain
+
+	return d.observe()
+}
+
+func (d *DoubleHead) solveMidpoint(
+	forceN, batterTensionNPerM, resonantTensionNPerM float64,
+) (float64, float64, float64) {
+	timeStep := 1 / d.config.SampleRateHz
 	inverseTimeStep := d.config.SampleRateHz
 	sweptMidpointVelocity := 0.0
 	pressureFeedback := 0.0
 
 	for index, mode := range d.modes {
+		surfaceDensity := d.config.Batter.SurfaceDensityKgPerM2
+		tensionIncrease := batterTensionNPerM
+		if index >= d.batterModeCount {
+			surfaceDensity = d.config.Resonant.SurfaceDensityKgPerM2
+			tensionIncrease = resonantTensionNPerM
+		}
+		nonlinearAngularFrequencySquared := tensionIncrease /
+			surfaceDensity * mode.WavenumberPerM * mode.WavenumberPerM
+		angularFrequencySquared := mode.AngularFrequency*
+			mode.AngularFrequency + nonlinearAngularFrequencySquared
+		denominator := d.midpointDenom[index] +
+			0.5*nonlinearAngularFrequencySquared*timeStep
 		numerator := 2*d.velocity[index]*inverseTimeStep -
-			mode.AngularFrequency*mode.AngularFrequency*d.displacement[index]
+			angularFrequencySquared*d.displacement[index]
 		if index < d.batterModeCount {
 			numerator += forceN * mode.StrikeAccelerationPerN
 		}
 
-		uncoupledMidpointVelocity := numerator / d.midpointDenom[index]
+		uncoupledMidpointVelocity := numerator / denominator
 		d.midpointVelocity[index] = uncoupledMidpointVelocity
+		d.pressureGain[index] = mode.SweptAreaM2 /
+			(mode.ModalMassKg * denominator)
 		sweptMidpointVelocity += mode.SweptAreaM2 * uncoupledMidpointVelocity
 		pressureFeedback += mode.SweptAreaM2 * d.pressureGain[index]
 	}
 
-	stiffness := d.cavityBulkStiffnessPaPerM3
-	pressureMidpoint := (2*d.cavityPressurePa*inverseTimeStep +
-		stiffness*sweptMidpointVelocity) /
-		(2*inverseTimeStep + d.config.Cavity.LossPerSecond +
-			stiffness*pressureFeedback)
+	pressureMidpoint := 0.0
+	if d.config.Cavity.Enabled {
+		stiffness := d.cavityBulkStiffnessPaPerM3
+		pressureMidpoint = (2*d.cavityPressurePa*inverseTimeStep +
+			stiffness*sweptMidpointVelocity) /
+			(2*inverseTimeStep + d.config.Cavity.LossPerSecond +
+				stiffness*pressureFeedback)
+	}
 
+	batterStrain := 0.0
+	resonantStrain := 0.0
 	for index := range d.modes {
 		midpointVelocity := d.midpointVelocity[index] -
 			d.pressureGain[index]*pressureMidpoint
-		d.displacement[index] += timeStep * midpointVelocity
-		d.velocity[index] = 2*midpointVelocity - d.velocity[index]
+		d.midpointVelocity[index] = midpointVelocity
+		newDisplacement := d.displacement[index] +
+			timeStep*midpointVelocity
+		strain := d.strainWeight[index] *
+			newDisplacement * newDisplacement
+		if index < d.batterModeCount {
+			batterStrain += strain
+		} else {
+			resonantStrain += strain
+		}
 	}
 
-	d.cavityPressurePa = 2*pressureMidpoint - d.cavityPressurePa
+	return batterStrain, resonantStrain, pressureMidpoint
+}
 
-	return d.observe()
+func tensionConverged(current, next, maximum float64) bool {
+	return math.Abs(next-current) <=
+		nonlinearSolveTolerance*max(1, maximum)
 }
 
 func (d *DoubleHead) observe() DoubleHeadOutput {
 	var output DoubleHeadOutput
+	batterStrain := 0.0
+	resonantStrain := 0.0
 
 	for index, mode := range d.modes {
 		displacement := d.displacement[index]
@@ -365,18 +489,33 @@ func (d *DoubleHead) observe() DoubleHeadOutput {
 			output.BatterDisplacementM += pickupDisplacement
 			output.BatterVelocityMPerS += pickupVelocity
 			output.BatterRawRadiated += rawRadiated
+			batterStrain += d.strainWeight[index] *
+				displacement * displacement
 		} else {
 			output.ResonantDisplacementM += pickupDisplacement
 			output.ResonantVelocityMPerS += pickupVelocity
 			output.ResonantRawRadiated += rawRadiated
+			resonantStrain += d.strainWeight[index] *
+				displacement * displacement
 		}
 
 		output.SweptVolumeM3 += mode.SweptAreaM2 * displacement
-		output.HeadMechanicalEnergyJ += 0.5 * mode.ModalMassKg *
+		output.LinearHeadMechanicalEnergyJ += 0.5 * mode.ModalMassKg *
 			(velocity*velocity +
 				mode.AngularFrequency*mode.AngularFrequency*
 					displacement*displacement)
 	}
+	d.batterNonlinear.strainMeasureM2 = batterStrain
+	d.resonantNonlinear.strainMeasureM2 = resonantStrain
+	output.BatterTensionIncreaseNPerM =
+		d.batterNonlinear.tensionAt(batterStrain)
+	output.ResonantTensionIncreaseNPerM =
+		d.resonantNonlinear.tensionAt(resonantStrain)
+	output.NonlinearPotentialEnergyJ =
+		d.batterNonlinear.potentialEnergy(batterStrain) +
+			d.resonantNonlinear.potentialEnergy(resonantStrain)
+	output.HeadMechanicalEnergyJ = output.LinearHeadMechanicalEnergyJ +
+		output.NonlinearPotentialEnergyJ
 
 	if d.cavityBulkStiffnessPaPerM3 > 0 {
 		output.CavityMechanicalEnergyJ = 0.5 *

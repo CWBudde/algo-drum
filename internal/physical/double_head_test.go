@@ -11,6 +11,7 @@ func TestDoubleHeadZeroCouplingMatchesSingleHead(t *testing.T) {
 
 	config := DefaultPhysicalDrum()
 	config.Cavity.Enabled = false
+	config.Nonlinearity.Enabled = false
 	single, err := NewSingleHead(config)
 	if err != nil {
 		t.Fatal(err)
@@ -342,6 +343,7 @@ func TestDoubleHeadRenderDoesNotAllocate(t *testing.T) {
 
 func losslessDoubleHeadConfig() PhysicalDrum {
 	config := DefaultPhysicalDrum()
+	config.Nonlinearity.Enabled = false
 	config.Batter.Loss0PerSecond = 0
 	config.Batter.Loss2M2PerSecond = 0
 	config.Batter.RadiationLossPerSecond = 0

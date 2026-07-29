@@ -77,6 +77,32 @@ func TestDecodeConfigMigratesVersionOne(t *testing.T) {
 	}
 }
 
+func TestDecodeConfigMigratesLinearDoubleHeadWithoutChangingSound(t *testing.T) {
+	t.Parallel()
+
+	legacy := DefaultPhysicalDrum()
+	legacy.Version = linearDoubleHeadConfigVersion
+	legacy.Nonlinearity = Nonlinearity{}
+	encoded, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decoded, err := DecodeConfig(encoded)
+	if err != nil {
+		t.Fatalf("DecodeConfig(v2) error = %v", err)
+	}
+	if decoded.Version != ConfigVersion {
+		t.Fatalf("migrated version = %d, want %d", decoded.Version, ConfigVersion)
+	}
+	if decoded.Nonlinearity.Enabled ||
+		decoded.Nonlinearity.BatterTensionCoefficientNPerM3 != 0 ||
+		decoded.Nonlinearity.ResonantTensionCoefficientNPerM3 != 0 ||
+		decoded.Nonlinearity.MaximumTensionRatio != 0 {
+		t.Fatalf("v2 migration enabled nonlinearity: %#v", decoded.Nonlinearity)
+	}
+}
+
 func TestConfigRejectsNonFiniteValue(t *testing.T) {
 	t.Parallel()
 
@@ -126,6 +152,30 @@ func TestConfigRejectsInvalidMicrophoneBand(t *testing.T) {
 
 	config := DefaultPhysicalDrum()
 	config.Pickup.LowpassHz = config.Pickup.HighpassHz - 1
+
+	if err := config.Validate(); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("Validate() error = %v, want ErrInvalidConfig", err)
+	}
+}
+
+func TestConfigRejectsUnsafeNonlinearTensionBound(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultPhysicalDrum()
+	config.Nonlinearity.MaximumTensionRatio =
+		maximumSafeTensionRatio(config.Batter) + 1e-6
+
+	if err := config.Validate(); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("Validate() error = %v, want ErrInvalidConfig", err)
+	}
+}
+
+func TestDisabledNonlinearityStillRejectsNonFiniteFields(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultPhysicalDrum()
+	config.Nonlinearity.Enabled = false
+	config.Nonlinearity.BatterTensionCoefficientNPerM3 = math.NaN()
 
 	if err := config.Validate(); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("Validate() error = %v, want ErrInvalidConfig", err)
