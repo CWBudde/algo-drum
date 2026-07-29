@@ -54,13 +54,13 @@ the browser pipeline.
 
 ## Candidate numerical approaches
 
-| Approach | Strengths | Weaknesses | Role here |
-| --- | --- | --- | --- |
-| Modal synthesis | Small real-time state; analytic circular modes; natural strike and pickup position; easy per-mode damping | Circular/linear assumptions; nonlinear and contact coupling need reduced models | **Primary real-time method** |
-| Finite differences (FDTD) | Direct PDE implementation; local nonlinearities and collisions; energy methods give strong stability guarantees | A 3-D air grid dominates cost; numerical dispersion and CFL limits; difficult at audio rate in Go/WASM | Offline reference and later research path |
-| Digital waveguide mesh | Local, real-time wave propagation; established drum work | Curved boundaries and numerical dispersion require correction; 3-D coupling remains costly | Alternative experiment, not first implementation |
-| FEM/BEM | Flexible geometry, shell, bearing edge, and radiation | Heavy mesh/tooling; unsuitable as the browser-time integrator | Offline mode/radiation data generator |
-| Measured modal/transfer-function model | Most direct path to matching one real instrument | Depends on measurements and no longer predicts a new drum from physical parameters alone | Validation and optional calibration layer |
+| Approach                               | Strengths                                                                                                       | Weaknesses                                                                                             | Role here                                        |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
+| Modal synthesis                        | Small real-time state; analytic circular modes; natural strike and pickup position; easy per-mode damping       | Circular/linear assumptions; nonlinear and contact coupling need reduced models                        | **Primary real-time method**                     |
+| Finite differences (FDTD)              | Direct PDE implementation; local nonlinearities and collisions; energy methods give strong stability guarantees | A 3-D air grid dominates cost; numerical dispersion and CFL limits; difficult at audio rate in Go/WASM | Offline reference and later research path        |
+| Digital waveguide mesh                 | Local, real-time wave propagation; established drum work                                                        | Curved boundaries and numerical dispersion require correction; 3-D coupling remains costly             | Alternative experiment, not first implementation |
+| FEM/BEM                                | Flexible geometry, shell, bearing edge, and radiation                                                           | Heavy mesh/tooling; unsuitable as the browser-time integrator                                          | Offline mode/radiation data generator            |
+| Measured modal/transfer-function model | Most direct path to matching one real instrument                                                                | Depends on measurements and no longer predicts a new drum from physical parameters alone               | Validation and optional calibration layer        |
 
 The practical architecture is hybrid: physical modal dynamics in the audio
 loop, with coefficients optionally calibrated from offline FDTD/FEM or
@@ -74,8 +74,10 @@ For transverse displacement \(w(r,\theta,t)\), start with the lossy
 membrane/plate equation
 
 \[
+\begin{aligned}
 \mu w_{tt} + d_0 w_t - d_2\Delta w_t
-+ D\Delta^2w - T\Delta w = f,
+&+ D\Delta^2w - T\Delta w = f,
+\end{aligned}
 \]
 
 where \(\mu\) is surface density, \(T\) tension per unit length, \(D\) bending
@@ -94,9 +96,11 @@ where \(\alpha_{mn}\) is the \(n\)-th positive zero of \(J_m\). The approximate
 linear angular frequency is
 
 \[
+\begin{aligned}
 \omega_{mn}^{2}
-= \frac{T}{\mu}\left(\frac{\alpha_{mn}}{R}\right)^2
-+ \frac{D}{\mu}\left(\frac{\alpha_{mn}}{R}\right)^4.
+&= \frac{T}{\mu}\left(\frac{\alpha_{mn}}{R}\right)^2 \\
+&\quad + \frac{D}{\mu}\left(\frac{\alpha_{mn}}{R}\right)^4.
+\end{aligned}
 \]
 
 Each retained modal coordinate is a damped second-order oscillator:
@@ -253,18 +257,18 @@ One repository issue must be resolved before adding it as a dependency:
 
 Use SI units in the model and expose a smaller musical control surface:
 
-| Internal parameter | Initial UI control |
-| --- | --- |
-| radius, shell depth | diameter, depth |
-| batter/resonant tension | batter tune, resonant tune |
-| surface density, bending stiffness | head type preset |
-| \(d_0,d_2\) / modal decay fit | damping |
-| strike radius/angle | hit-position control |
-| contact time/stiffness | hardness |
-| strike velocity | velocity |
-| cavity loss/coupling | air/coupling |
-| nonlinear coefficient | pitch-glide amount |
-| pickup/radiation weights | microphone position |
+| Internal parameter                 | Initial UI control         |
+| ---------------------------------- | -------------------------- |
+| radius, shell depth                | diameter, depth            |
+| batter/resonant tension            | batter tune, resonant tune |
+| surface density, bending stiffness | head type preset           |
+| \(d_0,d_2\) / modal decay fit      | damping                    |
+| strike radius/angle                | hit-position control       |
+| contact time/stiffness             | hardness                   |
+| strike velocity                    | velocity                   |
+| cavity loss/coupling               | air/coupling               |
+| nonlinear coefficient              | pitch-glide amount         |
+| pickup/radiation weights           | microphone position        |
 
 Ship named, documented presets with physical dimensions and provenance. Avoid
 claiming that a preset represents a specific commercial drum until it has been
@@ -305,8 +309,7 @@ third-party or newly recorded audio without a clear license and provenance.
 
 - F. Avanzini and R. Marogna, ["A Modular Physically Based Approach to the
   Sound Synthesis of Membrane Percussion
-  Instruments"](https://doi.org/10.1109/TASL.2009.2036903), IEEE TASLP 18(4),
-  2010. Modal circular membrane, reduced nonlinear tension, two-head air
+  Instruments"](https://doi.org/10.1109/TASL.2009.2036903), IEEE TASLP 18(4), 2010. Modal circular membrane, reduced nonlinear tension, two-head air
   coupling, and modular string/membrane coupling.
 - R. Marogna and F. Avanzini, ["Physically-Based Synthesis of Nonlinear
   Circular

@@ -7,6 +7,7 @@
 
 import type { AlgoDrumApi, WorkerCommand, WorkerResponse } from "./audioWorker";
 import { PatternMirror } from "./patternMirror";
+import type { TomModel } from "./tomModel";
 
 const SAMPLE_RATE = 48000;
 
@@ -417,6 +418,12 @@ export function setVoiceParam(
   value: number,
 ): void {
   command("setVoiceParam", track, index, value);
+}
+
+// setTomModel explicitly switches only the Tom track between the unchanged
+// procedural voice and the experimental physical modal implementation.
+export function setTomModel(model: TomModel): void {
+  command("setTomModel", model === "physical" ? 1 : 0);
 }
 
 // triggerVoice fires one voice immediately, independent of the sequencer, so

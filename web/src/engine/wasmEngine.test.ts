@@ -52,8 +52,8 @@ class FakeWorker {
 // tests need to emit steps and to observe teardown.
 class FakePort {
   onmessage:
-    | ((event: MessageEvent<{ type: string; step: number }>) => void)
-    | null = null;
+    ((event: MessageEvent<{ type: string; step: number }>) => void) | null =
+    null;
 
   postMessage(): void {}
 }
@@ -308,6 +308,18 @@ describe("command queue", () => {
 
     workers()[1].emit({ type: "patternSync", pattern: pattern(0.7, 1.0) });
     expect(listener).toHaveBeenCalledExactlyOnceWith(pattern(0.7, 1.0));
+  });
+
+  it("maps the named Tom model to the WASM model code", async () => {
+    const engine = await loaded();
+
+    engine.setTomModel("physical");
+    engine.setTomModel("procedural");
+
+    expect(workers()[0].commands()).toEqual([
+      { type: "cmd", name: "setTomModel", args: [1] },
+      { type: "cmd", name: "setTomModel", args: [0] },
+    ]);
   });
 });
 
