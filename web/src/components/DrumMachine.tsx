@@ -8,6 +8,7 @@ import {
   VOICE_NAMES,
   VOICE_PARAMS,
 } from "../engine/voiceParams";
+import { DEFAULT_TOM_MODEL, type TomModel } from "../engine/tomModel";
 import {
   loadInitialState,
   saveLocal,
@@ -102,6 +103,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   const [reverb, setReverbState] = useState(initial?.reverb ?? 0.0);
   const [prob, setProbState] = useState(initial?.prob ?? 1.0);
   const [humanize, setHumanizeState] = useState(initial?.humanize ?? 0.0);
+  const [tomModel, setTomModel] = useState<TomModel>(
+    initial?.tomModel ?? DEFAULT_TOM_MODEL,
+  );
   const [volumes, setVolumes] = useState<number[]>(
     () => initial?.volumes ?? Array<number>(ROWS).fill(0.75),
   );
@@ -152,6 +156,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   useEffect(() => {
     engine.setHumanize(humanize);
   }, [humanize]);
+  useEffect(() => {
+    engine.setTomModel(tomModel);
+  }, [tomModel]);
   useEffect(() => {
     volumes.forEach((v, i) => {
       engine.setVolume(TRACK_INDEX[i], muted[i] ? 0 : v);
@@ -216,6 +223,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       reverb,
       prob,
       humanize,
+      tomModel,
       volumes,
       decays,
       muted,
@@ -229,6 +237,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       reverb,
       prob,
       humanize,
+      tomModel,
       volumes,
       decays,
       muted,
@@ -542,6 +551,8 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           specs={VOICE_PARAMS[editorTrack]}
           values={voiceParamsByEngineTrack[editorTrack]}
           disabled={!wasmLoaded}
+          model={editorTrack === 3 ? tomModel : undefined}
+          onModelChange={editorTrack === 3 ? setTomModel : undefined}
           onChange={(index, value) => setVoiceParam(editorTrack, index, value)}
           onReset={() => resetVoice(editorTrack)}
           onAudition={() => void engine.triggerVoice(editorTrack, 1)}

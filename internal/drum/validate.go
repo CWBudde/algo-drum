@@ -120,6 +120,10 @@ func (e *Engine) checkMix(problems []error) []error {
 		problems = append(problems, fmt.Errorf("volume ramp coefficient out of contract: %v", e.volCoef))
 	}
 
+	if e.tomModel != TomModelProcedural && e.tomModel != TomModelPhysical {
+		problems = append(problems, fmt.Errorf("invalid Tom model: %d", e.tomModel))
+	}
+
 	for track := range e.pattern {
 		for step, velocity := range e.pattern[track] {
 			if !inRange(velocity, 0, 1) {

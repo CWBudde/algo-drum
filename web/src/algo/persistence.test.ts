@@ -10,7 +10,8 @@ import {
 import { VOICE_PARAM_CAPACITY } from "../engine/voiceParams";
 
 const V1_BYTES = 38;
-const TOTAL_BYTES = V1_BYTES + TRACK_COUNT * VOICE_PARAM_CAPACITY;
+const V2_BYTES = V1_BYTES + TRACK_COUNT * VOICE_PARAM_CAPACITY;
+const TOTAL_BYTES = V2_BYTES + 1;
 
 // Scalars are stored as one byte, so only multiples of 1/255 survive a
 // roundtrip exactly. Quantize test inputs so equality is bit-exact.
@@ -49,6 +50,7 @@ function makeState(): PersistedState {
         q((track * VOICE_PARAM_CAPACITY + i) / 40),
       ),
     ),
+    tomModel: "physical",
   };
 }
 
@@ -84,6 +86,14 @@ function encodeV1(state: PersistedState): string {
     bytes[offset++] = packed;
   }
 
+  return toB64Url(bytes);
+}
+
+// v3 is a strict one-byte append to v2, so trimming the selector documents
+// and exercises the exact previous layout.
+function encodeV2(state: PersistedState): string {
+  const bytes = toBytes(encodeState(state)).slice(0, V2_BYTES);
+  bytes[0] = 2;
   return toB64Url(bytes);
 }
 
@@ -165,7 +175,22 @@ describe("persistence encode/decode", () => {
     });
   });
 
-  describe("backward compatibility with v1 blobs", () => {
+  describe("Tom model", () => {
+    it("roundtrips both model selections", () => {
+      for (const tomModel of ["procedural", "physical"] as const) {
+        const state = { ...makeState(), tomModel };
+        expect(decodeState(encodeState(state))?.tomModel).toBe(tomModel);
+      }
+    });
+
+    it("rejects an unknown model code", () => {
+      const bytes = toBytes(encodeState(makeState()));
+      bytes[bytes.length - 1] = 2;
+      expect(decodeState(toB64Url(bytes))).toBeNull();
+    });
+  });
+
+  describe("backward compatibility with v1/v2 blobs", () => {
     it("decodes a v1 blob and leaves voiceParams unset", () => {
       const state = makeState();
       const decoded = decodeState(encodeV1(state));
@@ -178,14 +203,23 @@ describe("persistence encode/decode", () => {
       expect(decoded?.decays).toEqual(state.decays);
       expect(decoded?.muted).toEqual(state.muted);
       expect(decoded?.voiceParams).toBeUndefined();
+      expect(decoded?.tomModel).toBeUndefined();
     });
 
-    it("re-encodes a decoded v1 state as v2 (one-way upgrade)", () => {
+    it("decodes a v2 blob and defaults the Tom model at the call site", () => {
+      const state = makeState();
+      const decoded = decodeState(encodeV2(state));
+
+      expect(decoded?.voiceParams).toEqual(state.voiceParams);
+      expect(decoded?.tomModel).toBeUndefined();
+    });
+
+    it("re-encodes a decoded v1 state as v3 (one-way upgrade)", () => {
       const decoded = decodeState(encodeV1(makeState()));
       const bytes = toBytes(encodeState(decoded!));
 
       expect(bytes).toHaveLength(TOTAL_BYTES);
-      expect(bytes[0]).toBe(2);
+      expect(bytes[0]).toBe(3);
     });
 
     it("rejects a v1-length blob whose version byte claims v2", () => {
@@ -195,14 +229,14 @@ describe("persistence encode/decode", () => {
     });
 
     it("rejects a v2-length blob whose version byte claims v1", () => {
-      const bytes = toBytes(encodeState(makeState()));
+      const bytes = toBytes(encodeV2(makeState()));
       bytes[0] = 1;
       expect(decodeState(toB64Url(bytes))).toBeNull();
     });
 
     it("rejects an unknown future version at the right length", () => {
       const bytes = toBytes(encodeState(makeState()));
-      bytes[0] = 3;
+      bytes[0] = 4;
       expect(decodeState(toB64Url(bytes))).toBeNull();
     });
   });

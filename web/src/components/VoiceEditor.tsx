@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Knob from "./Knob";
 import { formatParam, type VoiceParamSpec } from "../engine/voiceParams";
+import type { TomModel } from "../engine/tomModel";
 import "./VoiceEditor.css";
 
 const AMBER = "#C87828";
@@ -18,6 +19,9 @@ interface Props {
   values: readonly number[];
   /** True while the engine is still loading — disables the audition button. */
   disabled: boolean;
+  /** Present only for the Tom, whose implementation can be selected. */
+  model?: TomModel;
+  onModelChange?: (model: TomModel) => void;
   onChange: (index: number, value: number) => void;
   onReset: () => void;
   onAudition: () => void;
@@ -29,6 +33,8 @@ export default function VoiceEditor({
   specs,
   values,
   disabled,
+  model,
+  onModelChange,
   onChange,
   onReset,
   onAudition,
@@ -38,6 +44,7 @@ export default function VoiceEditor({
   const titleId = useId();
   const [resetNotice, setResetNotice] = useState("");
   const noticeTimer = useRef<number | undefined>(undefined);
+  const showProceduralParams = model !== "physical";
 
   // The component is mounted only while open, so showModal() runs exactly once.
   // It brings the focus trap, the background `inert`, ::backdrop and top-layer
@@ -134,29 +141,70 @@ export default function VoiceEditor({
         </button>
       </div>
 
-      <div className="dm-voice-knobs" data-params={specs.length}>
-        {specs.map((spec, i) => (
-          <div className="dm-voice-param" key={spec.id}>
-            <Knob
-              value={values[i]}
-              onChange={(v) => onChange(i, v)}
-              label={spec.label}
-              ariaLabel={`${name} ${spec.name}`}
-              valueText={(v) => formatParam(spec, v)}
-              defaultValue={spec.default}
-              size={54}
-              color={spec.unit === "s" ? BLUE : AMBER}
+      {model !== undefined && onModelChange && (
+        <fieldset className="dm-voice-model">
+          <legend>Tom synthesis model</legend>
+          <label>
+            <input
+              type="radio"
+              name={`${titleId}-model`}
+              value="procedural"
+              checked={model === "procedural"}
+              onChange={() => onModelChange("procedural")}
             />
-            <span className="dm-voice-value">
-              {formatParam(spec, values[i])}
+            <span>Algorithmic</span>
+          </label>
+          <label>
+            <input
+              type="radio"
+              name={`${titleId}-model`}
+              value="physical"
+              checked={model === "physical"}
+              onChange={() => onModelChange("physical")}
+            />
+            <span>
+              Physical <small>EXPERIMENTAL</small>
             </span>
-          </div>
-        ))}
-      </div>
+          </label>
+        </fieldset>
+      )}
 
-      <p className="dm-voice-hint">
-        The strip’s DEC knob trims these decay times by ±50%.
-      </p>
+      {showProceduralParams ? (
+        <>
+          <div className="dm-voice-knobs" data-params={specs.length}>
+            {specs.map((spec, i) => (
+              <div className="dm-voice-param" key={spec.id}>
+                <Knob
+                  value={values[i]}
+                  onChange={(v) => onChange(i, v)}
+                  label={spec.label}
+                  ariaLabel={`${name} ${spec.name}`}
+                  valueText={(v) => formatParam(spec, v)}
+                  defaultValue={spec.default}
+                  size={54}
+                  color={spec.unit === "s" ? BLUE : AMBER}
+                />
+                <span className="dm-voice-value">
+                  {formatParam(spec, values[i])}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <p className="dm-voice-hint">
+            The strip’s DEC knob trims these decay times by ±50%.
+          </p>
+        </>
+      ) : (
+        <div className="dm-voice-physical-note">
+          <strong>Single circular head</strong>
+          <p>
+            A 48-mode Fourier–Bessel model with position-dependent strike and
+            pickup. The strip’s DEC knob controls modal loss; detailed physical
+            parameters will follow in the dedicated lab.
+          </p>
+        </div>
+      )}
 
       <div className="dm-voice-foot">
         <button
@@ -173,14 +221,16 @@ export default function VoiceEditor({
           AUDITION
         </button>
         <span className="dm-voice-foot-spacer" />
-        <button
-          type="button"
-          className="dm-algo-btn dm-algo-btn-warn"
-          onClick={handleReset}
-          aria-label={`Reset ${name} voice to defaults`}
-        >
-          RESET
-        </button>
+        {showProceduralParams && (
+          <button
+            type="button"
+            className="dm-algo-btn dm-algo-btn-warn"
+            onClick={handleReset}
+            aria-label={`Reset ${name} voice to defaults`}
+          >
+            RESET
+          </button>
+        )}
         <button type="button" className="dm-algo-btn" onClick={onRequestClose}>
           CLOSE
         </button>
