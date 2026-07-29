@@ -712,3 +712,164 @@ banks), G11 (undo), G18 (continuous velocity — already in the engine), F7 (spl
 **Quick wins, any time:** G14 (Tom absent from every preset), G21 + U19 (a default
 pattern so the app makes a sound on first click), U18 (`?` shortcut overlay), CI11 (a
 WASM size budget), H5 (take dependabot's first PRs).
+---
+
+## Physical drum synthesis path
+
+Research completed: **2026-07-29**. See
+[`docs/physical-model-research.md`](docs/physical-model-research.md) for the
+model comparison, equations, repository fit, validation strategy, and primary
+sources.
+
+### Scope and architecture decision
+
+- [ ] Add a **parallel, explicitly selected physical model**. Preserve the
+      existing procedural voices, their parameter meanings, and old share links.
+- [ ] Target a **double-headed tom first**. It covers circular head modes,
+      strike position/contact, frequency-dependent loss, radiation, enclosed-air
+      coupling, and nonlinear tension without making snare collision a
+      prerequisite.
+- [ ] Keep the physical core independent of sequencer/UI state. Use SI units
+      internally and a flat, precomputed, allocation-free modal state.
+- [ ] Prototype in `algo-drum`; extract a generic modal bank to `algo-dsp` only
+      after its API has been proven by this implementation.
+- [ ] Use `algo-pde` for offline frequency-domain/reference calculations, not
+      for audio-rate time evolution. Resolve its GitHub/module-path mismatch
+      before taking a direct dependency.
+
+### P0 — Baseline and contracts
+
+- [ ] Define `PhysicalDrum`, `Head`, `Mode`, `Strike`, `Cavity`, and `Pickup`
+      parameter structs, units, valid ranges, defaults, and versioned
+      serialization.
+- [ ] Define quality tiers by retained frequency/mode count; benchmark both
+      native and `GOOS=js GOARCH=wasm` before fixing the shipped tier.
+- [ ] Add a benchmark harness that reports samples/second, real-time factor,
+      allocations, and active modes at 48 kHz/512-sample chunks.
+- [ ] Establish the integration contract: explicit model selection, deterministic
+      reset/trigger, finite output, zero allocations in `Render`, and no changes
+      to existing procedural output when physical mode is not selected.
+
+Exit: an empty/silent physical backend is selectable in tests and the measured
+WASM budget is recorded.
+
+### P1 — Linear single-head modal prototype
+
+- [ ] Generate circular Fourier-Bessel modes, including both orientations of
+      each \(m>0\) pair; test zeros, ordering, normalization, and analytic modal
+      frequencies.
+- [ ] Implement stable damped two-pole/exact-state modal updates with
+      precomputed coefficients and structure-of-arrays storage.
+- [ ] Project a finite-area, band-limited strike onto the modes. Expose velocity,
+      hardness, strike radius, and strike angle.
+- [ ] Add separate diagnostic outputs for head displacement/velocity and the
+      radiated pickup sum.
+- [ ] Validate center/off-center selection rules, determinism, finite output,
+      bounded lossless energy, monotonic damped energy, and zero steady-state
+      allocations.
+
+Exit: an auditionable single circular head whose pitch, mode mix, and decay move
+predictably with physical parameters and strike position.
+
+### P2 — Loss, radiation, and calibration
+
+- [ ] Replace the provisional uniform decay with a two-parameter
+      frequency-dependent modal decay law; retain room for measured per-mode
+      corrections.
+- [ ] Add mode-dependent radiation weights and a compact radiation/microphone
+      filter using `algo-dsp`.
+- [ ] Add offline analysis tooling for modal peaks, decay times, pitch-glide
+      tracks, spectra, and waveform/spectrum regression metrics using
+      `algo-fft`/`algo-dsp`.
+- [ ] Define an openly licensed or locally measured reference set: multiple
+      velocities, strike radii, and microphone positions, with provenance and
+      recording conditions.
+
+Exit: low modal frequencies and decay times match analytic/reference targets;
+the radiated output is clearly distinguished from a raw point pickup.
+
+### P3 — Resonant head and cavity
+
+- [ ] Add an independently tuned resonant-head modal bank.
+- [ ] Implement a passive lumped cavity spring/damper driven by swept head
+      volume; couple the ideal axisymmetric modes first.
+- [ ] Test the zero-coupling limit, in-phase/out-of-phase modal splitting, and
+      lossless energy exchange/conservation.
+- [ ] Compare the reduced transfer function against an offline
+      frequency-domain reference; add only evidenced cross-coupling terms.
+- [ ] Expose batter tuning, resonant tuning, shell depth, and air/coupling as
+      physical parameters with safe update semantics.
+
+Exit: changing either head or shell depth causes explainable coupled-mode
+changes, and a batter hit audibly excites the resonant head.
+
+### P4 — Nonlinear hit behaviour
+
+- [ ] Implement a Berger-style reduced tension modulation driven by modal
+      displacement/strain energy.
+- [ ] Give the update a discrete energy/passivity argument and conservative
+      parameter bounds; add an oversampled or high-precision reference test.
+- [ ] Verify velocity-dependent attack spectrum and downward modal-frequency
+      glides without runaway energy or aliasing.
+- [ ] Replace the provisional force pulse with a bounded-iteration mallet/contact
+      model only if comparison shows an audible, measurable benefit.
+
+Exit: louder hits produce a controlled, reference-comparable pitch glide and
+attack change while all fuzz/finite/energy tests remain green.
+
+### P5 — Product integration
+
+- [ ] Add a Physical Drum lab/editor with model selection, head dimensions and
+      tuning, damping, hit position/hardness, cavity coupling, nonlinear amount,
+      pickup position, quality tier, audition, and reset.
+- [ ] Decide after profiling whether the first physical tom replaces the Tom
+      track when selected or appears as a separate experimental instrument;
+      never make this an implicit preset change.
+- [ ] Extend the generated parameter metadata rather than hand-maintaining a
+      second Go/TypeScript parameter table.
+- [ ] Version persistence and URL sharing; old states must decode to the
+      unchanged procedural engine.
+- [ ] Extend Worker/WASM command validation, recovery, E2E coverage, and
+      accessibility for the new controls.
+
+Exit: users can A/B the procedural and physical paths in the production browser
+build without audio-pipeline or persistence regressions.
+
+### P6 — Real-instrument departures
+
+- [ ] Add deterministic degenerate-mode splitting/non-uniform tension.
+- [ ] Evaluate a small shell/hardware modal bank and bearing-edge/vent
+      corrections, accepting each only when measurements justify it.
+- [ ] Fit documented presets from measurement while preserving the underlying
+      SI parameters and provenance.
+- [ ] Consider measured modal transfer functions as an optional calibration
+      layer, not a replacement for the physical state.
+
+Exit: a measured tom can be matched within documented tolerances for modal
+frequency, decay, and spectrum across more than one hit.
+
+### P7 — Snare research extension
+
+- [ ] First add a clearly labelled reduced snare-contact model driven by the
+      resonant head.
+- [ ] Separately prototype 1-D snare strings with distributed unilateral
+      membrane contact and an energy-conserving update.
+- [ ] Keep any full 2-D heads + 3-D air FDTD implementation as a quality/reference
+      path until measured WASM performance proves it can meet the real-time
+      contract.
+
+Exit: the reduced musical model and the high-fidelity research model have
+separate names, tests, and performance expectations.
+
+### Physical-path success criteria
+
+1. Existing procedural renders and old persisted/share states are bit-for-bit
+   unchanged when the physical path is not selected.
+2. Physical parameters have units, bounds, documented provenance, and one
+   generated Go/TypeScript description.
+3. Analytic mode tests, energy/passivity tests, reference comparisons, fuzzing,
+   and zero-allocation rendering all gate CI.
+4. The shipped quality tier meets the measured 48 kHz WASM budget with headroom
+   in the production Worker/AudioWorklet pipeline.
+5. Claims distinguish analytic prediction, reduced physical approximation,
+   empirical calibration, and full numerical simulation.
