@@ -21,6 +21,7 @@ const V4_PHYSICAL_TOM_PARAM_CAPACITY = 13;
 const V4_BYTES = V3_BYTES + V4_PHYSICAL_TOM_PARAM_CAPACITY;
 const V6_BYTES = V3_BYTES + PHYSICAL_TOM_PARAM_CAPACITY;
 const EXTRA_TRACK_COUNT = TRACK_COUNT - LEGACY_TRACK_COUNT;
+const LEGACY_VISUAL_TO_CURRENT = [0, 3, 4, 5, 6] as const;
 const TOTAL_BYTES =
   V6_BYTES +
   EXTRA_TRACK_COUNT * 2 +
@@ -88,14 +89,14 @@ function encodeV1(state: PersistedState): string {
   bytes[offset++] = toByte(state.prob);
   bytes[offset++] = toByte(state.humanize);
 
-  for (let i = 0; i < LEGACY_TRACK_COUNT; i++)
-    bytes[offset++] = toByte(state.volumes[EXTRA_TRACK_COUNT + i]);
-  for (let i = 0; i < LEGACY_TRACK_COUNT; i++)
-    bytes[offset++] = toByte(state.decays[EXTRA_TRACK_COUNT + i]);
+  for (const visualIndex of LEGACY_VISUAL_TO_CURRENT)
+    bytes[offset++] = toByte(state.volumes[visualIndex]);
+  for (const visualIndex of LEGACY_VISUAL_TO_CURRENT)
+    bytes[offset++] = toByte(state.decays[visualIndex]);
 
   let muteMask = 0;
   for (let i = 0; i < LEGACY_TRACK_COUNT; i++)
-    if (state.muted[EXTRA_TRACK_COUNT + i]) muteMask |= 1 << i;
+    if (state.muted[LEGACY_VISUAL_TO_CURRENT[i]]) muteMask |= 1 << i;
   bytes[offset++] = muteMask;
 
   for (let i = 0; i < (LEGACY_TRACK_COUNT * 16) / 4; i++) {
@@ -140,6 +141,12 @@ function encodeV5(state: PersistedState): string {
 function encodeV6(state: PersistedState): string {
   const bytes = toBytes(encodeState(state)).slice(0, V6_BYTES);
   bytes[0] = 6;
+  return toB64Url(bytes);
+}
+
+function encodeV7(state: PersistedState): string {
+  const bytes = toBytes(encodeState(state));
+  bytes[0] = 7;
   return toB64Url(bytes);
 }
 
@@ -259,7 +266,7 @@ describe("persistence encode/decode", () => {
     });
   });
 
-  describe("backward compatibility with v1/v2/v3/v4/v5 blobs", () => {
+  describe("backward compatibility with v1–v7 blobs", () => {
     it("decodes a v1 blob and leaves voiceParams unset", () => {
       const state = makeState();
       const decoded = decodeState(encodeV1(state));
@@ -271,9 +278,24 @@ describe("persistence encode/decode", () => {
       );
       expect(decoded?.tempo).toBe(state.tempo);
       expect(decoded?.swing).toBe(state.swing);
-      expect(decoded?.volumes).toEqual([0.75, 0.75, ...state.volumes.slice(2)]);
-      expect(decoded?.decays).toEqual([0.5, 0.5, ...state.decays.slice(2)]);
-      expect(decoded?.muted).toEqual([false, false, ...state.muted.slice(2)]);
+      expect(decoded?.volumes).toEqual([
+        state.volumes[0],
+        0.75,
+        0.75,
+        ...state.volumes.slice(3),
+      ]);
+      expect(decoded?.decays).toEqual([
+        state.decays[0],
+        0.5,
+        0.5,
+        ...state.decays.slice(3),
+      ]);
+      expect(decoded?.muted).toEqual([
+        state.muted[0],
+        false,
+        false,
+        ...state.muted.slice(3),
+      ]);
       expect(decoded?.voiceParams).toBeUndefined();
       expect(decoded?.tomModel).toBeUndefined();
       expect(decoded?.physicalTomParams).toBeUndefined();
@@ -332,21 +354,45 @@ describe("persistence encode/decode", () => {
     it("decodes v6 with the two added tracks at defaults", () => {
       const decoded = decodeState(encodeV6(makeState()));
 
-      expect(decoded?.volumes.slice(0, 2)).toEqual([0.75, 0.75]);
-      expect(decoded?.decays.slice(0, 2)).toEqual([0.5, 0.5]);
-      expect(decoded?.muted.slice(0, 2)).toEqual([false, false]);
+      expect(decoded?.volumes).toEqual([
+        makeState().volumes[0],
+        0.75,
+        0.75,
+        ...makeState().volumes.slice(3),
+      ]);
+      expect(decoded?.decays).toEqual([
+        makeState().decays[0],
+        0.5,
+        0.5,
+        ...makeState().decays.slice(3),
+      ]);
+      expect(decoded?.muted).toEqual([
+        makeState().muted[0],
+        false,
+        false,
+        ...makeState().muted.slice(3),
+      ]);
       expect(decoded?.pattern.slice(80)).toEqual(
         new Array<number>(32).fill(VEL_OFF),
       );
       expect(decoded?.voiceParams).toHaveLength(LEGACY_TRACK_COUNT);
     });
 
-    it("re-encodes a decoded v1 state as v7 (one-way upgrade)", () => {
+    it("keeps v7 mixer values attached to their voices after reordering", () => {
+      const state = makeState();
+      const decoded = decodeState(encodeV7(state));
+
+      expect(decoded?.volumes).toEqual(state.volumes);
+      expect(decoded?.decays).toEqual(state.decays);
+      expect(decoded?.muted).toEqual(state.muted);
+    });
+
+    it("re-encodes a decoded v1 state as v8 (one-way upgrade)", () => {
       const decoded = decodeState(encodeV1(makeState()));
       const bytes = toBytes(encodeState(decoded!));
 
       expect(bytes).toHaveLength(TOTAL_BYTES);
-      expect(bytes[0]).toBe(7);
+      expect(bytes[0]).toBe(8);
     });
 
     it("rejects a v1-length blob whose version byte claims v2", () => {
@@ -363,7 +409,7 @@ describe("persistence encode/decode", () => {
 
     it("rejects an unknown future version at the right length", () => {
       const bytes = toBytes(encodeState(makeState()));
-      bytes[0] = 8;
+      bytes[0] = 9;
       expect(decodeState(toB64Url(bytes))).toBeNull();
     });
   });

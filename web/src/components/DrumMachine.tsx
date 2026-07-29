@@ -19,10 +19,10 @@ import {
 } from "../algo/persistence";
 import "./DrumMachine.css";
 
-// Visual order: Percussion on top, Bass on bottom.
-const TRACKS = ["Perc", "Tom 2", "Cymbal", "Tom", "HiHat", "Snare", "Bass"];
-// Maps visual row index → engine track index (the UI reverses engine order).
-const TRACK_INDEX = [6, 5, 4, 3, 2, 1, 0];
+// Visual order: Cymbal on top, Bass on bottom.
+const TRACKS = ["Cymbal", "Perc", "Tom 2", "Tom", "HiHat", "Snare", "Bass"];
+// Maps visual row index → engine track index.
+const TRACK_INDEX = [4, 6, 5, 3, 2, 1, 0];
 const COLS = 16;
 const ROWS = 7;
 
@@ -118,7 +118,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     Array.from({ length: ROWS }, (_, row) => initial?.muted?.[row] ?? false),
   );
   // Per-track state comes in two flavours; do not mix them up:
-  //   pattern / volumes / decays / muted — indexed by VISUAL ROW (0 = Perc … 6 = Bass)
+  //   pattern / volumes / decays / muted — indexed by VISUAL ROW (0 = Cymbal … 6 = Bass)
   //   voiceParamsByEngineTrack          — indexed by ENGINE TRACK (0 = Bass … 6 = Perc)
   // TRACK_INDEX converts either way (it is a reversal, so it is its own inverse).
   // The voice parameters follow the engine's order because the generated

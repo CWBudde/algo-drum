@@ -52,7 +52,7 @@ jobs:
           git diff --exit-code web/src/engine/voiceParams.generated.ts
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         env:
           # cmd/wasm/main.go is `//go:build js && wasm`, so on the runner's
           # native GOOS it is invisible to the linter ("no go files to
@@ -63,5 +63,5 @@ jobs:
         with:
           # Pinned for reproducibility: an upstream release must not be able to
           # break CI with no repo change. Must stay a v2.x — .golangci.yml is
-          # schema `version: "2"` and golangci-lint-action@v8 requires v2.
+          # schema `version: "2"` and golangci-lint-action@v9 requires v2.
           version: v2.12.2

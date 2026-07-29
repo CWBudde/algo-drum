@@ -20,13 +20,14 @@ import {
 } from "./pattern";
 import type { TomModel } from "../engine/tomModel";
 
-// Bump when the byte layout changes. Every version is a strict append, so old
-// offsets and meanings stay fixed: v2 added voice parameters, v3 the Tom model
-// selector, v4 the original 13-slot physical Tom bank, v5 the two
-// tension-asymmetry controls, v6 the corrected central-hit default, and v7
-// the second Tom and Percussion tracks. Older links still decode with the two
-// new rows initialized to defaults.
-const FORMAT_VERSION = 7;
+// Bump when the byte layout or its UI interpretation changes. Layout changes
+// through v7 are strict appends, so old offsets and meanings stay fixed: v2
+// added voice parameters, v3 the Tom model selector, v4 the original 13-slot
+// physical Tom bank, v5 the two tension-asymmetry controls, v6 the corrected
+// central-hit default, and v7 the second Tom and Percussion tracks. V8 keeps
+// the same bytes but migrates the reordered mixer strips. Older links still
+// decode with values attached to the same voices.
+const FORMAT_VERSION = 8;
 
 // Byte layout: version, 6 scalar knobs, 5 volumes, 5 decays, 1 mute mask,
 // then the 80-cell pattern packed 2 bits per cell (20 bytes)...
@@ -121,10 +122,14 @@ function codeToVel(code: number): number {
   return code === 1 ? VEL_NORMAL : VEL_OFF;
 }
 
-// The mixer strips are displayed in reverse engine order. Legacy blobs stored
-// the old five visual rows; their values now live after the two new top rows.
+// Persisted mixer values are split between the original five visual rows
+// (Cymbal, Tom, HiHat, Snare, Bass) and the two appended engine tracks. These
+// mappings keep that byte layout independent from later UI reordering.
+const LEGACY_VISUAL_TO_CURRENT = [0, 3, 4, 5, 6] as const;
+const ENGINE_TO_VISUAL = [6, 5, 4, 3, 0, 2, 1] as const;
+
 function visualIndexForEngineTrack(track: number): number {
-  return TRACK_COUNT - 1 - track;
+  return ENGINE_TO_VISUAL[track] ?? -1;
 }
 
 function bytesToBase64Url(bytes: Uint8Array): string {
@@ -164,14 +169,15 @@ export function encodeState(state: PersistedState): string {
   bytes[offset++] = toByte(state.prob);
   bytes[offset++] = toByte(state.humanize);
 
-  for (let i = 0; i < LEGACY_TRACK_COUNT; i++)
-    bytes[offset++] = toByte(state.volumes[EXTRA_TRACK_COUNT + i] ?? 0);
-  for (let i = 0; i < LEGACY_TRACK_COUNT; i++)
-    bytes[offset++] = toByte(state.decays[EXTRA_TRACK_COUNT + i] ?? 0);
+  for (const visualIndex of LEGACY_VISUAL_TO_CURRENT)
+    bytes[offset++] = toByte(state.volumes[visualIndex] ?? 0);
+  for (const visualIndex of LEGACY_VISUAL_TO_CURRENT)
+    bytes[offset++] = toByte(state.decays[visualIndex] ?? 0);
 
   let muteMask = 0;
-  for (let i = 0; i < LEGACY_TRACK_COUNT; i++)
-    if (state.muted[EXTRA_TRACK_COUNT + i]) muteMask |= 1 << i;
+  for (let i = 0; i < LEGACY_TRACK_COUNT; i++) {
+    if (state.muted[LEGACY_VISUAL_TO_CURRENT[i]]) muteMask |= 1 << i;
+  }
   bytes[offset++] = muteMask;
 
   // Pack four 2-bit cell codes into each pattern byte.
@@ -255,7 +261,7 @@ export function decodeState(text: string): PersistedState | null {
             ? V4_BYTES
             : version === 5 || version === 6
               ? V6_BYTES
-              : version === FORMAT_VERSION
+              : version === 7 || version === FORMAT_VERSION
                 ? TOTAL_BYTES
                 : -1;
   if (bytes.length !== expected) return null;
@@ -290,6 +296,16 @@ export function decodeState(text: string): PersistedState | null {
     }
   }
 
+  const volumes = new Array<number>(TRACK_COUNT).fill(0.75);
+  const decays = new Array<number>(TRACK_COUNT).fill(0.5);
+  const muted = new Array<boolean>(TRACK_COUNT).fill(false);
+  for (let i = 0; i < LEGACY_TRACK_COUNT; i++) {
+    const visualIndex = LEGACY_VISUAL_TO_CURRENT[i];
+    volumes[visualIndex] = legacyVolumes[i];
+    decays[visualIndex] = legacyDecays[i];
+    muted[visualIndex] = legacyMuted[i];
+  }
+
   const state: PersistedState = {
     pattern,
     steps,
@@ -298,18 +314,9 @@ export function decodeState(text: string): PersistedState | null {
     reverb,
     prob,
     humanize,
-    volumes: [
-      ...new Array<number>(EXTRA_TRACK_COUNT).fill(0.75),
-      ...legacyVolumes,
-    ],
-    decays: [
-      ...new Array<number>(EXTRA_TRACK_COUNT).fill(0.5),
-      ...legacyDecays,
-    ],
-    muted: [
-      ...new Array<boolean>(EXTRA_TRACK_COUNT).fill(false),
-      ...legacyMuted,
-    ],
+    volumes,
+    decays,
+    muted,
   };
 
   if (version === 1) return state;
@@ -358,7 +365,7 @@ export function decodeState(text: string): PersistedState | null {
   }
 
   const stateWithPhysical = { ...stateWithModel, physicalTomParams };
-  if (version < FORMAT_VERSION) return stateWithPhysical;
+  if (version < 7) return stateWithPhysical;
 
   for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
     stateWithPhysical.volumes[visualIndexForEngineTrack(track)] = fromByte(
