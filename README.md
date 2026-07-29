@@ -48,6 +48,26 @@ React UI (TypeScript) ◄──────────────────�
 
 The synthesizer voices are purely procedural — no samples. Each voice uses an exponential amplitude envelope; tonal voices (Bass Drum, Tom) add pitch sweep, and noise voices (Snare, Hi-Hat, Cymbal) pass filtered white noise through biquad filters from the [algo-dsp](https://github.com/cwbudde/algo-dsp) library. The mix passes through a global FDN reverb and brick-wall limiter before reaching the browser. See [`docs/voices.md`](docs/voices.md) for the full per-voice synthesis recipe and parameter reference.
 
+### Experimental physical model
+
+An independent, work-in-progress physical path now contains a linear
+single-head modal prototype. It uses circular Fourier–Bessel modes, an exact
+damped state update, finite circular strike contact, position-dependent
+excitation and pickup, and frequency-dependent modal loss. It is deliberately
+not connected to the browser sequencer yet, so the existing procedural sound
+and saved patterns remain unchanged.
+
+Render the default model to a normalized mono PCM WAV file for auditioning:
+
+```bash
+go run ./cmd/render-physical -o physical-drum.wav
+```
+
+Use `-duration`, `-velocity`, `-strike-radius`, and `-hardness` to compare the
+prototype's response. The research basis and staged implementation plan are in
+[`docs/physical-model-research.md`](docs/physical-model-research.md) and
+[`PLAN.md`](PLAN.md).
+
 ## Browser requirements
 
 algo-drum needs a browser with:

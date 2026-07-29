@@ -729,7 +729,7 @@ sources.
       strike position/contact, frequency-dependent loss, radiation, enclosed-air
       coupling, and nonlinear tension without making snare collision a
       prerequisite.
-- [ ] Keep the physical core independent of sequencer/UI state. Use SI units
+- [x] Keep the physical core independent of sequencer/UI state. Use SI units
       internally and a flat, precomputed, allocation-free modal state.
 - [ ] Prototype in `algo-drum`; extract a generic modal bank to `algo-dsp` only
       after its API has been proven by this implementation.
@@ -739,12 +739,12 @@ sources.
 
 ### P0 — Baseline and contracts
 
-- [ ] Define `PhysicalDrum`, `Head`, `Mode`, `Strike`, `Cavity`, and `Pickup`
+- [x] Define `PhysicalDrum`, `Head`, `Mode`, `Strike`, `Cavity`, and `Pickup`
       parameter structs, units, valid ranges, defaults, and versioned
       serialization.
-- [ ] Define quality tiers by retained frequency/mode count; benchmark both
+- [x] Define quality tiers by retained frequency/mode count; benchmark both
       native and `GOOS=js GOARCH=wasm` before fixing the shipped tier.
-- [ ] Add a benchmark harness that reports samples/second, real-time factor,
+- [x] Add a benchmark harness that reports samples/second, real-time factor,
       allocations, and active modes at 48 kHz/512-sample chunks.
 - [ ] Establish the integration contract: explicit model selection, deterministic
       reset/trigger, finite output, zero allocations in `Render`, and no changes
@@ -753,18 +753,24 @@ sources.
 Exit: an empty/silent physical backend is selectable in tests and the measured
 WASM budget is recorded.
 
+Initial P1 microbenchmark baseline (2026-07-29, 48 modes, 48 kHz/512-sample
+chunks, zero allocations): 3.49–3.96 Msamples/s (72.7–82.6× real time) on
+Linux/amd64 and 1.71 Msamples/s (35.6×) on `js/wasm` under Node. The Standard
+tier remains a prototype default until the production Worker/AudioWorklet path
+is measured.
+
 ### P1 — Linear single-head modal prototype
 
-- [ ] Generate circular Fourier-Bessel modes, including both orientations of
+- [x] Generate circular Fourier-Bessel modes, including both orientations of
       each \(m>0\) pair; test zeros, ordering, normalization, and analytic modal
       frequencies.
-- [ ] Implement stable damped two-pole/exact-state modal updates with
+- [x] Implement stable damped two-pole/exact-state modal updates with
       precomputed coefficients and structure-of-arrays storage.
-- [ ] Project a finite-area, band-limited strike onto the modes. Expose velocity,
+- [x] Project a finite-area, band-limited strike onto the modes. Expose velocity,
       hardness, strike radius, and strike angle.
-- [ ] Add separate diagnostic outputs for head displacement/velocity and the
+- [x] Add separate diagnostic outputs for head displacement/velocity and the
       radiated pickup sum.
-- [ ] Validate center/off-center selection rules, determinism, finite output,
+- [x] Validate center/off-center selection rules, determinism, finite output,
       bounded lossless energy, monotonic damped energy, and zero steady-state
       allocations.
 
