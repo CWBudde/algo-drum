@@ -52,7 +52,7 @@ jobs:
           git diff --exit-code web/src/engine/voiceParams.generated.ts
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         env:
           # cmd/wasm/main.go is `//go:build js && wasm`, so on the runner's
           # native GOOS it is invisible to the linter ("no go files to
