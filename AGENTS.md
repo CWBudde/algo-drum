@@ -166,7 +166,8 @@ Versions below are the pinned ones in `go.mod` / `web/package.json` — check th
 **Runtime**
 
 - **Go 1.25** — toolchain for the engine (`go.mod`)
-- **[algo-dsp](https://github.com/cwbudde/algo-dsp) v0.5.0** — DSP library used for biquad filters in voices (`biquad.Section`, `design.Highpass`, `design.Bandpass`) plus master effects (`reverb.FDNReverb`, `dynamics.Limiter`)
+- **[algo-dsp](https://github.com/cwbudde/algo-dsp) `v0.0.0-20260729115219-8ea972cf5f07`** — compatibility commit for `algo-fft` v0.7.3; used for biquad filters in voices (`biquad.Section`, `design.Highpass`, `design.Bandpass`), master effects (`reverb.FDNReverb`, `dynamics.Limiter`), and physical-analysis metrics
+- **[algo-fft](https://github.com/cwbudde/algo-fft) v0.7.3** — FFT backend used directly by the physical-analysis tooling and transitively by `algo-dsp`
 - **React 19.2.7** (`react` + `react-dom`) — the only runtime npm dependencies; everything else is a devDependency
 
 **Build & tooling**

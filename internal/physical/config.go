@@ -53,8 +53,6 @@ func (q Quality) ModeLimit() int {
 }
 
 // PhysicalDrum is the versioned, serializable physical-model configuration.
-// P2 uses Batter only; Resonant and Cavity already have explicit contracts so
-// the later two-head model does not need to reinterpret persisted fields.
 type PhysicalDrum struct {
 	Version      int     `json:"version"`
 	SampleRateHz float64 `json:"sampleRateHz"`
@@ -106,6 +104,7 @@ type Mode struct {
 	StrikeAccelerationPerN   float64
 	PickupShape              float64
 	RadiationWeight          float64
+	SweptAreaM2              float64
 }
 
 // Strike describes the mallet and its finite contact footprint.
@@ -118,7 +117,7 @@ type Strike struct {
 	Hardness01     float64 `json:"hardness01"`
 }
 
-// Cavity reserves the SI-unit contract for the P3 enclosed-air coupling.
+// Cavity describes the lumped enclosed-air spring and its pressure loss.
 type Cavity struct {
 	Enabled           bool    `json:"enabled"`
 	DepthM            float64 `json:"depthM"`
@@ -140,7 +139,7 @@ type Pickup struct {
 }
 
 // DefaultPhysicalDrum returns a conservative 12-inch double-headed tom
-// configuration. Only its batter head is rendered by the P2 prototype.
+// configuration.
 func DefaultPhysicalDrum() PhysicalDrum {
 	head := Head{
 		Enabled:                  true,
@@ -198,7 +197,7 @@ func DefaultPhysicalDrum() PhysicalDrum {
 	}
 }
 
-// Validate checks every persisted field, including P3 fields not yet rendered.
+// Validate checks every persisted field.
 func (d PhysicalDrum) Validate() error {
 	if d.Version != ConfigVersion {
 		return fmt.Errorf("%w: got %d, want %d", ErrConfigVersion, d.Version, ConfigVersion)

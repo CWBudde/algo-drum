@@ -10,35 +10,41 @@ type TomModel uint8
 const (
 	// TomModelProcedural preserves the original swept-sine Tom.
 	TomModelProcedural TomModel = iota
-	// TomModelPhysical selects the experimental single-head modal model.
+	// TomModelPhysical selects the experimental double-headed modal model.
 	TomModelPhysical
 )
 
 type physicalTom struct {
-	config            physical.PhysicalDrum
-	model             *physical.SingleHead
-	decayAmount       float64
-	baseLoss0         float64
-	baseLoss2         float64
-	baseRadiationLoss float64
+	config                    physical.PhysicalDrum
+	model                     *physical.DoubleHead
+	decayAmount               float64
+	baseBatterLoss0           float64
+	baseBatterLoss2           float64
+	baseBatterRadiationLoss   float64
+	baseResonantLoss0         float64
+	baseResonantLoss2         float64
+	baseResonantRadiationLoss float64
 }
 
 func newPhysicalTom(sampleRate float64) (*physicalTom, error) {
 	config := physical.DefaultPhysicalDrum()
 	config.SampleRateHz = sampleRate
 
-	model, err := physical.NewSingleHead(config)
+	model, err := physical.NewDoubleHead(config)
 	if err != nil {
 		return nil, err
 	}
 
 	return &physicalTom{
-		config:            config,
-		model:             model,
-		decayAmount:       0.5,
-		baseLoss0:         config.Batter.Loss0PerSecond,
-		baseLoss2:         config.Batter.Loss2M2PerSecond,
-		baseRadiationLoss: config.Batter.RadiationLossPerSecond,
+		config:                    config,
+		model:                     model,
+		decayAmount:               0.5,
+		baseBatterLoss0:           config.Batter.Loss0PerSecond,
+		baseBatterLoss2:           config.Batter.Loss2M2PerSecond,
+		baseBatterRadiationLoss:   config.Batter.RadiationLossPerSecond,
+		baseResonantLoss0:         config.Resonant.Loss0PerSecond,
+		baseResonantLoss2:         config.Resonant.Loss2M2PerSecond,
+		baseResonantRadiationLoss: config.Resonant.RadiationLossPerSecond,
 	}, nil
 }
 
@@ -73,19 +79,22 @@ func (v *physicalTom) SetDecay(amount float64) {
 	// Modal loss rates are inverse time constants, hence the reciprocal.
 	lossScale := 1 / (decayScaleMin + decayAmount)
 	config := v.config
-	config.Batter.Loss0PerSecond = v.baseLoss0 * lossScale
-	config.Batter.Loss2M2PerSecond = v.baseLoss2 * lossScale
-	config.Batter.RadiationLossPerSecond = v.baseRadiationLoss * lossScale
+	config.Batter.Loss0PerSecond = v.baseBatterLoss0 * lossScale
+	config.Batter.Loss2M2PerSecond = v.baseBatterLoss2 * lossScale
+	config.Batter.RadiationLossPerSecond =
+		v.baseBatterRadiationLoss * lossScale
+	config.Resonant.Loss0PerSecond = v.baseResonantLoss0 * lossScale
+	config.Resonant.Loss2M2PerSecond = v.baseResonantLoss2 * lossScale
+	config.Resonant.RadiationLossPerSecond =
+		v.baseResonantRadiationLoss * lossScale
 
-	model, err := physical.NewSingleHead(config)
-	if err != nil {
+	if err := v.model.Reconfigure(config); err != nil {
 		logErr("physical tom decay", err)
 
 		return
 	}
 
 	v.config = config
-	v.model = model
 	v.decayAmount = decayAmount
 }
 

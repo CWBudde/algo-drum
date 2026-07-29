@@ -55,7 +55,10 @@ func GenerateModes(config PhysicalDrum) ([]Mode, error) {
 		return nil, err
 	}
 
-	head := config.Batter
+	return generateHeadModes(config, config.Batter)
+}
+
+func generateHeadModes(config PhysicalDrum, head Head) ([]Mode, error) {
 	frequencyLimit := head.FrequencyLimitFraction * config.SampleRateHz
 	candidates := make([]eigenmode, 0, maxModeOrder*maxModeOrder)
 
@@ -110,7 +113,7 @@ func GenerateModes(config PhysicalDrum) ([]Mode, error) {
 		}
 
 		for _, orientation := range orientations[:orientationCount] {
-			mode, err := buildMode(config, candidate, orientation)
+			mode, err := buildMode(config, head, candidate, orientation)
 			if err != nil {
 				return nil, err
 			}
@@ -147,10 +150,10 @@ func naturalAngularFrequency(head Head, wavenumber float64) float64 {
 
 func buildMode(
 	config PhysicalDrum,
+	head Head,
 	candidate eigenmode,
 	orientation Orientation,
 ) (Mode, error) {
-	head := config.Batter
 	azimuthalOrder := candidate.azimuthalOrder
 
 	angularIntegral := math.Pi
@@ -206,6 +209,12 @@ func buildMode(
 		)
 	}
 
+	sweptArea := 0.0
+	if azimuthalOrder == 0 {
+		sweptArea = 2 * math.Pi * head.RadiusM * head.RadiusM *
+			math.J1(candidate.besselZero) / candidate.besselZero
+	}
+
 	return Mode{
 		AzimuthalOrder:           azimuthalOrder,
 		RadialOrder:              candidate.radialOrder,
@@ -222,6 +231,7 @@ func buildMode(
 		StrikeAccelerationPerN:   strikeShape * footprint / modalMass,
 		PickupShape:              pickupShape,
 		RadiationWeight:          pickupShape * radiationAmplitude * distanceGain,
+		SweptAreaM2:              sweptArea,
 	}, nil
 }
 

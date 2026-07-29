@@ -268,6 +268,44 @@ func TestCenterStrikeSelectsAxisymmetricModes(t *testing.T) {
 	}
 }
 
+func TestOnlyAxisymmetricModesSweepCavityVolume(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultPhysicalDrum()
+	modes, err := GenerateModes(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, mode := range modes {
+		if mode.AzimuthalOrder != 0 {
+			if mode.SweptAreaM2 != 0 {
+				t.Errorf(
+					"non-axisymmetric mode (%d,%d,%s) swept area = %v",
+					mode.AzimuthalOrder,
+					mode.RadialOrder,
+					mode.Orientation,
+					mode.SweptAreaM2,
+				)
+			}
+			continue
+		}
+
+		want := 2 * math.Pi * config.Batter.RadiusM *
+			config.Batter.RadiusM * math.J1(mode.BesselZero) /
+			mode.BesselZero
+		if relativeDifference(mode.SweptAreaM2, want) > 1e-14 {
+			t.Errorf(
+				"axisymmetric mode (%d,%d) swept area = %.15g, analytic %.15g",
+				mode.AzimuthalOrder,
+				mode.RadialOrder,
+				mode.SweptAreaM2,
+				want,
+			)
+		}
+	}
+}
+
 func TestCircularFootprintLimitAndAttenuation(t *testing.T) {
 	t.Parallel()
 

@@ -796,18 +796,23 @@ the radiated output is clearly distinguished from a raw point pickup.
 
 ### P3 — Resonant head and cavity
 
-- [ ] Add an independently tuned resonant-head modal bank.
-- [ ] Implement a passive lumped cavity spring/damper driven by swept head
+- [x] Add an independently tuned resonant-head modal bank.
+- [x] Implement a passive lumped cavity spring/damper driven by swept head
       volume; couple the ideal axisymmetric modes first.
-- [ ] Test the zero-coupling limit, in-phase/out-of-phase modal splitting, and
+- [x] Test the zero-coupling limit, in-phase/out-of-phase modal splitting, and
       lossless energy exchange/conservation.
-- [ ] Compare the reduced transfer function against an offline
+- [x] Compare the reduced transfer function against an offline
       frequency-domain reference; add only evidenced cross-coupling terms.
-- [ ] Expose batter tuning, resonant tuning, shell depth, and air/coupling as
+- [x] Expose batter tuning, resonant tuning, shell depth, and air/coupling as
       physical parameters with safe update semantics.
 
 Exit: changing either head or shell depth causes explainable coupled-mode
 changes, and a batter hit audibly excites the resonant head.
+
+Completed 2026-07-29. The passive rank-one pressure coupling, update semantics,
+validation equations, transfer-function reference, and native/WASM benchmark
+results are documented in
+[`docs/physical-cavity.md`](docs/physical-cavity.md).
 
 ### P4 — Nonlinear hit behaviour
 

@@ -120,8 +120,9 @@ gain chain, sample rate, room, license, and raw-file checksums are recorded.
 
 ## Dependency compatibility
 
-P2 uses `algo-dsp` v0.5.1, its latest tag at implementation time. Direct
-analysis uses `algo-fft` v0.6.15, the newest compatible v0.6 tag. `algo-fft`
-v0.7.3 removes `NewPlanT`, which `algo-dsp` v0.5.1 still calls, so selecting
-both latest tags does not compile. Upgrade to v0.7 only after `algo-dsp`
-releases a compatible tag.
+Direct analysis uses `algo-fft` v0.7.3, its latest tag at implementation time.
+The latest `algo-dsp` tag remains v0.5.1 and calls the removed `NewPlanT` API,
+so P2 temporarily pins the published compatibility commit
+`8ea972cf5f07` (`v0.0.0-20260729115219-8ea972cf5f07`). Replace the
+pseudo-version with the next compatible `algo-dsp` release tag when one is
+available.
