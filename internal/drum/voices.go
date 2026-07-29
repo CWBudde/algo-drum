@@ -624,10 +624,12 @@ func (v *Percussion) Tick() float64 {
 	}
 
 	v.phaseA += 2 * math.Pi * v.pitch / v.sr
+
 	v.phaseB += 2 * math.Pi * v.pitch * v.ratio / v.sr
 	if v.phaseA > 2*math.Pi {
 		v.phaseA -= 2 * math.Pi
 	}
+
 	if v.phaseB > 2*math.Pi {
 		v.phaseB -= 2 * math.Pi
 	}
@@ -637,6 +639,7 @@ func (v *Percussion) Tick() float64 {
 	sample := (body*v.env + click) * v.gain
 
 	v.env *= v.envDecay
+
 	v.clickEnv *= decayCoef(v.sr, 0.006)
 	if v.env < envSilence {
 		v.active = false

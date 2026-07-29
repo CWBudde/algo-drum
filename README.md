@@ -8,17 +8,15 @@ No plugins, no backend — just a `.wasm` file and a browser.
 
 ## Features
 
-- 5 voices × up to 16 steps: Bass Drum, Snare, Hi-Hat, Tom, Cymbal, with a
-  runtime-adjustable pattern length (STEPS knob, 1–16)
+- 7 voices × up to 16 steps: Bass Drum, Snare, Hi-Hat, two independently
+  tunable Toms, Cymbal, and metallic Percussion, with a runtime-adjustable
+  pattern length (STEPS knob, 1–16)
 - Per-step velocity: click a cell to cycle off → hit → accent
 - Per-track volume (smoothed, zipper-free) and decay knobs, plus per-track mute
 - Tempo (BPM) and swing, with tap tempo
 - Trigger probability and humanize (timing jitter) knobs for less mechanical
   patterns
-- Euclidean rhythm generator — fill any track with an even E(pulses, steps)
-  pattern at a chosen rotation
-- Pattern mutate (random-walk the current pattern), 6 built-in presets, and a
-  Clear button
+- Pattern mutate (random-walk the current pattern) and 6 built-in presets
 - Global reverb control
 - Shareable patterns: state round-trips through a URL hash and
   `localStorage`, so reloading or sending a link restores the pattern, tempo,
@@ -46,7 +44,13 @@ Go engine (WASM, in a Web Worker)  ──512-sample chunks──►  AudioWorkle
 React UI (TypeScript) ◄─────────────────────────────────── playhead
 ```
 
-The synthesizer voices are purely procedural — no samples. Each voice uses an exponential amplitude envelope; tonal voices (Bass Drum, Tom) add pitch sweep, and noise voices (Snare, Hi-Hat, Cymbal) pass filtered white noise through biquad filters from the [algo-dsp](https://github.com/cwbudde/algo-dsp) library. The mix passes through a global FDN reverb and brick-wall limiter before reaching the browser. See [`docs/voices.md`](docs/voices.md) for the full per-voice synthesis recipe and parameter reference.
+The synthesizer voices are purely procedural — no samples. Each voice uses an
+exponential amplitude envelope; tonal voices (Bass Drum and both Toms) add
+pitch sweep, the Snare, Hi-Hat, and Cymbal use filtered noise, and Percussion
+combines inharmonic oscillators with a short noise transient. The mix passes
+through a global FDN reverb and brick-wall limiter before reaching the browser.
+See [`docs/voices.md`](docs/voices.md) for the full per-voice synthesis recipe
+and parameter reference.
 
 ### Experimental physical model
 

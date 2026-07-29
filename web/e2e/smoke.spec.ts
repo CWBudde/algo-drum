@@ -12,10 +12,18 @@ test("loads, plays, and responds to input", async ({ page }) => {
   const play = page.getByRole("button", { name: "Play", exact: true });
   await expect(play).toBeEnabled({ timeout: 30_000 });
   await expect(page.getByText("Loading engine")).toHaveCount(0);
+  await expect(page.locator(".dm-track-label")).toHaveCount(7);
+  await expect(
+    page.getByRole("button", { name: "Tom 2 voice settings" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Percussion voice settings" }),
+  ).toBeVisible();
 
   // Toggle a grid cell (mouse click also blurs it, freeing Space for the
-  // transport). aria-pressed must flip off → on.
-  const cell = page.getByRole("button", { name: /^Bass step 1:/ });
+  // transport). Use the highest new engine track so the seven-track WASM
+  // bridge is covered; aria-pressed must flip off → on.
+  const cell = page.getByRole("button", { name: /^Perc step 1:/ });
   await expect(cell).toHaveAttribute("aria-pressed", "false");
   await cell.click();
   await expect(cell).toHaveAttribute("aria-pressed", "true");

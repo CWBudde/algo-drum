@@ -145,6 +145,7 @@ func NewEngine(sr float64) *Engine {
 
 	e.voices[4] = NewCymbal(sr)
 	e.voices[5] = NewTom2(sr)
+
 	e.voices[6] = NewPercussion(sr)
 	for i := range e.voices {
 		e.voices[i].SetDecay(e.decays[i])

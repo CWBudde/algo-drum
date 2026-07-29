@@ -1,6 +1,6 @@
 # Voice architecture
 
-This is a reference for the five drum synths in `internal/drum/voices.go` — what
+This is a reference for the seven drum synths in `internal/drum/voices.go` — what
 each one generates, which named constants shape the sound, and how a hit
 travels from `Voice.Tick()` to the speakers via `internal/drum/engine.go`.
 
@@ -76,7 +76,7 @@ A few constants and helpers in `voices.go` are shared across voices:
 | ---------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `envSilence`     | `1e-4` | Envelope level below which a voice deactivates (`IsActive()` → false).                                                                            |
 | `decayScaleMin`  | `0.5`  | `SetDecay(amount)` scales the voice's base decay time by `decayScaleMin + amount`, i.e. **0.5x–1.5x** of the base decay for `amount` in `[0, 1]`. |
-| `pitchSweepRate` | `5.0`  | Exponential rate of the pitch-sweep decay used by Bass Drum and Tom; higher settles onto the target pitch faster.                                 |
+| `pitchSweepRate` | `5.0`  | Exponential rate of the pitch-sweep decay used by Bass Drum and both Toms; higher settles onto the target pitch faster.                           |
 
 Two helper functions do the actual math:
 
@@ -84,7 +84,8 @@ Two helper functions do the actual math:
   one-pole multiplier (`env *= coef` each tick), floored at 5 ms so `SetDecay`
   can never fully freeze a voice.
 - `newVoiceRng(seed)` returns a `math/rand/v2` PCG generator seeded with
-  `rand.NewPCG(seed, seed)`. Each noise-based voice (Snare, Hi-Hat, Cymbal)
+  `rand.NewPCG(seed, seed)`. Each noise-based voice (Snare, Hi-Hat, Cymbal,
+  Percussion)
   keeps **one** `*rand.Rand` for its whole lifetime, created once in the
   constructor and never reseeded on `Trigger` — successive hits draw further
   along the same deterministic stream. See
@@ -312,19 +313,63 @@ before, but it is why the parameter-extremes test uses a longer cap than the
 
 ---
 
+## Tom 2 (track 5)
+
+Tom 2 uses the same pitch-swept sine recipe as track 3, but owns a separate
+parameter bank and ships as the higher drum in the pair.
+
+| idx | ID               | Label | Curve | Range       | Default constant      |
+| --- | ---------------- | ----- | ----- | ----------- | --------------------- |
+| 0   | `tom2.pitchFrom` | ATK   | exp   | 60–600 Hz   | `tom2PitchFromHz` 220 |
+| 1   | `tom2.pitchTo`   | TUNE  | exp   | 30–300 Hz   | `tom2PitchToHz` 110   |
+| 2   | `tom2.sweepTime` | SWP   | exp   | 0.005–0.5 s | `tom2PitchTCS` 0.075  |
+| 3   | `tom2.sweepRate` | SNAP  | exp   | 1–20        | `pitchSweepRate` 5.0  |
+| 4   | `tom2.decay`     | TIME  | exp   | 0.05–2.0 s  | `tom2BaseDecayS` 0.28 |
+| 5   | `tom2.gain`      | LVL   | lin   | 0–2         | `tom2Gain` 0.85       |
+
+Unlike track 3, Tom 2 is always procedural; the experimental physical model
+remains scoped to the original Tom.
+
+---
+
+## Percussion (track 6)
+
+**Recipe:** two sine oscillators at an adjustable inharmonic ratio form the
+metallic body. A deterministic six-millisecond noise transient supplies the
+attack, producing a compact cowbell/woodblock-like sound.
+
+```go
+body := (math.Sin(phaseA) + 0.55*math.Sin(phaseB)) / 1.55
+click := (rng.Float64()*2 - 1) * clickEnv * clickAmount
+sample := (body*env + click) * gain
+```
+
+| idx | ID           | Label | Curve | Range       | Default constant     |
+| --- | ------------ | ----- | ----- | ----------- | -------------------- |
+| 0   | `perc.pitch` | TUNE  | exp   | 120–1600 Hz | `percPitchHz` 420    |
+| 1   | `perc.ratio` | METAL | exp   | 1.05–3.0    | `percRatio` 1.48     |
+| 2   | `perc.decay` | TIME  | exp   | 0.02–1.0 s  | `percBaseDecay` 0.12 |
+| 3   | `perc.click` | CLICK | lin   | 0–1         | `percClick` 0.25     |
+| 4   | `perc.gain`  | LVL   | lin   | 0–2         | `percGain` 0.8       |
+
+The strip DEC knob scales `perc.decay` by the same 0.5×–1.5× range as every
+other track. The fixed `percSeed` keeps renders reproducible.
+
+---
+
 ## Signal flow: the master chain
 
 Once triggered, a voice's `Tick()` output travels through `Engine.Render`
 (`internal/drum/engine.go`) once per sample, in this order:
 
-1. **Per-voice `Tick()`.** Each of the 5 voices produces one sample (0 if
+1. **Per-voice `Tick()`.** Each of the 7 voices produces one sample (0 if
    inactive).
 2. **Volume smoothing.** Each track's live gain (`liveVol[t]`) ramps toward
    its target (`volumes[t]`, set by `SetVolume`) with a one-pole filter:
    `liveVol[t] += (volumes[t] - liveVol[t]) * volCoef`, where `volCoef` is
    derived from `volSmoothTauS` (`0.008 s`, ~8 ms) — fast enough to feel
    instant on a knob, slow enough to avoid zipper noise on live changes.
-3. **Mix + headroom.** The 5 volume-scaled voice outputs are summed, then
+3. **Mix + headroom.** The 7 volume-scaled voice outputs are summed, then
    scaled by `mixHeadroom` (`0.5`) so that simultaneous hits on all tracks
    don't slam the limiter — the limiter is meant to catch rare worst cases,
    not do steady-state gain reduction.
