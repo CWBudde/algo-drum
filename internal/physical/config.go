@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	legacyConfigVersion = 1
+	legacyConfigVersion           = 1
+	linearDoubleHeadConfigVersion = 2
 	// ConfigVersion is the physical-drum JSON schema emitted by EncodeConfig.
-	ConfigVersion = 2
+	ConfigVersion = 3
 
 	minSampleRateHz = 8_000.0
 	maxSampleRateHz = 384_000.0
@@ -54,14 +55,15 @@ func (q Quality) ModeLimit() int {
 
 // PhysicalDrum is the versioned, serializable physical-model configuration.
 type PhysicalDrum struct {
-	Version      int     `json:"version"`
-	SampleRateHz float64 `json:"sampleRateHz"`
-	Quality      Quality `json:"quality"`
-	Batter       Head    `json:"batter"`
-	Resonant     Head    `json:"resonant"`
-	Strike       Strike  `json:"strike"`
-	Cavity       Cavity  `json:"cavity"`
-	Pickup       Pickup  `json:"pickup"`
+	Version      int          `json:"version"`
+	SampleRateHz float64      `json:"sampleRateHz"`
+	Quality      Quality      `json:"quality"`
+	Batter       Head         `json:"batter"`
+	Resonant     Head         `json:"resonant"`
+	Strike       Strike       `json:"strike"`
+	Cavity       Cavity       `json:"cavity"`
+	Nonlinearity Nonlinearity `json:"nonlinearity"`
+	Pickup       Pickup       `json:"pickup"`
 }
 
 // Head describes one circular membrane/plate.
@@ -126,6 +128,18 @@ type Cavity struct {
 	LossPerSecond     float64 `json:"lossPerSecond"`
 }
 
+// Nonlinearity controls the Berger-style tension increase shared by every
+// retained mode of each head. TensionCoefficientNPerM3 is the small-strain
+// slope dT/dS, where S is the integral of the squared head gradient in m².
+// MaximumTensionRatio caps the tension increase relative to each head's static
+// tension so retained modes remain below Nyquist.
+type Nonlinearity struct {
+	Enabled                          bool    `json:"enabled"`
+	BatterTensionCoefficientNPerM3   float64 `json:"batterTensionCoefficientNPerM3"`
+	ResonantTensionCoefficientNPerM3 float64 `json:"resonantTensionCoefficientNPerM3"`
+	MaximumTensionRatio              float64 `json:"maximumTensionRatio"`
+}
+
 // Pickup selects a diagnostic observation point and compact microphone
 // response. Radius01 and AngleRad locate the microphone projection over the
 // head; DistanceM controls geometric attenuation.
@@ -185,6 +199,12 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			AirDensityKgPerM3: 1.204,
 			SoundSpeedMPerS:   343,
 			LossPerSecond:     5,
+		},
+		Nonlinearity: Nonlinearity{
+			Enabled:                          true,
+			BatterTensionCoefficientNPerM3:   3.0e5,
+			ResonantTensionCoefficientNPerM3: 2.0e5,
+			MaximumTensionRatio:              0.2,
 		},
 		Pickup: Pickup{
 			Radius01:   0.32,
@@ -259,6 +279,10 @@ func (d PhysicalDrum) Validate() error {
 		return err
 	}
 
+	if err := validateNonlinearity(d); err != nil {
+		return err
+	}
+
 	if err := finiteRange("pickup.radius01", d.Pickup.Radius01, 0, 1); err != nil {
 		return err
 	}
@@ -295,7 +319,8 @@ func EncodeConfig(config PhysicalDrum) ([]byte, error) {
 	return json.Marshal(config)
 }
 
-// DecodeConfig decodes only the current schema and validates every field.
+// DecodeConfig decodes the current schema, migrates supported older schemas,
+// and validates every field.
 func DecodeConfig(data []byte) (PhysicalDrum, error) {
 	var config PhysicalDrum
 	if err := json.Unmarshal(data, &config); err != nil {
@@ -304,6 +329,9 @@ func DecodeConfig(data []byte) (PhysicalDrum, error) {
 
 	if config.Version == legacyConfigVersion {
 		migrateV1Config(&config)
+	}
+	if config.Version == linearDoubleHeadConfigVersion {
+		migrateV2Config(&config)
 	}
 
 	if err := config.Validate(); err != nil {
@@ -316,7 +344,7 @@ func DecodeConfig(data []byte) (PhysicalDrum, error) {
 func migrateV1Config(config *PhysicalDrum) {
 	defaults := DefaultPhysicalDrum()
 
-	config.Version = ConfigVersion
+	config.Version = linearDoubleHeadConfigVersion
 	config.Batter.RadiationLossPerSecond = defaults.Batter.RadiationLossPerSecond
 	config.Resonant.RadiationLossPerSecond = defaults.Resonant.RadiationLossPerSecond
 	config.Pickup.DistanceM = defaults.Pickup.DistanceM
@@ -326,6 +354,79 @@ func migrateV1Config(config *PhysicalDrum) {
 	// P1's scalar gain preceded distance attenuation and radiation filtering.
 	// Move legacy configs onto the P2 output level.
 	config.Pickup.OutputGain = defaults.Pickup.OutputGain
+}
+
+func migrateV2Config(config *PhysicalDrum) {
+	config.Version = ConfigVersion
+	// Version 2 was the linear double-head model. Preserve its sound exactly;
+	// newly created version-3 configs opt into the nonlinear extension.
+	config.Nonlinearity = Nonlinearity{}
+}
+
+func validateNonlinearity(config PhysicalDrum) error {
+	nonlinearity := config.Nonlinearity
+	if err := finiteRange(
+		"nonlinearity.batterTensionCoefficientNPerM3",
+		nonlinearity.BatterTensionCoefficientNPerM3,
+		0,
+		1e9,
+	); err != nil {
+		return err
+	}
+	if err := finiteRange(
+		"nonlinearity.resonantTensionCoefficientNPerM3",
+		nonlinearity.ResonantTensionCoefficientNPerM3,
+		0,
+		1e9,
+	); err != nil {
+		return err
+	}
+	if err := finiteRange(
+		"nonlinearity.maximumTensionRatio",
+		nonlinearity.MaximumTensionRatio,
+		0,
+		1,
+	); err != nil {
+		return err
+	}
+	if !nonlinearity.Enabled {
+		return nil
+	}
+	if nonlinearity.BatterTensionCoefficientNPerM3 == 0 &&
+		(!config.Resonant.Enabled ||
+			nonlinearity.ResonantTensionCoefficientNPerM3 == 0) {
+		return fmt.Errorf(
+			"%w: enabled nonlinearity has no positive tension coefficient",
+			ErrInvalidConfig,
+		)
+	}
+	if nonlinearity.MaximumTensionRatio == 0 {
+		return fmt.Errorf(
+			"%w: enabled nonlinearity has zero maximum tension ratio",
+			ErrInvalidConfig,
+		)
+	}
+
+	safeRatio := maximumSafeTensionRatio(config.Batter)
+	if config.Resonant.Enabled {
+		safeRatio = min(safeRatio, maximumSafeTensionRatio(config.Resonant))
+	}
+	if nonlinearity.MaximumTensionRatio > safeRatio {
+		return fmt.Errorf(
+			"%w: nonlinearity.maximumTensionRatio %v exceeds anti-alias bound %v",
+			ErrInvalidConfig,
+			nonlinearity.MaximumTensionRatio,
+			safeRatio,
+		)
+	}
+
+	return nil
+}
+
+func maximumSafeTensionRatio(head Head) float64 {
+	frequencyLimit := head.FrequencyLimitFraction
+
+	return 1/(4*frequencyLimit*frequencyLimit) - 1
 }
 
 func validateHead(name string, head Head, required bool) error {
