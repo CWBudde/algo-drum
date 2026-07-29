@@ -25,6 +25,7 @@ type DoubleHeadOutput struct {
 	ResonantTensionIncreaseNPerM float64
 	LinearHeadMechanicalEnergyJ  float64
 	NonlinearPotentialEnergyJ    float64
+	NonlinearSolveIterations     int
 	HeadMechanicalEnergyJ        float64
 	CavityMechanicalEnergyJ      float64
 	TotalMechanicalEnergyJ       float64
@@ -67,6 +68,7 @@ type DoubleHead struct {
 	cavityPressurePa           float64
 	batterNonlinear            nonlinearHead
 	resonantNonlinear          nonlinearHead
+	nonlinearSolveIterations   int
 	energy                     float64
 }
 
@@ -275,6 +277,7 @@ func (d *DoubleHead) Reset() {
 	d.cavityPressurePa = 0
 	d.batterNonlinear.strainMeasureM2 = 0
 	d.resonantNonlinear.strainMeasureM2 = 0
+	d.nonlinearSolveIterations = 0
 	d.energy = 0
 	d.radiationHP.Reset()
 	d.radiationLP.Reset()
@@ -360,7 +363,9 @@ func (d *DoubleHead) tickCoupled(forceN float64) DoubleHeadOutput {
 	if d.config.Nonlinearity.Enabled {
 		iterationCount = nonlinearSolveIterations
 	}
+	iterationsUsed := 0
 	for range iterationCount {
+		iterationsUsed++
 		batterStrain, resonantStrain, pressureMidpoint =
 			d.solveMidpoint(forceN, batterTension, resonantTension)
 		nextBatterTension := d.batterNonlinear.discreteTension(
@@ -388,6 +393,7 @@ func (d *DoubleHead) tickCoupled(forceN float64) DoubleHeadOutput {
 		batterTension = nextBatterTension
 		resonantTension = nextResonantTension
 	}
+	d.nonlinearSolveIterations = iterationsUsed
 
 	for index := range d.modes {
 		midpointVelocity := d.midpointVelocity[index]
@@ -516,6 +522,7 @@ func (d *DoubleHead) observe() DoubleHeadOutput {
 			d.resonantNonlinear.potentialEnergy(resonantStrain)
 	output.HeadMechanicalEnergyJ = output.LinearHeadMechanicalEnergyJ +
 		output.NonlinearPotentialEnergyJ
+	output.NonlinearSolveIterations = d.nonlinearSolveIterations
 
 	if d.cavityBulkStiffnessPaPerM3 > 0 {
 		output.CavityMechanicalEnergyJ = 0.5 *

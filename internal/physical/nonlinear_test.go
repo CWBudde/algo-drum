@@ -219,6 +219,36 @@ func TestNonlinearMaximumStrengthRemainsFiniteAndBounded(t *testing.T) {
 	}
 }
 
+func TestNonlinearMaximumStrengthConservesLosslessEnergy(t *testing.T) {
+	t.Parallel()
+
+	config := isolatedNonlinearConfig()
+	config.Batter.Loss0PerSecond = 0
+	config.Nonlinearity.BatterTensionCoefficientNPerM3 = 1e9
+	model, err := NewDoubleHead(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model.displacement[0] = 0.003
+	model.batterNonlinear.strainMeasureM2 =
+		model.strainWeight[0] * model.displacement[0] * model.displacement[0]
+	referenceEnergy := model.observe().TotalMechanicalEnergyJ
+
+	for sampleIndex := range 10_000 {
+		energy := model.Tick().TotalMechanicalEnergyJ
+		if difference := relativeDifference(
+			energy,
+			referenceEnergy,
+		); difference > 2e-9 {
+			t.Fatalf(
+				"sample %d maximum-strength energy drift = %.3g",
+				sampleIndex,
+				difference,
+			)
+		}
+	}
+}
+
 func TestNonlinearFrequencyBoundKeepsRetainedModesBelowNyquist(t *testing.T) {
 	t.Parallel()
 
@@ -301,8 +331,15 @@ func nonlinearAttackSpectrum(t *testing.T, velocity float64) (float64, float64) 
 	}
 
 	samples := make([]float64, fftSize)
+	iterationTotal := 0
+	maximumIterations := 0
 	for index := range samples {
 		output := model.Tick()
+		iterationTotal += output.NonlinearSolveIterations
+		maximumIterations = max(
+			maximumIterations,
+			output.NonlinearSolveIterations,
+		)
 		window := 0.5 - 0.5*math.Cos(
 			2*math.Pi*float64(index)/float64(fftSize),
 		)
@@ -333,6 +370,12 @@ func nonlinearAttackSpectrum(t *testing.T, velocity float64) (float64, float64) 
 	if totalPower == 0 {
 		t.Fatal("zero attack spectrum")
 	}
+	t.Logf(
+		"velocity %.2f nonlinear solve: mean %.2f, maximum %d iterations",
+		velocity,
+		float64(iterationTotal)/fftSize,
+		maximumIterations,
+	)
 
 	return weightedFrequency / totalPower, topBandPower / totalPower
 }
