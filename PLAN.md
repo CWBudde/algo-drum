@@ -723,7 +723,7 @@ sources.
 
 ### Scope and architecture decision
 
-- [ ] Add a **parallel, explicitly selected physical model**. Preserve the
+- [x] Add a **parallel, explicitly selected physical model**. Preserve the
       existing procedural voices, their parameter meanings, and old share links.
 - [ ] Target a **double-headed tom first**. It covers circular head modes,
       strike position/contact, frequency-dependent loss, radiation, enclosed-air
@@ -746,7 +746,7 @@ sources.
       native and `GOOS=js GOARCH=wasm` before fixing the shipped tier.
 - [x] Add a benchmark harness that reports samples/second, real-time factor,
       allocations, and active modes at 48 kHz/512-sample chunks.
-- [ ] Establish the integration contract: explicit model selection, deterministic
+- [x] Establish the integration contract: explicit model selection, deterministic
       reset/trigger, finite output, zero allocations in `Render`, and no changes
       to existing procedural output when physical mode is not selected.
 
@@ -828,7 +828,7 @@ attack change while all fuzz/finite/energy tests remain green.
 - [ ] Add a Physical Drum lab/editor with model selection, head dimensions and
       tuning, damping, hit position/hardness, cavity coupling, nonlinear amount,
       pickup position, quality tier, audition, and reset.
-- [ ] Decide after profiling whether the first physical tom replaces the Tom
+- [x] Decide after profiling whether the first physical tom replaces the Tom
       track when selected or appears as a separate experimental instrument;
       never make this an implicit preset change.
 - [ ] Extend the generated parameter metadata rather than hand-maintaining a

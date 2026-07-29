@@ -19,6 +19,7 @@ export interface AlgoDrumApi {
   setVolume: (track: number, vol: number) => void;
   setDecay: (track: number, amount: number) => void;
   setVoiceParam: (track: number, index: number, value: number) => void;
+  setTomModel: (model: number) => void;
   triggerVoice: (track: number, velocity: number) => void;
   setReverb: (amount: number) => void;
   setProbability: (p: number) => void;
@@ -46,6 +47,7 @@ const REQUIRED_METHODS = [
   "setVolume",
   "setDecay",
   "setVoiceParam",
+  "setTomModel",
   "triggerVoice",
   "setReverb",
   "setProbability",

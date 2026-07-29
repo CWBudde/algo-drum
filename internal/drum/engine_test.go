@@ -1023,3 +1023,78 @@ func TestTriggerVoiceIgnoresInvalidInput(t *testing.T) {
 		}
 	}
 }
+
+func TestPhysicalTomCanBeSelectedAndAuditioned(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetTomModel(TomModelPhysical)
+
+	if got := engine.TomModel(); got != TomModelPhysical {
+		t.Fatalf("TomModel() = %v, want physical", got)
+	}
+
+	engine.TriggerVoice(tomTrackIndex, 1)
+	buffer := make([]float32, int(testSampleRate/2))
+	engine.Render(buffer)
+
+	peak := 0.0
+	for index, sample := range buffer {
+		value := float64(sample)
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			t.Fatalf("physical Tom sample %d is non-finite: %v", index, value)
+		}
+
+		peak = math.Max(peak, math.Abs(value))
+	}
+
+	if peak < 0.05 {
+		t.Fatalf("physical Tom audition peak = %v, want audible output", peak)
+	}
+}
+
+func TestTomModelSwitchResetsTailsAndPreservesProceduralParams(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetVoiceParam(tomTrackIndex, tomParamPitchTo, 0.8)
+	engine.TriggerVoice(tomTrackIndex, 1)
+
+	engine.SetTomModel(TomModelPhysical)
+	if engine.proceduralTom.IsActive() {
+		t.Fatal("procedural Tom remained active after switching models")
+	}
+
+	engine.SetVoiceParam(tomTrackIndex, tomParamPitchTo, 0.3)
+	engine.TriggerVoice(tomTrackIndex, 1)
+	engine.SetTomModel(TomModelProcedural)
+
+	if engine.physicalTom.IsActive() {
+		t.Fatal("physical Tom remained active after switching models")
+	}
+	if got := engine.proceduralTom.Param(tomParamPitchTo); got != 0.3 {
+		t.Fatalf("procedural Tom parameter = %v, want 0.3", got)
+	}
+}
+
+func TestInvalidTomModelIsIgnored(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetTomModel(TomModel(99))
+
+	if got := engine.TomModel(); got != TomModelProcedural {
+		t.Fatalf("TomModel() = %v after invalid selection, want procedural", got)
+	}
+	if engine.voices[tomTrackIndex] != engine.proceduralTom {
+		t.Fatal("invalid selection changed the active Tom voice")
+	}
+}
+
+func TestPhysicalTomRenderDoesNotAllocate(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetTomModel(TomModelPhysical)
+	engine.TriggerVoice(tomTrackIndex, 1)
+	buffer := make([]float32, 512)
+
+	allocations := testing.AllocsPerRun(100, func() {
+		engine.Render(buffer)
+	})
+	if allocations != 0 {
+		t.Fatalf("physical Tom Render allocated %v times per call, want 0", allocations)
+	}
+}

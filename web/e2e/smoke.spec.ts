@@ -62,7 +62,7 @@ test("cell edits survive the engine's authoritative pattern echo", async ({
 // The per-voice synthesis editor (PLAN.md G20): the modal opens from the strip,
 // its knobs drive the engine, Escape is shared with the knobs' reset-to-default,
 // audition must not start the transport, and edits must survive a reload
-// through the v2 persistence blob.
+// through the versioned persistence blob.
 test("voice editor opens, edits, auditions, and persists", async ({ page }) => {
   await page.goto("./");
 
@@ -114,7 +114,7 @@ test("voice editor opens, edits, auditions, and persists", async ({ page }) => {
   await close.click();
   await expect(dialog).toBeHidden();
 
-  // The edit must survive a reload through the v2 localStorage blob.
+  // The edit must survive a reload through localStorage.
   await page.reload();
   await expect(play).toBeEnabled({ timeout: 30_000 });
   await page.getByRole("button", { name: "Bass Drum voice settings" }).click();
@@ -132,7 +132,7 @@ test("voice editor opens, edits, auditions, and persists", async ({ page }) => {
   ).toHaveAttribute("aria-valuenow", initial!);
 });
 
-// The only automated proof that the v2 voice-parameter tail survives
+// The only automated proof that the voice-parameter tail survives
 // base64url + URL hash + decode in a real browser.
 test("voice edits travel in a share link", async ({ page }) => {
   await page.goto("./");
@@ -166,4 +166,37 @@ test("voice edits travel in a share link", async ({ page }) => {
   await expect(
     page.getByRole("dialog").getByRole("slider").first(),
   ).toHaveAttribute("aria-valuenow", edited!);
+});
+
+test("Tom can select, audition, and persist the physical model", async ({
+  page,
+}) => {
+  await page.goto("./");
+
+  const play = page.getByRole("button", { name: "Play", exact: true });
+  await expect(play).toBeEnabled({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Tom voice settings" }).click();
+
+  const dialog = page.getByRole("dialog");
+  const algorithmic = dialog.getByRole("radio", { name: "Algorithmic" });
+  const physical = dialog.getByRole("radio", { name: /Physical/ });
+  await expect(algorithmic).toBeChecked();
+
+  await physical.check();
+  await expect(physical).toBeChecked();
+  await expect(dialog.getByText("Single circular head")).toBeVisible();
+  await expect(dialog.getByRole("slider")).toHaveCount(0);
+
+  // The physical audition is independent of the transport.
+  await dialog.getByRole("button", { name: "Audition Tom" }).click();
+  await expect(play).toBeVisible();
+
+  await page.waitForTimeout(500);
+  await dialog.getByRole("button", { name: /^Close Tom/ }).click();
+  await page.reload();
+  await expect(play).toBeEnabled({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Tom voice settings" }).click();
+  await expect(
+    page.getByRole("dialog").getByRole("radio", { name: /Physical/ }),
+  ).toBeChecked();
 });
