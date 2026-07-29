@@ -290,19 +290,19 @@ const (
 )
 
 var physicalTomSpecs = []ParamSpec{
-	physicalTomParamDiameter:         expSpec("physicalTom.diameter", "SIZE", "head diameter", "m", 0.16, 0.50, 0.3048, 3),
-	physicalTomParamBatterTension:    expSpec("physicalTom.batterTension", "B.TUNE", "batter head tension", "N/m", 150, 1400, 600, 0),
-	physicalTomParamResonantTension:  expSpec("physicalTom.resonantTension", "R.TUNE", "resonant head tension", "N/m", 150, 1400, 500, 0),
-	physicalTomParamDamping:          expSpec("physicalTom.damping", "DAMP", "head damping", "/s", 0.75, 12, 3, 2),
-	physicalTomParamStrikeRadius:     linSpec("physicalTom.strikeRadius", "HIT.R", "strike radius", "", 0, 0.95, 0.45, 2),
-	physicalTomParamStrikeAngle:      linSpec("physicalTom.strikeAngle", "HIT.A", "strike angle", "°", -180, 180, 0.2*180/math.Pi, 0),
-	physicalTomParamHardness:         linSpec("physicalTom.hardness", "HARD", "mallet hardness", "", 0, 1, 0.7, 2),
-	physicalTomParamShellDepth:       expSpec("physicalTom.shellDepth", "DEPTH", "shell depth", "m", 0.05, 0.60, 0.20, 3),
-	physicalTomParamCavityCoupling:   linSpec("physicalTom.cavityCoupling", "AIR", "cavity coupling", "", 0, 1, 1, 2),
-	physicalTomParamNonlinearity:     linSpec("physicalTom.nonlinearity", "NLIN", "nonlinear tension amount", "", 0, 2, 1, 2),
-	physicalTomParamPickupRadius:     linSpec("physicalTom.pickupRadius", "MIC.R", "pickup radius", "", 0, 0.95, 0.32, 2),
-	physicalTomParamPickupAngle:      linSpec("physicalTom.pickupAngle", "MIC.A", "pickup angle", "°", -180, 180, 0.6*180/math.Pi, 0),
-	physicalTomParamQuality:          choiceSpec("physicalTom.quality", "QUAL", "quality tier", []string{"Draft", "Standard", "High"}, 1),
+	physicalTomParamDiameter:        expSpec("physicalTom.diameter", "SIZE", "head diameter", "m", 0.16, 0.50, 0.3048, 3),
+	physicalTomParamBatterTension:   expSpec("physicalTom.batterTension", "B.TUNE", "batter head tension", "N/m", 150, 1400, 600, 0),
+	physicalTomParamResonantTension: expSpec("physicalTom.resonantTension", "R.TUNE", "resonant head tension", "N/m", 150, 1400, 500, 0),
+	physicalTomParamDamping:         expSpec("physicalTom.damping", "DAMP", "head damping", "/s", 0.75, 12, 3, 2),
+	physicalTomParamStrikeRadius:    linSpec("physicalTom.strikeRadius", "HIT.R", "strike radius", "", 0, 0.95, 0.45, 2),
+	physicalTomParamStrikeAngle:     linSpec("physicalTom.strikeAngle", "HIT.A", "strike angle", "°", -180, 180, 0.2*180/math.Pi, 0),
+	physicalTomParamHardness:        linSpec("physicalTom.hardness", "HARD", "mallet hardness", "", 0, 1, 0.7, 2),
+	physicalTomParamShellDepth:      expSpec("physicalTom.shellDepth", "DEPTH", "shell depth", "m", 0.05, 0.60, 0.20, 3),
+	physicalTomParamCavityCoupling:  linSpec("physicalTom.cavityCoupling", "AIR", "cavity coupling", "", 0, 1, 1, 2),
+	physicalTomParamNonlinearity:    linSpec("physicalTom.nonlinearity", "NLIN", "nonlinear tension amount", "", 0, 2, 1, 2),
+	physicalTomParamPickupRadius:    linSpec("physicalTom.pickupRadius", "MIC.R", "pickup radius", "", 0, 0.95, 0.32, 2),
+	physicalTomParamPickupAngle:     linSpec("physicalTom.pickupAngle", "MIC.A", "pickup angle", "°", -180, 180, 0.6*180/math.Pi, 0),
+	physicalTomParamQuality:         choiceSpec("physicalTom.quality", "QUAL", "quality tier", []string{"Draft", "Standard", "High"}, 1),
 }
 
 // voiceNames labels each track for the editor UI, in engine track order.

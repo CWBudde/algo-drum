@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { TRACK_COUNT } from "../algo/pattern";
 import {
+  defaultPhysicalTomParams,
   defaultParamsFor,
   defaultVoiceParams,
   formatParam,
   mapParam,
+  PHYSICAL_TOM_PARAM_CAPACITY,
+  PHYSICAL_TOM_PARAMS,
   VOICE_NAMES,
   VOICE_PARAM_CAPACITY,
   VOICE_PARAMS,
@@ -14,6 +17,16 @@ describe("the generated voice parameter table", () => {
   it("covers every engine track", () => {
     expect(VOICE_PARAMS).toHaveLength(TRACK_COUNT);
     expect(VOICE_NAMES).toHaveLength(TRACK_COUNT);
+  });
+
+  it("generates the independent physical Tom bank", () => {
+    expect(PHYSICAL_TOM_PARAMS).toHaveLength(PHYSICAL_TOM_PARAM_CAPACITY);
+    expect(PHYSICAL_TOM_PARAMS.map((spec) => spec.id)).toContain(
+      "physicalTom.cavityCoupling",
+    );
+    expect(PHYSICAL_TOM_PARAMS.map((spec) => spec.id)).toContain(
+      "physicalTom.quality",
+    );
   });
 
   it("stays within the persistence capacity", () => {
@@ -113,6 +126,18 @@ describe("mapParam", () => {
       9,
     );
   });
+
+  it("maps and formats the discrete quality tier", () => {
+    const quality = PHYSICAL_TOM_PARAMS.find(
+      (spec) => spec.id === "physicalTom.quality",
+    )!;
+    expect(mapParam(quality, 0)).toBe(0);
+    expect(mapParam(quality, 0.5)).toBe(1);
+    expect(mapParam(quality, 1)).toBe(2);
+    expect(formatParam(quality, 0)).toBe("Draft");
+    expect(formatParam(quality, 0.5)).toBe("Standard");
+    expect(formatParam(quality, 1)).toBe("High");
+  });
 });
 
 describe("formatParam", () => {
@@ -165,6 +190,12 @@ describe("defaults", () => {
     expect(table).toHaveLength(TRACK_COUNT);
     expect(table.every((row) => row.length === VOICE_PARAM_CAPACITY)).toBe(
       true,
+    );
+  });
+
+  it("builds the physical Tom defaults from generated metadata", () => {
+    expect(defaultPhysicalTomParams()).toEqual(
+      PHYSICAL_TOM_PARAMS.map((spec) => spec.default),
     );
   });
 });

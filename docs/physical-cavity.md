@@ -22,16 +22,17 @@ A\_{0n} = 2\pi R^2\frac{J_1(z\_{0n})}{z\_{0n}}.
 The angular integral of every \(m>0\) mode is zero, so those modes have exactly
 zero cavity coupling. No empirical cross-coupling terms are present.
 
-With modal displacement \(q_i\), modal mass \(m_i\), loss rate \(d_i\), and
-cavity pressure \(p\), the coupled equations are
+With modal displacement \(q_i\), modal mass \(m_i\), loss rate \(d_i\), cavity
+pressure \(p\), and the product control \(g\in[0,1]\), define the effective
+swept area \(\widetilde A_i=gA_i\). The coupled equations are
 
 \[
 \ddot q_i + 2d_i\dot q_i + \omega_i^2 q_i
-= f_i/m_i - A_i p/m_i,
+= f_i/m_i - \widetilde A_i p/m_i,
 \]
 
 \[
-\dot p = K\sum_i A_i\dot q_i - \lambda p,
+\dot p = K\sum_i \widetilde A_i\dot q_i - \lambda p,
 \qquad
 K=\frac{\rho c^2}{V},
 \qquad
@@ -39,7 +40,9 @@ V=\pi R^2L.
 \]
 
 Here \(L\) is shell depth, \(\rho\) is air density, \(c\) is sound speed, and
-`Cavity.LossPerSecond` is the pressure-amplitude loss \(\lambda\). Setting
+`Cavity.LossPerSecond` is the pressure-amplitude loss \(\lambda\).
+`Cavity.Coupling01` is \(g\); scaling pressure drive and feedback by the same
+coefficient preserves passivity. Setting it to zero or setting
 `Cavity.Enabled` to false is the exact zero-coupling limit.
 
 The stored mechanical energy is
@@ -78,8 +81,9 @@ All P3 parameters remain SI-valued fields of `PhysicalDrum`:
 - shell geometry uses `Cavity.DepthM`;
 - air stiffness uses `Cavity.AirDensityKgPerM3` and
   `Cavity.SoundSpeedMPerS`;
-- `Cavity.Enabled` selects the zero-coupling limit and
-  `Cavity.LossPerSecond` controls pressure loss.
+- `Cavity.Coupling01` continuously controls passive head/air coupling,
+  `Cavity.Enabled` can bypass it, and `Cavity.LossPerSecond` controls pressure
+  loss.
 
 Call `DoubleHead.Config`, edit the returned copy, and pass it to
 `DoubleHead.Reconfigure` from the model's owner goroutine. Reconfiguration

@@ -103,6 +103,38 @@ func TestDecodeConfigMigratesLinearDoubleHeadWithoutChangingSound(t *testing.T) 
 	}
 }
 
+func TestDecodeConfigMigratesVersionThreeWithFullCavityCoupling(t *testing.T) {
+	t.Parallel()
+
+	legacy := DefaultPhysicalDrum()
+	legacy.Version = nonlinearConfigVersion
+	legacy.Cavity.Coupling01 = 0
+	encoded, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decoded, err := DecodeConfig(encoded)
+	if err != nil {
+		t.Fatalf("DecodeConfig(v3) error = %v", err)
+	}
+	if decoded.Version != ConfigVersion || decoded.Cavity.Coupling01 != 1 {
+		t.Fatalf("migrated v3 cavity = %#v, version %d",
+			decoded.Cavity, decoded.Version)
+	}
+}
+
+func TestConfigRejectsInvalidCavityCoupling(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultPhysicalDrum()
+	config.Cavity.Coupling01 = 1.01
+
+	if err := config.Validate(); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("Validate() error = %v, want ErrInvalidConfig", err)
+	}
+}
+
 func TestConfigRejectsNonFiniteValue(t *testing.T) {
 	t.Parallel()
 

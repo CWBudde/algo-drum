@@ -54,6 +54,57 @@ func TestParamSpecsWellFormed(t *testing.T) {
 	}
 }
 
+func TestPhysicalTomParamSpecsWellFormed(t *testing.T) {
+	if len(physicalTomSpecs) != physicalTomParamQuality+1 {
+		t.Fatalf("physical Tom has %d specs, want %d",
+			len(physicalTomSpecs), physicalTomParamQuality+1)
+	}
+
+	seen := make(map[string]bool, len(physicalTomSpecs))
+	for index, spec := range physicalTomSpecs {
+		if spec.ID == "" || spec.Label == "" || spec.Name == "" {
+			t.Errorf("physical param %d has empty metadata: %+v", index, spec)
+		}
+		if seen[spec.ID] {
+			t.Errorf("duplicate physical param ID %q", spec.ID)
+		}
+		seen[spec.ID] = true
+		if !(spec.Min < spec.Max) {
+			t.Errorf("%s: invalid range [%v, %v]", spec.ID, spec.Min, spec.Max)
+		}
+		if spec.Default < 0 || spec.Default > 1 {
+			t.Errorf("%s: default %v outside [0, 1]", spec.ID, spec.Default)
+		}
+		if got := spec.Map(spec.Default); got != spec.Shipped {
+			t.Errorf("%s: Map(Default) = %v, want %v", spec.ID, got, spec.Shipped)
+		}
+	}
+}
+
+func TestPhysicalTomParamIDsAreStable(t *testing.T) {
+	want := []string{
+		"physicalTom.diameter",
+		"physicalTom.batterTension",
+		"physicalTom.resonantTension",
+		"physicalTom.damping",
+		"physicalTom.strikeRadius",
+		"physicalTom.strikeAngle",
+		"physicalTom.hardness",
+		"physicalTom.shellDepth",
+		"physicalTom.cavityCoupling",
+		"physicalTom.nonlinearity",
+		"physicalTom.pickupRadius",
+		"physicalTom.pickupAngle",
+		"physicalTom.quality",
+	}
+
+	for index, id := range want {
+		if got := physicalTomSpecs[index].ID; got != id {
+			t.Errorf("physical param %d ID = %q, want %q", index, got, id)
+		}
+	}
+}
+
 // TestParamSpecDefaultMapsToShippedExactly is what the byte-step snap in Map
 // buys: a knob left (or reset) at its default must produce the exact constant
 // the voice shipped with, not a value one ulp away.

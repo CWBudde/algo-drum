@@ -837,21 +837,27 @@ decision to retain the existing force pulse are documented in
 
 ### P5 — Product integration
 
-- [ ] Add a Physical Drum lab/editor with model selection, head dimensions and
+- [x] Add a Physical Drum lab/editor with model selection, head dimensions and
       tuning, damping, hit position/hardness, cavity coupling, nonlinear amount,
       pickup position, quality tier, audition, and reset.
 - [x] Decide after profiling whether the first physical tom replaces the Tom
       track when selected or appears as a separate experimental instrument;
       never make this an implicit preset change.
-- [ ] Extend the generated parameter metadata rather than hand-maintaining a
+- [x] Extend the generated parameter metadata rather than hand-maintaining a
       second Go/TypeScript parameter table.
-- [ ] Version persistence and URL sharing; old states must decode to the
+- [x] Version persistence and URL sharing; old states must decode to the
       unchanged procedural engine.
-- [ ] Extend Worker/WASM command validation, recovery, E2E coverage, and
+- [x] Extend Worker/WASM command validation, recovery, E2E coverage, and
       accessibility for the new controls.
 
 Exit: users can A/B the procedural and physical paths in the production browser
 build without audio-pipeline or persistence regressions.
+
+Completed 2026-07-29. The generated control bank, bounded physical mappings,
+passive cavity-coupling control, independent A/B state, version-4
+persistence/share migration, Worker/WASM validation, accessibility behavior,
+and production-browser coverage are documented in
+[`docs/physical-product-integration.md`](docs/physical-product-integration.md).
 
 ### P6 — Real-instrument departures
 

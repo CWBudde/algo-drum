@@ -7,11 +7,15 @@ import {
   VEL_NORMAL,
   VEL_OFF,
 } from "./pattern";
-import { VOICE_PARAM_CAPACITY } from "../engine/voiceParams";
+import {
+  PHYSICAL_TOM_PARAM_CAPACITY,
+  VOICE_PARAM_CAPACITY,
+} from "../engine/voiceParams";
 
 const V1_BYTES = 38;
 const V2_BYTES = V1_BYTES + TRACK_COUNT * VOICE_PARAM_CAPACITY;
-const TOTAL_BYTES = V2_BYTES + 1;
+const V3_BYTES = V2_BYTES + 1;
+const TOTAL_BYTES = V3_BYTES + PHYSICAL_TOM_PARAM_CAPACITY;
 
 // Scalars are stored as one byte, so only multiples of 1/255 survive a
 // roundtrip exactly. Quantize test inputs so equality is bit-exact.
@@ -51,6 +55,10 @@ function makeState(): PersistedState {
       ),
     ),
     tomModel: "physical",
+    physicalTomParams: Array.from(
+      { length: PHYSICAL_TOM_PARAM_CAPACITY },
+      (_, i) => q((i + 1) / (PHYSICAL_TOM_PARAM_CAPACITY + 1)),
+    ),
   };
 }
 
@@ -94,6 +102,12 @@ function encodeV1(state: PersistedState): string {
 function encodeV2(state: PersistedState): string {
   const bytes = toBytes(encodeState(state)).slice(0, V2_BYTES);
   bytes[0] = 2;
+  return toB64Url(bytes);
+}
+
+function encodeV3(state: PersistedState): string {
+  const bytes = toBytes(encodeState(state)).slice(0, V3_BYTES);
+  bytes[0] = 3;
   return toB64Url(bytes);
 }
 
@@ -185,12 +199,35 @@ describe("persistence encode/decode", () => {
 
     it("rejects an unknown model code", () => {
       const bytes = toBytes(encodeState(makeState()));
-      bytes[bytes.length - 1] = 2;
+      bytes[V2_BYTES] = 2;
       expect(decodeState(toB64Url(bytes))).toBeNull();
     });
   });
 
-  describe("backward compatibility with v1/v2 blobs", () => {
+  describe("physical Tom parameters", () => {
+    it("roundtrips every slot exactly", () => {
+      const state = makeState();
+      expect(decodeState(encodeState(state))?.physicalTomParams).toEqual(
+        state.physicalTomParams,
+      );
+    });
+
+    it("pads, truncates, clamps, and sanitizes the independent bank", () => {
+      const state = makeState();
+      state.physicalTomParams = [
+        NaN,
+        -1,
+        2,
+        ...new Array<number>(PHYSICAL_TOM_PARAM_CAPACITY + 2).fill(q(0.4)),
+      ];
+
+      const decoded = decodeState(encodeState(state))?.physicalTomParams;
+      expect(decoded).toHaveLength(PHYSICAL_TOM_PARAM_CAPACITY);
+      expect(decoded?.slice(0, 3)).toEqual([0, 0, 1]);
+    });
+  });
+
+  describe("backward compatibility with v1/v2/v3 blobs", () => {
     it("decodes a v1 blob and leaves voiceParams unset", () => {
       const state = makeState();
       const decoded = decodeState(encodeV1(state));
@@ -204,6 +241,7 @@ describe("persistence encode/decode", () => {
       expect(decoded?.muted).toEqual(state.muted);
       expect(decoded?.voiceParams).toBeUndefined();
       expect(decoded?.tomModel).toBeUndefined();
+      expect(decoded?.physicalTomParams).toBeUndefined();
     });
 
     it("decodes a v2 blob and defaults the Tom model at the call site", () => {
@@ -212,14 +250,24 @@ describe("persistence encode/decode", () => {
 
       expect(decoded?.voiceParams).toEqual(state.voiceParams);
       expect(decoded?.tomModel).toBeUndefined();
+      expect(decoded?.physicalTomParams).toBeUndefined();
     });
 
-    it("re-encodes a decoded v1 state as v3 (one-way upgrade)", () => {
+    it("decodes a v3 blob and leaves physical parameters unset", () => {
+      const state = makeState();
+      const decoded = decodeState(encodeV3(state));
+
+      expect(decoded?.voiceParams).toEqual(state.voiceParams);
+      expect(decoded?.tomModel).toBe(state.tomModel);
+      expect(decoded?.physicalTomParams).toBeUndefined();
+    });
+
+    it("re-encodes a decoded v1 state as v4 (one-way upgrade)", () => {
       const decoded = decodeState(encodeV1(makeState()));
       const bytes = toBytes(encodeState(decoded!));
 
       expect(bytes).toHaveLength(TOTAL_BYTES);
-      expect(bytes[0]).toBe(3);
+      expect(bytes[0]).toBe(4);
     });
 
     it("rejects a v1-length blob whose version byte claims v2", () => {
@@ -236,7 +284,7 @@ describe("persistence encode/decode", () => {
 
     it("rejects an unknown future version at the right length", () => {
       const bytes = toBytes(encodeState(makeState()));
-      bytes[0] = 4;
+      bytes[0] = 5;
       expect(decodeState(toB64Url(bytes))).toBeNull();
     });
   });

@@ -38,6 +38,13 @@
   backdrop-filter: blur(2px);
 }
 
+/* The physical lab has thirteen generated controls. Keep the whole dialog
+   reachable on short/mobile viewports without changing the compact procedural
+   editors' overflow behavior. */
+.dm-voice:has(.dm-voice-knobs[data-physical]) {
+  overflow-y: auto;
+}
+
 .dm-voice-head {
   display: flex;
   align-items: center;
@@ -157,6 +164,10 @@
   grid-template-columns: repeat(3, 1fr);
 }
 
+.dm-voice-knobs[data-physical] {
+  padding-top: 18px;
+}
+
 .dm-voice-param {
   display: flex;
   flex-direction: column;
@@ -184,8 +195,8 @@
 }
 
 .dm-voice-physical-note {
-  margin: 18px;
-  padding: 18px;
+  margin: 14px 18px 0;
+  padding: 12px 14px;
   border: 1px solid rgba(109, 149, 200, 0.28);
   border-radius: 8px;
   background: rgba(25, 38, 58, 0.38);

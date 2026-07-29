@@ -7,6 +7,7 @@
 // test, so the two implementations cannot drift.
 
 import {
+  PHYSICAL_TOM_PARAM_CAPACITY,
   PHYSICAL_TOM_PARAMS,
   VOICE_NAMES,
   VOICE_PARAM_CAPACITY,
@@ -16,6 +17,7 @@ import {
 
 export {
   PHYSICAL_TOM_PARAMS,
+  PHYSICAL_TOM_PARAM_CAPACITY,
   VOICE_NAMES,
   VOICE_PARAM_CAPACITY,
   VOICE_PARAMS,

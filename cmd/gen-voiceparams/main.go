@@ -119,10 +119,13 @@ export interface VoiceParamSpec {
 	out.WriteString("];\n")
 
 	out.WriteString("\n/** Physical Tom parameter table, separate from the procedural Tom bank. */\nexport const PHYSICAL_TOM_PARAMS: readonly VoiceParamSpec[] = [\n")
+
 	for _, spec := range drum.PhysicalTomSpecs() {
 		writeSpec(&out, spec)
 	}
+
 	out.WriteString("];\n")
+	fmt.Fprintf(&out, "\nexport const PHYSICAL_TOM_PARAM_CAPACITY = %d;\n", len(drum.PhysicalTomSpecs()))
 
 	return out.String()
 }
@@ -133,9 +136,11 @@ func writeSpec(out *strings.Builder, spec drum.ParamSpec) {
 	fmt.Fprintf(out, "    label: %s,\n", quote(spec.Label))
 	fmt.Fprintf(out, "    name: %s,\n", quote(spec.Name))
 	fmt.Fprintf(out, "    unit: %s,\n", quote(spec.Unit))
+
 	if len(spec.Choices) > 0 {
 		fmt.Fprintf(out, "    choices: [%s],\n", quoteList(spec.Choices))
 	}
+
 	fmt.Fprintf(out, "    kind: %s,\n", quote(spec.Kind.String()))
 	fmt.Fprintf(out, "    min: %s,\n", num(spec.Min))
 	fmt.Fprintf(out, "    max: %s,\n", num(spec.Max))

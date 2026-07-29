@@ -70,10 +70,13 @@ func (v *physicalTom) SetDecay(amount float64) {
 	}
 
 	oldDecay := v.decayAmount
+
 	v.decayAmount = decayAmount
 	if err := v.reconfigure(); err != nil {
 		logErr("physical tom decay", err)
+
 		v.decayAmount = oldDecay
+
 		return
 	}
 }
@@ -90,6 +93,7 @@ func (v *physicalTom) SetParam(index int, value01 float64) {
 
 	if err := v.reconfigure(); err != nil {
 		v.params.vals[index] = old
+
 		logErr("physical tom parameter", err)
 	}
 }

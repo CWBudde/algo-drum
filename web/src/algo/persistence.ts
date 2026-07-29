@@ -6,7 +6,10 @@
 // pure and testable; the localStorage/hash glue below is a thin, fail-soft
 // wrapper around it.
 
-import { VOICE_PARAM_CAPACITY } from "../engine/voiceParams";
+import {
+  PHYSICAL_TOM_PARAM_CAPACITY,
+  VOICE_PARAM_CAPACITY,
+} from "../engine/voiceParams";
 import {
   PATTERN_SIZE,
   TRACK_COUNT,
@@ -18,8 +21,9 @@ import type { TomModel } from "../engine/tomModel";
 
 // Bump when the byte layout changes. Every version is a strict append, so old
 // offsets and meanings stay fixed: v2 added voice parameters and v3 adds the
-// Tom model selector. Older links still decode with their new fields unset.
-const FORMAT_VERSION = 3;
+// Tom model selector and v4 adds the physical Tom parameter bank. Older links
+// still decode with their new fields unset.
+const FORMAT_VERSION = 4;
 
 // Byte layout: version, 6 scalar knobs, 5 volumes, 5 decays, 1 mute mask,
 // then the 80-cell pattern packed 2 bits per cell (20 bytes)...
@@ -34,7 +38,10 @@ const VOICE_PARAM_BYTES = TRACK_COUNT * VOICE_PARAM_CAPACITY;
 const V2_BYTES = V1_BYTES + VOICE_PARAM_BYTES;
 
 // v3 appends one byte for the explicitly selected Tom implementation.
-const TOTAL_BYTES = V2_BYTES + 1;
+const V3_BYTES = V2_BYTES + 1;
+
+// v4 appends the independent physical-model parameter bank.
+const TOTAL_BYTES = V3_BYTES + PHYSICAL_TOM_PARAM_CAPACITY;
 
 // Names the storage slot, not the blob version — it never tracked
 // FORMAT_VERSION, and the decoder is version-tolerant. Bumping it would orphan
@@ -60,6 +67,8 @@ export interface PersistedState {
   voiceParams?: number[][];
   // Absent from v1/v2 blobs, which always used the procedural Tom.
   tomModel?: TomModel;
+  // Absent from v1/v2/v3 blobs. The call site supplies generated defaults.
+  physicalTomParams?: number[];
 }
 
 function clamp01(v: number): number {
@@ -147,7 +156,11 @@ export function encodeState(state: PersistedState): string {
     }
   }
 
-  bytes[offset] = state.tomModel === "physical" ? 1 : 0;
+  bytes[offset++] = state.tomModel === "physical" ? 1 : 0;
+
+  for (let i = 0; i < PHYSICAL_TOM_PARAM_CAPACITY; i++) {
+    bytes[offset++] = toByte(state.physicalTomParams?.[i] ?? 0);
+  }
 
   return bytesToBase64Url(bytes);
 }
@@ -167,9 +180,11 @@ export function decodeState(text: string): PersistedState | null {
       ? V1_BYTES
       : version === 2
         ? V2_BYTES
-        : version === FORMAT_VERSION
-          ? TOTAL_BYTES
-          : -1;
+        : version === 3
+          ? V3_BYTES
+          : version === FORMAT_VERSION
+            ? TOTAL_BYTES
+            : -1;
   if (bytes.length !== expected) return null;
 
   let offset = 1;
@@ -224,14 +239,23 @@ export function decodeState(text: string): PersistedState | null {
 
   if (version === 2) return { ...state, voiceParams };
 
-  const tomModelCode = bytes[offset];
+  const tomModelCode = bytes[offset++];
   if (tomModelCode > 1) return null;
 
-  return {
+  const stateWithModel: PersistedState = {
     ...state,
     voiceParams,
     tomModel: tomModelCode === 1 ? "physical" : "procedural",
   };
+
+  if (version === 3) return stateWithModel;
+
+  const physicalTomParams: number[] = [];
+  for (let i = 0; i < PHYSICAL_TOM_PARAM_CAPACITY; i++) {
+    physicalTomParams.push(fromByte(bytes[offset++]));
+  }
+
+  return { ...stateWithModel, physicalTomParams };
 }
 
 // ── localStorage + URL hash glue (fail-soft) ────────────────────────────────

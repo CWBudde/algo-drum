@@ -299,7 +299,8 @@ func (d *DoubleHead) IsActive() bool {
 // Tick advances both modal banks and the cavity by one sample.
 func (d *DoubleHead) Tick() DoubleHeadOutput {
 	forceN := d.nextForce()
-	if !d.config.Cavity.Enabled && !d.config.Nonlinearity.Enabled {
+	if (!d.config.Cavity.Enabled || d.config.Cavity.Coupling01 == 0) &&
+		!d.config.Nonlinearity.Enabled {
 		return d.tickUncoupled(forceN)
 	}
 

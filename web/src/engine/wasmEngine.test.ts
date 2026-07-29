@@ -321,6 +321,16 @@ describe("command queue", () => {
       { type: "cmd", name: "setTomModel", args: [0] },
     ]);
   });
+
+  it("sends physical Tom parameter edits to the independent bank", async () => {
+    const engine = await loaded();
+
+    engine.setPhysicalTomParam(4, 0.625);
+
+    expect(workers()[0].commands()).toEqual([
+      { type: "cmd", name: "setPhysicalTomParam", args: [4, 0.625] },
+    ]);
+  });
 });
 
 // A ready engine. The audio graph is built lazily by the first play().

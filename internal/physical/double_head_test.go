@@ -55,6 +55,43 @@ func TestDoubleHeadZeroCouplingMatchesSingleHead(t *testing.T) {
 	}
 }
 
+func TestCavityCouplingZeroMatchesDisabledCavity(t *testing.T) {
+	t.Parallel()
+
+	disabledConfig := DefaultPhysicalDrum()
+	disabledConfig.Cavity.Enabled = false
+	disabledConfig.Cavity.Coupling01 = 0
+	disabledConfig.Nonlinearity.Enabled = false
+	disabled, err := NewDoubleHead(disabledConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	zeroConfig := disabledConfig
+	zeroConfig.Cavity.Enabled = true
+	zeroConfig.Cavity.Coupling01 = 0
+	zero, err := NewDoubleHead(zeroConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := disabled.Trigger(0.8); err != nil {
+		t.Fatal(err)
+	}
+	if err := zero.Trigger(0.8); err != nil {
+		t.Fatal(err)
+	}
+
+	for sampleIndex := range 20_000 {
+		want := disabled.Tick()
+		got := zero.Tick()
+		if got != want {
+			t.Fatalf("sample %d zero coupling differs:\ngot  %#v\nwant %#v",
+				sampleIndex, got, want)
+		}
+	}
+}
+
 func TestDoubleHeadStrikeExcitesResonantHead(t *testing.T) {
 	t.Parallel()
 
