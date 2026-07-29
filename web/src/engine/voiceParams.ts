@@ -7,13 +7,19 @@
 // test, so the two implementations cannot drift.
 
 import {
+  PHYSICAL_TOM_PARAMS,
   VOICE_NAMES,
   VOICE_PARAM_CAPACITY,
   VOICE_PARAMS,
   type VoiceParamSpec,
 } from "./voiceParams.generated";
 
-export { VOICE_NAMES, VOICE_PARAM_CAPACITY, VOICE_PARAMS };
+export {
+  PHYSICAL_TOM_PARAMS,
+  VOICE_NAMES,
+  VOICE_PARAM_CAPACITY,
+  VOICE_PARAMS,
+};
 export type { VoiceParamSpec };
 
 // One step of the 8-bit persistence quantisation (see algo/persistence.ts).
@@ -34,6 +40,8 @@ export function mapParam(spec: VoiceParamSpec, value01: number): number {
 
   if (Math.abs(v - spec.default) < BYTE_STEP / 2) return spec.shipped;
 
+  if (spec.choices) return Math.round(v * (spec.choices.length - 1));
+
   if (spec.kind === "exp") return spec.min * Math.pow(spec.max / spec.min, v);
 
   return spec.min + (spec.max - spec.min) * v;
@@ -43,6 +51,8 @@ export function mapParam(spec: VoiceParamSpec, value01: number): number {
 // Frequencies above 1 kHz switch to kHz so the label stays short.
 export function formatParam(spec: VoiceParamSpec, value01: number): string {
   const value = mapParam(spec, value01);
+
+  if (spec.choices) return spec.choices[value] ?? spec.choices[0];
 
   if (spec.unit === "Hz" && value >= 1000) {
     return `${(value / 1000).toFixed(2)} kHz`;
@@ -67,4 +77,8 @@ export function defaultParamsFor(track: number): number[] {
 // v1 blob (or no saved state at all) leaves the voice parameters unspecified.
 export function defaultVoiceParams(): number[][] {
   return VOICE_PARAMS.map((_, track) => defaultParamsFor(track));
+}
+
+export function defaultPhysicalTomParams(): number[] {
+  return PHYSICAL_TOM_PARAMS.map((spec) => spec.default);
 }

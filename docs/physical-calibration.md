@@ -32,8 +32,10 @@ T_{60,i} = \frac{\ln(1000)}{\gamma_i}.
 
 The default 12-inch head's lowest mode is 104.00 Hz with a 2.21 s analytic
 amplitude \(T_{60}\). These are model targets, not claims about a commercial
-drum. The physical configuration schema is version 2; version-1 configurations
-are migrated by filling the P2 radiation and microphone defaults.
+drum. The physical configuration schema is version 3. Version-1
+configurations are migrated by filling the P2 radiation and microphone
+defaults; version-2 linear double-head configurations migrate with P4
+nonlinearity disabled so their sound is unchanged.
 
 ## Radiation and microphone response
 
@@ -78,9 +80,11 @@ The report contains:
 - Schroeder/IR decay metrics from `algo-dsp`;
 - a Hann-windowed real FFT from `algo-fft`, spectral descriptors from
   `algo-dsp`, and interpolated modal peaks;
-- a frame-wise track constrained around the lowest analytic mode. The linear
-  P2 model should remain essentially stationary; P4 will use the same metric to
-  measure nonlinear pitch glide.
+- a frame-wise track constrained around the lowest analytic mode. This
+  analyzer intentionally renders the linear P2 `SingleHead`, so its track
+  should remain essentially stationary. P4 glide verification renders
+  `DoubleHead` directly; see
+  [`physical-nonlinearity.md`](physical-nonlinearity.md).
 
 `analysis.CompareSignals` supplies gain-fitted normalized waveform RMSE,
 waveform correlation, and log-spectrum RMSE in dB for regression or for a

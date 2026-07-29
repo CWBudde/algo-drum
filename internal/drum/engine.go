@@ -457,6 +457,36 @@ func (e *Engine) SetVoiceParam(track, index int, value01 float64) {
 	e.voices[track].SetParam(index, value01)
 }
 
+// SetPhysicalTomParam updates the physical Tom's independent parameter bank.
+// It is valid while either Tom model is selected so A/B edits survive a model
+// switch. Invalid indices and non-finite values are ignored by the voice.
+func (e *Engine) SetPhysicalTomParam(index int, value01 float64) {
+	physicalVoice, ok := e.ensurePhysicalTom()
+	if !ok {
+		return
+	}
+
+	physicalVoice.SetParam(index, value01)
+}
+
+func (e *Engine) ensurePhysicalTom() (*physicalTom, bool) {
+	if e.physicalTom != nil {
+		return e.physicalTom, true
+	}
+
+	physicalVoice, err := newPhysicalTom(e.sr)
+	if err != nil {
+		logErr("NewPhysicalTom", err)
+
+		return nil, false
+	}
+
+	physicalVoice.SetDecay(e.decays[tomTrackIndex])
+	e.physicalTom = physicalVoice
+
+	return physicalVoice, true
+}
+
 // SetTomModel explicitly selects the Tom implementation. The original
 // procedural voice remains the default, and invalid values are ignored.
 // Switching resets both sides so a dormant tail cannot resume later.
@@ -471,18 +501,12 @@ func (e *Engine) SetTomModel(model TomModel) {
 	case TomModelProcedural:
 		next = e.proceduralTom
 	case TomModelPhysical:
-		if e.physicalTom == nil {
-			physicalVoice, err := newPhysicalTom(e.sr)
-			if err != nil {
-				logErr("NewPhysicalTom", err)
-
-				return
-			}
-
-			e.physicalTom = physicalVoice
+		physicalVoice, ok := e.ensurePhysicalTom()
+		if !ok {
+			return
 		}
 
-		next = e.physicalTom
+		next = physicalVoice
 	default:
 		return
 	}
@@ -495,7 +519,9 @@ func (e *Engine) SetTomModel(model TomModel) {
 		reset.Reset()
 	}
 
-	next.SetDecay(e.decays[tomTrackIndex])
+	if model != TomModelPhysical {
+		next.SetDecay(e.decays[tomTrackIndex])
+	}
 	e.voices[tomTrackIndex] = next
 	e.tomModel = model
 }

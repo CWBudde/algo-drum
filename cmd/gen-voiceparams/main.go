@@ -69,6 +69,8 @@ export interface VoiceParamSpec {
   readonly name: string;
   /** Engineering unit for the readout ("Hz", "s", or empty). */
   readonly unit: string;
+  /** Labels for a discrete selector; absent for continuous parameters. */
+  readonly choices?: readonly string[];
   /** Curve used to map the normalized position onto [min, max]. */
   readonly kind: "exp" | "lin";
   readonly min: number;
@@ -116,7 +118,40 @@ export interface VoiceParamSpec {
 
 	out.WriteString("];\n")
 
+	out.WriteString("\n/** Physical Tom parameter table, separate from the procedural Tom bank. */\nexport const PHYSICAL_TOM_PARAMS: readonly VoiceParamSpec[] = [\n")
+	for _, spec := range drum.PhysicalTomSpecs() {
+		writeSpec(&out, spec)
+	}
+	out.WriteString("];\n")
+
 	return out.String()
+}
+
+func writeSpec(out *strings.Builder, spec drum.ParamSpec) {
+	fmt.Fprintf(out, "  {\n")
+	fmt.Fprintf(out, "    id: %s,\n", quote(spec.ID))
+	fmt.Fprintf(out, "    label: %s,\n", quote(spec.Label))
+	fmt.Fprintf(out, "    name: %s,\n", quote(spec.Name))
+	fmt.Fprintf(out, "    unit: %s,\n", quote(spec.Unit))
+	if len(spec.Choices) > 0 {
+		fmt.Fprintf(out, "    choices: [%s],\n", quoteList(spec.Choices))
+	}
+	fmt.Fprintf(out, "    kind: %s,\n", quote(spec.Kind.String()))
+	fmt.Fprintf(out, "    min: %s,\n", num(spec.Min))
+	fmt.Fprintf(out, "    max: %s,\n", num(spec.Max))
+	fmt.Fprintf(out, "    shipped: %s,\n", num(spec.Shipped))
+	fmt.Fprintf(out, "    default: %s,\n", num(spec.Default))
+	fmt.Fprintf(out, "    digits: %d,\n", spec.Digits)
+	fmt.Fprintf(out, "  },\n")
+}
+
+func quoteList(values []string) string {
+	quoted := make([]string, len(values))
+	for i, value := range values {
+		quoted[i] = quote(value)
+	}
+
+	return strings.Join(quoted, ", ")
 }
 
 func maxParams() int {

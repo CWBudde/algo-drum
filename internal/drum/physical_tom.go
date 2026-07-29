@@ -1,6 +1,10 @@
 package drum
 
-import "github.com/cwbudde/algo-drum/internal/physical"
+import (
+	"math"
+
+	"github.com/cwbudde/algo-drum/internal/physical"
+)
 
 const physicalTomOutputGain = 0.25
 
@@ -15,15 +19,10 @@ const (
 )
 
 type physicalTom struct {
-	config                    physical.PhysicalDrum
-	model                     *physical.DoubleHead
-	decayAmount               float64
-	baseBatterLoss0           float64
-	baseBatterLoss2           float64
-	baseBatterRadiationLoss   float64
-	baseResonantLoss0         float64
-	baseResonantLoss2         float64
-	baseResonantRadiationLoss float64
+	config      physical.PhysicalDrum
+	model       *physical.DoubleHead
+	params      paramBank
+	decayAmount float64
 }
 
 func newPhysicalTom(sampleRate float64) (*physicalTom, error) {
@@ -36,15 +35,10 @@ func newPhysicalTom(sampleRate float64) (*physicalTom, error) {
 	}
 
 	return &physicalTom{
-		config:                    config,
-		model:                     model,
-		decayAmount:               0.5,
-		baseBatterLoss0:           config.Batter.Loss0PerSecond,
-		baseBatterLoss2:           config.Batter.Loss2M2PerSecond,
-		baseBatterRadiationLoss:   config.Batter.RadiationLossPerSecond,
-		baseResonantLoss0:         config.Resonant.Loss0PerSecond,
-		baseResonantLoss2:         config.Resonant.Loss2M2PerSecond,
-		baseResonantRadiationLoss: config.Resonant.RadiationLossPerSecond,
+		config:      config,
+		model:       model,
+		params:      newParamBank(physicalTomSpecs),
+		decayAmount: 0.5,
 	}, nil
 }
 
@@ -75,35 +69,93 @@ func (v *physicalTom) SetDecay(amount float64) {
 		return
 	}
 
-	// Match the procedural DEC strip's 0.5×–1.5× decay-time convention.
-	// Modal loss rates are inverse time constants, hence the reciprocal.
-	lossScale := 1 / (decayScaleMin + decayAmount)
-	config := v.config
-	config.Batter.Loss0PerSecond = v.baseBatterLoss0 * lossScale
-	config.Batter.Loss2M2PerSecond = v.baseBatterLoss2 * lossScale
-	config.Batter.RadiationLossPerSecond =
-		v.baseBatterRadiationLoss * lossScale
-	config.Resonant.Loss0PerSecond = v.baseResonantLoss0 * lossScale
-	config.Resonant.Loss2M2PerSecond = v.baseResonantLoss2 * lossScale
-	config.Resonant.RadiationLossPerSecond =
-		v.baseResonantRadiationLoss * lossScale
-
-	if err := v.model.Reconfigure(config); err != nil {
+	oldDecay := v.decayAmount
+	v.decayAmount = decayAmount
+	if err := v.reconfigure(); err != nil {
 		logErr("physical tom decay", err)
+		v.decayAmount = oldDecay
+		return
+	}
+}
 
+func (v *physicalTom) SetParam(index int, value01 float64) {
+	if index < 0 || index >= len(v.params.specs) {
 		return
 	}
 
-	v.config = config
-	v.decayAmount = decayAmount
+	old := v.params.vals[index]
+	if !v.params.set(index, value01) {
+		return
+	}
+
+	if err := v.reconfigure(); err != nil {
+		v.params.vals[index] = old
+		logErr("physical tom parameter", err)
+	}
 }
 
-// The first web integration deliberately exposes the model selector only.
-// Physical parameters receive their own generated metadata in a later phase;
-// procedural Tom parameters remain stored in Engine.proceduralTom while this
-// voice is selected.
-func (v *physicalTom) SetParam(_ int, _ float64) {}
+func (v *physicalTom) Param(index int) float64 {
+	return v.params.Param(index)
+}
 
-func (v *physicalTom) Param(_ int) float64 { return 0 }
+func (v *physicalTom) ParamSpecs() []ParamSpec {
+	return v.params.ParamSpecs()
+}
 
-func (v *physicalTom) ParamSpecs() []ParamSpec { return nil }
+func (v *physicalTom) reconfigure() error {
+	config := physical.DefaultPhysicalDrum()
+	config.SampleRateHz = v.config.SampleRateHz
+
+	diameterM := v.params.value(physicalTomParamDiameter)
+	config.Batter.RadiusM = diameterM / 2
+	config.Resonant.RadiusM = diameterM / 2
+	config.Batter.TensionNPerM = v.params.value(physicalTomParamBatterTension)
+	config.Resonant.TensionNPerM = v.params.value(physicalTomParamResonantTension)
+
+	// The one damping control preserves the default frequency-dependent and
+	// radiation-loss proportions on both heads. The strip DEC knob then trims
+	// all rates by its documented reciprocal 0.5×–1.5× time scale.
+	dampingScale := v.params.value(physicalTomParamDamping) /
+		physicalTomSpecs[physicalTomParamDamping].Shipped
+	decayScale := 1 / (decayScaleMin + v.decayAmount)
+	lossScale := dampingScale * decayScale
+	config.Batter.Loss0PerSecond *= lossScale
+	config.Batter.Loss2M2PerSecond *= lossScale
+	config.Batter.RadiationLossPerSecond *= lossScale
+	config.Resonant.Loss0PerSecond *= lossScale
+	config.Resonant.Loss2M2PerSecond *= lossScale
+	config.Resonant.RadiationLossPerSecond *= lossScale
+
+	config.Strike.Radius01 = v.params.value(physicalTomParamStrikeRadius)
+	config.Strike.AngleRad = v.params.value(physicalTomParamStrikeAngle) *
+		math.Pi / 180
+	config.Strike.Hardness01 = v.params.value(physicalTomParamHardness)
+	config.Cavity.DepthM = v.params.value(physicalTomParamShellDepth)
+	config.Cavity.Coupling01 = v.params.value(physicalTomParamCavityCoupling)
+
+	nonlinearScale := v.params.value(physicalTomParamNonlinearity)
+	config.Nonlinearity.Enabled = nonlinearScale > 0
+	config.Nonlinearity.BatterTensionCoefficientNPerM3 *= nonlinearScale
+	config.Nonlinearity.ResonantTensionCoefficientNPerM3 *= nonlinearScale
+
+	config.Pickup.Radius01 = v.params.value(physicalTomParamPickupRadius)
+	config.Pickup.AngleRad = v.params.value(physicalTomParamPickupAngle) *
+		math.Pi / 180
+
+	switch int(v.params.value(physicalTomParamQuality)) {
+	case 0:
+		config.Quality = physical.QualityDraft
+	case 1:
+		config.Quality = physical.QualityStandard
+	case 2:
+		config.Quality = physical.QualityHigh
+	}
+
+	if err := v.model.Reconfigure(config); err != nil {
+		return err
+	}
+
+	v.config = config
+
+	return nil
+}

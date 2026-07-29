@@ -246,6 +246,21 @@ func main() {
 		return js.Null()
 	}))
 
+	api.Set("setPhysicalTomParam", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		index, indexOK := argInt(args, 0, "setPhysicalTomParam")
+		value, valueOK := argFloat(args, 1, "setPhysicalTomParam")
+
+		if indexOK && valueOK {
+			engine.SetPhysicalTomParam(index, value)
+		}
+
+		return js.Null()
+	}))
+
 	api.Set("setTomModel", export(func(args []js.Value) any {
 		if !ready() {
 			return js.Null()
