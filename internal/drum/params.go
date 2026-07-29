@@ -46,6 +46,7 @@ type ParamSpec struct {
 	Label   string // knob face, kept short
 	Name    string // accessible-name fragment, e.g. "pitch sweep start"
 	Unit    string // "Hz", "s", "" …
+	Choices []string
 	Kind    paramKind
 	Min     float64
 	Max     float64
@@ -69,11 +70,25 @@ func (s ParamSpec) Map(value01 float64) float64 {
 		return s.Shipped
 	}
 
+	if len(s.Choices) > 0 {
+		return math.Round(val * float64(len(s.Choices)-1))
+	}
+
 	if s.Kind == paramExp {
 		return s.Min * math.Pow(s.Max/s.Min, val)
 	}
 
 	return s.Min + (s.Max-s.Min)*val
+}
+
+// choiceSpec builds a discrete selector rendered by the same normalized Knob
+// as continuous parameters. Shipped is the zero-based selected choice.
+func choiceSpec(id, label, name string, choices []string, shipped int) ParamSpec {
+	return ParamSpec{
+		ID: id, Label: label, Name: name, Choices: choices,
+		Kind: paramLinear, Min: 0, Max: float64(len(choices) - 1),
+		Shipped: float64(shipped), Default: float64(shipped) / float64(len(choices)-1),
+	}
 }
 
 // expSpec builds an exponentially mapped parameter. Frequencies and times are
@@ -102,11 +117,14 @@ func linSpec(id, label, name, unit string, minVal, maxVal, shipped float64, digi
 // is the genuinely heterogeneous part.
 type paramBank struct {
 	specs []ParamSpec
-	vals  [maxVoiceParams]float64
+	vals  []float64
 }
 
 func newParamBank(specs []ParamSpec) paramBank {
-	bank := paramBank{specs: specs}
+	bank := paramBank{
+		specs: specs,
+		vals:  make([]float64, len(specs)),
+	}
 	for i, spec := range specs {
 		bank.vals[i] = spec.Default
 	}
@@ -252,6 +270,41 @@ var cymSpecs = []ParamSpec{
 	cymParamGain:  linSpec("cym.gain", "LVL", "make-up gain", "", 0, 2, cymGain, 2),
 }
 
+// Physical Tom parameters use their own persistence bank, separate from the
+// procedural Tom table above. The application can therefore A/B models
+// without one model reinterpreting or overwriting the other's settings.
+const (
+	physicalTomParamDiameter = iota
+	physicalTomParamBatterTension
+	physicalTomParamResonantTension
+	physicalTomParamDamping
+	physicalTomParamStrikeRadius
+	physicalTomParamStrikeAngle
+	physicalTomParamHardness
+	physicalTomParamShellDepth
+	physicalTomParamCavityCoupling
+	physicalTomParamNonlinearity
+	physicalTomParamPickupRadius
+	physicalTomParamPickupAngle
+	physicalTomParamQuality
+)
+
+var physicalTomSpecs = []ParamSpec{
+	physicalTomParamDiameter:         expSpec("physicalTom.diameter", "SIZE", "head diameter", "m", 0.16, 0.50, 0.3048, 3),
+	physicalTomParamBatterTension:    expSpec("physicalTom.batterTension", "B.TUNE", "batter head tension", "N/m", 150, 1400, 600, 0),
+	physicalTomParamResonantTension:  expSpec("physicalTom.resonantTension", "R.TUNE", "resonant head tension", "N/m", 150, 1400, 500, 0),
+	physicalTomParamDamping:          expSpec("physicalTom.damping", "DAMP", "head damping", "/s", 0.75, 12, 3, 2),
+	physicalTomParamStrikeRadius:     linSpec("physicalTom.strikeRadius", "HIT.R", "strike radius", "", 0, 0.95, 0.45, 2),
+	physicalTomParamStrikeAngle:      linSpec("physicalTom.strikeAngle", "HIT.A", "strike angle", "°", -180, 180, 0.2*180/math.Pi, 0),
+	physicalTomParamHardness:         linSpec("physicalTom.hardness", "HARD", "mallet hardness", "", 0, 1, 0.7, 2),
+	physicalTomParamShellDepth:       expSpec("physicalTom.shellDepth", "DEPTH", "shell depth", "m", 0.05, 0.60, 0.20, 3),
+	physicalTomParamCavityCoupling:   linSpec("physicalTom.cavityCoupling", "AIR", "cavity coupling", "", 0, 1, 1, 2),
+	physicalTomParamNonlinearity:     linSpec("physicalTom.nonlinearity", "NLIN", "nonlinear tension amount", "", 0, 2, 1, 2),
+	physicalTomParamPickupRadius:     linSpec("physicalTom.pickupRadius", "MIC.R", "pickup radius", "", 0, 0.95, 0.32, 2),
+	physicalTomParamPickupAngle:      linSpec("physicalTom.pickupAngle", "MIC.A", "pickup angle", "°", -180, 180, 0.6*180/math.Pi, 0),
+	physicalTomParamQuality:          choiceSpec("physicalTom.quality", "QUAL", "quality tier", []string{"Draft", "Standard", "High"}, 1),
+}
+
 // voiceNames labels each track for the editor UI, in engine track order.
 var voiceNames = [TrackCount]string{"Bass Drum", "Snare", "Hi-Hat", "Tom", "Cymbal"}
 
@@ -269,6 +322,12 @@ func SpecsForTrack(track int) []ParamSpec {
 	}
 
 	return voiceSpecs[track]
+}
+
+// PhysicalTomSpecs returns the generated descriptor source for the physical
+// Tom editor. Its indices are stable persistence and WASM command addresses.
+func PhysicalTomSpecs() []ParamSpec {
+	return physicalTomSpecs
 }
 
 // VoiceName returns the display name of one voice, or "" for a bad track.

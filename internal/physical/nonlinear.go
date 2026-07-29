@@ -73,6 +73,7 @@ func (head nonlinearHead) discreteTension(oldStrain, newStrain float64) float64 
 		head.maxTensionNPerM
 	newScaled := head.coefficientNPerM3 * newStrain /
 		head.maxTensionNPerM
+
 	difference := newScaled - oldScaled
 	if math.Abs(difference) < 1e-5 {
 		midpoint := 0.5 * (oldScaled + newScaled)

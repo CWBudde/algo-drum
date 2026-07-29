@@ -166,5 +166,14 @@ func (e *Engine) checkMix(problems []error) []error {
 		}
 	}
 
+	if e.physicalTom != nil {
+		for index := range e.physicalTom.ParamSpecs() {
+			if param := e.physicalTom.Param(index); !inRange(param, 0, 1) {
+				problems = append(problems,
+					fmt.Errorf("physical Tom param %d out of contract: %v", index, param))
+			}
+		}
+	}
+
 	return problems
 }

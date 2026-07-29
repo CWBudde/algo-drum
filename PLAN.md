@@ -816,17 +816,24 @@ results are documented in
 
 ### P4 — Nonlinear hit behaviour
 
-- [ ] Implement a Berger-style reduced tension modulation driven by modal
+- [x] Implement a Berger-style reduced tension modulation driven by modal
       displacement/strain energy.
-- [ ] Give the update a discrete energy/passivity argument and conservative
+- [x] Give the update a discrete energy/passivity argument and conservative
       parameter bounds; add an oversampled or high-precision reference test.
-- [ ] Verify velocity-dependent attack spectrum and downward modal-frequency
+- [x] Verify velocity-dependent attack spectrum and downward modal-frequency
       glides without runaway energy or aliasing.
-- [ ] Replace the provisional force pulse with a bounded-iteration mallet/contact
-      model only if comparison shows an audible, measurable benefit.
+- [x] Evaluate the provisional force pulse; replace it with a bounded-iteration
+      mallet/contact model only if comparison shows an audible, measurable
+      benefit.
 
 Exit: louder hits produce a controlled, reference-comparable pitch glide and
 attack change while all fuzz/finite/energy tests remain green.
+
+Completed 2026-07-29. The bounded Berger potential, discrete-gradient
+passivity argument, anti-alias parameter bound, oversampled reference,
+velocity/glide measurements, active native/WASM benchmarks, and evidence-based
+decision to retain the existing force pulse are documented in
+[`docs/physical-nonlinearity.md`](docs/physical-nonlinearity.md).
 
 ### P5 — Product integration
 

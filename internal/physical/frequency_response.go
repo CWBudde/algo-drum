@@ -21,7 +21,9 @@ type FrequencyResponse struct {
 }
 
 // ReferenceFrequencyResponse solves the diagonal modal system plus its
-// rank-one axisymmetric cavity coupling in the frequency domain.
+// rank-one axisymmetric cavity coupling in the frequency domain. This is the
+// small-signal response linearized at zero displacement; nonlinear
+// level-dependent behaviour is verified in the time domain.
 func (d *DoubleHead) ReferenceFrequencyResponse(
 	frequencyHz float64,
 ) (FrequencyResponse, error) {
@@ -47,6 +49,7 @@ func (d *DoubleHead) ReferenceFrequencyResponse(
 	sweptPressure := complex(0, 0)
 
 	for index, mode := range d.modes {
+		effectiveSweptArea := d.config.Cavity.Coupling01 * mode.SweptAreaM2
 		dynamicStiffness := complex(
 			mode.ModalMassKg*
 				(mode.AngularFrequency*mode.AngularFrequency-
@@ -62,10 +65,10 @@ func (d *DoubleHead) ReferenceFrequencyResponse(
 		uncoupledDisplacement[index] =
 			complex(forceShape, 0) / dynamicStiffness
 		pressureDisplacement[index] =
-			complex(mode.SweptAreaM2, 0) / dynamicStiffness
-		sweptUncoupled += complex(mode.SweptAreaM2, 0) *
+			complex(effectiveSweptArea, 0) / dynamicStiffness
+		sweptUncoupled += complex(effectiveSweptArea, 0) *
 			uncoupledDisplacement[index]
-		sweptPressure += complex(mode.SweptAreaM2, 0) *
+		sweptPressure += complex(effectiveSweptArea, 0) *
 			pressureDisplacement[index]
 	}
 

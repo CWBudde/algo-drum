@@ -15,8 +15,9 @@ import (
 const (
 	legacyConfigVersion           = 1
 	linearDoubleHeadConfigVersion = 2
+	nonlinearConfigVersion        = 3
 	// ConfigVersion is the physical-drum JSON schema emitted by EncodeConfig.
-	ConfigVersion = 3
+	ConfigVersion = 4
 
 	minSampleRateHz = 8_000.0
 	maxSampleRateHz = 384_000.0
@@ -123,6 +124,7 @@ type Strike struct {
 type Cavity struct {
 	Enabled           bool    `json:"enabled"`
 	DepthM            float64 `json:"depthM"`
+	Coupling01        float64 `json:"coupling01"`
 	AirDensityKgPerM3 float64 `json:"airDensityKgPerM3"`
 	SoundSpeedMPerS   float64 `json:"soundSpeedMPerS"`
 	LossPerSecond     float64 `json:"lossPerSecond"`
@@ -196,6 +198,7 @@ func DefaultPhysicalDrum() PhysicalDrum {
 		Cavity: Cavity{
 			Enabled:           true,
 			DepthM:            0.20,
+			Coupling01:        1,
 			AirDensityKgPerM3: 1.204,
 			SoundSpeedMPerS:   343,
 			LossPerSecond:     5,
@@ -267,6 +270,10 @@ func (d PhysicalDrum) Validate() error {
 		return err
 	}
 
+	if err := finiteRange("cavity.coupling01", d.Cavity.Coupling01, 0, 1); err != nil {
+		return err
+	}
+
 	if err := finiteRange("cavity.airDensityKgPerM3", d.Cavity.AirDensityKgPerM3, 0.5, 2); err != nil {
 		return err
 	}
@@ -330,8 +337,13 @@ func DecodeConfig(data []byte) (PhysicalDrum, error) {
 	if config.Version == legacyConfigVersion {
 		migrateV1Config(&config)
 	}
+
 	if config.Version == linearDoubleHeadConfigVersion {
 		migrateV2Config(&config)
+	}
+
+	if config.Version == nonlinearConfigVersion {
+		migrateV3Config(&config)
 	}
 
 	if err := config.Validate(); err != nil {
@@ -357,10 +369,16 @@ func migrateV1Config(config *PhysicalDrum) {
 }
 
 func migrateV2Config(config *PhysicalDrum) {
-	config.Version = ConfigVersion
+	config.Version = nonlinearConfigVersion
 	// Version 2 was the linear double-head model. Preserve its sound exactly;
 	// newly created version-3 configs opt into the nonlinear extension.
 	config.Nonlinearity = Nonlinearity{}
+}
+
+func migrateV3Config(config *PhysicalDrum) {
+	config.Version = ConfigVersion
+	// Version 3 coupled the full analytic swept head area into the cavity.
+	config.Cavity.Coupling01 = 1
 }
 
 func validateNonlinearity(config PhysicalDrum) error {
@@ -373,6 +391,7 @@ func validateNonlinearity(config PhysicalDrum) error {
 	); err != nil {
 		return err
 	}
+
 	if err := finiteRange(
 		"nonlinearity.resonantTensionCoefficientNPerM3",
 		nonlinearity.ResonantTensionCoefficientNPerM3,
@@ -381,6 +400,7 @@ func validateNonlinearity(config PhysicalDrum) error {
 	); err != nil {
 		return err
 	}
+
 	if err := finiteRange(
 		"nonlinearity.maximumTensionRatio",
 		nonlinearity.MaximumTensionRatio,
@@ -389,9 +409,11 @@ func validateNonlinearity(config PhysicalDrum) error {
 	); err != nil {
 		return err
 	}
+
 	if !nonlinearity.Enabled {
 		return nil
 	}
+
 	if nonlinearity.BatterTensionCoefficientNPerM3 == 0 &&
 		(!config.Resonant.Enabled ||
 			nonlinearity.ResonantTensionCoefficientNPerM3 == 0) {
@@ -400,6 +422,7 @@ func validateNonlinearity(config PhysicalDrum) error {
 			ErrInvalidConfig,
 		)
 	}
+
 	if nonlinearity.MaximumTensionRatio == 0 {
 		return fmt.Errorf(
 			"%w: enabled nonlinearity has zero maximum tension ratio",
@@ -411,9 +434,10 @@ func validateNonlinearity(config PhysicalDrum) error {
 	if config.Resonant.Enabled {
 		safeRatio = min(safeRatio, maximumSafeTensionRatio(config.Resonant))
 	}
-	if nonlinearity.MaximumTensionRatio > safeRatio {
+
+	if nonlinearity.MaximumTensionRatio >= safeRatio {
 		return fmt.Errorf(
-			"%w: nonlinearity.maximumTensionRatio %v exceeds anti-alias bound %v",
+			"%w: nonlinearity.maximumTensionRatio %v reaches anti-alias bound %v",
 			ErrInvalidConfig,
 			nonlinearity.MaximumTensionRatio,
 			safeRatio,

@@ -112,16 +112,23 @@ func TestNonlinearUpdateMatchesOversampledReference(t *testing.T) {
 		)
 	}
 
-	if relativeError := maximumError / initialMotion; relativeError > 0.015 {
+	relativeError := maximumError / initialMotion
+	energyError := relativeDifference(
+		base.observe().TotalMechanicalEnergyJ,
+		initialEnergy,
+	)
+	t.Logf(
+		"48/192 kHz trajectory maximum error %.4f%%, energy drift %.3g",
+		100*relativeError,
+		energyError,
+	)
+	if relativeError > 0.015 {
 		t.Fatalf(
 			"48 kHz trajectory differs from 192 kHz reference by %.3f%%",
 			100*relativeError,
 		)
 	}
-	if energyError := relativeDifference(
-		base.observe().TotalMechanicalEnergyJ,
-		initialEnergy,
-	); energyError > 2e-10 {
+	if energyError > 2e-10 {
 		t.Fatalf("lossless nonlinear energy drift = %.3g", energyError)
 	}
 }

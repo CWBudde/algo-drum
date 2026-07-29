@@ -3,7 +3,8 @@
 P3 extends the calibrated single-head model with a separately tuned resonant
 head and a passive lumped cavity. The real-time implementation is
 `physical.DoubleHead`; `physical.SingleHead` remains available as the P2
-reference and is still bit-identical when cavity coupling is disabled.
+reference and is still bit-identical when both cavity coupling and P4
+nonlinear tension are disabled.
 
 ## Reduced model
 
@@ -15,8 +16,7 @@ retains 48 oscillators per head.
 For an axisymmetric mode with Bessel zero \(z\_{0n}\), the signed swept area is
 
 \[
-A*{0n}
-= 2\pi R^2\frac{J_1(z*{0n})}{z\_{0n}}.
+A\_{0n} = 2\pi R^2\frac{J_1(z\_{0n})}{z\_{0n}}.
 \]
 
 The angular integral of every \(m>0\) mode is zero, so those modes have exactly
@@ -47,10 +47,8 @@ The stored mechanical energy is
 \[
 E =
 \sum_i \frac{m_i}{2}
-\left(\dot q_i^2 + \omega_i^2q_i^2\right)
-
-- \frac{p^2}{2K}.
-  \]
+\left(\dot q_i^2 + \omega_i^2q_i^2\right) + \frac{p^2}{2K}.
+\]
 
 After contact ends,
 
@@ -92,7 +90,9 @@ dynamic state, so coefficients never change halfway through a tail.
 ## Frequency-domain reference
 
 `DoubleHead.ReferenceFrequencyResponse` is an allocation-tolerant offline
-check of the continuous reduced model. At angular frequency \(\Omega\),
+check of the continuous linearized-at-rest reduced model. Nonlinear
+amplitude-dependent responses require a time-domain render. At angular
+frequency \(\Omega\),
 
 \[
 D_i = m_i(\omega_i^2-\Omega^2+j\,2d_i\Omega),
@@ -125,10 +125,14 @@ The P3 suite covers:
 - continuous frequency-response agreement;
 - rejected-update atomicity and zero allocations in `Render`.
 
-On the 2026-07-29 development machine, the Standard two-head model (96 total
-oscillators, 48 kHz, 512-sample chunks) measured 292 ksamples/s or 6.09 times
-real time on Linux/amd64, and 244 ksamples/s or 5.08 times real time on
-`js/wasm` under Node, with zero render allocations.
+Before P4 nonlinear tension was enabled, the Standard linear two-head model
+(96 total oscillators, 48 kHz, 512-sample chunks) measured 292 ksamples/s or
+6.09 times real time on Linux/amd64, and 244 ksamples/s or 5.08 times real time
+on `js/wasm` under Node, with zero render allocations.
+
+The P4 equations, energy extension, active-solve benchmarks, and validation
+results are documented in
+[`physical-nonlinearity.md`](physical-nonlinearity.md).
 
 The cavity is intentionally a single uniform-pressure state. Shell modes,
 vents, non-axisymmetric leakage, and empirical head-to-head cross-coupling
