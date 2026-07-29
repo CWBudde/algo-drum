@@ -1073,6 +1073,47 @@ func TestTomModelSwitchResetsTailsAndPreservesProceduralParams(t *testing.T) {
 	}
 }
 
+func TestPhysicalTomParametersAreIndependentAndSurviveModelSwitch(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetPhysicalTomParam(physicalTomParamBatterTension, 0.8)
+
+	if engine.physicalTom == nil {
+		t.Fatal("physical parameter edit did not initialize the physical Tom")
+	}
+	if got := engine.physicalTom.Param(physicalTomParamBatterTension); got != 0.8 {
+		t.Fatalf("physical batter tension position = %v, want 0.8", got)
+	}
+	wantTension := physicalTomSpecs[physicalTomParamBatterTension].Map(0.8)
+	if got := engine.physicalTom.config.Batter.TensionNPerM; got != wantTension {
+		t.Fatalf("physical batter tension = %v, want %v", got, wantTension)
+	}
+
+	engine.SetTomModel(TomModelPhysical)
+	engine.SetTomModel(TomModelProcedural)
+	if got := engine.physicalTom.Param(physicalTomParamBatterTension); got != 0.8 {
+		t.Fatalf("physical parameter after A/B switch = %v, want 0.8", got)
+	}
+	if got := engine.proceduralTom.Param(tomParamPitchTo); got != tomSpecs[tomParamPitchTo].Default {
+		t.Fatalf("physical edit changed procedural tuning to %v", got)
+	}
+}
+
+func TestPhysicalTomParameterRejectsInvalidInput(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetPhysicalTomParam(physicalTomParamHardness, 0.4)
+
+	for _, index := range []int{-1, len(physicalTomSpecs), math.MaxInt} {
+		engine.SetPhysicalTomParam(index, 0.8)
+	}
+	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		engine.SetPhysicalTomParam(physicalTomParamHardness, value)
+	}
+
+	if got := engine.physicalTom.Param(physicalTomParamHardness); got != 0.4 {
+		t.Fatalf("invalid edit changed hardness to %v", got)
+	}
+}
+
 func TestInvalidTomModelIsIgnored(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	engine.SetTomModel(TomModel(99))

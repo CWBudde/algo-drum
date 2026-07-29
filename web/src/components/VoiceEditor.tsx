@@ -24,7 +24,7 @@ interface Props {
   onModelChange?: (model: TomModel) => void;
   onChange: (index: number, value: number) => void;
   onReset: () => void;
-  onAudition: () => void;
+  onAudition: (amount: number) => void;
   onRequestClose: () => void;
 }
 
@@ -45,6 +45,18 @@ export default function VoiceEditor({
   const [resetNotice, setResetNotice] = useState("");
   const noticeTimer = useRef<number | undefined>(undefined);
   const showProceduralParams = model !== "physical";
+
+  const handleAudition = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      const bounds = e.currentTarget.getBoundingClientRect();
+      const position =
+        e.detail === 0 || bounds.width <= 0
+          ? 1
+          : Math.max(0, Math.min(1, (e.clientX - bounds.left) / bounds.width));
+      onAudition(0.05 + 0.95 * position);
+    },
+    [onAudition],
+  );
 
   // The component is mounted only while open, so showModal() runs exactly once.
   // It brings the focus trap, the background `inert`, ::backdrop and top-layer
@@ -169,42 +181,46 @@ export default function VoiceEditor({
         </fieldset>
       )}
 
-      {showProceduralParams ? (
-        <>
-          <div className="dm-voice-knobs" data-params={specs.length}>
-            {specs.map((spec, i) => (
-              <div className="dm-voice-param" key={spec.id}>
-                <Knob
-                  value={values[i]}
-                  onChange={(v) => onChange(i, v)}
-                  label={spec.label}
-                  ariaLabel={`${name} ${spec.name}`}
-                  valueText={(v) => formatParam(spec, v)}
-                  defaultValue={spec.default}
-                  size={54}
-                  color={spec.unit === "s" ? BLUE : AMBER}
-                />
-                <span className="dm-voice-value">
-                  {formatParam(spec, values[i])}
-                </span>
-              </div>
-            ))}
-          </div>
+      {!showProceduralParams && (
+        <div className="dm-voice-physical-note">
+          <strong>Double-headed physical drum</strong>
+          <p>
+            Coupled circular heads, enclosed air, nonlinear tension, and a
+            position-dependent strike and pickup.
+          </p>
+        </div>
+      )}
 
+      <div
+        className="dm-voice-knobs"
+        data-params={specs.length}
+        data-physical={!showProceduralParams || undefined}
+      >
+        {specs.map((spec, i) => (
+          <div className="dm-voice-param" key={spec.id}>
+            <Knob
+              value={values[i]}
+              onChange={(v) => onChange(i, v)}
+              label={spec.label}
+              ariaLabel={`${name} ${spec.name}`}
+              valueText={(v) => formatParam(spec, v)}
+              defaultValue={spec.default}
+              size={54}
+              color={spec.unit === "s" || spec.unit === "/s" ? BLUE : AMBER}
+            />
+            <span className="dm-voice-value">
+              {formatParam(spec, values[i])}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {showProceduralParams && (
+        <>
           <p className="dm-voice-hint">
             The strip’s DEC knob trims these decay times by ±50%.
           </p>
         </>
-      ) : (
-        <div className="dm-voice-physical-note">
-          <strong>Single circular head</strong>
-          <p>
-            A 48-mode Fourier–Bessel model with position-dependent strike and
-            pickup, frequency-dependent loss, modal radiation, and a filtered
-            microphone response. The strip’s DEC knob controls modal loss;
-            detailed physical parameters will follow in the dedicated lab.
-          </p>
-        </div>
       )}
 
       <div className="dm-voice-foot">
@@ -212,7 +228,7 @@ export default function VoiceEditor({
           type="button"
           className="dm-algo-btn dm-voice-audition"
           disabled={disabled}
-          onClick={onAudition}
+          onClick={handleAudition}
           aria-label={`Audition ${name}`}
           title="Play this voice once"
         >
@@ -222,16 +238,14 @@ export default function VoiceEditor({
           AUDITION
         </button>
         <span className="dm-voice-foot-spacer" />
-        {showProceduralParams && (
-          <button
-            type="button"
-            className="dm-algo-btn dm-algo-btn-warn"
-            onClick={handleReset}
-            aria-label={`Reset ${name} voice to defaults`}
-          >
-            RESET
-          </button>
-        )}
+        <button
+          type="button"
+          className="dm-algo-btn dm-algo-btn-warn"
+          onClick={handleReset}
+          aria-label={`Reset ${name} voice to defaults`}
+        >
+          RESET
+        </button>
         <button type="button" className="dm-algo-btn" onClick={onRequestClose}>
           CLOSE
         </button>

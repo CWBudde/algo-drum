@@ -186,11 +186,22 @@ test("Tom can select, audition, and persist the physical model", async ({
   // user does instead of asking Playwright to click the transparent input.
   await dialog.getByText("Physical", { exact: false }).click();
   await expect(physical).toBeChecked();
-  await expect(dialog.getByText("Single circular head")).toBeVisible();
-  await expect(dialog.getByRole("slider")).toHaveCount(0);
+  await expect(dialog.getByText("Double-headed physical drum")).toBeVisible();
+  await expect(dialog.getByRole("slider")).toHaveCount(13);
 
-  // The physical audition is independent of the transport.
-  await dialog.getByRole("button", { name: "Audition Tom" }).click();
+  const tuning = dialog.getByRole("slider", {
+    name: "Tom batter head tension",
+  });
+  await tuning.focus();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  const edited = await tuning.getAttribute("aria-valuenow");
+
+  const audition = dialog.getByRole("button", { name: "Audition Tom" });
+  await audition.click({ position: { x: 4, y: 8 } });
+  const box = await audition.boundingBox();
+  expect(box).not.toBeNull();
+  await audition.click({ position: { x: box!.width - 4, y: 8 } });
   await expect(play).toBeVisible();
 
   await page.waitForTimeout(500);
@@ -201,4 +212,26 @@ test("Tom can select, audition, and persist the physical model", async ({
   await expect(
     page.getByRole("dialog").getByRole("radio", { name: /Physical/ }),
   ).toBeChecked();
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByRole("slider", { name: "Tom batter head tension" }),
+  ).toHaveAttribute("aria-valuenow", edited!);
+
+  // The physical bank is also part of the URL payload, not just localStorage.
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: /^Close Tom/ })
+    .click();
+  await page.getByRole("button", { name: /Copy shareable link/i }).click();
+  const shared = page.url();
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(shared);
+  await expect(play).toBeEnabled({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Tom voice settings" }).click();
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByRole("slider", { name: "Tom batter head tension" }),
+  ).toHaveAttribute("aria-valuenow", edited!);
 });

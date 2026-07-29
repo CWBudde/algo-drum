@@ -461,6 +461,14 @@ func (e *Engine) SetVoiceParam(track, index int, value01 float64) {
 // It is valid while either Tom model is selected so A/B edits survive a model
 // switch. Invalid indices and non-finite values are ignored by the voice.
 func (e *Engine) SetPhysicalTomParam(index int, value01 float64) {
+	if index < 0 || index >= len(physicalTomSpecs) {
+		return
+	}
+
+	if _, ok := validFloat(value01, 0, 1); !ok {
+		return
+	}
+
 	physicalVoice, ok := e.ensurePhysicalTom()
 	if !ok {
 		return
@@ -522,6 +530,7 @@ func (e *Engine) SetTomModel(model TomModel) {
 	if model != TomModelPhysical {
 		next.SetDecay(e.decays[tomTrackIndex])
 	}
+
 	e.voices[tomTrackIndex] = next
 	e.tomModel = model
 }

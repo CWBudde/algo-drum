@@ -4,7 +4,9 @@ import AlgoPanel from "./AlgoPanel";
 import VoiceEditor from "./VoiceEditor";
 import * as engine from "../engine/wasmEngine";
 import {
+  defaultPhysicalTomParams,
   defaultVoiceParams,
+  PHYSICAL_TOM_PARAMS,
   VOICE_NAMES,
   VOICE_PARAMS,
 } from "../engine/voiceParams";
@@ -129,6 +131,10 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       );
     },
   );
+  const [physicalTomParams, setPhysicalTomParams] = useState<number[]>(() => {
+    const defaults = defaultPhysicalTomParams();
+    return defaults.map((value, i) => initial?.physicalTomParams?.[i] ?? value);
+  });
   // Engine track whose editor is open, or null. Also used to hand the keyboard
   // over to the dialog (see the Space handler below).
   const [editorTrack, setEditorTrack] = useState<number | null>(null);
@@ -195,6 +201,16 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!initial?.physicalTomParams) return;
+
+    physicalTomParams.forEach((value, index) => {
+      engine.setPhysicalTomParam(index, value);
+    });
+    // Mount-only: restore the independent physical parameter bank.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Playhead follows the audible step reported by the audio worklet
   useEffect(() => engine.onStep(setCurrentStep), []);
 
@@ -228,6 +244,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       decays,
       muted,
       voiceParams: voiceParamsByEngineTrack,
+      physicalTomParams,
     }),
     [
       pattern,
@@ -242,6 +259,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       decays,
       muted,
       voiceParamsByEngineTrack,
+      physicalTomParams,
     ],
   );
 
@@ -398,6 +416,23 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     });
   }, []);
 
+  const setPhysicalTomParam = useCallback((index: number, value: number) => {
+    setPhysicalTomParams((prev) => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
+    engine.setPhysicalTomParam(index, value);
+  }, []);
+
+  const resetPhysicalTom = useCallback(() => {
+    const defaults = defaultPhysicalTomParams();
+    setPhysicalTomParams(defaults);
+    defaults.forEach((value, index) => {
+      engine.setPhysicalTomParam(index, value);
+    });
+  }, []);
+
   return (
     <div className="dm-machine">
       <header className="dm-header">
@@ -548,14 +583,30 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       {editorTrack !== null && (
         <VoiceEditor
           name={VOICE_NAMES[editorTrack]}
-          specs={VOICE_PARAMS[editorTrack]}
-          values={voiceParamsByEngineTrack[editorTrack]}
+          specs={
+            editorTrack === 3 && tomModel === "physical"
+              ? PHYSICAL_TOM_PARAMS
+              : VOICE_PARAMS[editorTrack]
+          }
+          values={
+            editorTrack === 3 && tomModel === "physical"
+              ? physicalTomParams
+              : voiceParamsByEngineTrack[editorTrack]
+          }
           disabled={!wasmLoaded}
           model={editorTrack === 3 ? tomModel : undefined}
           onModelChange={editorTrack === 3 ? setTomModel : undefined}
-          onChange={(index, value) => setVoiceParam(editorTrack, index, value)}
-          onReset={() => resetVoice(editorTrack)}
-          onAudition={() => void engine.triggerVoice(editorTrack, 1)}
+          onChange={(index, value) =>
+            editorTrack === 3 && tomModel === "physical"
+              ? setPhysicalTomParam(index, value)
+              : setVoiceParam(editorTrack, index, value)
+          }
+          onReset={() =>
+            editorTrack === 3 && tomModel === "physical"
+              ? resetPhysicalTom()
+              : resetVoice(editorTrack)
+          }
+          onAudition={(amount) => void engine.triggerVoice(editorTrack, amount)}
           onRequestClose={closeEditor}
         />
       )}
