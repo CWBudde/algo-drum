@@ -62,7 +62,7 @@ func main() {
 	}
 
 	fmt.Printf(
-		"wrote %s: %.2fs, %d Hz, %d modes, source peak %.6g\n",
+		"wrote %s: %.2fs, %d Hz, %d-mode budget, source peak %.6g\n",
 		*outputPath,
 		duration.Seconds(),
 		int(config.SampleRateHz),

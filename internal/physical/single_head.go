@@ -35,10 +35,11 @@ type SingleHead struct {
 	matrix21     []float64
 	matrix22     []float64
 
-	pulse      []float64
-	pulseIndex int
-	pulseScale float64
-	energy     float64
+	pulse          []float64
+	pendingForce   []float64
+	pendingIndex   int
+	pendingSamples int
+	energy         float64
 }
 
 // NewSingleHead precomputes the circular modes, exact damped state-transition
@@ -84,7 +85,7 @@ func NewSingleHead(config PhysicalDrum) (*SingleHead, error) {
 	}
 
 	model.pulse = contactPulse(config.SampleRateHz, config.Strike.Hardness01)
-	model.pulseIndex = len(model.pulse)
+	model.pendingForce = make([]float64, len(model.pulse))
 
 	return model, nil
 }
@@ -111,9 +112,15 @@ func (s *SingleHead) Trigger(velocity01 float64) error {
 		return ErrInvalidVelocity
 	}
 
-	s.pulseIndex = 0
 	impulseKgMPerS := s.config.Strike.MalletMassKg * s.config.Strike.VelocityMPerS * velocity01
-	s.pulseScale = impulseKgMPerS * s.config.SampleRateHz
+
+	pulseScale := impulseKgMPerS * s.config.SampleRateHz
+	for pulseIndex, sample := range s.pulse {
+		pendingIndex := (s.pendingIndex + pulseIndex) % len(s.pendingForce)
+		s.pendingForce[pendingIndex] += pulseScale * sample
+	}
+
+	s.pendingSamples = len(s.pulse)
 
 	return nil
 }
@@ -122,24 +129,32 @@ func (s *SingleHead) Trigger(velocity01 float64) error {
 func (s *SingleHead) Reset() {
 	clear(s.displacement)
 	clear(s.velocity)
-	s.pulseIndex = len(s.pulse)
-	s.pulseScale = 0
+	clear(s.pendingForce)
+	s.pendingIndex = 0
+	s.pendingSamples = 0
 	s.energy = 0
 }
 
 // IsActive reports whether contact is pending or mechanical energy is above
 // the configured threshold.
 func (s *SingleHead) IsActive() bool {
-	return s.pulseIndex < len(s.pulse) ||
+	return s.pendingSamples > 0 ||
 		s.energy > s.config.Batter.InactiveEnergyThresholdJ
 }
 
 // Tick advances the exact linear modal state by one sample.
 func (s *SingleHead) Tick() Output {
 	forceN := 0.0
-	if s.pulseIndex < len(s.pulse) {
-		forceN = s.pulseScale * s.pulse[s.pulseIndex]
-		s.pulseIndex++
+	if s.pendingSamples > 0 {
+		forceN = s.pendingForce[s.pendingIndex]
+		s.pendingForce[s.pendingIndex] = 0
+
+		s.pendingIndex++
+		if s.pendingIndex == len(s.pendingForce) {
+			s.pendingIndex = 0
+		}
+
+		s.pendingSamples--
 	}
 
 	inverseSampleRate := 1 / s.config.SampleRateHz
@@ -181,16 +196,34 @@ func (s *SingleHead) Render(dst []float64) {
 func stateTransition(
 	angularFrequency, decayRate, sampleRate float64,
 ) (float64, float64, float64, float64, error) {
-	if decayRate >= angularFrequency {
-		return 0, 0, 0, 0, fmt.Errorf(
-			"%w: overdamped mode decay=%v angular frequency=%v",
-			ErrInvalidConfig,
-			decayRate,
-			angularFrequency,
-		)
+	timeStep := 1 / sampleRate
+	if math.Abs(decayRate-angularFrequency) <= angularFrequency*1e-8 {
+		decay := math.Exp(-decayRate * timeStep)
+
+		return decay * (1 + decayRate*timeStep),
+			decay * timeStep,
+			-decay * angularFrequency * angularFrequency * timeStep,
+			decay * (1 - decayRate*timeStep),
+			nil
 	}
 
-	timeStep := 1 / sampleRate
+	if decayRate > angularFrequency {
+		rateDifference := math.Sqrt(
+			decayRate*decayRate - angularFrequency*angularFrequency,
+		)
+		slowRate := -angularFrequency * angularFrequency / (decayRate + rateDifference)
+		fastRate := -decayRate - rateDifference
+		slowDecay := math.Exp(slowRate * timeStep)
+		fastDecay := math.Exp(fastRate * timeStep)
+		denominator := slowRate - fastRate
+
+		return (-fastRate*slowDecay + slowRate*fastDecay) / denominator,
+			(slowDecay - fastDecay) / denominator,
+			angularFrequency * angularFrequency * (fastDecay - slowDecay) / denominator,
+			(slowRate*slowDecay - fastRate*fastDecay) / denominator,
+			nil
+	}
+
 	dampedFrequency := math.Sqrt(angularFrequency*angularFrequency - decayRate*decayRate)
 	sine := math.Sin(dampedFrequency * timeStep)
 	cosine := math.Cos(dampedFrequency * timeStep)

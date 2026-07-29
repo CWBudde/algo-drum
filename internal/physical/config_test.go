@@ -57,6 +57,19 @@ func TestConfigRejectsNonFiniteValue(t *testing.T) {
 	}
 }
 
+func TestConfigValidatesDisabledHeadFields(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultPhysicalDrum()
+	config.Resonant.Enabled = false
+	config.Resonant.TensionNPerM = math.NaN()
+
+	err := config.Validate()
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("Validate() error = %v, want ErrInvalidConfig", err)
+	}
+}
+
 func TestQualityModeLimits(t *testing.T) {
 	t.Parallel()
 

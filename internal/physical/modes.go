@@ -40,7 +40,8 @@ type eigenmode struct {
 
 // BesselZero returns the radialIndex-th positive zero of J_order.
 func BesselZero(order, radialIndex int) (float64, error) {
-	if order < 0 || radialIndex < 1 {
+	if order < 0 || order > maxModeOrder ||
+		radialIndex < 1 || radialIndex > maxModeOrder {
 		return 0, fmt.Errorf("%w: order=%d radial=%d", ErrInvalidModeIndex, order, radialIndex)
 	}
 

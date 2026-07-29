@@ -1,6 +1,7 @@
 package physical
 
 import (
+	"errors"
 	"math"
 	"testing"
 )
@@ -40,11 +41,20 @@ func TestBesselZeroKnownValues(t *testing.T) {
 func TestBesselZeroRejectsInvalidIndex(t *testing.T) {
 	t.Parallel()
 
-	if _, err := BesselZero(-1, 1); err == nil {
-		t.Fatal("BesselZero(-1, 1) succeeded, want error")
-	}
-	if _, err := BesselZero(0, 0); err == nil {
-		t.Fatal("BesselZero(0, 0) succeeded, want error")
+	for _, index := range [][2]int{
+		{-1, 1},
+		{maxModeOrder + 1, 1},
+		{0, 0},
+		{0, maxModeOrder + 1},
+	} {
+		if _, err := BesselZero(index[0], index[1]); !errors.Is(err, ErrInvalidModeIndex) {
+			t.Errorf(
+				"BesselZero(%d, %d) error = %v, want ErrInvalidModeIndex",
+				index[0],
+				index[1],
+				err,
+			)
+		}
 	}
 }
 
