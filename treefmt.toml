@@ -68,8 +68,8 @@ priority = 1
 
 # Markdown, YAML, JSON, TypeScript/React formatter
 [formatter.prettier]
-command = "prettier"
-options = ["-w"]
+command = "bunx"
+options = ["prettier@3.9.5", "-w"]
 includes = [
     "*.md",
     "*.yaml",

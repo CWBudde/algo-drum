@@ -1,0 +1,59 @@
+name: CI Format
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: Format
+    # Mirrors `just check-formatted`: treefmt with every formatter it lists
+    # (treefmt.toml) actually installed, so the check can't silently no-op
+    # via --allow-missing-formatter.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Install Go-based formatters
+        run: |
+          go install mvdan.cc/gofumpt@v0.10.0
+          go install github.com/daixiang0/gci@v0.14.0
+          go install mvdan.cc/sh/v3/cmd/shfmt@v3.13.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.7"
+
+      - name: Install treefmt
+        env:
+          TREEFMT_VERSION: 2.5.0
+        run: |
+          asset="treefmt_${TREEFMT_VERSION}_linux_amd64.tar.gz"
+          base_url="https://github.com/numtide/treefmt/releases/download/v${TREEFMT_VERSION}"
+          curl -sSL -o "$asset" "$base_url/$asset"
+          curl -sSL -o checksums.txt "$base_url/treefmt_${TREEFMT_VERSION}_checksums.txt"
+          sha256sum --ignore-missing -c checksums.txt
+          tar -xzf "$asset" treefmt
+          sudo install -m 755 treefmt /usr/local/bin/treefmt
+          rm -f "$asset" checksums.txt treefmt
+
+      - name: Check formatting
+        # No --allow-missing-formatter (unlike the justfile recipe, where local
+        # dev may legitimately lack a formatter): if setup degrades — e.g. Bun
+        # cannot resolve the pinned Prettier that owns every .ts/.tsx/.md/.yml/
+        # .json/.css file — this must fail loudly instead of passing green
+        # having formatted nothing.
+        run: treefmt --fail-on-change

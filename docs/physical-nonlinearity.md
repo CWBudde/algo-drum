@@ -62,6 +62,7 @@ nonlinear force with the discrete tension
 \[
 \overline{\Delta T}
 =
+
 2\frac{U\_\mathrm{B}(S^{n+1})-U\_\mathrm{B}(S^n)}
 {S^{n+1}-S^n}.
 \]

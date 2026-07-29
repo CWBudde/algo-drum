@@ -48,7 +48,7 @@ build-wasm:
 # Regenerate the TypeScript mirror of the engine's voice parameter table
 gen-params:
     go run ./cmd/gen-voiceparams -o web/src/engine/voiceParams.generated.ts
-    cd web && bunx prettier --write src/engine/voiceParams.generated.ts
+    cd web && bunx prettier@3.9.5 --write src/engine/voiceParams.generated.ts
 
 # Regenerate the deterministic physical-model calibration metrics
 gen-physical-reference:
