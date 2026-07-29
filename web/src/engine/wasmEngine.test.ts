@@ -52,8 +52,8 @@ class FakeWorker {
 // tests need to emit steps and to observe teardown.
 class FakePort {
   onmessage:
-    | ((event: MessageEvent<{ type: string; step: number }>) => void)
-    | null = null;
+    ((event: MessageEvent<{ type: string; step: number }>) => void) | null =
+    null;
 
   postMessage(): void {}
 }
