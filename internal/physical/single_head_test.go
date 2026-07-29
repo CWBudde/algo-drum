@@ -57,12 +57,26 @@ func TestSingleHeadDiagnosticOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for range model.PulseSamples() + 1 {
+	rawEnergy := 0.0
+	pointDifferenceEnergy := 0.0
+	filterDifferenceEnergy := 0.0
+	for range model.PulseSamples() + 256 {
 		output := model.Tick()
-		want := config.Pickup.OutputGain * output.VelocityMPerS
-		if output.Radiated != want {
-			t.Fatalf("Radiated = %v, want gain * velocity = %v", output.Radiated, want)
-		}
+		rawEnergy += output.RawRadiated * output.RawRadiated
+		pointDifference := output.RawRadiated - output.VelocityMPerS
+		pointDifferenceEnergy += pointDifference * pointDifference
+		filterDifference := output.Radiated -
+			config.Pickup.OutputGain*output.RawRadiated
+		filterDifferenceEnergy += filterDifference * filterDifference
+	}
+	if rawEnergy == 0 {
+		t.Fatal("raw radiated diagnostic is silent")
+	}
+	if pointDifferenceEnergy == 0 {
+		t.Fatal("raw radiated output is identical to the point pickup")
+	}
+	if filterDifferenceEnergy == 0 {
+		t.Fatal("microphone filter did not distinguish filtered and raw radiation")
 	}
 }
 
@@ -72,6 +86,7 @@ func TestSingleHeadLosslessEnergyIsBounded(t *testing.T) {
 	config := DefaultPhysicalDrum()
 	config.Batter.Loss0PerSecond = 0
 	config.Batter.Loss2M2PerSecond = 0
+	config.Batter.RadiationLossPerSecond = 0
 	model, err := NewSingleHead(config)
 	if err != nil {
 		t.Fatal(err)
@@ -127,6 +142,39 @@ func TestSingleHeadDampedEnergyIsMonotonicAfterContact(t *testing.T) {
 			)
 		}
 		previousEnergy = energy
+	}
+}
+
+func TestStateTransitionMatchesModalDecayTargets(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultPhysicalDrum()
+	modes, err := GenerateModes(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, mode := range modes[:min(8, len(modes))] {
+		matrix11, matrix12, matrix21, matrix22, err := stateTransition(
+			mode.AngularFrequency,
+			mode.DecayRatePerSecond,
+			config.SampleRateHz,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		determinant := matrix11*matrix22 - matrix12*matrix21
+		measuredDecay := -0.5 * config.SampleRateHz * math.Log(determinant)
+		if difference := math.Abs(measuredDecay - mode.DecayRatePerSecond); difference > 1e-9 {
+			t.Fatalf(
+				"mode (%d,%d,%s) transition decay = %.15g, target = %.15g",
+				mode.AzimuthalOrder,
+				mode.RadialOrder,
+				mode.Orientation,
+				measuredDecay,
+				mode.DecayRatePerSecond,
+			)
+		}
 	}
 }
 

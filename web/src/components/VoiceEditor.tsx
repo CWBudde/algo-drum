@@ -200,8 +200,9 @@ export default function VoiceEditor({
           <strong>Single circular head</strong>
           <p>
             A 48-mode Fourier–Bessel model with position-dependent strike and
-            pickup. The strip’s DEC knob controls modal loss; detailed physical
-            parameters will follow in the dedicated lab.
+            pickup, frequency-dependent loss, modal radiation, and a filtered
+            microphone response. The strip’s DEC knob controls modal loss;
+            detailed physical parameters will follow in the dedicated lab.
           </p>
         </div>
       )}

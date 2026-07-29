@@ -52,11 +52,12 @@ The synthesizer voices are purely procedural — no samples. Each voice uses an 
 
 An independent, work-in-progress physical path now contains a linear
 single-head modal prototype. It uses circular Fourier–Bessel modes, an exact
-damped state update, finite circular strike contact, position-dependent
-excitation and pickup, and frequency-dependent modal loss. In the web demo,
-open the Tom voice settings and select **Physical — Experimental** to A/B it
-against the unchanged algorithmic Tom. Algorithmic remains the default, and
-older saved patterns and share links continue to select it.
+damped state update, finite circular strike contact, a two-parameter loss law,
+mode-dependent radiation, and a compact filtered microphone response. In the
+web demo, open the Tom voice settings and select
+**Physical — Experimental** to A/B it against the unchanged algorithmic Tom.
+Algorithmic remains the default, and older saved patterns and share links
+continue to select it.
 
 Render the default model to a normalized mono PCM WAV file for auditioning:
 
@@ -70,6 +71,18 @@ prototype's response. WAV encoding uses the maintained
 staged implementation plan are in
 [`docs/physical-model-research.md`](docs/physical-model-research.md) and
 [`PLAN.md`](PLAN.md).
+
+Generate modal targets, decay estimates, spectra, spectral peaks, and a
+fundamental-frequency track as JSON:
+
+```bash
+go run ./cmd/analyze-physical
+just gen-physical-reference # refresh the committed multi-condition suite
+```
+
+The equations, calibration workflow, and provenance of the synthetic reference
+set are documented in
+[`docs/physical-calibration.md`](docs/physical-calibration.md).
 
 ## Browser requirements
 

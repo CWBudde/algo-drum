@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	// ConfigVersion is the only physical-drum JSON schema understood here.
-	ConfigVersion = 1
+	legacyConfigVersion = 1
+	// ConfigVersion is the physical-drum JSON schema emitted by EncodeConfig.
+	ConfigVersion = 2
 
 	minSampleRateHz = 8_000.0
 	maxSampleRateHz = 384_000.0
@@ -52,7 +53,7 @@ func (q Quality) ModeLimit() int {
 }
 
 // PhysicalDrum is the versioned, serializable physical-model configuration.
-// P1 uses Batter only; Resonant and Cavity already have explicit contracts so
+// P2 uses Batter only; Resonant and Cavity already have explicit contracts so
 // the later two-head model does not need to reinterpret persisted fields.
 type PhysicalDrum struct {
 	Version      int     `json:"version"`
@@ -67,30 +68,44 @@ type PhysicalDrum struct {
 
 // Head describes one circular membrane/plate.
 type Head struct {
-	Enabled                  bool    `json:"enabled"`
-	RadiusM                  float64 `json:"radiusM"`
-	SurfaceDensityKgPerM2    float64 `json:"surfaceDensityKgPerM2"`
-	TensionNPerM             float64 `json:"tensionNPerM"`
-	BendingStiffnessNM       float64 `json:"bendingStiffnessNM"`
-	Loss0PerSecond           float64 `json:"loss0PerSecond"`
-	Loss2M2PerSecond         float64 `json:"loss2M2PerSecond"`
-	FrequencyLimitFraction   float64 `json:"frequencyLimitFraction"`
-	InactiveEnergyThresholdJ float64 `json:"inactiveEnergyThresholdJ"`
+	Enabled                  bool                  `json:"enabled"`
+	RadiusM                  float64               `json:"radiusM"`
+	SurfaceDensityKgPerM2    float64               `json:"surfaceDensityKgPerM2"`
+	TensionNPerM             float64               `json:"tensionNPerM"`
+	BendingStiffnessNM       float64               `json:"bendingStiffnessNM"`
+	Loss0PerSecond           float64               `json:"loss0PerSecond"`
+	Loss2M2PerSecond         float64               `json:"loss2M2PerSecond"`
+	RadiationLossPerSecond   float64               `json:"radiationLossPerSecond"`
+	ModeDecayCorrections     []ModeDecayCorrection `json:"modeDecayCorrections,omitempty"`
+	FrequencyLimitFraction   float64               `json:"frequencyLimitFraction"`
+	InactiveEnergyThresholdJ float64               `json:"inactiveEnergyThresholdJ"`
+}
+
+// ModeDecayCorrection adds a measured residual to the two-parameter loss law.
+// A correction applies to both orientations of a non-axisymmetric mode.
+type ModeDecayCorrection struct {
+	AzimuthalOrder     int     `json:"azimuthalOrder"`
+	RadialOrder        int     `json:"radialOrder"`
+	DecayRatePerSecond float64 `json:"decayRatePerSecond"`
 }
 
 // Mode describes one retained circular-head oscillator.
 type Mode struct {
-	AzimuthalOrder         int
-	RadialOrder            int
-	Orientation            Orientation
-	BesselZero             float64
-	WavenumberPerM         float64
-	FrequencyHz            float64
-	AngularFrequency       float64
-	DecayRatePerSecond     float64
-	ModalMassKg            float64
-	StrikeAccelerationPerN float64
-	PickupShape            float64
+	AzimuthalOrder           int
+	RadialOrder              int
+	Orientation              Orientation
+	BesselZero               float64
+	WavenumberPerM           float64
+	FrequencyHz              float64
+	AngularFrequency         float64
+	StructuralDecayPerSecond float64
+	RadiationDecayPerSecond  float64
+	DecayCorrectionPerSecond float64
+	DecayRatePerSecond       float64
+	ModalMassKg              float64
+	StrikeAccelerationPerN   float64
+	PickupShape              float64
+	RadiationWeight          float64
 }
 
 // Strike describes the mallet and its finite contact footprint.
@@ -112,17 +127,20 @@ type Cavity struct {
 	LossPerSecond     float64 `json:"lossPerSecond"`
 }
 
-// Pickup selects a diagnostic observation point on the batter head.
-// OutputGain converts the provisional modal velocity sum to an audio signal;
-// the P2 radiation model will replace this scalar approximation.
+// Pickup selects a diagnostic observation point and compact microphone
+// response. Radius01 and AngleRad locate the microphone projection over the
+// head; DistanceM controls geometric attenuation.
 type Pickup struct {
 	Radius01   float64 `json:"radius01"`
 	AngleRad   float64 `json:"angleRad"`
+	DistanceM  float64 `json:"distanceM"`
+	HighpassHz float64 `json:"highpassHz"`
+	LowpassHz  float64 `json:"lowpassHz"`
 	OutputGain float64 `json:"outputGain"`
 }
 
 // DefaultPhysicalDrum returns a conservative 12-inch double-headed tom
-// configuration. Only its batter head is rendered by the P1 prototype.
+// configuration. Only its batter head is rendered by the P2 prototype.
 func DefaultPhysicalDrum() PhysicalDrum {
 	head := Head{
 		Enabled:                  true,
@@ -132,6 +150,7 @@ func DefaultPhysicalDrum() PhysicalDrum {
 		BendingStiffnessNM:       0.001,
 		Loss0PerSecond:           3,
 		Loss2M2PerSecond:         2e-5,
+		RadiationLossPerSecond:   1.5,
 		FrequencyLimitFraction:   0.45,
 		InactiveEnergyThresholdJ: 1e-12,
 	}
@@ -149,6 +168,7 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			BendingStiffnessNM:       0.0007,
 			Loss0PerSecond:           4,
 			Loss2M2PerSecond:         2e-5,
+			RadiationLossPerSecond:   1.5,
 			FrequencyLimitFraction:   head.FrequencyLimitFraction,
 			InactiveEnergyThresholdJ: head.InactiveEnergyThresholdJ,
 		},
@@ -170,7 +190,10 @@ func DefaultPhysicalDrum() PhysicalDrum {
 		Pickup: Pickup{
 			Radius01:   0.32,
 			AngleRad:   0.6,
-			OutputGain: 0.15,
+			DistanceM:  0.30,
+			HighpassHz: 35,
+			LowpassHz:  12_000,
+			OutputGain: 0.6,
 		},
 	}
 }
@@ -245,6 +268,18 @@ func (d PhysicalDrum) Validate() error {
 		return err
 	}
 
+	if err := finiteRange("pickup.distanceM", d.Pickup.DistanceM, 0.01, 10); err != nil {
+		return err
+	}
+
+	if err := finiteRange("pickup.highpassHz", d.Pickup.HighpassHz, 1, maxSampleRateHz/2); err != nil {
+		return err
+	}
+
+	if err := finiteRange("pickup.lowpassHz", d.Pickup.LowpassHz, d.Pickup.HighpassHz, maxSampleRateHz/2); err != nil {
+		return err
+	}
+
 	if err := finiteRange("pickup.outputGain", d.Pickup.OutputGain, 0, 100); err != nil {
 		return err
 	}
@@ -268,11 +303,30 @@ func DecodeConfig(data []byte) (PhysicalDrum, error) {
 		return PhysicalDrum{}, fmt.Errorf("%w: decode: %v", ErrInvalidConfig, err)
 	}
 
+	if config.Version == legacyConfigVersion {
+		migrateV1Config(&config)
+	}
+
 	if err := config.Validate(); err != nil {
 		return PhysicalDrum{}, err
 	}
 
 	return config, nil
+}
+
+func migrateV1Config(config *PhysicalDrum) {
+	defaults := DefaultPhysicalDrum()
+
+	config.Version = ConfigVersion
+	config.Batter.RadiationLossPerSecond = defaults.Batter.RadiationLossPerSecond
+	config.Resonant.RadiationLossPerSecond = defaults.Resonant.RadiationLossPerSecond
+	config.Pickup.DistanceM = defaults.Pickup.DistanceM
+	config.Pickup.HighpassHz = defaults.Pickup.HighpassHz
+	config.Pickup.LowpassHz = defaults.Pickup.LowpassHz
+
+	// P1's scalar gain preceded distance attenuation and radiation filtering.
+	// Move legacy configs onto the P2 output level.
+	config.Pickup.OutputGain = defaults.Pickup.OutputGain
 }
 
 func validateHead(name string, head Head, required bool) error {
@@ -292,6 +346,7 @@ func validateHead(name string, head Head, required bool) error {
 		{"bendingStiffnessNM", head.BendingStiffnessNM, 0, 100},
 		{"loss0PerSecond", head.Loss0PerSecond, 0, 10_000},
 		{"loss2M2PerSecond", head.Loss2M2PerSecond, 0, 10},
+		{"radiationLossPerSecond", head.RadiationLossPerSecond, 0, 10_000},
 		{"frequencyLimitFraction", head.FrequencyLimitFraction, 0.05, 0.49},
 		{"inactiveEnergyThresholdJ", head.InactiveEnergyThresholdJ, 0, 1},
 	}
@@ -299,6 +354,42 @@ func validateHead(name string, head Head, required bool) error {
 		if err := finiteRange(name+"."+check.field, check.value, check.minValue, check.maxValue); err != nil {
 			return err
 		}
+	}
+
+	seenCorrections := make(map[[2]int]struct{}, len(head.ModeDecayCorrections))
+	for _, correction := range head.ModeDecayCorrections {
+		if correction.AzimuthalOrder < 0 || correction.AzimuthalOrder > maxModeOrder ||
+			correction.RadialOrder < 1 || correction.RadialOrder > maxModeOrder {
+			return fmt.Errorf(
+				"%w: %s mode correction index=(%d,%d)",
+				ErrInvalidConfig,
+				name,
+				correction.AzimuthalOrder,
+				correction.RadialOrder,
+			)
+		}
+
+		if err := finiteRange(
+			name+".modeDecayCorrection",
+			correction.DecayRatePerSecond,
+			-10_000,
+			10_000,
+		); err != nil {
+			return err
+		}
+
+		key := [2]int{correction.AzimuthalOrder, correction.RadialOrder}
+		if _, exists := seenCorrections[key]; exists {
+			return fmt.Errorf(
+				"%w: duplicate %s mode correction index=(%d,%d)",
+				ErrInvalidConfig,
+				name,
+				correction.AzimuthalOrder,
+				correction.RadialOrder,
+			)
+		}
+
+		seenCorrections[key] = struct{}{}
 	}
 
 	return nil

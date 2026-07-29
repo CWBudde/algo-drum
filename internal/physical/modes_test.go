@@ -79,6 +79,101 @@ func TestNaturalFrequencyMembraneRatio(t *testing.T) {
 	}
 }
 
+func TestModalLossLawAndCorrection(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultPhysicalDrum()
+	config.Batter.ModeDecayCorrections = []ModeDecayCorrection{{
+		AzimuthalOrder:     0,
+		RadialOrder:        1,
+		DecayRatePerSecond: -0.25,
+	}}
+	modes, err := GenerateModes(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first := modes[0]
+	wantStructural := config.Batter.Loss0PerSecond +
+		config.Batter.Loss2M2PerSecond*first.WavenumberPerM*first.WavenumberPerM
+	if first.StructuralDecayPerSecond != wantStructural {
+		t.Fatalf(
+			"first structural decay = %v, want two-parameter law %v",
+			first.StructuralDecayPerSecond,
+			wantStructural,
+		)
+	}
+	if first.DecayCorrectionPerSecond != -0.25 {
+		t.Fatalf("first correction = %v, want -0.25", first.DecayCorrectionPerSecond)
+	}
+	if first.DecayRatePerSecond != first.StructuralDecayPerSecond+
+		first.RadiationDecayPerSecond+first.DecayCorrectionPerSecond {
+		t.Fatalf("first total decay does not equal separated loss terms: %#v", first)
+	}
+
+	last := modes[len(modes)-1]
+	if last.StructuralDecayPerSecond <= first.StructuralDecayPerSecond {
+		t.Fatalf(
+			"frequency-dependent loss did not increase: first=%v last=%v",
+			first.StructuralDecayPerSecond,
+			last.StructuralDecayPerSecond,
+		)
+	}
+}
+
+func TestModalRadiationWeightsDependOnModeAndMicrophone(t *testing.T) {
+	t.Parallel()
+
+	nearConfig := DefaultPhysicalDrum()
+	nearConfig.Pickup.DistanceM = 0.05
+	farConfig := nearConfig
+	farConfig.Pickup.DistanceM = 1
+
+	near, err := GenerateModes(nearConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	far, err := GenerateModes(farConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	weightVaries := false
+	for index := range near {
+		if math.Abs(far[index].RadiationWeight) >=
+			math.Abs(near[index].RadiationWeight) {
+			t.Fatalf(
+				"mode %d far weight %v is not below near weight %v",
+				index,
+				far[index].RadiationWeight,
+				near[index].RadiationWeight,
+			)
+		}
+		if index > 0 &&
+			math.Abs(near[index].RadiationWeight) !=
+				math.Abs(near[index-1].RadiationWeight) {
+			weightVaries = true
+		}
+	}
+	if !weightVaries {
+		t.Fatal("all modal radiation weights are identical")
+	}
+}
+
+func TestModeCorrectionCannotMakeDecayNegative(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultPhysicalDrum()
+	config.Batter.ModeDecayCorrections = []ModeDecayCorrection{{
+		AzimuthalOrder:     0,
+		RadialOrder:        1,
+		DecayRatePerSecond: -100,
+	}}
+	if _, err := GenerateModes(config); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("GenerateModes() error = %v, want ErrInvalidConfig", err)
+	}
+}
+
 func TestGenerateModesOrderingPairsAndNormalization(t *testing.T) {
 	t.Parallel()
 

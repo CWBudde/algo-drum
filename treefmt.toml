@@ -81,4 +81,8 @@ includes = [
 ]
 excludes = [
     "**/*.sops.*",
+    # Prettier interprets LaTeX subscripts as Markdown emphasis and corrupts
+    # the equations in these research/calibration documents.
+    "docs/physical-model-research.md",
+    "docs/physical-calibration.md",
 ]
