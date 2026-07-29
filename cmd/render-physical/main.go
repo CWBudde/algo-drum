@@ -81,7 +81,7 @@ func render(config physical.PhysicalDrum, duration time.Duration, velocity float
 		)
 	}
 
-	model, err := physical.NewSingleHead(config)
+	model, err := physical.NewDoubleHead(config)
 	if err != nil {
 		return nil, err
 	}
