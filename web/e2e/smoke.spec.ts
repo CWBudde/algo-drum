@@ -192,9 +192,15 @@ test("Tom can select, audition, and persist the physical model", async ({
 
   // The native radio is visually hidden; click its visible label just as a
   // user does instead of asking Playwright to click the transparent input.
-  await dialog.getByText("Physical", { exact: false }).click();
+  await physical.locator("..").click();
   await expect(physical).toBeChecked();
-  await expect(dialog.getByText("Double-headed physical drum")).toBeVisible();
+  const physicalInfo = dialog.getByRole("button", {
+    name: "About physical modelling",
+  });
+  await physicalInfo.focus();
+  await expect(
+    dialog.getByRole("tooltip", { name: /Double-headed physical drum/ }),
+  ).toBeVisible();
   await expect(dialog.getByRole("slider")).toHaveCount(15);
 
   const tuning = dialog.getByRole("slider", {
@@ -241,5 +247,50 @@ test("Tom can select, audition, and persist the physical model", async ({
     page
       .getByRole("dialog")
       .getByRole("slider", { name: "Tom batter head tension" }),
+  ).toHaveAttribute("aria-valuenow", edited!);
+});
+
+test("Tom 2 has an independent physical model and parameter bank", async ({
+  page,
+}) => {
+  await page.goto("./");
+
+  const play = page.getByRole("button", { name: "Play", exact: true });
+  await expect(play).toBeEnabled({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Tom 2 voice settings" }).click();
+
+  let dialog = page.getByRole("dialog");
+  await expect(
+    dialog.getByRole("radio", { name: "Algorithmic" }),
+  ).toBeChecked();
+  const physical = dialog.getByRole("radio", { name: /Physical/ });
+  await physical.locator("..").click();
+  await expect(physical).toBeChecked();
+
+  const tuning = dialog.getByRole("slider", {
+    name: "Tom 2 batter head tension",
+  });
+  await tuning.focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  const edited = await tuning.getAttribute("aria-valuenow");
+  await page.waitForTimeout(500);
+  await dialog.getByRole("button", { name: /^Close Tom 2/ }).click();
+
+  // The original Tom keeps its own model selection.
+  await page.getByRole("button", { name: "Tom voice settings" }).click();
+  dialog = page.getByRole("dialog");
+  await expect(
+    dialog.getByRole("radio", { name: "Algorithmic" }),
+  ).toBeChecked();
+  await dialog.getByRole("button", { name: /^Close Tom voice/ }).click();
+
+  await page.reload();
+  await expect(play).toBeEnabled({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Tom 2 voice settings" }).click();
+  dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("radio", { name: /Physical/ })).toBeChecked();
+  await expect(
+    dialog.getByRole("slider", { name: "Tom 2 batter head tension" }),
   ).toHaveAttribute("aria-valuenow", edited!);
 });

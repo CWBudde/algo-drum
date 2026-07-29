@@ -86,6 +86,7 @@
 }
 
 .dm-voice-model {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
@@ -147,6 +148,71 @@
   outline-offset: 2px;
 }
 
+.dm-voice-model-help {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  z-index: 3;
+}
+
+.dm-voice-model-help > button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid rgba(109, 149, 200, 0.45);
+  border-radius: 50%;
+  background: rgba(25, 38, 58, 0.55);
+  color: #9bb9df;
+  font:
+    600 11px/1 "Inter",
+    "Helvetica Neue",
+    sans-serif;
+  cursor: help;
+}
+
+.dm-voice-model-help > button:focus-visible {
+  outline: 2px solid rgba(200, 140, 60, 0.85);
+  outline-offset: 2px;
+}
+
+.dm-voice-model-tooltip {
+  position: absolute;
+  top: 24px;
+  right: 0;
+  width: min(250px, calc(92vw - 64px));
+  padding: 10px 12px;
+  border: 1px solid rgba(109, 149, 200, 0.38);
+  border-radius: 7px;
+  background: #161f2d;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.65);
+  color: rgba(206, 197, 178, 0.9);
+  font-size: 10px;
+  line-height: 1.5;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-3px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    visibility 120ms;
+  pointer-events: none;
+}
+
+.dm-voice-model-tooltip strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #9bb9df;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.dm-voice-model-help:hover .dm-voice-model-tooltip,
+.dm-voice-model-help:focus-within .dm-voice-model-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
 /* auto-fit fits four knobs on one row; the extra top padding leaves room for
    the first row's drag readout. */
 .dm-voice-knobs {
@@ -192,29 +258,6 @@
   line-height: 1.5;
   /* X3: rgba(178,170,155,0.8) over #1a1a26 → 5.6:1. */
   color: rgba(178, 170, 155, 0.8);
-}
-
-.dm-voice-physical-note {
-  margin: 14px 18px 0;
-  padding: 12px 14px;
-  border: 1px solid rgba(109, 149, 200, 0.28);
-  border-radius: 8px;
-  background: rgba(25, 38, 58, 0.38);
-  color: rgba(206, 197, 178, 0.85);
-}
-
-.dm-voice-physical-note strong {
-  display: block;
-  margin-bottom: 7px;
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  color: #9bb9df;
-}
-
-.dm-voice-physical-note p {
-  margin: 0;
-  font-size: 10px;
-  line-height: 1.55;
 }
 
 .dm-voice-foot {

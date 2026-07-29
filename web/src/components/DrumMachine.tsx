@@ -25,6 +25,8 @@ const TRACKS = ["Cymbal", "Perc", "Tom 2", "Tom", "HiHat", "Snare", "Bass"];
 const TRACK_INDEX = [4, 6, 5, 3, 2, 1, 0];
 const COLS = 16;
 const ROWS = 7;
+const TOM_TRACK = 3;
+const TOM2_TRACK = 5;
 
 // Clicking a cell cycles off → normal hit → accent → off.
 const VEL_NORMAL = 0.7;
@@ -108,6 +110,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   const [tomModel, setTomModel] = useState<TomModel>(
     initial?.tomModel ?? DEFAULT_TOM_MODEL,
   );
+  const [tom2Model, setTom2Model] = useState<TomModel>(
+    initial?.tom2Model ?? DEFAULT_TOM_MODEL,
+  );
   const [volumes, setVolumes] = useState<number[]>(() =>
     Array.from({ length: ROWS }, (_, row) => initial?.volumes?.[row] ?? 0.75),
   );
@@ -120,9 +125,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   // Per-track state comes in two flavours; do not mix them up:
   //   pattern / volumes / decays / muted — indexed by VISUAL ROW (0 = Cymbal … 6 = Bass)
   //   voiceParamsByEngineTrack          — indexed by ENGINE TRACK (0 = Bass … 6 = Perc)
-  // TRACK_INDEX converts either way (it is a reversal, so it is its own inverse).
-  // The voice parameters follow the engine's order because the generated
-  // descriptor table, the persisted tail and setVoiceParam all do.
+  // TRACK_INDEX converts visual rows to engine tracks. Voice parameters follow
+  // engine order because the generated descriptor table, persisted tail and
+  // setVoiceParam all do.
   const [voiceParamsByEngineTrack, setVoiceParams] = useState<number[][]>(
     () => {
       const defaults = defaultVoiceParams();
@@ -134,6 +139,12 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   const [physicalTomParams, setPhysicalTomParams] = useState<number[]>(() => {
     const defaults = defaultPhysicalTomParams();
     return defaults.map((value, i) => initial?.physicalTomParams?.[i] ?? value);
+  });
+  const [physicalTom2Params, setPhysicalTom2Params] = useState<number[]>(() => {
+    const defaults = defaultPhysicalTomParams();
+    return defaults.map(
+      (value, i) => initial?.physicalTom2Params?.[i] ?? value,
+    );
   });
   // Engine track whose editor is open, or null. Also used to hand the keyboard
   // over to the dialog (see the Space handler below).
@@ -163,8 +174,11 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     engine.setHumanize(humanize);
   }, [humanize]);
   useEffect(() => {
-    engine.setTomModel(tomModel);
+    engine.setTomModel(TOM_TRACK, tomModel);
   }, [tomModel]);
+  useEffect(() => {
+    engine.setTomModel(TOM2_TRACK, tom2Model);
+  }, [tom2Model]);
   useEffect(() => {
     volumes.forEach((v, i) => {
       engine.setVolume(TRACK_INDEX[i], muted[i] ? 0 : v);
@@ -205,9 +219,19 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     if (!initial?.physicalTomParams) return;
 
     physicalTomParams.forEach((value, index) => {
-      engine.setPhysicalTomParam(index, value);
+      engine.setPhysicalTomParam(TOM_TRACK, index, value);
     });
     // Mount-only: restore the independent physical parameter bank.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!initial?.physicalTom2Params) return;
+
+    physicalTom2Params.forEach((value, index) => {
+      engine.setPhysicalTomParam(TOM2_TRACK, index, value);
+    });
+    // Mount-only: restore Tom 2's independent physical parameter bank.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -240,11 +264,13 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       prob,
       humanize,
       tomModel,
+      tom2Model,
       volumes,
       decays,
       muted,
       voiceParams: voiceParamsByEngineTrack,
       physicalTomParams,
+      physicalTom2Params,
     }),
     [
       pattern,
@@ -255,11 +281,13 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       prob,
       humanize,
       tomModel,
+      tom2Model,
       volumes,
       decays,
       muted,
       voiceParamsByEngineTrack,
       physicalTomParams,
+      physicalTom2Params,
     ],
   );
 
@@ -416,22 +444,48 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     });
   }, []);
 
-  const setPhysicalTomParam = useCallback((index: number, value: number) => {
-    setPhysicalTomParams((prev) => {
-      const next = [...prev];
-      next[index] = value;
-      return next;
-    });
-    engine.setPhysicalTomParam(index, value);
-  }, []);
+  const setPhysicalTomParam = useCallback(
+    (
+      engineTrack: number,
+      setter: React.Dispatch<React.SetStateAction<number[]>>,
+      index: number,
+      value: number,
+    ) => {
+      setter((prev) => {
+        const next = [...prev];
+        next[index] = value;
+        return next;
+      });
+      engine.setPhysicalTomParam(engineTrack, index, value);
+    },
+    [],
+  );
 
-  const resetPhysicalTom = useCallback(() => {
-    const defaults = defaultPhysicalTomParams();
-    setPhysicalTomParams(defaults);
-    defaults.forEach((value, index) => {
-      engine.setPhysicalTomParam(index, value);
-    });
-  }, []);
+  const resetPhysicalTom = useCallback(
+    (
+      engineTrack: number,
+      setter: React.Dispatch<React.SetStateAction<number[]>>,
+    ) => {
+      const defaults = defaultPhysicalTomParams();
+      setter(defaults);
+      defaults.forEach((value, index) => {
+        engine.setPhysicalTomParam(engineTrack, index, value);
+      });
+    },
+    [],
+  );
+
+  const editorTomModel =
+    editorTrack === TOM_TRACK
+      ? tomModel
+      : editorTrack === TOM2_TRACK
+        ? tom2Model
+        : undefined;
+  const editorUsesPhysical = editorTomModel === "physical";
+  const editorPhysicalParams =
+    editorTrack === TOM2_TRACK ? physicalTom2Params : physicalTomParams;
+  const editorPhysicalSetter =
+    editorTrack === TOM2_TRACK ? setPhysicalTom2Params : setPhysicalTomParams;
 
   return (
     <div className="dm-machine">
@@ -591,26 +645,35 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         <VoiceEditor
           name={VOICE_NAMES[editorTrack]}
           specs={
-            editorTrack === 3 && tomModel === "physical"
-              ? PHYSICAL_TOM_PARAMS
-              : VOICE_PARAMS[editorTrack]
+            editorUsesPhysical ? PHYSICAL_TOM_PARAMS : VOICE_PARAMS[editorTrack]
           }
           values={
-            editorTrack === 3 && tomModel === "physical"
-              ? physicalTomParams
+            editorUsesPhysical
+              ? editorPhysicalParams
               : voiceParamsByEngineTrack[editorTrack]
           }
           disabled={!wasmLoaded}
-          model={editorTrack === 3 ? tomModel : undefined}
-          onModelChange={editorTrack === 3 ? setTomModel : undefined}
+          model={editorTomModel}
+          onModelChange={
+            editorTrack === TOM_TRACK
+              ? setTomModel
+              : editorTrack === TOM2_TRACK
+                ? setTom2Model
+                : undefined
+          }
           onChange={(index, value) =>
-            editorTrack === 3 && tomModel === "physical"
-              ? setPhysicalTomParam(index, value)
+            editorUsesPhysical
+              ? setPhysicalTomParam(
+                  editorTrack,
+                  editorPhysicalSetter,
+                  index,
+                  value,
+                )
               : setVoiceParam(editorTrack, index, value)
           }
           onReset={() =>
-            editorTrack === 3 && tomModel === "physical"
-              ? resetPhysicalTom()
+            editorUsesPhysical
+              ? resetPhysicalTom(editorTrack, editorPhysicalSetter)
               : resetVoice(editorTrack)
           }
           onAudition={(amount) => void engine.triggerVoice(editorTrack, amount)}

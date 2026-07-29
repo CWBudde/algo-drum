@@ -19,8 +19,8 @@ export interface AlgoDrumApi {
   setVolume: (track: number, vol: number) => void;
   setDecay: (track: number, amount: number) => void;
   setVoiceParam: (track: number, index: number, value: number) => void;
-  setPhysicalTomParam: (index: number, value: number) => void;
-  setTomModel: (model: number) => void;
+  setPhysicalTomParam: (track: number, index: number, value: number) => void;
+  setTomModel: (track: number, model: number) => void;
   triggerVoice: (track: number, velocity: number) => void;
   setReverb: (amount: number) => void;
   setProbability: (p: number) => void;

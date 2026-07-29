@@ -59,7 +59,8 @@ const (
 	minSampleRate     = 8000.0
 	maxSampleRate     = 768000.0
 
-	tomTrackIndex = 3
+	tomTrackIndex  = 3
+	tom2TrackIndex = 5
 
 	// secondsPerMinute and stepsPerBeat convert BPM to samples per step;
 	// steps are 16th notes, so there are four per quarter-note beat.
@@ -97,9 +98,9 @@ type Engine struct {
 
 	voices [TrackCount]Voice
 
-	tomModel      TomModel
-	proceduralTom *Tom
-	physicalTom   *physicalTom
+	tomModels      [TrackCount]TomModel
+	proceduralToms [TrackCount]*Tom
+	physicalToms   [TrackCount]*physicalTom
 
 	stepCount   int // active pattern length in [1, MaxSteps]
 	currentStep int
@@ -140,11 +141,12 @@ func NewEngine(sr float64) *Engine {
 	e.voices[0] = NewBassDrum(sr)
 	e.voices[1] = NewSnare(sr)
 	e.voices[2] = NewHiHat(sr)
-	e.proceduralTom = NewTom(sr)
-	e.voices[tomTrackIndex] = e.proceduralTom
+	e.proceduralToms[tomTrackIndex] = NewTom(sr)
+	e.voices[tomTrackIndex] = e.proceduralToms[tomTrackIndex]
 
 	e.voices[4] = NewCymbal(sr)
-	e.voices[5] = NewTom2(sr)
+	e.proceduralToms[tom2TrackIndex] = NewTom2(sr)
+	e.voices[tom2TrackIndex] = e.proceduralToms[tom2TrackIndex]
 
 	e.voices[6] = NewPercussion(sr)
 	for i := range e.voices {
@@ -228,6 +230,10 @@ func validSampleRate(sr float64) float64 {
 // indices are a no-op for every indexed setter (see SetCell).
 func validTrack(track int) bool {
 	return track >= 0 && track < TrackCount
+}
+
+func validTomTrack(track int) bool {
+	return track == tomTrackIndex || track == tom2TrackIndex
 }
 
 // validStep reports whether step addresses a real pattern cell. Steps are
@@ -449,10 +455,10 @@ func (e *Engine) SetVoiceParam(track, index int, value01 float64) {
 		return
 	}
 
-	// The Tom's procedural parameter bank remains authoritative while the
+	// Each Tom's procedural parameter bank remains authoritative while its
 	// physical model is selected, so saved settings survive A/B switching.
-	if track == tomTrackIndex {
-		e.proceduralTom.SetParam(index, value01)
+	if validTomTrack(track) {
+		e.proceduralToms[track].SetParam(index, value01)
 
 		return
 	}
@@ -460,11 +466,11 @@ func (e *Engine) SetVoiceParam(track, index int, value01 float64) {
 	e.voices[track].SetParam(index, value01)
 }
 
-// SetPhysicalTomParam updates the physical Tom's independent parameter bank.
-// It is valid while either Tom model is selected so A/B edits survive a model
-// switch. Invalid indices and non-finite values are ignored by the voice.
-func (e *Engine) SetPhysicalTomParam(index int, value01 float64) {
-	if index < 0 || index >= len(physicalTomSpecs) {
+// SetPhysicalTomParam updates one Tom's independent physical parameter bank.
+// It is valid while either model is selected so A/B edits survive a model
+// switch. Invalid tracks, indices, and non-finite values are ignored.
+func (e *Engine) SetPhysicalTomParam(track, index int, value01 float64) {
+	if !validTomTrack(track) || index < 0 || index >= len(physicalTomSpecs) {
 		return
 	}
 
@@ -472,7 +478,7 @@ func (e *Engine) SetPhysicalTomParam(index int, value01 float64) {
 		return
 	}
 
-	physicalVoice, ok := e.ensurePhysicalTom()
+	physicalVoice, ok := e.ensurePhysicalTom(track)
 	if !ok {
 		return
 	}
@@ -480,9 +486,13 @@ func (e *Engine) SetPhysicalTomParam(index int, value01 float64) {
 	physicalVoice.SetParam(index, value01)
 }
 
-func (e *Engine) ensurePhysicalTom() (*physicalTom, bool) {
-	if e.physicalTom != nil {
-		return e.physicalTom, true
+func (e *Engine) ensurePhysicalTom(track int) (*physicalTom, bool) {
+	if !validTomTrack(track) {
+		return nil, false
+	}
+
+	if e.physicalToms[track] != nil {
+		return e.physicalToms[track], true
 	}
 
 	physicalVoice, err := newPhysicalTom(e.sr)
@@ -492,17 +502,17 @@ func (e *Engine) ensurePhysicalTom() (*physicalTom, bool) {
 		return nil, false
 	}
 
-	physicalVoice.SetDecay(e.decays[tomTrackIndex])
-	e.physicalTom = physicalVoice
+	physicalVoice.SetDecay(e.decays[track])
+	e.physicalToms[track] = physicalVoice
 
 	return physicalVoice, true
 }
 
-// SetTomModel explicitly selects the Tom implementation. The original
-// procedural voice remains the default, and invalid values are ignored.
-// Switching resets both sides so a dormant tail cannot resume later.
-func (e *Engine) SetTomModel(model TomModel) {
-	if model == e.tomModel {
+// SetTomModel explicitly selects one Tom track's implementation. Procedural
+// remains the default, and invalid tracks or values are ignored. Switching
+// resets both sides so a dormant tail cannot resume later.
+func (e *Engine) SetTomModel(track int, model TomModel) {
+	if !validTomTrack(track) || model == e.tomModels[track] {
 		return
 	}
 
@@ -510,9 +520,9 @@ func (e *Engine) SetTomModel(model TomModel) {
 
 	switch model {
 	case TomModelProcedural:
-		next = e.proceduralTom
+		next = e.proceduralToms[track]
 	case TomModelPhysical:
-		physicalVoice, ok := e.ensurePhysicalTom()
+		physicalVoice, ok := e.ensurePhysicalTom(track)
 		if !ok {
 			return
 		}
@@ -522,7 +532,7 @@ func (e *Engine) SetTomModel(model TomModel) {
 		return
 	}
 
-	if current, ok := e.voices[tomTrackIndex].(interface{ Reset() }); ok {
+	if current, ok := e.voices[track].(interface{ Reset() }); ok {
 		current.Reset()
 	}
 
@@ -530,17 +540,20 @@ func (e *Engine) SetTomModel(model TomModel) {
 		reset.Reset()
 	}
 
-	if model != TomModelPhysical {
-		next.SetDecay(e.decays[tomTrackIndex])
-	}
+	next.SetDecay(e.decays[track])
 
-	e.voices[tomTrackIndex] = next
-	e.tomModel = model
+	e.voices[track] = next
+	e.tomModels[track] = model
 }
 
-// TomModel reports the currently selected Tom implementation.
-func (e *Engine) TomModel() TomModel {
-	return e.tomModel
+// TomModel reports one Tom track's selected implementation. Invalid tracks
+// report the procedural default.
+func (e *Engine) TomModel(track int) TomModel {
+	if !validTomTrack(track) {
+		return TomModelProcedural
+	}
+
+	return e.tomModels[track]
 }
 
 // TriggerVoice fires one voice immediately, independent of the sequencer, so

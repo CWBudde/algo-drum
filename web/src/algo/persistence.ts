@@ -25,9 +25,10 @@ import type { TomModel } from "../engine/tomModel";
 // added voice parameters, v3 the Tom model selector, v4 the original 13-slot
 // physical Tom bank, v5 the two tension-asymmetry controls, v6 the corrected
 // central-hit default, and v7 the second Tom and Percussion tracks. V8 keeps
-// the same bytes but migrates the reordered mixer strips. Older links still
+// the same bytes but migrates the reordered mixer strips; v9 appends Tom 2's
+// physical model choice and independent parameter bank. Older links still
 // decode with values attached to the same voices.
-const FORMAT_VERSION = 8;
+const FORMAT_VERSION = 9;
 
 // Byte layout: version, 6 scalar knobs, 5 volumes, 5 decays, 1 mute mask,
 // then the 80-cell pattern packed 2 bits per cell (20 bytes)...
@@ -65,7 +66,10 @@ const V7_EXTRA_BYTES =
   1 + // mute mask
   EXTRA_PATTERN_BYTES +
   EXTRA_TRACK_COUNT * VOICE_PARAM_CAPACITY;
-const TOTAL_BYTES = V6_BYTES + V7_EXTRA_BYTES;
+const V8_BYTES = V6_BYTES + V7_EXTRA_BYTES;
+
+// v9 gives Tom 2 the same independently persisted physical-model controls.
+const TOTAL_BYTES = V8_BYTES + 1 + PHYSICAL_TOM_PARAM_CAPACITY;
 
 const PHYSICAL_STRIKE_RADIUS_INDEX = 4;
 const OLD_PHYSICAL_STRIKE_RADIUS_DEFAULT =
@@ -97,6 +101,9 @@ export interface PersistedState {
   tomModel?: TomModel;
   // Absent from v1/v2/v3 blobs. The call site supplies generated defaults.
   physicalTomParams?: number[];
+  // Absent before v9; Tom 2 used its procedural model and fresh defaults.
+  tom2Model?: TomModel;
+  physicalTom2Params?: number[];
 }
 
 function clamp01(v: number): number {
@@ -237,6 +244,11 @@ export function encodeState(state: PersistedState): string {
     }
   }
 
+  bytes[offset++] = state.tom2Model === "physical" ? 1 : 0;
+  for (let i = 0; i < PHYSICAL_TOM_PARAM_CAPACITY; i++) {
+    bytes[offset++] = toByte(state.physicalTom2Params?.[i] ?? 0);
+  }
+
   return bytesToBase64Url(bytes);
 }
 
@@ -261,9 +273,11 @@ export function decodeState(text: string): PersistedState | null {
             ? V4_BYTES
             : version === 5 || version === 6
               ? V6_BYTES
-              : version === 7 || version === FORMAT_VERSION
-                ? TOTAL_BYTES
-                : -1;
+              : version === 7 || version === 8
+                ? V8_BYTES
+                : version === FORMAT_VERSION
+                  ? TOTAL_BYTES
+                  : -1;
   if (bytes.length !== expected) return null;
 
   let offset = 1;
@@ -400,7 +414,21 @@ export function decodeState(text: string): PersistedState | null {
     voiceParams.push(row);
   }
 
-  return stateWithPhysical;
+  if (version < FORMAT_VERSION) return stateWithPhysical;
+
+  const tom2ModelCode = bytes[offset++];
+  if (tom2ModelCode > 1) return null;
+
+  const physicalTom2Params: number[] = [];
+  for (let i = 0; i < PHYSICAL_TOM_PARAM_CAPACITY; i++) {
+    physicalTom2Params.push(fromByte(bytes[offset++]));
+  }
+
+  return {
+    ...stateWithPhysical,
+    tom2Model: tom2ModelCode === 1 ? "physical" : "procedural",
+    physicalTom2Params,
+  };
 }
 
 // ── localStorage + URL hash glue (fail-soft) ────────────────────────────────

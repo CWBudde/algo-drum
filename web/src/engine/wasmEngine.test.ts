@@ -52,8 +52,8 @@ class FakeWorker {
 // tests need to emit steps and to observe teardown.
 class FakePort {
   onmessage:
-    ((event: MessageEvent<{ type: string; step: number }>) => void) | null =
-    null;
+    | ((event: MessageEvent<{ type: string; step: number }>) => void)
+    | null = null;
 
   postMessage(): void {}
 }
@@ -313,22 +313,22 @@ describe("command queue", () => {
   it("maps the named Tom model to the WASM model code", async () => {
     const engine = await loaded();
 
-    engine.setTomModel("physical");
-    engine.setTomModel("procedural");
+    engine.setTomModel(3, "physical");
+    engine.setTomModel(5, "procedural");
 
     expect(workers()[0].commands()).toEqual([
-      { type: "cmd", name: "setTomModel", args: [1] },
-      { type: "cmd", name: "setTomModel", args: [0] },
+      { type: "cmd", name: "setTomModel", args: [3, 1] },
+      { type: "cmd", name: "setTomModel", args: [5, 0] },
     ]);
   });
 
   it("sends physical Tom parameter edits to the independent bank", async () => {
     const engine = await loaded();
 
-    engine.setPhysicalTomParam(4, 0.625);
+    engine.setPhysicalTomParam(5, 4, 0.625);
 
     expect(workers()[0].commands()).toEqual([
-      { type: "cmd", name: "setPhysicalTomParam", args: [4, 0.625] },
+      { type: "cmd", name: "setPhysicalTomParam", args: [5, 4, 0.625] },
     ]);
   });
 });

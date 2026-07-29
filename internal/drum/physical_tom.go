@@ -12,7 +12,7 @@ import (
 // mechanical state or its energy balance.
 const physicalTomOutputGain = 4
 
-// TomModel selects the implementation used by the Tom track.
+// TomModel selects the implementation used by either Tom track.
 type TomModel uint8
 
 const (

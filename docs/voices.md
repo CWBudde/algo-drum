@@ -327,8 +327,9 @@ parameter bank and ships as the higher drum in the pair.
 | 4   | `tom2.decay`     | TIME  | exp   | 0.05–2.0 s  | `tom2BaseDecayS` 0.28 |
 | 5   | `tom2.gain`      | LVL   | lin   | 0–2         | `tom2Gain` 0.85       |
 
-Unlike track 3, Tom 2 is always procedural; the experimental physical model
-remains scoped to the original Tom.
+Like track 3, Tom 2 can switch independently to the experimental physical
+model. Each Tom owns its model selection, physical parameter bank, decay, and
+ringing state; changing one never retunes or interrupts the other.
 
 ---
 

@@ -19,7 +19,7 @@ interface Props {
   values: readonly number[];
   /** True while the engine is still loading — disables the audition button. */
   disabled: boolean;
-  /** Present only for the Tom, whose implementation can be selected. */
+  /** Present only for Tom voices, whose implementation can be selected. */
   model?: TomModel;
   onModelChange?: (model: TomModel) => void;
   onChange: (index: number, value: number) => void;
@@ -42,6 +42,7 @@ export default function VoiceEditor({
 }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  const physicalInfoId = useId();
   const [resetNotice, setResetNotice] = useState("");
   const noticeTimer = useRef<number | undefined>(undefined);
   const showProceduralParams = model !== "physical";
@@ -178,17 +179,25 @@ export default function VoiceEditor({
               Physical <small>EXPERIMENTAL</small>
             </span>
           </label>
+          <span className="dm-voice-model-help">
+            <button
+              type="button"
+              aria-label="About physical modelling"
+              aria-describedby={physicalInfoId}
+            >
+              i
+            </button>
+            <span
+              className="dm-voice-model-tooltip"
+              id={physicalInfoId}
+              role="tooltip"
+            >
+              <strong>Double-headed physical drum</strong>
+              Coupled circular heads, enclosed air, nonlinear tension, and a
+              position-dependent strike and pickup.
+            </span>
+          </span>
         </fieldset>
-      )}
-
-      {!showProceduralParams && (
-        <div className="dm-voice-physical-note">
-          <strong>Double-headed physical drum</strong>
-          <p>
-            Coupled circular heads, enclosed air, nonlinear tension, and a
-            position-dependent strike and pickup.
-          </p>
-        </div>
       )}
 
       <div

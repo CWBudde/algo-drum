@@ -420,16 +420,20 @@ export function setVoiceParam(
   command("setVoiceParam", track, index, value);
 }
 
-// setPhysicalTomParam addresses the physical model's independent generated
-// parameter bank, regardless of which Tom model is currently selected.
-export function setPhysicalTomParam(index: number, value: number): void {
-  command("setPhysicalTomParam", index, value);
+// setPhysicalTomParam addresses one Tom track's independent generated
+// physical parameter bank, regardless of which model is currently selected.
+export function setPhysicalTomParam(
+  track: number,
+  index: number,
+  value: number,
+): void {
+  command("setPhysicalTomParam", track, index, value);
 }
 
-// setTomModel explicitly switches only the Tom track between the unchanged
-// procedural voice and the experimental physical modal implementation.
-export function setTomModel(model: TomModel): void {
-  command("setTomModel", model === "physical" ? 1 : 0);
+// setTomModel switches either Tom track between its procedural voice and an
+// independent experimental physical modal implementation.
+export function setTomModel(track: number, model: TomModel): void {
+  command("setTomModel", track, model === "physical" ? 1 : 0);
 }
 
 // triggerVoice fires one voice immediately, independent of the sequencer, so

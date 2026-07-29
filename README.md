@@ -58,11 +58,11 @@ An independent, work-in-progress physical path contains a double-headed,
 cavity-coupled modal tom. It uses circular Fourier–Bessel modes, a passive
 damped/nonlinear state update, measured-range velocity-dependent stick
 contact, frequency-dependent loss, mode-dependent radiation, and a
-batter-side filtered microphone response. In the web demo, open the Tom voice
-settings and select
-**Physical — Experimental** to A/B it against the unchanged algorithmic Tom.
-Algorithmic remains the default, and older saved patterns and share links
-continue to select it.
+batter-side filtered microphone response. In the web demo, open either Tom
+voice’s settings and select **Physical — Experimental** to A/B it against that
+track’s algorithmic model. The two Toms keep independent model choices and
+physical parameter banks. Algorithmic remains the default, and older saved
+patterns and share links continue to select it.
 
 Render the default model to a normalized mono PCM WAV file for auditioning:
 

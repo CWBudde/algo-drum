@@ -251,11 +251,12 @@ func main() {
 			return js.Null()
 		}
 
-		index, indexOK := argInt(args, 0, "setPhysicalTomParam")
-		value, valueOK := argFloat(args, 1, "setPhysicalTomParam")
+		track, trackOK := argInt(args, 0, "setPhysicalTomParam")
+		index, indexOK := argInt(args, 1, "setPhysicalTomParam")
+		value, valueOK := argFloat(args, 2, "setPhysicalTomParam")
 
-		if indexOK && valueOK {
-			engine.SetPhysicalTomParam(index, value)
+		if trackOK && indexOK && valueOK {
+			engine.SetPhysicalTomParam(track, index, value)
 		}
 
 		return js.Null()
@@ -266,8 +267,11 @@ func main() {
 			return js.Null()
 		}
 
-		if model, ok := argInt(args, 0, "setTomModel"); ok {
-			engine.SetTomModel(drum.TomModel(model))
+		track, trackOK := argInt(args, 0, "setTomModel")
+
+		model, modelOK := argInt(args, 1, "setTomModel")
+		if trackOK && modelOK {
+			engine.SetTomModel(track, drum.TomModel(model))
 		}
 
 		return js.Null()

@@ -1025,29 +1025,33 @@ func TestTriggerVoiceIgnoresInvalidInput(t *testing.T) {
 }
 
 func TestPhysicalTomCanBeSelectedAndAuditioned(t *testing.T) {
-	engine := NewEngine(testSampleRate)
-	engine.SetTomModel(TomModelPhysical)
+	for _, track := range []int{tomTrackIndex, tom2TrackIndex} {
+		engine := NewEngine(testSampleRate)
+		engine.SetTomModel(track, TomModelPhysical)
 
-	if got := engine.TomModel(); got != TomModelPhysical {
-		t.Fatalf("TomModel() = %v, want physical", got)
-	}
-
-	engine.TriggerVoice(tomTrackIndex, 1)
-	buffer := make([]float32, int(testSampleRate/2))
-	engine.Render(buffer)
-
-	peak := 0.0
-	for index, sample := range buffer {
-		value := float64(sample)
-		if math.IsNaN(value) || math.IsInf(value, 0) {
-			t.Fatalf("physical Tom sample %d is non-finite: %v", index, value)
+		if got := engine.TomModel(track); got != TomModelPhysical {
+			t.Fatalf("TomModel(%d) = %v, want physical", track, got)
 		}
 
-		peak = math.Max(peak, math.Abs(value))
-	}
+		engine.TriggerVoice(track, 1)
+		buffer := make([]float32, int(testSampleRate/2))
+		engine.Render(buffer)
 
-	if peak < 0.05 {
-		t.Fatalf("physical Tom audition peak = %v, want audible output", peak)
+		peak := 0.0
+		for index, sample := range buffer {
+			value := float64(sample)
+			if math.IsNaN(value) || math.IsInf(value, 0) {
+				t.Fatalf("physical Tom track %d sample %d is non-finite: %v",
+					track, index, value)
+			}
+
+			peak = math.Max(peak, math.Abs(value))
+		}
+
+		if peak < 0.05 {
+			t.Fatalf("physical Tom track %d audition peak = %v, want audible output",
+				track, peak)
+		}
 	}
 }
 
@@ -1056,54 +1060,58 @@ func TestTomModelSwitchResetsTailsAndPreservesProceduralParams(t *testing.T) {
 	engine.SetVoiceParam(tomTrackIndex, tomParamPitchTo, 0.8)
 	engine.TriggerVoice(tomTrackIndex, 1)
 
-	engine.SetTomModel(TomModelPhysical)
-	if engine.proceduralTom.IsActive() {
+	engine.SetTomModel(tomTrackIndex, TomModelPhysical)
+	if engine.proceduralToms[tomTrackIndex].IsActive() {
 		t.Fatal("procedural Tom remained active after switching models")
 	}
 
 	engine.SetVoiceParam(tomTrackIndex, tomParamPitchTo, 0.3)
 	engine.TriggerVoice(tomTrackIndex, 1)
-	engine.SetTomModel(TomModelProcedural)
+	engine.SetTomModel(tomTrackIndex, TomModelProcedural)
 
-	if engine.physicalTom.IsActive() {
+	if engine.physicalToms[tomTrackIndex].IsActive() {
 		t.Fatal("physical Tom remained active after switching models")
 	}
-	if got := engine.proceduralTom.Param(tomParamPitchTo); got != 0.3 {
+	if got := engine.proceduralToms[tomTrackIndex].Param(tomParamPitchTo); got != 0.3 {
 		t.Fatalf("procedural Tom parameter = %v, want 0.3", got)
 	}
 }
 
 func TestPhysicalTomParametersAreIndependentAndSurviveModelSwitch(t *testing.T) {
 	engine := NewEngine(testSampleRate)
-	engine.SetPhysicalTomParam(physicalTomParamBatterTension, 0.8)
+	engine.SetPhysicalTomParam(tomTrackIndex, physicalTomParamBatterTension, 0.8)
+	engine.SetPhysicalTomParam(tom2TrackIndex, physicalTomParamBatterTension, 0.3)
 
-	if engine.physicalTom == nil {
+	if engine.physicalToms[tomTrackIndex] == nil {
 		t.Fatal("physical parameter edit did not initialize the physical Tom")
 	}
-	if got := engine.physicalTom.Param(physicalTomParamBatterTension); got != 0.8 {
+	if got := engine.physicalToms[tomTrackIndex].Param(physicalTomParamBatterTension); got != 0.8 {
 		t.Fatalf("physical batter tension position = %v, want 0.8", got)
 	}
+	if got := engine.physicalToms[tom2TrackIndex].Param(physicalTomParamBatterTension); got != 0.3 {
+		t.Fatalf("physical Tom 2 batter tension position = %v, want 0.3", got)
+	}
 	wantTension := physicalTomSpecs[physicalTomParamBatterTension].Map(0.8)
-	if got := engine.physicalTom.config.Batter.TensionNPerM; got != wantTension {
+	if got := engine.physicalToms[tomTrackIndex].config.Batter.TensionNPerM; got != wantTension {
 		t.Fatalf("physical batter tension = %v, want %v", got, wantTension)
 	}
 
-	engine.SetTomModel(TomModelPhysical)
-	engine.SetTomModel(TomModelProcedural)
-	if got := engine.physicalTom.Param(physicalTomParamBatterTension); got != 0.8 {
+	engine.SetTomModel(tomTrackIndex, TomModelPhysical)
+	engine.SetTomModel(tomTrackIndex, TomModelProcedural)
+	if got := engine.physicalToms[tomTrackIndex].Param(physicalTomParamBatterTension); got != 0.8 {
 		t.Fatalf("physical parameter after A/B switch = %v, want 0.8", got)
 	}
-	if got := engine.proceduralTom.Param(tomParamPitchTo); got != tomSpecs[tomParamPitchTo].Default {
+	if got := engine.proceduralToms[tomTrackIndex].Param(tomParamPitchTo); got != tomSpecs[tomParamPitchTo].Default {
 		t.Fatalf("physical edit changed procedural tuning to %v", got)
 	}
 }
 
 func TestPhysicalTomAsymmetryParametersMapToBothHeads(t *testing.T) {
 	engine := NewEngine(testSampleRate)
-	engine.SetPhysicalTomParam(physicalTomParamAsymmetry, 0.75)
-	engine.SetPhysicalTomParam(physicalTomParamAsymmetryAxis, 0.25)
+	engine.SetPhysicalTomParam(tomTrackIndex, physicalTomParamAsymmetry, 0.75)
+	engine.SetPhysicalTomParam(tomTrackIndex, physicalTomParamAsymmetryAxis, 0.25)
 
-	config := engine.physicalTom.config
+	config := engine.physicalToms[tomTrackIndex].config
 	wantSplit := physicalTomSpecs[physicalTomParamAsymmetry].Map(0.75) / 100
 	wantAxis := physicalTomSpecs[physicalTomParamAsymmetryAxis].Map(0.25) *
 		math.Pi / 180
@@ -1131,35 +1139,36 @@ func TestPhysicalTomAsymmetryParametersMapToBothHeads(t *testing.T) {
 
 func TestPhysicalTomParameterRejectsInvalidInput(t *testing.T) {
 	engine := NewEngine(testSampleRate)
-	engine.SetPhysicalTomParam(physicalTomParamHardness, 0.4)
+	engine.SetPhysicalTomParam(tomTrackIndex, physicalTomParamHardness, 0.4)
 
 	for _, index := range []int{-1, len(physicalTomSpecs), math.MaxInt} {
-		engine.SetPhysicalTomParam(index, 0.8)
+		engine.SetPhysicalTomParam(tomTrackIndex, index, 0.8)
 	}
 	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
-		engine.SetPhysicalTomParam(physicalTomParamHardness, value)
+		engine.SetPhysicalTomParam(tomTrackIndex, physicalTomParamHardness, value)
 	}
 
-	if got := engine.physicalTom.Param(physicalTomParamHardness); got != 0.4 {
+	if got := engine.physicalToms[tomTrackIndex].Param(physicalTomParamHardness); got != 0.4 {
 		t.Fatalf("invalid edit changed hardness to %v", got)
 	}
 }
 
 func TestInvalidTomModelIsIgnored(t *testing.T) {
 	engine := NewEngine(testSampleRate)
-	engine.SetTomModel(TomModel(99))
+	engine.SetTomModel(tomTrackIndex, TomModel(99))
+	engine.SetTomModel(0, TomModelPhysical)
 
-	if got := engine.TomModel(); got != TomModelProcedural {
+	if got := engine.TomModel(tomTrackIndex); got != TomModelProcedural {
 		t.Fatalf("TomModel() = %v after invalid selection, want procedural", got)
 	}
-	if engine.voices[tomTrackIndex] != engine.proceduralTom {
+	if engine.voices[tomTrackIndex] != engine.proceduralToms[tomTrackIndex] {
 		t.Fatal("invalid selection changed the active Tom voice")
 	}
 }
 
 func TestPhysicalTomRenderDoesNotAllocate(t *testing.T) {
 	engine := NewEngine(testSampleRate)
-	engine.SetTomModel(TomModelPhysical)
+	engine.SetTomModel(tomTrackIndex, TomModelPhysical)
 	engine.TriggerVoice(tomTrackIndex, 1)
 	buffer := make([]float32, 512)
 

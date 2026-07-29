@@ -120,8 +120,12 @@ func (e *Engine) checkMix(problems []error) []error {
 		problems = append(problems, fmt.Errorf("volume ramp coefficient out of contract: %v", e.volCoef))
 	}
 
-	if e.tomModel != TomModelProcedural && e.tomModel != TomModelPhysical {
-		problems = append(problems, fmt.Errorf("invalid Tom model: %d", e.tomModel))
+	for _, track := range [...]int{tomTrackIndex, tom2TrackIndex} {
+		model := e.tomModels[track]
+		if model != TomModelProcedural && model != TomModelPhysical {
+			problems = append(problems,
+				fmt.Errorf("invalid Tom model on track %d: %d", track, model))
+		}
 	}
 
 	for track := range e.pattern {
@@ -166,11 +170,17 @@ func (e *Engine) checkMix(problems []error) []error {
 		}
 	}
 
-	if e.physicalTom != nil {
-		for index := range e.physicalTom.ParamSpecs() {
-			if param := e.physicalTom.Param(index); !inRange(param, 0, 1) {
+	for _, track := range [...]int{tomTrackIndex, tom2TrackIndex} {
+		physicalTom := e.physicalToms[track]
+		if physicalTom == nil {
+			continue
+		}
+
+		for index := range physicalTom.ParamSpecs() {
+			if param := physicalTom.Param(index); !inRange(param, 0, 1) {
 				problems = append(problems,
-					fmt.Errorf("physical Tom param %d out of contract: %v", index, param))
+					fmt.Errorf("physical Tom track %d param %d out of contract: %v",
+						track, index, param))
 			}
 		}
 	}
