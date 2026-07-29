@@ -59,6 +59,8 @@ const (
 	minSampleRate     = 8000.0
 	maxSampleRate     = 768000.0
 
+	tomTrackIndex = 3
+
 	// secondsPerMinute and stepsPerBeat convert BPM to samples per step;
 	// steps are 16th notes, so there are four per quarter-note beat.
 	secondsPerMinute = 60.0
@@ -94,6 +96,10 @@ type Engine struct {
 	decays  [TrackCount]float64
 
 	voices [TrackCount]Voice
+
+	tomModel      TomModel
+	proceduralTom *Tom
+	physicalTom   *physicalTom
 
 	stepCount   int // active pattern length in [1, MaxSteps]
 	currentStep int
@@ -134,7 +140,8 @@ func NewEngine(sr float64) *Engine {
 	e.voices[0] = NewBassDrum(sr)
 	e.voices[1] = NewSnare(sr)
 	e.voices[2] = NewHiHat(sr)
-	e.voices[3] = NewTom(sr)
+	e.proceduralTom = NewTom(sr)
+	e.voices[tomTrackIndex] = e.proceduralTom
 
 	e.voices[4] = NewCymbal(sr)
 	for i := range e.voices {
@@ -439,7 +446,63 @@ func (e *Engine) SetVoiceParam(track, index int, value01 float64) {
 		return
 	}
 
+	// The Tom's procedural parameter bank remains authoritative while the
+	// physical model is selected, so saved settings survive A/B switching.
+	if track == tomTrackIndex {
+		e.proceduralTom.SetParam(index, value01)
+
+		return
+	}
+
 	e.voices[track].SetParam(index, value01)
+}
+
+// SetTomModel explicitly selects the Tom implementation. The original
+// procedural voice remains the default, and invalid values are ignored.
+// Switching resets both sides so a dormant tail cannot resume later.
+func (e *Engine) SetTomModel(model TomModel) {
+	if model == e.tomModel {
+		return
+	}
+
+	var next Voice
+
+	switch model {
+	case TomModelProcedural:
+		next = e.proceduralTom
+	case TomModelPhysical:
+		if e.physicalTom == nil {
+			physicalVoice, err := newPhysicalTom(e.sr)
+			if err != nil {
+				logErr("NewPhysicalTom", err)
+
+				return
+			}
+
+			e.physicalTom = physicalVoice
+		}
+
+		next = e.physicalTom
+	default:
+		return
+	}
+
+	if current, ok := e.voices[tomTrackIndex].(interface{ Reset() }); ok {
+		current.Reset()
+	}
+
+	if reset, ok := next.(interface{ Reset() }); ok {
+		reset.Reset()
+	}
+
+	next.SetDecay(e.decays[tomTrackIndex])
+	e.voices[tomTrackIndex] = next
+	e.tomModel = model
+}
+
+// TomModel reports the currently selected Tom implementation.
+func (e *Engine) TomModel() TomModel {
+	return e.tomModel
 }
 
 // TriggerVoice fires one voice immediately, independent of the sequencer, so

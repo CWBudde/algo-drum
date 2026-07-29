@@ -3,21 +3,21 @@
 package main
 
 import (
-	"encoding/binary"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"time"
 
 	"github.com/cwbudde/algo-drum/internal/physical"
+	"github.com/cwbudde/wav"
+	"github.com/go-audio/audio"
 )
 
 const (
 	maxRenderDuration = 30 * time.Second
-	wavHeaderBytes    = 44
-	pcm16Bytes        = 2
 	normalizedPeak    = 0.9
 )
 
@@ -42,14 +42,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	wav, peak, err := encodePCM16WAV(samples, int(config.SampleRateHz))
+	output, err := os.Create(*outputPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "render-physical: %v\n", err)
+		fmt.Fprintf(os.Stderr, "render-physical: create %s: %v\n", *outputPath, err)
 		os.Exit(1)
 	}
 
-	if err := os.WriteFile(*outputPath, wav, 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "render-physical: write %s: %v\n", *outputPath, err)
+	peak, encodeErr := writePCM16WAV(output, samples, int(config.SampleRateHz))
+	closeErr := output.Close()
+
+	if encodeErr != nil {
+		fmt.Fprintf(os.Stderr, "render-physical: encode %s: %v\n", *outputPath, encodeErr)
+		os.Exit(1)
+	}
+
+	if closeErr != nil {
+		fmt.Fprintf(os.Stderr, "render-physical: close %s: %v\n", *outputPath, closeErr)
 		os.Exit(1)
 	}
 
@@ -89,16 +97,24 @@ func render(config physical.PhysicalDrum, duration time.Duration, velocity float
 	return samples, nil
 }
 
-func encodePCM16WAV(samples []float64, sampleRate int) ([]byte, float64, error) {
+func writePCM16WAV(
+	writer io.WriteSeeker,
+	samples []float64,
+	sampleRate int,
+) (float64, error) {
+	if writer == nil {
+		return 0, fmt.Errorf("%w: nil WAV writer", errInvalidRenderOption)
+	}
+
 	if sampleRate <= 0 {
-		return nil, 0, fmt.Errorf("%w: sample rate %d", errInvalidRenderOption, sampleRate)
+		return 0, fmt.Errorf("%w: sample rate %d", errInvalidRenderOption, sampleRate)
 	}
 
 	peak := 0.0
 
 	for index, sample := range samples {
 		if math.IsNaN(sample) || math.IsInf(sample, 0) {
-			return nil, 0, fmt.Errorf("%w: non-finite sample %d", errInvalidRenderOption, index)
+			return 0, fmt.Errorf("%w: non-finite sample %d", errInvalidRenderOption, index)
 		}
 
 		peak = math.Max(peak, math.Abs(sample))
@@ -109,30 +125,28 @@ func encodePCM16WAV(samples []float64, sampleRate int) ([]byte, float64, error) 
 		scale = normalizedPeak / peak
 	}
 
-	dataBytes := len(samples) * pcm16Bytes
-	wav := make([]byte, wavHeaderBytes+dataBytes)
-	copy(wav[0:4], "RIFF")
-	binary.LittleEndian.PutUint32(wav[4:8], uint32(len(wav)-8))
-	copy(wav[8:12], "WAVE")
-	copy(wav[12:16], "fmt ")
-	binary.LittleEndian.PutUint32(wav[16:20], 16)
-	binary.LittleEndian.PutUint16(wav[20:22], 1)
-	binary.LittleEndian.PutUint16(wav[22:24], 1)
-	binary.LittleEndian.PutUint32(wav[24:28], uint32(sampleRate))
-	binary.LittleEndian.PutUint32(wav[28:32], uint32(sampleRate*pcm16Bytes))
-	binary.LittleEndian.PutUint16(wav[32:34], pcm16Bytes)
-	binary.LittleEndian.PutUint16(wav[34:36], 16)
-	copy(wav[36:40], "data")
-	binary.LittleEndian.PutUint32(wav[40:44], uint32(dataBytes))
+	data := make([]float32, len(samples))
 
 	for index, sample := range samples {
-		normalized := math.Max(-1, math.Min(1, sample*scale))
-		pcm := int16(math.Round(normalized * math.MaxInt16))
-		binary.LittleEndian.PutUint16(
-			wav[wavHeaderBytes+index*pcm16Bytes:],
-			uint16(pcm),
-		)
+		data[index] = float32(math.Max(-1, math.Min(1, sample*scale)))
 	}
 
-	return wav, peak, nil
+	buffer := &audio.Float32Buffer{
+		Format: &audio.Format{
+			NumChannels: 1,
+			SampleRate:  sampleRate,
+		},
+		Data: data,
+	}
+	encoder := wav.NewEncoder(writer, sampleRate, 16, 1, 1)
+
+	if err := encoder.Write(buffer); err != nil {
+		return 0, fmt.Errorf("write WAV samples: %w", err)
+	}
+
+	if err := encoder.Close(); err != nil {
+		return 0, fmt.Errorf("finalize WAV: %w", err)
+	}
+
+	return peak, nil
 }

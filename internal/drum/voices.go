@@ -459,6 +459,13 @@ func (v *Tom) Trigger(velocity float64) {
 
 func (v *Tom) IsActive() bool { return v.active }
 
+func (v *Tom) Reset() {
+	v.active = false
+	v.age = 0
+	v.phase = 0
+	v.env = 0
+}
+
 func (v *Tom) SetDecay(amount float64) {
 	v.decayAmount = clamp01(amount)
 	v.applyDecay()

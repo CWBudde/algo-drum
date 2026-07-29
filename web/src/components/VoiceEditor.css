@@ -78,6 +78,68 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
+.dm-voice-model {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 18px 0;
+  padding: 0;
+  border: 0;
+}
+
+.dm-voice-model legend {
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(206, 197, 178, 0.85);
+}
+
+.dm-voice-model label {
+  position: relative;
+  cursor: pointer;
+}
+
+.dm-voice-model input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dm-voice-model span {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.7);
+  border-radius: 6px;
+  background: rgba(8, 8, 14, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  color: rgba(206, 197, 178, 0.8);
+}
+
+.dm-voice-model small {
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  color: #d99b53;
+}
+
+.dm-voice-model input:checked + span {
+  border-color: rgba(200, 140, 60, 0.7);
+  background: rgba(200, 120, 40, 0.14);
+  color: #f0dcc0;
+}
+
+.dm-voice-model input:focus-visible + span {
+  outline: 2px solid rgba(200, 140, 60, 0.85);
+  outline-offset: 2px;
+}
+
 /* auto-fit fits four knobs on one row; the extra top padding leaves room for
    the first row's drag readout. */
 .dm-voice-knobs {
@@ -119,6 +181,29 @@
   line-height: 1.5;
   /* X3: rgba(178,170,155,0.8) over #1a1a26 → 5.6:1. */
   color: rgba(178, 170, 155, 0.8);
+}
+
+.dm-voice-physical-note {
+  margin: 18px;
+  padding: 18px;
+  border: 1px solid rgba(109, 149, 200, 0.28);
+  border-radius: 8px;
+  background: rgba(25, 38, 58, 0.38);
+  color: rgba(206, 197, 178, 0.85);
+}
+
+.dm-voice-physical-note strong {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: #9bb9df;
+}
+
+.dm-voice-physical-note p {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.55;
 }
 
 .dm-voice-foot {

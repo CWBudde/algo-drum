@@ -246,6 +246,18 @@ func main() {
 		return js.Null()
 	}))
 
+	api.Set("setTomModel", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		if model, ok := argInt(args, 0, "setTomModel"); ok {
+			engine.SetTomModel(drum.TomModel(model))
+		}
+
+		return js.Null()
+	}))
+
 	api.Set("triggerVoice", export(func(args []js.Value) any {
 		if !ready() {
 			return js.Null()
