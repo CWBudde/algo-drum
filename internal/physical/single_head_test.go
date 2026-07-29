@@ -191,6 +191,73 @@ func TestSingleHeadTriggerValidationAndReset(t *testing.T) {
 	}
 }
 
+func TestSingleHeadOverlappingTriggersSuperpose(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultPhysicalDrum()
+	first, err := NewSingleHead(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := NewSingleHead(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	combined, err := NewSingleHead(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := first.Trigger(0.8); err != nil {
+		t.Fatal(err)
+	}
+	if err := combined.Trigger(0.8); err != nil {
+		t.Fatal(err)
+	}
+
+	overlapAt := combined.PulseSamples() / 2
+	for sampleIndex := range combined.PulseSamples() * 3 {
+		if sampleIndex == overlapAt {
+			if err := second.Trigger(0.35); err != nil {
+				t.Fatal(err)
+			}
+			if err := combined.Trigger(0.35); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		firstOutput := first.Tick()
+		secondOutput := second.Tick()
+		combinedOutput := combined.Tick()
+		if difference := math.Abs(
+			combinedOutput.Radiated - firstOutput.Radiated - secondOutput.Radiated,
+		); difference > 1e-12 {
+			t.Fatalf("sample %d superposition difference = %v", sampleIndex, difference)
+		}
+	}
+}
+
+func TestSingleHeadSupportsOverdampedModes(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultPhysicalDrum()
+	config.Batter.Loss0PerSecond = 1_000
+	model, err := NewSingleHead(config)
+	if err != nil {
+		t.Fatalf("NewSingleHead() error = %v", err)
+	}
+	if err := model.Trigger(1); err != nil {
+		t.Fatal(err)
+	}
+
+	for sampleIndex := range model.PulseSamples() + 100 {
+		output := model.Tick()
+		if !isFinite(output.Radiated) || !isFinite(output.MechanicalEnergyJ) {
+			t.Fatalf("sample %d is non-finite: %#v", sampleIndex, output)
+		}
+	}
+}
+
 func TestSingleHeadRenderDoesNotAllocate(t *testing.T) {
 	config := DefaultPhysicalDrum()
 	model, err := NewSingleHead(config)

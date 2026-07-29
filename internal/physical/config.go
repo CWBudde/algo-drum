@@ -280,10 +280,6 @@ func validateHead(name string, head Head, required bool) error {
 		return fmt.Errorf("%w: %s must be enabled", ErrInvalidConfig, name)
 	}
 
-	if !head.Enabled {
-		return nil
-	}
-
 	checks := []struct {
 		field    string
 		value    float64
