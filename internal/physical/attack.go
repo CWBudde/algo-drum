@@ -1,6 +1,8 @@
 package physical
 
 import (
+	"math"
+
 	"github.com/cwbudde/algo-dsp/dsp/filter/biquad"
 	"github.com/cwbudde/algo-dsp/dsp/filter/design"
 )
@@ -10,6 +12,19 @@ import (
 // within one render are identical to each other — deliberately. Per-trigger
 // variation is a separate mechanism (PLAN.md S7) with a separate justification.
 const attackNoiseSeed = 0x9E3779B97F4A7C15
+
+// attackBandRatios place the layer's bands relative to Attack.CentreHz. At the
+// default 4 kHz they land on 1.6, 4.0 and 10 kHz, so the group starts just above
+// the top retained mode and covers the range the layer stands in for.
+// Attack.CentreHz keeps meaning what it did: where the layer's weight sits.
+//
+// Three bands, not one, because the band this layer replaces does not decay at
+// one rate. On a membrane γ grows with k, so the top of the range dies several
+// times faster than the bottom; a single release makes the whole span ring for as
+// long as its slowest part, which is heard as a noise burst sitting on the drum
+// rather than as the drum's own attack. Measured at the default: 94 ms T60 at
+// 1.6 kHz, 37 ms at 4 kHz, 15 ms at 10 kHz, against the flat 138 ms it had.
+var attackBandRatios = [3]float64{0.4, 1, 2.5}
 
 // attackLayer is the non-modal half of the voice.
 //
@@ -28,33 +43,68 @@ const attackNoiseSeed = 0x9E3779B97F4A7C15
 // shorter contact and so a brighter, tighter burst, with no second set of
 // parameters to keep consistent.
 type attackLayer struct {
-	enabled     bool
-	level       float64
-	decayFactor float64
-	band        biquad.Section
-	envelope    float64
-	noiseState  uint64
+	enabled bool
+	level   float64
+	bands   [len(attackBandRatios)]attackBand
+	// One source for all three bands. They barely overlap, so sharing it costs
+	// no audible correlation and keeps the reproducible state to one word.
+	noiseState uint64
 }
 
-func newAttackLayer(attack Attack, sampleRateHz float64) attackLayer {
+// attackBand is one band of the layer: a filter, a release, and the envelope
+// between them. Each band models a slice of the unresolved mode thicket, so each
+// one gets that slice's own decay rate.
+type attackBand struct {
+	filter      biquad.Section
+	decayFactor float64
+	envelope    float64
+}
+
+// newAttackLayer builds the layer against the head whose modes it continues.
+//
+// The decay rates are *derived*, not fitted: each band's release is the head's
+// own structural loss law evaluated at that band's centre wavenumber. That is the
+// same law the resolved modes use, so the layer is an extrapolation of the mode
+// series rather than an independent effect bolted beside it, and DAMP, DEC and
+// D.TILT reach it for free because they have already been applied to the head.
+//
+// This replaced a single fitted 20 ms release, which was wrong in both size and
+// shape. A one-pole 20 ms release is a 138 ms T60, where the loss law puts the
+// band it stands for at 75 ms at 2 kHz and 18 ms at 8 kHz — so the layer rang
+// about twice too long at the bottom of its range and seven times too long at
+// the top, and rang equally long across the whole span. Broadband noise held that
+// far past the strike is heard as a separate hiss instead of fusing into the
+// attack, which is exactly what it sounded like.
+func newAttackLayer(attack Attack, head Head, sampleRateHz float64) attackLayer {
 	if !attack.Enabled || attack.LevelRelative == 0 {
 		return attackLayer{}
 	}
 
-	return attackLayer{
-		enabled: true,
-		level:   attack.LevelRelative,
-		// One-pole release. The envelope is charged by the contact force and then
-		// decays on its own, so the burst outlasts the 5.5-8 ms contact the way a
-		// struck head's high band does.
-		decayFactor: decayFactorPerSample(attack.DecaySeconds, sampleRateHz),
-		band: biquad.Section{Coefficients: design.Bandpass(
-			min(attack.CentreHz, sampleRateHz*0.45),
-			attack.QualityFactor,
-			sampleRateHz,
-		)},
+	layer := attackLayer{
+		enabled:    true,
+		level:      attack.LevelRelative,
 		noiseState: attackNoiseSeed,
 	}
+
+	speed := WaveSpeedMPerS(head)
+
+	for index, ratio := range attackBandRatios {
+		centreHz := min(attack.CentreHz*ratio, sampleRateHz*0.45)
+		decayRate := ModalDecayRatePerSecond(head, 2*math.Pi*centreHz/speed)
+		layer.bands[index] = attackBand{
+			filter: biquad.Section{Coefficients: design.Bandpass(
+				centreHz,
+				attack.QualityFactor,
+				sampleRateHz,
+			)},
+			decayFactor: decayFactorPerSample(
+				attack.DecayScale/decayRate,
+				sampleRateHz,
+			),
+		}
+	}
+
+	return layer
 }
 
 func decayFactorPerSample(decaySeconds, sampleRateHz float64) float64 {
@@ -80,12 +130,18 @@ func (a *attackLayer) tick(forceN float64) float64 {
 		forceN = -forceN
 	}
 
-	a.envelope = a.envelope*a.decayFactor + forceN
-	if a.envelope == 0 {
-		return 0
+	// One noise sample feeds every band, so the draw happens whether or not the
+	// envelopes have anything left: the sequence must not depend on the force.
+	noise := a.noise()
+	sum := 0.0
+
+	for index := range a.bands {
+		band := &a.bands[index]
+		band.envelope = band.envelope*band.decayFactor + forceN
+		sum += band.filter.ProcessSample(a.level * band.envelope * noise)
 	}
 
-	return a.band.ProcessSample(a.level * a.envelope * a.noise())
+	return sum
 }
 
 // noise is xorshift64*, chosen because it is a few instructions, has no state
@@ -101,16 +157,32 @@ func (a *attackLayer) noise() float64 {
 }
 
 func (a *attackLayer) reset() {
-	a.envelope = 0
 	a.noiseState = attackNoiseSeed
-	a.band.Reset()
+
+	for index := range a.bands {
+		a.bands[index].envelope = 0
+		a.bands[index].filter.Reset()
+	}
 }
 
 // isRinging reports whether the layer still has audible envelope left. The modal
 // energy threshold cannot speak for it: the voice stops calling Tick the moment
 // IsActive is false, so a layer outlasting the modal tail would be cut off.
+//
+// The slowest band decides, which after the change to derived rates is always the
+// lowest one.
 func (a *attackLayer) isRinging() bool {
-	return a.enabled && a.envelope > attackInactiveEnvelope
+	if !a.enabled {
+		return false
+	}
+
+	for index := range a.bands {
+		if a.bands[index].envelope > attackInactiveEnvelope {
+			return true
+		}
+	}
+
+	return false
 }
 
 // attackInactiveEnvelope is in newtons of accumulated contact force. The

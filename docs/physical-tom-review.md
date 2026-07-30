@@ -44,6 +44,14 @@ numbers in the table describe the voice as diagnosed, not as it now stands.
 Two things I initially flagged turned out to be **fine**, and the literature is
 what corrected me — details in "What I got wrong" below.
 
+One thing this review **missed entirely**, found later the same day by listening
+rather than by measurement: the whole drum was tuned about a fifth too low
+(104 Hz on a 12-inch head), and the tuning control silently changed the decay as
+well as the pitch, because the ζc coefficient was stored as an absolute constant.
+Every frequency in this document is therefore from a drum tuned to 600 N/m,
+where the default is now 1250. See PLAN.md items S9 and S10, and
+[`physical-calibration.md`](physical-calibration.md#tuning-and-constant-q).
+
 ## The measurements
 
 ### 1 & 2. Damping is the biggest error (11, 06, 05)

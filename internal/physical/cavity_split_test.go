@@ -91,11 +91,17 @@ func centreHitPeaks(t *testing.T, config PhysicalDrum, limitHz float64) []spectr
 	return peaks
 }
 
-// firstOvertoneFamilyHz is just below the lowest uncoupled (0,2), which is
-// 238.9 Hz on the batter and 258.0 Hz on the resonant head. Cavity stiffening
-// only ever raises an axisymmetric branch, so no member of the (0,2) family can
-// appear below this and anything that does belongs to the (0,1) doublet.
-const firstOvertoneFamilyHz = 235.0
+// firstOvertoneFamilyHz is just below the lowest uncoupled (0,2), which at the
+// retuned default is 344.5 Hz on the batter and 371.8 Hz on the resonant head.
+// Cavity stiffening only ever raises an axisymmetric branch, so no member of the
+// (0,2) family can appear below this and anything that does belongs to the (0,1)
+// doublet.
+//
+// This has to follow the tuning. It was 235 Hz against the old 600 N/m default,
+// where the (0,2) sat at 238.9 Hz — below the retuned drum's *stiffened*
+// fundamental branch, so the rigid-cavity comparison stopped finding anything at
+// all rather than failing on its own terms.
+const firstOvertoneFamilyHz = 340.0
 
 // axisymmetricDoublet returns the unstiffened and stiffened (0,1) branches. The
 // unstiffened one is the lowest peak — interlacing keeps it between the two

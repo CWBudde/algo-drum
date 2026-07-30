@@ -342,7 +342,13 @@ func nonlinearFirstModeFrequenciesFor(
 func nonlinearAttackSpectrum(t *testing.T, velocity float64) (float64, float64) {
 	t.Helper()
 
-	const fftSize = 8192
+	// 2048 samples, 43 ms: the attack, which is what this measures. Over the
+	// 171 ms window this used to take, the Hann taper suppresses exactly the
+	// interval where the tension is raised and emphasises the settled middle, so
+	// a large glide moves the measured centroid *down* — at the shipped
+	// coefficients, loud 363.8 Hz against quiet 371.2 Hz. That was a property of
+	// the window, not of the model.
+	const fftSize = 2048
 	config := isolatedNonlinearConfig()
 	setUniformLoss(&config.Batter, 3)
 	model, err := NewDoubleHead(config)

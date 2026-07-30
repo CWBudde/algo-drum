@@ -65,9 +65,14 @@ tiers doubled once the second full bank stopped being computed and discarded.
 
 | Tier     | Batter | Resonant | Top mode |
 | -------- | ------ | -------- | -------- |
-| Draft    | 48     | 4        | 646 Hz   |
-| Standard | 96     | 6        | 915 Hz   |
-| High     | 160    | 8        | 1166 Hz  |
+| Draft    | 48     | 4        | 926 Hz   |
+| Standard | 96     | 6        | 1310 Hz  |
+| High     | 160    | 8        | 1671 Hz  |
+
+Those are the frequencies at the retuned 1250 N/m default; before it they were
+646, 915 and 1166 Hz. Raising the tuning raises the whole mode series, so the same
+budget reaches 1.44 times higher — which is where the room to move the attack
+layer above the modal band came from.
 
 Measured on `js/wasm` under Node with 512-sample chunks, retriggering at full
 velocity before every chunk so the nonlinear solve never idles:
@@ -83,6 +88,13 @@ Standard now covers twice the mode count of the old default, plus a high band th
 old default did not have at all, for slightly _less_ cost than before. Render
 still allocates nothing.
 
+Re-measured after the attack layer became three bands, since that tripled its
+per-sample filtering: 1.70, 1.81 and 2.19 times real time over three runs at 102
+oscillators, still with zero allocations. The 1.66 above is inside that spread and
+is kept as the conservative figure. Two extra biquads and two extra one-pole
+envelopes are a rounding error beside a hundred oscillators and a nonlinear solve,
+which is what the measurement says as well as what the arithmetic predicts.
+
 The honest caveat: both Tom tracks can select the physical model, and two
 simultaneous physical voices at Standard sit at about 0.8 times real time in the
 worst case. That was already true before this work — 0.74 — so this is an
@@ -90,38 +102,84 @@ improvement rather than a fix, and Draft exists for it.
 
 ## The attack layer
 
-`Attack` is a single band of noise, driven by the contact force and decaying on
-its own.
+`Attack` is three bands of noise, driven by the contact force and each decaying at
+its own rate.
+
+### Why three, and not one
+
+It shipped as one band with one fitted 20 ms release, and it sounded like a hiss
+laid over the drum rather than like the drum's own attack. Two things were wrong
+with it, and both are measurable.
+
+**The release was far too long.** A one-pole 20 ms release is a 138 ms \(T_{60}\).
+The head's own loss law, extrapolated into the band the layer stands for, gives:
+
+| Frequency | \(\gamma\) | \(\tau\) | \(T_{60}\) |
+| --------- | ---------- | -------- | ---------- |
+| 1 kHz     | 46.3 /s    | 21.6 ms  | 149 ms     |
+| 2 kHz     | 92.1 /s    | 10.9 ms  | 75 ms      |
+| 5 kHz     | 232.3 /s   | 4.3 ms   | 30 ms      |
+| 8 kHz     | 376.2 /s   | 2.7 ms   | 18 ms      |
+
+So the layer rang about twice too long at the bottom of its range and seven times
+too long at the top. Broadband noise held that far past the strike does not fuse
+into the attack; it is heard as a separate source, which is exactly the complaint.
+
+**And it was one rate for the whole span.** Constant \(Q\) means the absolute
+decay rate rises with frequency, so the top of this band genuinely dies several
+times faster than its bottom. A single release cannot express that, and the
+version that had one made 8 kHz sustain as long as 1 kHz — something no membrane
+does.
+
+### How it works now
 
 - **Excitation** is the contact force sample the modes see, so mallet hardness
   and velocity carry into the layer for free: a harder stick has a shorter
   contact and so a tighter, brighter burst. There is no second trigger and no
   second set of dynamics to keep consistent with the first.
-- **Envelope** is a one-pole release charged by that force, so the burst outlasts
-  the 5.5–8 ms contact the way a struck head's high band does.
-  `Attack.DecaySeconds` defaults to 20 ms and follows `DAMP` and the strip `DEC`,
-  for the same reason the (0,1) decay correction does: a damping control that
-  cannot shorten the stick has no authority over the part of the sound listeners
-  notice first. `D.TILT` deliberately does not apply — one band has no shape to
-  tilt.
-- **Band** is one bandpass at `Attack.CentreHz` with `Attack.QualityFactor`
-  defaulting to 0.7, which spans roughly 1–8 kHz. Broad on purpose: this stands
-  in for a dense thicket of unresolved modes, so a resonant peak would be a worse
-  lie than a gentle hump.
-- **Level** is fitted, like the near-field scale, and measured in the 43 ms
-  attack window against the strongest low partial:
+- **Bands** sit at 0.4, 1 and 2.5 times `Attack.CentreHz`, each a bandpass with
+  `Attack.QualityFactor` defaulting to 0.7 — about an octave wide, so the three
+  tile the group without a gap. Broad on purpose: this stands in for a dense
+  thicket of unresolved modes, so a resonant peak would be a worse lie than a
+  gentle hump.
+- **Envelopes** are one per band, a one-pole release charged by the contact force,
+  so each burst outlasts the 5.5–8 ms contact the way a struck head's high band
+  does. Their rates are **derived, not fitted**: each is the batter head's own
+  structural loss law evaluated at that band's centre wavenumber, so the layer is
+  an extrapolation of the mode series rather than an effect bolted beside it. At
+  the default that gives 94 ms \(T_{60}\) at 1.6 kHz, 37 ms at 4 kHz and 15 ms at
+  10 kHz.
 
-  | `LevelRelative` | 1–2 kHz | 2–5 kHz | 5–10 kHz |
-  | --------------- | ------- | ------- | -------- |
-  | 0               | −66.9   | −83.9   | −99.8    |
-  | 0.05            | −38.3   | −33.0   | −33.9    |
-  | **0.1**         | −32.3   | −27.0   | −27.9    |
-  | 0.2             | −26.3   | −20.9   | −21.9    |
+  `Attack.DecayScale` is a dimensionless multiplier on all three, defaulting to 1.
+  It exists only because the loss law is being read past the range it was fitted
+  in.
 
-  The first row is the defect this layer exists to fix: with modal synthesis
-  alone there is nothing above 1 kHz within 60 dB of the fundamental. 0.1 is a
-  stick that is clearly present and still well under the low band; 0.2 reads as a
-  click.
+  `DAMP`, the strip `DEC` and `D.TILT` now all reach the layer for free, because
+  they are applied to the head before the rates are read off it. `D.TILT` in
+  particular _does_ apply now: three bands at different rates are a shape to tilt,
+  where the single band it replaced was not.
+
+- **Placement** starts above the modal band. `Attack.CentreHz` defaults to 4 kHz,
+  putting the lowest band at 1.6 kHz against a top retained mode of 1310 Hz. At
+  the 3 kHz it shipped with, that band landed at 1.2 kHz — _inside_ the modal
+  band, which is both a double count and the wrong texture, because that region is
+  heard as pitch rather than as hiss. `TestAttackLayerStartsAboveTheModalBand`
+  keeps the two halves of the voice from describing the same frequencies.
+
+- **Level** is fitted, like the near-field scale, and measured in the 43 ms attack
+  window against the strongest low partial:
+
+  | `LevelRelative` | 1–2 kHz | 2–5 kHz | 5–10 kHz | voice peak |
+  | --------------- | ------- | ------- | -------- | ---------- |
+  | 0               | −45.5   | −77.7   | −94.5    | 0.435      |
+  | 0.02            | −37.9   | −39.1   | −40.6    | 0.503      |
+  | **0.05**        | −31.6   | −31.1   | −32.7    | 0.616      |
+  | 0.1             | −26.1   | −25.0   | −26.6    | 0.803      |
+
+  The first row is the defect this layer exists to fix: with modal synthesis alone
+  there is nothing above 2 kHz within 75 dB of the fundamental. Three summed
+  envelopes are about three times as loud as one for the same number, so the
+  refitted default is 0.05 where the single-band version used 0.1.
 
 ### Determinism
 
@@ -146,14 +204,18 @@ energy threshold would otherwise be cut off mid-burst.
 
 Two additions to the physical bank, appended at indices 16 and 17:
 
-| Control | Field                  | Range        |
-| ------- | ---------------------- | ------------ |
-| ATK.L   | `Attack.LevelRelative` | 0–0.3        |
-| ATK.T   | `Attack.CentreHz`      | 500 Hz–8 kHz |
+| Control | Field                  | Range        | Default |
+| ------- | ---------------------- | ------------ | ------- |
+| ATK.L   | `Attack.LevelRelative` | 0–0.15       | 0.05    |
+| ATK.T   | `Attack.CentreHz`      | 500 Hz–8 kHz | 4 kHz   |
 
-App-state format version 12 widens both physical banks for them. Version 11 —
-which changed no bytes, only the meaning of the stored strike radius — and
-version 10 keep their own 16-slot width, so links written by either still decode.
+App-state format version 12 widened both physical banks for them. Version 13
+changes no bytes at all: `ATK.L`'s range narrowed from 0–0.3 to 0–0.15 with the
+three-band refit, so a stored position has to double to keep meaning the same
+level, and a position still sitting on v12's detent moves to the new default
+instead — the same two-rule shape `migrateStrikeRadius` uses, and Tom 2's bank
+gets it too. Versions 10 and 11 keep their own 16-slot width, so links written by
+either still decode.
 
 ## Validation
 
@@ -164,6 +226,10 @@ The P8 suite covers:
   ones are excited — so a failure says which half broke;
 - audible content in 1–2 kHz and 2–5 kHz with the layer on, and its absence
   below 60 dB with the layer off, so the layer cannot be quietly removed;
+- each band's release matching the loss law at its own centre, and each band
+  decaying strictly faster than the one below it, so the layer cannot go back to
+  ringing at one flat rate;
+- the lowest band sitting above the top retained mode;
 - bit-identical renders from two fresh models and across `Reset`;
 - the layer scaling with velocity, and keeping the voice active while it rings;
 - exact silence when disabled or at zero level, with the radiated sum falling

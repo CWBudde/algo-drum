@@ -522,3 +522,44 @@ func bisectBesselRoot(order int, left, right, leftValue float64) float64 {
 
 	return 0.5 * (left + right)
 }
+
+// WaveSpeedMPerS returns the transverse wave speed √(T/σ) that sets the head's
+// whole mode series.
+func WaveSpeedMPerS(head Head) float64 {
+	return math.Sqrt(head.TensionNPerM / head.SurfaceDensityKgPerM2)
+}
+
+// RetuneTension sets a head's tension and rescales the loss terms that constant
+// Q makes proportional to the wave speed, so that the tuning knob changes the
+// drum's pitch and not its ring.
+//
+// The coefficients on Head are quoted at whatever tension the head carries when
+// this is called. Constant ζ means γ = ζω = ζ·c·k, so the k¹ coefficient *is*
+// ζc; the k² coefficient is the same statement one order out; and the (0,1)
+// correction stands for a coupling loss, which is a fraction of that mode's own
+// ω. All three are therefore proportional to c = √(T/σ). Loss0PerSecond is a
+// frequency-independent floor and by definition does not move.
+// RadiationLossPerSecond also stays put: its frequency dependence lives in the
+// radiation amplitude it multiplies, not in the coefficient.
+//
+// Without this the tuning knob is secretly a sustain control. Measured on the
+// shipped coefficients, ζ ran from 2.20 % at the bottom of B.TUNE's range to
+// 0.72 % at the top, which stretched a 300 Hz partial's T60 from 0.166 s to
+// 0.423 s — so "it only sounds good at high B.TUNE" was in part a report about
+// decay length, not pitch.
+func RetuneTension(head *Head, tensionNPerM float64) {
+	if head.TensionNPerM <= 0 || tensionNPerM <= 0 {
+		head.TensionNPerM = tensionNPerM
+
+		return
+	}
+
+	speedRatio := math.Sqrt(tensionNPerM / head.TensionNPerM)
+	head.TensionNPerM = tensionNPerM
+	head.Loss1MPerSecond *= speedRatio
+	head.Loss2M2PerSecond *= speedRatio
+
+	for index := range head.ModeDecayCorrections {
+		head.ModeDecayCorrections[index].DecayRatePerSecond *= speedRatio
+	}
+}

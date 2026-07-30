@@ -186,7 +186,7 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 		config.Resonant.TensionNPerM,
 	)
 
-	model.attack = newAttackLayer(config.Attack, config.SampleRateHz)
+	model.attack = newAttackLayer(config.Attack, config.Batter, config.SampleRateHz)
 
 	model.cavityVolumeM3 = math.Pi * config.Batter.RadiusM *
 		config.Batter.RadiusM * config.Cavity.DepthM

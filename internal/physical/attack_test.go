@@ -188,7 +188,7 @@ func TestAttackLayerScalesWithVelocityAndKeepsTheVoiceAlive(t *testing.T) {
 	// active, or the tail is cut off mid-burst. Silence the heads so the modal
 	// energy is negligible and only the layer can be keeping it alive.
 	config := DefaultPhysicalDrum()
-	config.Attack.DecaySeconds = 0.5
+	config.Attack.DecayScale = 30
 	model, err := NewDoubleHead(config)
 	if err != nil {
 		t.Fatal(err)
@@ -247,4 +247,106 @@ func attackConfigWith(apply func(*Attack)) PhysicalDrum {
 	apply(&config.Attack)
 
 	return config
+}
+
+// TestAttackBandsDecayAtTheirOwnRate is the fix for the layer sounding like
+// noise rather than like a stick.
+//
+// The layer used to be one band held at an absolute 20 ms release — a 138 ms T60,
+// flat across 1-8 kHz — where the head's own loss law puts that span between
+// 149 ms at 1 kHz and 18 ms at 8 kHz. Broadband noise sustained that far past the
+// strike does not fuse into the attack; it is heard as a separate hiss sitting on
+// the drum. Now each band decays at the rate the loss law gives for its own
+// centre, so the top of the layer dies several times faster than the bottom.
+func TestAttackBandsDecayAtTheirOwnRate(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultPhysicalDrum()
+	layer := newAttackLayer(config.Attack, config.Batter, config.SampleRateHz)
+	if !layer.enabled {
+		t.Fatal("default attack layer is disabled")
+	}
+
+	speed := WaveSpeedMPerS(config.Batter)
+	previous := 0.0
+
+	for index, ratio := range attackBandRatios {
+		centreHz := config.Attack.CentreHz * ratio
+		want := ModalDecayRatePerSecond(config.Batter, 2*math.Pi*centreHz/speed)
+		// decayFactor is tau*fs/(tau*fs + 1); invert it back to a rate.
+		factor := layer.bands[index].decayFactor
+		got := config.SampleRateHz * (1/factor - 1)
+		t.Logf(
+			"band %d at %.0f Hz: tau %.2f ms, T60 %.0f ms",
+			index,
+			centreHz,
+			1e3/got,
+			1e3*math.Log(1000)/got,
+		)
+
+		if math.Abs(got/want-1) > 1e-6 {
+			t.Fatalf(
+				"band %d rate %.3f /s does not match the loss law's %.3f /s",
+				index,
+				got,
+				want,
+			)
+		}
+		if index > 0 && got <= previous {
+			t.Fatalf(
+				"band %d decays at %.3f /s, no faster than the band below at %.3f /s",
+				index,
+				got,
+				previous,
+			)
+		}
+
+		previous = got
+	}
+
+	// The whole layer has to be finished inside the attack. Anything still
+	// audible at 100 ms is a tail, and a noise tail is exactly the complaint.
+	if t60 := 1e3 * math.Log(1000) /
+		ModalDecayRatePerSecond(
+			config.Batter,
+			2*math.Pi*config.Attack.CentreHz*attackBandRatios[0]/speed,
+		); t60 > 110 {
+		t.Fatalf("slowest attack band rings for %.0f ms", t60)
+	}
+}
+
+// TestAttackLayerStartsAboveTheModalBand keeps the two halves of the voice from
+// describing the same frequencies. Below the top retained mode the model has real
+// modes, which are heard as pitch; filling that region with noise as well is both
+// a double count and the wrong texture.
+func TestAttackLayerStartsAboveTheModalBand(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultPhysicalDrum()
+
+	modes, err := GenerateModes(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	topModeHz := 0.0
+	for _, mode := range modes {
+		topModeHz = max(topModeHz, mode.FrequencyHz)
+	}
+
+	lowestBandHz := config.Attack.CentreHz * attackBandRatios[0]
+	t.Logf(
+		"top retained mode %.0f Hz, lowest attack band %.0f Hz",
+		topModeHz,
+		lowestBandHz,
+	)
+
+	if lowestBandHz <= topModeHz {
+		t.Fatalf(
+			"lowest attack band at %.0f Hz sits inside the modal band, which "+
+				"reaches %.0f Hz",
+			lowestBandHz,
+			topModeHz,
+		)
+	}
 }

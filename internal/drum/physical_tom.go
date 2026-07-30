@@ -131,8 +131,12 @@ func (v *physicalTom) reconfigure() error {
 	diameterM := v.params.value(physicalTomParamDiameter)
 	config.Batter.RadiusM = diameterM / 2
 	config.Resonant.RadiusM = diameterM / 2
-	config.Batter.TensionNPerM = v.params.value(physicalTomParamBatterTension)
-	config.Resonant.TensionNPerM = v.params.value(physicalTomParamResonantTension)
+	// RetuneTension, not a bare assignment: the loss coefficients in the default
+	// config are quoted at its tension, so writing a new tension over them would
+	// leave ζ — and with it the whole decay calibration — drifting with the
+	// tuning knob. It used to, by a factor of three across B.TUNE's travel.
+	physical.RetuneTension(&config.Batter, v.params.value(physicalTomParamBatterTension))
+	physical.RetuneTension(&config.Resonant, v.params.value(physicalTomParamResonantTension))
 
 	// DAMP scales every loss rate together; the strip DEC knob then trims them
 	// all by its documented reciprocal 0.5×–1.5× time scale. D.TILT is applied
@@ -158,12 +162,11 @@ func (v *physicalTom) reconfigure() error {
 
 	config.Attack.LevelRelative = v.params.value(physicalTomParamAttackLevel)
 	config.Attack.CentreHz = v.params.value(physicalTomParamAttackTone)
-	// The attack layer's decay follows DAMP and the strip DEC for the same reason
-	// the (0,1) correction does: a damping control that cannot shorten the stick
-	// has no authority over the part of the sound people notice first. D.TILT is
-	// deliberately not applied — this layer is one band, so it has no shape to
-	// tilt.
-	config.Attack.DecaySeconds /= lossScale
+	// Nothing to do for the layer's decay: it is derived from the batter head's
+	// loss law, which scaleHeadLosses has already scaled. So DAMP, the strip DEC
+	// and D.TILT all reach the attack for free, and D.TILT now genuinely applies
+	// to it — three bands at different rates are a shape to tilt, where the single
+	// band this replaced was not.
 
 	config.Pickup.Radius01 = v.params.value(physicalTomParamPickupRadius)
 	config.Pickup.AngleRad = v.params.value(physicalTomParamPickupAngle) *

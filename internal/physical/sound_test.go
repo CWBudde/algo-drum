@@ -190,9 +190,11 @@ func TestCentreStrikeSoundIsFundamentalLedInTheAttack(t *testing.T) {
 	}
 
 	attackHz := strongestSpectralPeakHz(t, samples, config.SampleRateHz, 60, 1_000)
-	if attackHz < 90 || attackHz > 130 {
+	// Around the retuned 150.1 Hz fundamental, whose cavity-coupled lower branch
+	// renders at 152.3 Hz. The window was [90,130] against the old 104 Hz default.
+	if attackHz < 130 || attackHz > 175 {
 		t.Fatalf(
-			"centre-strike strongest attack peak = %.2f Hz, want fundamental in [90,130] Hz",
+			"centre-strike strongest attack peak = %.2f Hz, want fundamental in [130,175] Hz",
 			attackHz,
 		)
 	}

@@ -189,6 +189,57 @@ func TestDecodeConfigMigratesVersionSixToTheRigidCavity(t *testing.T) {
 	}
 }
 
+// TestDecodeConfigMigratesVersionEightKeepsItsTuning covers the half of the v8
+// migration that is a deliberate *non*-migration.
+//
+// Version 9 moved the default tuning from 600 N/m to 1250 and requoted the loss
+// coefficients against the new wave speed. A stored document's tension and losses
+// are its own measured content, though, so migrating them would retune somebody's
+// drum; only the attack layer, whose absolute release has no image in the derived
+// rates, is rewritten.
+func TestDecodeConfigMigratesVersionEightKeepsItsTuning(t *testing.T) {
+	t.Parallel()
+
+	legacy := DefaultPhysicalDrum()
+	legacy.Version = radiatedAccelerationVersion
+	legacy.Batter.TensionNPerM = 600
+	legacy.Batter.Loss1MPerSecond = 0.4554
+	encoded, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Version 8 had decaySeconds where version 9 has decayScale, so a real
+	// document carries neither field the new schema reads.
+	var document map[string]any
+	if err := json.Unmarshal(encoded, &document); err != nil {
+		t.Fatal(err)
+	}
+	attack, ok := document["attack"].(map[string]any)
+	if !ok {
+		t.Fatalf("attack is not an object: %#v", document["attack"])
+	}
+	delete(attack, "decayScale")
+	attack["decaySeconds"] = 0.02
+	encoded, err = json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decoded, err := DecodeConfig(encoded)
+	if err != nil {
+		t.Fatalf("DecodeConfig(v8) error = %v", err)
+	}
+	if decoded.Version != ConfigVersion {
+		t.Fatalf("migrated v8 version = %d, want %d", decoded.Version, ConfigVersion)
+	}
+	if decoded.Attack.DecayScale != DefaultPhysicalDrum().Attack.DecayScale {
+		t.Fatalf("migrated v8 attack = %#v", decoded.Attack)
+	}
+	if decoded.Batter.TensionNPerM != 600 || decoded.Batter.Loss1MPerSecond != 0.4554 {
+		t.Fatalf("migration retuned a stored head: %#v", decoded.Batter)
+	}
+}
+
 func TestConfigRejectsInvalidCavityCoupling(t *testing.T) {
 	t.Parallel()
 

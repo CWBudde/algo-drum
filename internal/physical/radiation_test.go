@@ -241,9 +241,13 @@ func TestNearFieldTermCarriesTheNonAxisymmetricModes(t *testing.T) {
 		shipped,
 	)
 
-	if farFieldOnly > -20 {
+	// -15, not the -20 this was written against. Multipole cancellation weakens as
+	// ka grows, and the retuned default raised every mode by a factor of 1.44, so
+	// the far-field-only (1,1) came up from -21.1 dB to -17.9. The near-field term
+	// is still carrying the family: it moves this to -6.8 dB.
+	if farFieldOnly > -15 {
 		t.Fatalf(
-			"far-field-only (1,1) is %.1f dB down, expected well below -20 dB; "+
+			"far-field-only (1,1) is %.1f dB down, expected well below -15 dB; "+
 				"if this no longer holds the near-field term may be redundant",
 			farFieldOnly,
 		)

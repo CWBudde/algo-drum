@@ -20,8 +20,9 @@ const (
 	asymmetryConfigVersion        = 5
 	tiltedDampingConfigVersion    = 6
 	fittedCavityConfigVersion     = 7
+	radiatedAccelerationVersion   = 8
 	// ConfigVersion is the physical-drum JSON schema emitted by EncodeConfig.
-	ConfigVersion = 8
+	ConfigVersion = 9
 
 	minSampleRateHz = 8_000.0
 	maxSampleRateHz = 384_000.0
@@ -215,15 +216,22 @@ type Nonlinearity struct {
 
 // Attack is the stochastic high-band layer that stands in for the modes this
 // model cannot afford to resolve. LevelRelative is fitted against the modal
-// layer; CentreHz and QualityFactor place its band; DecaySeconds is its own
-// release, independent of any head's loss law because what it represents decays
-// far faster than the resolved modes do.
+// layer; CentreHz places the band group and QualityFactor sets the width of each
+// of its bands.
+//
+// DecayScale is a dimensionless multiplier on releases that are otherwise
+// *derived*: each band decays at the batter head's own structural loss law
+// evaluated at that band's centre, so the layer extrapolates the mode series
+// instead of ringing at a rate of its own. It replaced an absolute DecaySeconds,
+// which was a fitted 20 ms — a 138 ms T60 held flat across 1-8 kHz, against a
+// loss law that puts that band between 75 ms and 18 ms. The scale exists at all
+// only because the law is being read past the range it was fitted in.
 type Attack struct {
 	Enabled       bool    `json:"enabled"`
 	LevelRelative float64 `json:"levelRelative"`
 	CentreHz      float64 `json:"centreHz"`
 	QualityFactor float64 `json:"qualityFactor"`
-	DecaySeconds  float64 `json:"decaySeconds"`
+	DecayScale    float64 `json:"decayScale"`
 }
 
 // Pickup places the microphone and sets the balance of the two mechanisms it
@@ -253,22 +261,35 @@ func DefaultPhysicalDrum() PhysicalDrum {
 		Enabled:               true,
 		RadiusM:               0.1524,
 		SurfaceDensityKgPerM2: 0.35,
-		TensionNPerM:          600,
+		// 1250 N/m, not the 600 this shipped with. At 600 the 12-inch batter
+		// head's fundamental is 104.00 Hz, which is a floor tom; the drum only
+		// began to read as a rack tom near the old ceiling of 1400. This puts
+		// the fundamental at 150.08 Hz, and the range around it now runs
+		// 300-3500 N/m (75-251 Hz) so that pitch sits mid-travel instead of
+		// against the stop. See RetuneTension for the other half of that fix.
+		TensionNPerM: 1250,
 		TensionAsymmetry: TensionAsymmetry{
 			SplitRatio:            0.004,
 			PrincipalAxisAngleRad: 0,
 		},
 		BendingStiffnessNM: 0.001,
-		// ζ = 1.1 % at c = √(T/σ) = 41.40 m/s. Loss0 is a small floor rather
+		// ζ = 0.72 % at c = √(T/σ) = 59.76 m/s. Loss0 is a small floor rather
 		// than the dominant term it used to be: it flattens ζ toward low
 		// frequencies, which is the shape the measurements contradict.
+		//
+		// 0.72 %, not the 1.1 % this shipped with, because 0.72 % is what the
+		// old coefficients happened to give at the old ceiling of 1400 N/m —
+		// the tuning that sounded right. See RetuneTension: ζ used to drift
+		// with the tuning knob, so "high B.TUNE sounds better" was partly a
+		// report about decay length rather than pitch.
 		Loss0PerSecond:         0.8,
-		Loss1MPerSecond:        0.4554,
-		Loss2M2PerSecond:       2e-5,
+		Loss1MPerSecond:        0.4303,
+		Loss2M2PerSecond:       1.9e-5,
 		RadiationLossPerSecond: 1.5,
 		// The (0,1) loses energy fastest of all, into the cavity and the
-		// opposite head: ζ ≈ 5 % at 103.98 Hz is γ = 32.7 /s, of which the
-		// law above already supplies 8.1 /s.
+		// opposite head. Held at the rate that keeps its T60 at 0.21 s, the
+		// value the retuned default inherits from the point that sounded
+		// right.
 		ModeDecayCorrections: []ModeDecayCorrection{
 			{AzimuthalOrder: 0, RadialOrder: 1, DecayRatePerSecond: 24.6},
 		},
@@ -288,19 +309,20 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			AxisymmetricOnly:      true,
 			RadiusM:               head.RadiusM,
 			SurfaceDensityKgPerM2: 0.25,
-			TensionNPerM:          500,
+			// Retuned by the same factor as the batter head, so the two heads
+			// keep the relationship the cavity fit was made against.
+			TensionNPerM: 1040,
 			TensionAsymmetry: TensionAsymmetry{
 				SplitRatio:            0.003,
 				PrincipalAxisAngleRad: 0,
 			},
 			BendingStiffnessNM: 0.0007,
 			// Same ζ, but the thinner, slacker head carries waves at
-			// c = 44.72 m/s, so its k¹ coefficient and its (0,1) correction
-			// (ζ ≈ 5 % at 112.31 Hz = 35.3 /s, less the 8.9 /s from the law)
+			// c = 64.50 m/s, so its k¹ coefficient and its (0,1) correction
 			// both differ from the batter's.
 			Loss0PerSecond:         1.0,
-			Loss1MPerSecond:        0.4919,
-			Loss2M2PerSecond:       2e-5,
+			Loss1MPerSecond:        0.4644,
+			Loss2M2PerSecond:       1.9e-5,
 			RadiationLossPerSecond: 1.5,
 			ModeDecayCorrections: []ModeDecayCorrection{
 				{AzimuthalOrder: 0, RadialOrder: 1, DecayRatePerSecond: 26.4},
@@ -330,7 +352,7 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			// branch at 219.5 Hz against an unstiffened 107.5 — a doublet ratio
 			// of 2.04, where a measured drum separates its two (0,1) branches by
 			// 10–20 %. This scale gives 106.6/124.2 Hz, a ratio of 1.16.
-			StiffnessScale:    0.04,
+			StiffnessScale:    0.083,
 			AirDensityKgPerM3: 1.204,
 			SoundSpeedMPerS:   343,
 			LossPerSecond:     5,
@@ -355,8 +377,8 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			// oversampled reference goes 0.0773 % to 0.0833 % against a 1.5 %
 			// ceiling, and the solve costs nothing extra — see the note in
 			// nonlinear.go.
-			BatterTensionCoefficientNPerM3:   1.2e6,
-			ResonantTensionCoefficientNPerM3: 8.0e5,
+			BatterTensionCoefficientNPerM3:   9.6e6,
+			ResonantTensionCoefficientNPerM3: 6.4e6,
 			MaximumTensionRatio:              0.2,
 		},
 		Attack: Attack{
@@ -371,18 +393,38 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			//	0.2      -26.3     -20.9     -21.9
 			//
 			// The first row is the defect: with modal synthesis alone there is
-			// nothing above 1 kHz at all. 0.1 is a stick that is clearly present
-			// and still well under the fundamental; 0.2 reads as a click.
-			LevelRelative: 0.1,
-			CentreHz:      3000,
+			// nothing above 1 kHz at all.
+			//
+			// Refitted for the three-band layer, which sums three envelopes where
+			// there used to be one, and against the retuned head. Measured in the
+			// 43 ms attack window, against the strongest low partial:
+			//
+			//	level   1-2 kHz   2-5 kHz   5-10 kHz   peak
+			//	0        -45.5     -77.7     -94.5     0.435
+			//	0.02     -37.9     -39.1     -40.6     0.503
+			//	0.05     -31.6     -31.1     -32.7     0.616
+			//	0.10     -26.1     -25.0     -26.6     0.803
+			//
+			// 0.05 is a stick clearly present and still well under the low band.
+			LevelRelative: 0.05,
+			// 4 kHz, not 3: the bands sit at 0.4, 1 and 2.5 times this, and at
+			// 3 kHz the lowest of them landed at 1.2 kHz — *below* the top retained
+			// mode, which the wider Standard budget now puts at 1310 Hz. Noise
+			// where the model already has resolved modes is both a double count and
+			// the wrong texture: that region is heard as pitch, not as hiss. At
+			// 4 kHz the group spans 1.6-10 kHz and starts just above the modal
+			// ceiling.
+			CentreHz: 4000,
 			// Broad on purpose. This band stands in for a dense thicket of
 			// unresolved modes, so a resonant peak would be a worse lie than a
-			// gentle hump: Q = 0.7 spans roughly 1 to 8 kHz.
+			// gentle hump. At Q = 0.7 each band is about an octave wide, so the
+			// three of them tile the group's 1-8 kHz span without a gap.
 			QualityFactor: 0.7,
-			// Much shorter than any resolved mode's decay, because what it stands
-			// for genuinely decays faster: high modes have the most radiation and
-			// structural loss, and constant Q means their absolute rate is highest.
-			DecaySeconds: 0.02,
+			// 1: take the loss law at its word. The releases it produces are much
+			// shorter than any resolved mode's, because what this layer stands for
+			// genuinely decays faster — constant Q means the absolute rate rises
+			// with frequency.
+			DecayScale: 1,
 		},
 		Pickup: Pickup{
 			// A tom microphone is a close one, a few centimetres off the head
@@ -402,7 +444,7 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			// in the voice, with the attack layer included. Small because the
 			// radiated sum is now a volume acceleration in m³/s² rather than a
 			// bare modal velocity.
-			OutputGain: 0.0033,
+			OutputGain: 0.0048,
 		},
 	}
 }
@@ -561,6 +603,10 @@ func DecodeConfig(data []byte) (PhysicalDrum, error) {
 		migrateV7Config(&config)
 	}
 
+	if config.Version == radiatedAccelerationVersion {
+		migrateV8Config(&config)
+	}
+
 	if err := config.Validate(); err != nil {
 		return PhysicalDrum{}, err
 	}
@@ -636,7 +682,7 @@ func migrateV6Config(config *PhysicalDrum) {
 // new configurations alike; only the mixture of the two mechanisms is
 // migratable, and zero — pure far field — is its exact absence.
 func migrateV7Config(config *PhysicalDrum) {
-	config.Version = ConfigVersion
+	config.Version = radiatedAccelerationVersion
 	// Version 7 had no separate near-field term, so its absent field decodes to
 	// the zero that means "propagating part only". That is a meaningful setting
 	// rather than a broken one: it is what a distant microphone hears.
@@ -648,6 +694,23 @@ func migrateV7Config(config *PhysicalDrum) {
 	// DefaultPhysicalDrum on every edit — so it is for internal consistency, not
 	// for user state.
 	config.Pickup.OutputGain = DefaultPhysicalDrum().Pickup.OutputGain
+}
+
+// migrateV8Config carries a version-8 document onto the multi-band attack layer.
+//
+// Like the migration above it cannot promise the old sound, and here that is the
+// point: version 8's attack was a single band held at an absolute 20 ms release,
+// which is the defect this version exists to remove. Its decaySeconds has no
+// image in a set of rates derived from the head's loss law, so the field is
+// dropped and the scale that reads that law verbatim takes its place.
+//
+// The tuning defaults moved in the same version, but they are not migrated:
+// tension, and the loss coefficients quoted against it, are the document's own
+// measured content. A version-8 drum keeps the pitch it was saved with, and only
+// new drums start from the retuned default.
+func migrateV8Config(config *PhysicalDrum) {
+	config.Version = ConfigVersion
+	config.Attack.DecayScale = DefaultPhysicalDrum().Attack.DecayScale
 }
 
 func validateNonlinearity(config PhysicalDrum) error {
@@ -851,5 +914,5 @@ func validateAttack(config PhysicalDrum) error {
 		return err
 	}
 
-	return finiteRange("attack.decaySeconds", attack.DecaySeconds, 0, 1)
+	return finiteRange("attack.decayScale", attack.DecayScale, 0, 100)
 }

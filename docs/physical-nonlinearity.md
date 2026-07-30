@@ -117,15 +117,32 @@ checks that the top one percent below Nyquist remains negligible.
 The deterministic P4 suite covers:
 
 - velocity-dependent first-mode glide: with the isolated default batter
-  fixture, velocity 0.2 measures about 104.2 to 104.0 Hz, while velocity 1.0
-  measures about 110.3 to 104.0 Hz — a 102.8-cent glide, up from 37.9 cents
-  before the tension coefficients were raised fourfold;
+  fixture, velocity 0.2 measures about 150.19 to 150.09 Hz, while velocity 1.0
+  measures about 158.73 to 150.09 Hz — a 96.9-cent glide.
+
+  The coefficients have now been raised twice, and the second time was forced by
+  the retuning rather than chosen. A stiffer head sees a smaller _relative_
+  tension excursion from the same strike, so the fourfold raise that produced
+  102.8 cents at 600 N/m produced only 20.7 at 1250. Restoring an audible glide
+  took another factor of two on top of that, to \(9.6\times10^6\) N/m³ on the
+  batter. The cost is accuracy against the oversampled reference, which went from
+  0.083 % to 0.290 % of a 1.5 % ceiling — still an order of magnitude clear, but
+  no longer negligibly so, and this is the term that limits how much further the
+  coefficients can go;
+
 - attack-spectrum change: the centroid _above the fundamental_ rises from about
-  244 Hz to 310 Hz between those velocities. It is measured above the fundamental
+  360 Hz to 367 Hz between those velocities. It is measured above the fundamental
   because tension modulation shifts every partial upward rather than moving
   energy into the top of the spectrum, and a full-band centroid is dominated by
-  the fundamental's level instead — with the corrected microphone model it moves
-  only from 112.373 to 112.377 Hz, which measures nothing;
+  the fundamental's level instead.
+
+  It is also measured over a 43 ms window rather than the 171 ms it first used.
+  A Hann window over 171 ms suppresses exactly the interval where the tension is
+  raised and emphasises the settled middle, so once the glide grew large the
+  measured centroid moved _down_ with velocity — 371.2 Hz quiet against 363.8
+  loud. That was a property of the window, not of the model, and the test was
+  measuring the window;
+
 - a 48 kHz trajectory against the same nonlinear system oversampled at
   192 kHz (0.08 percent maximum displacement error in the test fixture);
 - lossless nonlinear energy conservation for both the isolated head and the

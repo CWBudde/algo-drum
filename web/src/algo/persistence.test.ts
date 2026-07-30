@@ -518,12 +518,12 @@ describe("persistence encode/decode", () => {
       expect(decoded?.tom2Model).toBe(state.tom2Model);
     });
 
-    it("re-encodes a decoded v1 state as v12 (one-way upgrade)", () => {
+    it("re-encodes a decoded v1 state as v13 (one-way upgrade)", () => {
       const decoded = decodeState(encodeV1(makeState()));
       const bytes = toBytes(encodeState(decoded!));
 
       expect(bytes).toHaveLength(TOTAL_BYTES);
-      expect(bytes[0]).toBe(12);
+      expect(bytes[0]).toBe(13);
     });
 
     it("rejects a v1-length blob whose version byte claims v2", () => {
@@ -540,8 +540,45 @@ describe("persistence encode/decode", () => {
 
     it("rejects an unknown future version at the right length", () => {
       const bytes = toBytes(encodeState(makeState()));
-      bytes[0] = 13;
+      bytes[0] = 14;
       expect(decodeState(toB64Url(bytes))).toBeNull();
+    });
+
+    // v13 changed no bytes, only how one slot is read, so a v12 blob is a v13
+    // blob with a different version byte — which makes the migration itself the
+    // only thing under test here.
+    it("rescales a v12 attack level onto the narrowed range", () => {
+      const state = makeState();
+      // 0.4 of the old 0–0.3 range is 0.12, which is 0.8 of the new 0–0.15 one.
+      const edited = Math.round(0.4 * 255) / 255;
+      state.physicalTomParams = [...state.physicalTomParams!];
+      state.physicalTomParams[16] = edited;
+      state.physicalTom2Params = [...state.physicalTom2Params!];
+      state.physicalTom2Params[16] = edited;
+
+      const bytes = toBytes(encodeState(state));
+      bytes[0] = 12;
+
+      const decoded = decodeState(toB64Url(bytes));
+      expect(decoded).not.toBeNull();
+      expect(decoded?.physicalTomParams?.[16]).toBeCloseTo(edited * 2, 6);
+      // Tom 2's bank is a separate call site and has been missed before.
+      expect(decoded?.physicalTom2Params?.[16]).toBeCloseTo(edited * 2, 6);
+    });
+
+    it("moves an untouched v12 attack level onto the new default", () => {
+      const state = makeState();
+      state.physicalTomParams = [...state.physicalTomParams!];
+      state.physicalTomParams[16] = Math.round((0.1 / 0.3) * 255) / 255;
+
+      const bytes = toBytes(encodeState(state));
+      bytes[0] = 12;
+
+      const decoded = decodeState(toB64Url(bytes));
+      expect(decoded?.physicalTomParams?.[16]).toBeCloseTo(
+        PHYSICAL_TOM_PARAMS[16].default,
+        6,
+      );
     });
 
     // This is the case a version bump is most likely to break, and breaking it

@@ -63,18 +63,23 @@ modes, and by a large factor rather than a marginal one.
 Measured on the default 12-inch configuration with a central strike, which
 excites only the modes that have swept area:
 
-| \(s\)          | (0,1) branches   | ratio    |
-| -------------- | ---------------- | -------- |
-| 1 (rigid)      | 108.4 / 219.7 Hz | **2.03** |
-| 0.04 (shipped) | 105.5 / 123.0 Hz | **1.17** |
+| \(s\)           | (0,1) branches   | ratio    |
+| --------------- | ---------------- | -------- |
+| 1 (rigid)       | 155.3 / 290.0 Hz | **1.87** |
+| 0.083 (shipped) | 155.3 / 178.7 Hz | **1.15** |
+
+The shipped value was 0.04 before the tuning default moved from 600 N/m to
+1250 N/m. It had to be refitted, and roughly in proportion: a stiffer head is
+less influenced by the same air spring, so holding a given _relative_ split
+requires the air stiffness to rise with the head's. \(0.04 \times 1250/600 =
+0.083\) is where the measurement landed as well as where that argument puts it.
 
 A measured two-headed drum separates its two (0,1) branches by 10–20 %:
 [Fischer, _Modal Analysis of a Snare Drum_, Illinois 2014](https://courses.physics.illinois.edu/phys406/sp2017/Student_Projects/Spring14/Matthew_Fischer_Physics_406_Final_Project_Sp14.pdf)
 found 186 Hz with one head and 215 Hz after adding the resonant head at
 unchanged tuning — "this increase is due only to the coupling between heads" — a
-ratio of 1.16. The rigid value also put a partial at 219.7 Hz only 3 dB below the
-fundamental, directly on top of the (2,1) at 221.8 Hz, so it did not merely
-mistune the doublet: it masked a mode.
+ratio of 1.16. The rigid value also puts its stiffened branch on top of the (2,1)
+family, so it does not merely mistune the doublet: it masks a mode.
 
 Two consequences of the rank-one coupling are worth stating, because they bound
 what any choice of \(s\) can do:

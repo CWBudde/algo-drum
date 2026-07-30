@@ -15,8 +15,8 @@ existing voice tables. The physical bank has stable, append-only indices:
 | Control | Model field or mapping                              | Range                       |
 | ------- | --------------------------------------------------- | --------------------------- |
 | SIZE    | shared batter/resonant diameter                     | 0.16–0.50 m                 |
-| B.TUNE  | `Batter.TensionNPerM`                               | 150–1400 N/m                |
-| R.TUNE  | `Resonant.TensionNPerM`                             | 150–1400 N/m                |
+| B.TUNE  | `Batter.TensionNPerM`, via `RetuneTension`          | 300–3500 N/m                |
+| R.TUNE  | `Resonant.TensionNPerM`, via `RetuneTension`        | 300–3500 N/m                |
 | DAMP    | overall head loss scale                             | 0.25–4×                     |
 | HIT.R   | `Strike.Radius01`                                   | 0–0.95                      |
 | HIT.A   | `Strike.AngleRad`                                   | −180–180°                   |
@@ -30,13 +30,19 @@ existing voice tables. The physical bank has stable, append-only indices:
 | ASYM    | full cosine/sine pair-frequency separation          | 0–2 %                       |
 | AXIS    | non-uniform-tension principal axis                  | −90–90°                     |
 | D.TILT  | frequency-dependent loss terms, relative to DAMP    | 0–3×                        |
-| ATK.L   | `Attack.LevelRelative`                              | 0–0.3                       |
+| ATK.L   | `Attack.LevelRelative`                              | 0–0.15                      |
 | ATK.T   | `Attack.CentreHz`                                   | 500 Hz–8 kHz                |
+
+B.TUNE and R.TUNE go through `RetuneTension` rather than writing the tension
+field directly. The loss coefficients in the configuration are quoted at its
+tension, so a bare assignment leaves ζ — and with it the whole decay calibration
+— drifting with the tuning knob, which it used to do by a factor of three across
+the range. See [`physical-calibration.md`](physical-calibration.md#tuning-and-constant-q).
 
 AIR spans zero coupling up to the calibrated air spring, not up to the rigid
 enclosure: `Cavity.StiffnessScale` is fitted in the configuration and is not
 exposed as a control, so the knob's top of travel is now the measured 10–20 %
-(0,1) split rather than the 2.03 ratio the rigid formula produced. See
+(0,1) split rather than the 1.87 ratio the rigid formula produces. See
 [`physical-cavity.md`](physical-cavity.md).
 
 QUAL is the _batter_ head's oscillator budget. The resonant head runs the same
@@ -83,7 +89,13 @@ Versions 7 and 8 add the second Tom and Percussion tracks and migrate the
 reordered mixer strips; version 9 appends Tom 2's own model choice and parameter
 bank; version 10 widens both physical banks for D.TILT; version 11 keeps those
 bytes and moves the HIT.R detent again, off the 0.12 centre to 0.30, in **both**
-physical banks; version 12 widens both banks for ATK.L and ATK.T.
+physical banks; version 12 widens both banks for ATK.L and ATK.T; version 13
+keeps version 12's bytes and rescales ATK.L, whose range narrowed from 0–0.3 to
+0–0.15 when the attack layer became three bands.
+
+ATK.L's rescale has the same two-rule shape as the HIT.R detent: a position still
+sitting on version 12's default moves to version 13's default, and every other
+position doubles. Both Tom banks get it.
 
 The two HIT.R rules stay separately gated, at `version < 6` and `version < 11`.
 Merging them would overwrite a version-6-or-later blob that a user had

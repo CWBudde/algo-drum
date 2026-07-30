@@ -57,7 +57,13 @@ func TestDefaultDampingHoldsConstantQ(t *testing.T) {
 
 	// The (0,1) is deliberately over-damped relative to the series by the
 	// two-head correction, so the constant-Q band starts above it.
-	const targetZeta = 0.011
+	//
+	// 0.72 %, not the 1.1 % this was written against: the retuned default holds
+	// the ζ the old coefficients happened to produce at the top of B.TUNE's old
+	// range, which is the tuning that sounded right. RetuneTension now keeps this
+	// number fixed across the knob's whole travel, where it used to run from
+	// 2.20 % to 0.72 %.
+	const targetZeta = 0.0072
 	for _, mode := range modes {
 		if mode.AzimuthalOrder == 0 && mode.RadialOrder == 1 {
 			continue
@@ -178,14 +184,25 @@ func TestDefaultFundamentalDecaysFastest(t *testing.T) {
 			}
 		}
 
-		// A thump, not a boing: measured two-headed toms put the fundamental
-		// near ζ = 5 %, an order of magnitude short of the 2.2 s it used to ring.
+		// A thump, not a boing, and the number the anchor is stated in is the
+		// T60, not the ζ. The correction is set to hold the fundamental at about
+		// 210 ms, which is the length the drum had at the tuning that sounded
+		// right; ζ then follows from wherever the pitch is, and at the retuned
+		// 150 Hz default it comes out near 3.4 % rather than the 5 % that the
+		// 104 Hz default produced from the same rate.
+		//
+		// The property this file is about is the one asserted above: the
+		// fundamental is the shortest partial in the low band. At 3.4 % against
+		// the band's 0.72 % it still is, by a factor of nearly five.
 		zeta := fundamental.DecayRatePerSecond / fundamental.AngularFrequency
 		t60 := t60Milliseconds(fundamental.DecayRatePerSecond)
 		t.Logf("%s (0,1): %.2f Hz, zeta %.4f, T60 %.0f ms",
 			name, fundamental.FrequencyHz, zeta, t60)
-		if zeta < 0.035 || zeta > 0.07 {
-			t.Errorf("%s (0,1) zeta = %.4f, want near 0.05", name, zeta)
+		if t60 < 150 || t60 > 300 {
+			t.Errorf("%s (0,1) T60 = %.0f ms, want near 210", name, t60)
+		}
+		if zeta < 0.025 || zeta > 0.05 {
+			t.Errorf("%s (0,1) zeta = %.4f, want near 0.034", name, zeta)
 		}
 	}
 }

@@ -140,22 +140,37 @@ func TestModalRadiationWeightsDependOnModeAndMicrophone(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Per mode this is deliberately *not* asserted. The weight is the sum of two
+	// mechanisms with independent geometry — a far-field moment carrying
+	// J_{m+1}(z) and an evanescent term carrying the mode shape at the microphone
+	// — and each has its own sign. A microphone can therefore sit where one mode's
+	// near-field lobe opposes its own radiation, so that mode's weight passes
+	// through a null and grows again as the microphone retreats. That is a real
+	// consequence of summing the two, not an error, and pinning monotonicity mode
+	// by mode pins the absence of the near-field term instead.
+	//
+	// What retreating must do is reduce the whole microphone signal, and reduce it
+	// mostly by losing the near field.
+	nearTotal, farTotal := 0.0, 0.0
 	weightVaries := false
+
 	for index := range near {
-		if math.Abs(far[index].RadiationWeight) >=
-			math.Abs(near[index].RadiationWeight) {
-			t.Fatalf(
-				"mode %d far weight %v is not below near weight %v",
-				index,
-				far[index].RadiationWeight,
-				near[index].RadiationWeight,
-			)
-		}
+		nearTotal += math.Abs(near[index].RadiationWeight)
+		farTotal += math.Abs(far[index].RadiationWeight)
+
 		if index > 0 &&
 			math.Abs(near[index].RadiationWeight) !=
 				math.Abs(near[index-1].RadiationWeight) {
 			weightVaries = true
 		}
+	}
+
+	if farTotal >= nearTotal {
+		t.Fatalf(
+			"summed weight at 1 m (%v) is not below 50 mm (%v)",
+			farTotal,
+			nearTotal,
+		)
 	}
 	if !weightVaries {
 		t.Fatal("all modal radiation weights are identical")

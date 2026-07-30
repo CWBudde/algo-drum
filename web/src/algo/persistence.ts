@@ -30,9 +30,11 @@ import type { TomModel } from "../engine/tomModel";
 // physical banks by one slot for the damping tilt. V11 keeps v10's bytes and
 // migrates the former shipped strike-radius position again, this time off the
 // near-centre 0.12 detent. V12 widens both physical banks by two more slots for
-// the attack layer's level and tone. Older links still decode with values
-// attached to the same voices.
-const FORMAT_VERSION = 12;
+// the attack layer's level and tone. V13 keeps v12's bytes and rescales the
+// attack level, whose range narrowed from 0–0.3 to 0–0.15 once the layer became
+// three bands instead of one. Older links still decode with values attached to
+// the same voices.
+const FORMAT_VERSION = 13;
 
 // Byte layout: version, 6 scalar knobs, 5 volumes, 5 decays, 1 mute mask,
 // then the 80-cell pattern packed 2 bits per cell (20 bytes)...
@@ -92,8 +94,17 @@ const V10_BYTES =
   V10_PHYSICAL_TOM_PARAM_CAPACITY;
 
 // v11 changed no bytes, only the meaning of one stored position, so it shares
-// v10's length. v12 widens both banks again, for the attack layer.
+// v10's length. v12 widens both banks again, for the attack layer, and v13 in
+// turn changes only the interpretation of one of v12's slots, so those two share
+// a length the same way.
 const V11_BYTES = V10_BYTES;
+const V12_PHYSICAL_TOM_PARAM_CAPACITY = 18;
+const V12_BYTES =
+  V3_BYTES +
+  V12_PHYSICAL_TOM_PARAM_CAPACITY +
+  V7_EXTRA_BYTES +
+  1 +
+  V12_PHYSICAL_TOM_PARAM_CAPACITY;
 const TOTAL_BYTES =
   V3_BYTES +
   PHYSICAL_TOM_PARAM_CAPACITY +
@@ -138,9 +149,38 @@ function physicalBankWidth(version: number): number {
   if (version === 4) return V4_PHYSICAL_TOM_PARAM_CAPACITY;
   if (version <= 9) return V5_PHYSICAL_TOM_PARAM_CAPACITY;
   if (version <= 11) return V10_PHYSICAL_TOM_PARAM_CAPACITY;
+  if (version <= 13) return V12_PHYSICAL_TOM_PARAM_CAPACITY;
 
   return PHYSICAL_TOM_PARAM_CAPACITY;
 }
+
+// migrateAttackLevel rescales the stored attack level onto its narrowed range.
+//
+// v12 mapped the slot linearly onto 0–0.3 with 0.1 shipped. The layer became
+// three summed bands in v13, which is about three times as loud for the same
+// number, so the useful range narrowed to 0–0.15 with 0.05 shipped. A stored
+// position therefore has to double to keep meaning the same level.
+//
+// The untouched detent is handled first and separately, exactly as
+// migrateStrikeRadius does: a bank still sitting on v12's default gets v13's
+// default rather than v12's level, because the refit *is* the new default.
+function migrateAttackLevel(version: number, bank: number[]): void {
+  if (version >= 13 || bank.length <= PHYSICAL_ATTACK_LEVEL_INDEX) return;
+
+  const stored = bank[PHYSICAL_ATTACK_LEVEL_INDEX];
+  if (stored === OLD_PHYSICAL_ATTACK_LEVEL_DEFAULT) {
+    bank[PHYSICAL_ATTACK_LEVEL_INDEX] =
+      PHYSICAL_TOM_PARAMS[PHYSICAL_ATTACK_LEVEL_INDEX].default;
+
+    return;
+  }
+
+  bank[PHYSICAL_ATTACK_LEVEL_INDEX] = Math.min(1, stored * 2);
+}
+
+const PHYSICAL_ATTACK_LEVEL_INDEX = 16;
+// v12's shipped position: 0.1 on a 0–0.3 linear range, as one byte.
+const OLD_PHYSICAL_ATTACK_LEVEL_DEFAULT = Math.round((0.1 / 0.3) * 255) / 255;
 
 const PHYSICAL_STRIKE_RADIUS_INDEX = 4;
 const OLD_PHYSICAL_STRIKE_RADIUS_DEFAULT =
@@ -356,9 +396,11 @@ export function decodeState(text: string): PersistedState | null {
                     ? V10_BYTES
                     : version === 11
                       ? V11_BYTES
-                      : version === FORMAT_VERSION
-                        ? TOTAL_BYTES
-                        : -1;
+                      : version === 12
+                        ? V12_BYTES
+                        : version === FORMAT_VERSION
+                          ? TOTAL_BYTES
+                          : -1;
   if (bytes.length !== expected) return null;
 
   let offset = 1;
@@ -444,6 +486,7 @@ export function decodeState(text: string): PersistedState | null {
   }
 
   migrateStrikeRadius(version, physicalTomParams);
+  migrateAttackLevel(version, physicalTomParams);
 
   const stateWithPhysical = { ...stateWithModel, physicalTomParams };
   if (version < 7) return stateWithPhysical;
@@ -497,6 +540,7 @@ export function decodeState(text: string): PersistedState | null {
   // v9, so it could never hold a pre-v6 detent — but v9 and v10 blobs do carry
   // the 0.12 one, and leaving them alone would strand Tom 2 on a centre hit.
   migrateStrikeRadius(version, physicalTom2Params);
+  migrateAttackLevel(version, physicalTom2Params);
 
   return {
     ...stateWithPhysical,

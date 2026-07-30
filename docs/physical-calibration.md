@@ -45,24 +45,72 @@ whose only frequency-independent contribution is the middle term: choosing
 alone gives \(T_{60}\) independent of frequency and \(d_2\) alone gives
 \(T_{60} \propto 1/f^2\). Measured membrane behaviour is \(T_{60} \propto 1/f\).
 
-The reference set uses \(\zeta = 1.1\,\%\), so \(d_1 = 0.4554\) m/s on the
-batter (\(c = 41.40\) m/s) and \(0.4919\) m/s on the resonant head
-(\(c = 44.72\) m/s), with \(d_0\) reduced to a small floor. The retained band
-then holds \(\zeta\) between 1.12 % and 1.24 %.
+The reference set uses \(\zeta = 0.72\,\%\), so \(d_1 = 0.4303\) m/s on the
+batter (\(c = 59.76\) m/s) and \(0.4644\) m/s on the resonant head
+(\(c = 64.50\) m/s), with \(d_0\) reduced to a small floor. The retained band
+then holds \(\zeta\) between 0.73 % and 0.80 %.
+
+0.72 %, not the 1.1 % this was first calibrated at, and the reason is in
+[the tuning section](#tuning-and-constant-q) below: \(d_1\) used to be an
+absolute constant, so \(\zeta\) drifted as the tuning knob moved, and 0.72 % is
+what it happened to reach at the tuning that was reported as sounding right.
 
 The batter's \((0,1)\) carries a \(\Delta = 24.6\) /s correction and the
-resonant head's \(26.4\) /s, putting both near \(\zeta = 5\,\%\). This is the
+resonant head's \(26.4\) /s, putting both near \(\zeta = 3.4\,\%\) at the
+default tuning — a \(T_{60}\) of 213 ms, which is the number the correction is
+actually anchored to. This is the
 one mode whose loss is not a membrane property: the axisymmetric fundamental is
 the shape that compresses the cavity and drives the opposite head, so it sheds
 energy into the coupled system far faster than its neighbours. Measured
 two-headed drums show it as the shortest partial in the low band, not the
 longest.
 
-The default 12-inch head's lowest mode is 104.00 Hz with a 0.21 s analytic
-amplitude \(T_{60}\); its highest retained mode, at 915 Hz once the reclaimed
-resonant-head budget went to the batter head, decays in about 0.13 s. These are
-model targets, not claims about a commercial drum. The physical
-configuration schema is version 8. Version-1 configurations are migrated by
+The default 12-inch head's lowest mode is 150.10 Hz with a 0.21 s analytic
+amplitude \(T_{60}\); its highest retained mode, at 1310 Hz once the reclaimed
+resonant-head budget went to the batter head, decays in about 0.11 s. These are
+model targets, not claims about a commercial drum.
+
+## Tuning and constant Q
+
+`RetuneTension` sets a head's tension and rescales \(d_1\), \(d_2\) and the
+mode decay corrections by \(\sqrt{T_\mathrm{new}/T_\mathrm{old}}\), because
+each of them is proportional to the wave speed:
+
+- \(d_1\) *is* \(\zeta c\), by the argument above;
+- \(d_2\) is the same statement one order out in \(k\);
+- the \((0,1)\) correction stands for a coupling loss, which is a fraction of
+  that mode's own \(\omega\).
+
+\(d_0\) is a frequency-independent floor and does not move.
+`RadiationLossPerSecond` also stays put, because its frequency dependence lives
+in the radiation amplitude it multiplies rather than in the coefficient.
+
+Without this the tuning control is secretly a sustain control. Measured on the
+coefficients the model shipped with, tuning the batter head across `B.TUNE`'s
+range gave:
+
+| \(T\) (N/m) | \(c\) (m/s) | \(\zeta\) | \((0,1)\) | \(T_{60}\) of a 300 Hz partial |
+| ------------- | ------------- | ------------ | ----------- | -------------------------------- |
+| 150           | 20.70         | 2.20 %       | 52.0 Hz     | 0.166 s                          |
+| 600 (shipped) | 41.40         | 1.10 %       | 104.0 Hz    | 0.313 s                          |
+| 1400          | 63.25         | 0.72 %       | 158.9 Hz    | 0.423 s                          |
+
+Turning the drum up therefore made it ring half again as long as well as higher,
+and the report that it "only sounds good at high `B.TUNE`" was in part a report
+about that. `TestRetuningHoldsConstantQ` now pins \(\zeta\) across the whole
+range, and `TestRetuningMovesPitchAndNotMuchElse` states the same property the
+way a player would: four times the tension is twice the pitch and half the
+\(T_{60}\), so the number of cycles the drum rings for does not change.
+
+The default tension moved with it, from 600 N/m to 1250. At 600 the 12-inch
+batter head's fundamental is 104 Hz, which is a floor tom rather than a rack
+tom; the drum only began to read correctly near the old ceiling of 1400. The
+range is now 300–3500 N/m, or 75–251 Hz, so the usable pitch sits mid-travel
+instead of against the stop.
+
+## Configuration schema
+
+The physical configuration schema is version 9. Version-1 configurations are migrated by
 filling the P2 radiation and microphone defaults; version-2 linear double-head
 configurations migrate with P4 nonlinearity disabled so their sound is
 unchanged; version 3 migrates with full cavity coupling, preserving its
@@ -75,7 +123,16 @@ migration in the chain whose compatibility value is not the zero value, so it ha
 to be written explicitly: an absent `stiffnessScale` decodes to 0, which is the
 uncoupled limit rather than the old sound. See
 [`physical-cavity.md`](physical-cavity.md) for why new configurations do not use
-the rigid value.
+the rigid value. Version 7 migrates onto the corrected radiated sum with the
+near-field mixture at zero, which is the exact absence of that term rather than
+a broken value, and onto the recalibrated output gain. Version 8 migrates onto
+the multi-band attack layer; its `decaySeconds` is dropped rather than mapped,
+because an absolute release has no image in a set of rates read off the loss law.
+
+Version 8 documents keep their own tuning. Tension and the loss coefficients
+quoted against it are the document's measured content, so migrating them would
+retune a saved drum; only new configurations start from the retuned default.
+`TestDecodeConfigMigratesVersionEightKeepsItsTuning` pins that.
 
 ## Radiation and microphone response
 

@@ -1222,11 +1222,90 @@ Deliberately **not** doing:
       puts a 12"×9" tom near 30 Hz, far below the (0,1). No measurement of one
       was found.
 
+- [x] **S9: the tuning knob was also a sustain knob.** Reported from listening —
+      "the drum only sounds good for rather high B.TUNE values" — and the
+      measurement found two causes at once.
+
+      **The default pitch was a floor tom.** At the shipped 600 N/m the 12-inch
+      batter head's fundamental is 104.00 Hz; the whole range topped out at
+      158.85 Hz, so the drum only began to read as a rack tom against the stop.
+      Now 1250 N/m and 150.10 Hz, with the range 300–3500 N/m (75–251 Hz) so the
+      usable pitch is mid-travel. Every mode moved with it, which incidentally
+      raised the top retained mode from 915 Hz to 1310 Hz at Standard.
+
+      **And ζ drifted with the knob.** `Loss1MPerSecond` *is* ζc, but it was
+      stored as an absolute constant, so it only meant ζ = 1.1 % at the default
+      tension: 2.20 % at the bottom of the range, 0.72 % at the top. A 300 Hz
+      partial's T60 therefore ran 0.166 s → 0.423 s across the travel, and
+      turning the drum up made it ring half again as long as well as higher. New
+      `physical.RetuneTension` scales `Loss1`, `Loss2` and the mode decay
+      corrections by √(T_new/T_old) — each of them is proportional to c — and
+      `physicalTom.reconfigure` goes through it instead of assigning the tension
+      field. `TestRetuningHoldsConstantQ` pins ζ across the range and
+      `TestRetuningMovesPitchAndNotMuchElse` states it as a player would: 4× the
+      tension is 2× the pitch and ½ the T60, so the ring length in *cycles* does
+      not change.
+
+      ζ is now 0.72 %, not 1.1 %, because 0.72 % is what the old coefficients
+      happened to produce at the tuning that was reported as sounding right. The
+      (0,1) correction stays at its absolute rate, holding that mode's T60 at
+      213 ms — the same anchor — which puts it near ζ = 3.4 % rather than the 5 %
+      the 104 Hz default produced from the same number.
+
+      Three fitted values had to follow the retuning, none of them optional:
+      `Cavity.StiffnessScale` 0.04 → 0.083 (a stiffer head is less moved by the
+      same air spring, and 0.04 × 1250/600 = 0.083 is both the argument and the
+      measurement); the Berger coefficients ×2 again, to 9.6e6/6.4e6, because the
+      same strike is a smaller *relative* tension excursion on a stiffer head —
+      the fourfold raise that gave 102.8 cents at 600 N/m gave 20.7 at 1250, and
+      the glide is back to 96.9; and `Pickup.OutputGain` 0.0033 → 0.0048 for a
+      velocity-1 peak of 0.895.
+
+- [x] **S10: the attack layer sounded like noise, not like a stick.** Reported
+      from listening about ATK.L and ATK.T. Two defects, both measurable against
+      the model's own loss law.
+
+      **The release was far too long.** `Attack.DecaySeconds` was a fitted 20 ms
+      one-pole, which is a 138 ms T60. The head's loss law, extrapolated into the
+      band the layer stands for, gives 149 ms at 1 kHz, 75 ms at 2 kHz, 30 ms at
+      5 kHz and 18 ms at 8 kHz — so the layer rang about twice too long at the
+      bottom of its range and **seven times** too long at the top. Broadband noise
+      held that far past the strike does not fuse into the attack; it is heard as
+      a separate source.
+
+      **And one rate covered the whole span.** Constant Q means the absolute decay
+      rate rises with frequency, so 8 kHz should die several times faster than
+      1 kHz. A single release cannot express that.
+
+      The layer is now three bands at 0.4, 1 and 2.5 × `Attack.CentreHz`, each
+      with its own envelope whose rate is *derived* from the batter head's loss
+      law at that band's centre — 94 ms T60 at 1.6 kHz, 37 ms at 4 kHz, 15 ms at
+      10 kHz. `DecaySeconds` became a dimensionless `DecayScale`, defaulting to 1,
+      which exists only because the law is being read past where it was fitted.
+      `DAMP`, `DEC` and `D.TILT` now reach the layer for free because they are
+      applied to the head first — and `D.TILT` genuinely applies, where a single
+      band had no shape to tilt.
+
+      `Attack.CentreHz` moved 3 kHz → 4 kHz, which is a separate defect: at 3 kHz
+      the lowest band sat at 1.2 kHz, **below** the 1310 Hz top retained mode.
+      Noise where the model already has resolved modes is both a double count and
+      the wrong texture, since that region is heard as pitch.
+      `TestAttackLayerStartsAboveTheModalBand` keeps them apart.
+
+      Three summed envelopes are about three times as loud as one, so `ATK.L` was
+      refitted to 0.05 on a narrowed 0–0.15 range. That is the one range change,
+      so app-state format version 13 doubles a stored position and moves an
+      untouched v12 detent to the new default — the same two-rule shape
+      `migrateStrikeRadius` uses, applied to both Tom banks. Physical config
+      schema 8 → 9.
+
 Execution order: **S1 + S2 first** — they are cheap, independent, and should be
 audible immediately — then S4, S3, S5, then S6/S7, then S8. S1 and S2 landed
 together on 2026-07-30, S3 followed the same day ahead of S4 — harmless, they
 touch different code — and S4, S5, S6 and S8 landed together on 2026-07-30 in
-that order. **S7 is the only item left**, and it is the smallest.
+that order. S9 and S10 were added the same day from listening reports and landed
+in that order — S9 first, because the attack layer's derived decay rates read the
+retuned head's loss law. **S7 is the only item left**, and it is the smallest.
 
 Exit: per-mode T60 within a documented tolerance of the measured ζ structure,
 the (0,1) the fastest-decaying mode rather than the slowest, audible content
@@ -1239,17 +1318,23 @@ Progress against that exit: four of the five clauses now hold.
 the series, decay rate near-proportional to frequency, and the (0,1) the
 fastest-decaying mode of the low band. S4 deleted `physicalTomOutputGain`, with a
 test in `internal/drum` that fails if a compensating gain comes back. S8 supplied
-the bandwidth: 1–2 kHz moved from −66.9 to −32.3 dB and 2–5 kHz from −83.9 to
-−27.0 dB relative to the strongest low partial, asserted in both directions so
-the layer cannot be quietly removed.
+the bandwidth, and S10's refit restated it against the retuned head and the
+three-band layer: 1–2 kHz moves from −45.5 to −31.6 dB and 2–5 kHz from −77.7 to
+−31.1 dB relative to the strongest low partial, asserted in both directions so the
+layer cannot be quietly removed.
 
 The octave-band envelope clause is the one still open. It is now *possible* —
 before S8 there was content in only two bands to compare — and it should be
 written rather than deferred a fourth time. Note it needs stating carefully: the
-attack layer decays in 20 ms and the modal band in hundreds, so the property is
-that the bands' envelopes differ, which is nearly guaranteed by construction. The
-assertion worth having is quantitative and against the *modal* bands, where a
-uniformly damped bank would still pass today's tests.
+attack layer decays in tens of milliseconds and the modal band in hundreds, so
+"the bands' envelopes differ" is nearly guaranteed by construction. The assertion
+worth having is quantitative and against the *modal* bands, where a uniformly
+damped bank would still pass today's tests.
+
+S10 does add part of it: `TestAttackBandsDecayAtTheirOwnRate` asserts each attack
+band matches the loss law at its own centre and decays strictly faster than the
+band below, which is the same shape property one octave-band at a time. What is
+missing is the modal half.
 
 S3 adds a second shape assertion the criterion did not ask for but needs, in
 `internal/physical/cavity_split_test.go`: the (0,1) split inside the measured
