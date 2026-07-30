@@ -321,10 +321,11 @@ func search(
 		go func() {
 			defer group.Done()
 
-			// mayfly indexes males[k] for k < NC/2 without checking it against
-			// the population, so a small -pop with the default 20 offspring
-			// panics inside the library. A panic in one restart should not take
-			// the other seven down with it either.
+			// Since mayfly v0.2.0 an oversized NC is a returned error rather
+			// than a panic from inside the library, so this recover no longer
+			// has a known trigger. It stays as a backstop: the objective runs
+			// third-party numerics on adversarially-chosen parameters, and one
+			// restart dying should never take the other seven with it.
 			defer func() {
 				if recovered := recover(); recovered != nil {
 					results[run] = outcome{err: fmt.Errorf(
@@ -350,12 +351,14 @@ func search(
 				ForProblem(objective, local.dimensions(), 0, 1).
 				WithIterations(iterations).
 				WithPopulation(population, population).
-				WithConfig(func(c *mayfly.Config) {
-					c.Rand = rand.New(rand.NewSource(seed + int64(run)))
-					// One offspring per pair, which is the paper's ratio and,
-					// unlike the library's fixed default of 20, cannot index
-					// past a smaller population.
-					c.NC = population - population%2
+				WithConfig(func(settings *mayfly.Config) {
+					settings.Rand = rand.New(rand.NewSource(seed + int64(run)))
+					// One offspring per pair, which is the paper's ratio. The
+					// library's fixed default of 20 would exceed the population
+					// for any -pop below 10; v0.2.0 rejects that rather than
+					// indexing past the end, but rejecting is still not what we
+					// want here.
+					settings.NC = population - population%2
 				}).
 				Build()
 			if err != nil {
@@ -371,9 +374,6 @@ func search(
 				return
 			}
 
-			// GlobalBest.Position, not BestSolution: despite its name the
-			// latter is the per-iteration convergence curve, so it is
-			// MaxIterations long and has nothing to do with the search space.
 			candidate, err := local.describe(result.GlobalBest.Position)
 			if err != nil {
 				results[run] = outcome{err: err}
@@ -387,7 +387,7 @@ func search(
 			results[run] = outcome{
 				candidate:   candidate,
 				evaluations: result.FuncEvalCount,
-				convergence: result.BestSolution,
+				convergence: result.ConvergenceCurve,
 			}
 		}()
 	}

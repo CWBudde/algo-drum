@@ -137,9 +137,9 @@ go run ./cmd/fit-physical -reference reference/tom.wav \
 ```
 
 Driving mayfly from outside its own examples surfaced two defects. Both are
-fixed upstream on `fix/nc-validation-and-result-naming`; the workarounds below
-stay until this repository moves to a release that carries the fix, at which
-point they can be deleted rather than merely trusted.
+fixed upstream and released as
+[v0.2.0](https://github.com/CWBudde/mayfly/releases/tag/v0.2.0), which is what
+`go.mod` now pins.
 
 - **`Result.BestSolution` is not a solution.** It holds the best cost after each
   iteration — a convergence curve of `MaxIterations` entries. The name is the
@@ -147,18 +147,21 @@ point they can be deleted rather than merely trusted.
   reading it as one compiles, runs, and yields nonsense. Here it panicked on an
   index past the end of an 18-element bank, which was luck; a search space wider
   than the iteration count would have silently fitted a drum to noise. The
-  position is `Result.GlobalBest.Position`. Upstream it is now
-  `ConvergenceCurve`, with the old name deprecated.
+  position is `Result.GlobalBest.Position`. It is now `ConvergenceCurve` — a
+  deliberately breaking rename rather than an alias, since keeping the old
+  spelling would have left the trap in place.
 - **`NC` was unvalidated.** It drives three index expressions that do not
   bounds-check. Mating reads `males[k]` and `females[k]` for `k < NC/2`, so any
   population below half the offspring count panics inside the library — and the
   shipped default of `NC = 20` does that for every `-pop` under 10, which is
   precisely what someone shrinking the swarm to go faster would write. Mutants
   are then drawn from the offspring with `rng.Intn`, which panics on the empty
-  slice `NC < 2` leaves behind. `NC` is set from the population here to dodge
-  the first, and each restart runs under a `recover` so one bad run cannot take
-  the other seven down. Upstream, `Optimize` now rejects all three cases with an
-  error naming the constraint.
+  slice `NC < 2` leaves behind. `Optimize` now rejects all three cases with an
+  error naming the constraint. `NC` is still set from the population here, since
+  a returned error is not what this caller wants either, and each restart still
+  runs under a `recover` — no longer for a known trigger, but because the
+  objective runs third-party numerics on adversarially-chosen parameters and one
+  restart dying should not take the other seven with it.
 
 ### Watching a search that takes an hour
 

@@ -12,8 +12,8 @@ github.com/cwbudde/algo-fft v0.7.3 h1:1MDkBhgo/hhigpbTMDvcXZpMaW0ubz844IL6rDL/Bm
 github.com/cwbudde/algo-fft v0.7.3/go.mod h1:H5rJ7JNXvhe3kT4yc41TJB9DEnO7KlhHN7toLO+ZZXU=
 github.com/cwbudde/algo-vecmath v0.1.0 h1:RjZLXt3BAu1f3UmdWWXbgw3Xscyh+bsg31PkS5K4y4c=
 github.com/cwbudde/algo-vecmath v0.1.0/go.mod h1:lc9dLv41D4RCmhXG/CsIesfJXmONI7pQXcFrkxQSfeQ=
-github.com/cwbudde/mayfly v0.1.0 h1:u2LTL4SCZRc4mTxtbdF2pUFTuIUDgbIZAnfr6EGacok=
-github.com/cwbudde/mayfly v0.1.0/go.mod h1:Kvhc6sAww1oFoR37ON2/iqIvOu/E8qHKAyQsM7tRs6U=
+github.com/cwbudde/mayfly v0.2.0 h1:9pTdkqI5VKs8pZe2k0gbkkfuMHDZEY36vtdRXf3Etm4=
+github.com/cwbudde/mayfly v0.2.0/go.mod h1:Kvhc6sAww1oFoR37ON2/iqIvOu/E8qHKAyQsM7tRs6U=
 github.com/cwbudde/wav v0.1.0 h1:alxIMiBOcVFD94//8+qWW62oFgfeFbYMvpXcg9KJYAk=
 github.com/cwbudde/wav v0.1.0/go.mod h1:sc3u5nhwaPxuQ8NUWj1bAcZ7jhlTGk4fk5vARqgHrMs=
 github.com/go-audio/audio v1.0.0 h1:zS9vebldgbQqktK4H0lUqWrG8P0NxCJVqcj7ZpNnwd4=

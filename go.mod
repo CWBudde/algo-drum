@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/cwbudde/algo-dsp v0.0.0-20260729115219-8ea972cf5f07
 	github.com/cwbudde/algo-fft v0.7.3
-	github.com/cwbudde/mayfly v0.1.0
+	github.com/cwbudde/mayfly v0.2.0
 	github.com/cwbudde/wav v0.1.0
 	github.com/go-audio/audio v1.0.0
 )
