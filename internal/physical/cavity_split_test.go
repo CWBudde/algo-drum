@@ -72,9 +72,15 @@ func centreHitPeaks(t *testing.T, config PhysicalDrum, limitHz float64) []spectr
 		t.Fatal("central strike produced no radiated output")
 	}
 
+	// Start at 60 Hz. The lowest mode of either head is above 100 Hz and the
+	// pickup high-passes at 35 Hz, so the residue of the strike pulse in between
+	// is not modal content and must not be mistaken for a branch.
 	var peaks []spectralPeak
-	for index := 2; index < limitBin; index++ {
+	for index := max(2, int(60/binHz)); index < limitBin; index++ {
 		if magnitude[index] <= magnitude[index-1] || magnitude[index] < magnitude[index+1] {
+			continue
+		}
+		if 20*math.Log10(magnitude[index]/strongest) < -40 {
 			continue
 		}
 		peaks = append(peaks, spectralPeak{

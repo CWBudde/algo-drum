@@ -150,6 +150,45 @@ func TestDecodeConfigMigratesVersionFourWithoutAddingAsymmetry(t *testing.T) {
 	}
 }
 
+// TestDecodeConfigMigratesVersionSixToTheRigidCavity covers the one migration in
+// the chain whose compatibility value is not the zero value. A version-6
+// document has no stiffnessScale at all, and taking the decoded zero at face
+// value would silently uncouple the cavity rather than preserve it, so the
+// migration has to write the rigid 1 explicitly.
+func TestDecodeConfigMigratesVersionSixToTheRigidCavity(t *testing.T) {
+	t.Parallel()
+
+	legacy := DefaultPhysicalDrum()
+	legacy.Version = tiltedDampingConfigVersion
+	encoded, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Version 6 had no such field; drop it the way a real stored document would.
+	var document map[string]any
+	if err := json.Unmarshal(encoded, &document); err != nil {
+		t.Fatal(err)
+	}
+	cavity, ok := document["cavity"].(map[string]any)
+	if !ok {
+		t.Fatalf("cavity is not an object: %#v", document["cavity"])
+	}
+	delete(cavity, "stiffnessScale")
+	encoded, err = json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decoded, err := DecodeConfig(encoded)
+	if err != nil {
+		t.Fatalf("DecodeConfig(v6) error = %v", err)
+	}
+	if decoded.Version != ConfigVersion || decoded.Cavity.StiffnessScale != 1 {
+		t.Fatalf("migrated v6 cavity = %#v, version %d",
+			decoded.Cavity, decoded.Version)
+	}
+}
+
 func TestConfigRejectsInvalidCavityCoupling(t *testing.T) {
 	t.Parallel()
 
