@@ -200,11 +200,7 @@ export default function VoiceEditor({
         </fieldset>
       )}
 
-      <div
-        className="dm-voice-knobs"
-        data-params={specs.length}
-        data-physical={!showProceduralParams || undefined}
-      >
+      <div className="dm-voice-knobs" data-params={specs.length}>
         {specs.map((spec, i) => (
           <div className="dm-voice-param" key={spec.id}>
             <Knob
@@ -216,6 +212,9 @@ export default function VoiceEditor({
               defaultValue={spec.default}
               size={54}
               color={spec.unit === "s" || spec.unit === "/s" ? BLUE : AMBER}
+              // The readout below is always visible, so the knob's own drag
+              // bubble and hover tooltip would only duplicate it.
+              showReadout={false}
             />
             <span className="dm-voice-value">
               {formatParam(spec, values[i])}

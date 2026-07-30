@@ -12,7 +12,9 @@
  */
 
 .dm-voice {
-  width: min(92vw, 430px);
+  /* Wide enough for five knob columns (5 × 96px + 4 × 10px gap + 36px padding),
+     and narrow enough that a sixth never fits. */
+  width: min(94vw, 560px);
   max-height: min(86vh, 660px);
   /* A modal dialog is centred by the UA's `margin: auto` against its
      `inset: 0`, but the `* { margin: 0 }` reset in index.html outranks the UA
@@ -28,21 +30,15 @@
     0 20px 60px rgba(0, 0, 0, 0.9),
     inset 0 2px 2px rgba(255, 255, 255, 0.12),
     inset 0 -3px 6px rgba(0, 0, 0, 0.55);
-  /* The Knob's drag readout is absolutely positioned above the knob body and
-     must be able to escape the top row of the grid. */
-  overflow: visible;
+  /* The knobs here render with showReadout={false}, so nothing has to escape
+     the box and the dialog can simply scroll — which the eighteen-control
+     physical lab needs on short viewports. */
+  overflow-y: auto;
 }
 
 .dm-voice::backdrop {
   background: rgba(4, 4, 10, 0.72);
   backdrop-filter: blur(2px);
-}
-
-/* The physical lab has thirteen generated controls. Keep the whole dialog
-   reachable on short/mobile viewports without changing the compact procedural
-   editors' overflow behavior. */
-.dm-voice:has(.dm-voice-knobs[data-physical]) {
-  overflow-y: auto;
 }
 
 .dm-voice-head {
@@ -213,25 +209,22 @@
   transform: translateY(0);
 }
 
-/* auto-fit fits four knobs on one row; the extra top padding leaves room for
-   the first row's drag readout. */
+/* Fixed-width tracks rather than 1fr, so a four-knob voice stays as compact as
+   a full row instead of stretching across the dialog. The dialog width is
+   chosen so auto-fit tops out at five columns. */
 .dm-voice-knobs {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  grid-template-columns: repeat(auto-fit, 96px);
   gap: 22px 10px;
-  padding: 28px 18px 16px;
+  padding: 18px 18px 16px;
+  justify-content: center;
   justify-items: center;
 }
 
-/* Five or six parameters would otherwise wrap 4+1 / 4+2; three columns splits
-   them evenly instead. */
-.dm-voice-knobs[data-params="5"],
+/* Six parameters would otherwise wrap 5+1; two rows of three split them
+   evenly instead. */
 .dm-voice-knobs[data-params="6"] {
-  grid-template-columns: repeat(3, 1fr);
-}
-
-.dm-voice-knobs[data-physical] {
-  padding-top: 18px;
+  grid-template-columns: repeat(3, 96px);
 }
 
 .dm-voice-param {
@@ -303,14 +296,13 @@
     width: 94vw;
   }
 
-  /* The [data-params] rules above are more specific, so they have to be
-     restated here or a 5/6-parameter voice would stay at three columns. */
+  /* The [data-params] rule above is more specific, so it has to be restated
+     here or a 6-parameter voice would keep its own column count. */
   .dm-voice-knobs,
-  .dm-voice-knobs[data-params="5"],
   .dm-voice-knobs[data-params="6"] {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
     gap: 20px 8px;
-    padding: 24px 12px 12px;
+    padding: 16px 12px 12px;
   }
 
   .dm-voice-foot {
