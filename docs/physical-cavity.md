@@ -34,7 +34,7 @@ swept area \(\widetilde A_i=gA_i\). The coupled equations are
 \[
 \dot p = K\sum_i \widetilde A_i\dot q_i - \lambda p,
 \qquad
-K=\frac{\rho c^2}{V},
+K=s\,\frac{\rho c^2}{V},
 \qquad
 V=\pi R^2L.
 \]
@@ -44,6 +44,51 @@ Here \(L\) is shell depth, \(\rho\) is air density, \(c\) is sound speed, and
 `Cavity.Coupling01` is \(g\); scaling pressure drive and feedback by the same
 coefficient preserves passivity. Setting it to zero or setting
 `Cavity.Enabled` to false is the exact zero-coupling limit.
+
+`Cavity.StiffnessScale` is \(s\), and unlike the rest of the section it is
+fitted rather than derived — see [Why the air spring is
+fitted](#why-the-air-spring-is-fitted).
+
+### Why the air spring is fitted
+
+\(\rho c^2/V\) is the bulk stiffness of a **rigid, sealed** enclosure driven by
+**pistons**. A tom is none of the three: the shell flexes, the vent leaks, and a
+head's axisymmetric mode shape is not a flat plate. Using the rigid value
+therefore over-predicts how much the enclosed air stiffens the axisymmetric
+modes, and by a large factor rather than a marginal one.
+
+Measured on the default 12-inch configuration with a central strike, which
+excites only the modes that have swept area:
+
+| \(s\)          | (0,1) branches   | ratio    |
+| -------------- | ---------------- | -------- |
+| 1 (rigid)      | 108.4 / 219.7 Hz | **2.03** |
+| 0.04 (shipped) | 105.5 / 123.0 Hz | **1.17** |
+
+A measured two-headed drum separates its two (0,1) branches by 10–20 %:
+[Fischer, _Modal Analysis of a Snare Drum_, Illinois 2014](https://courses.physics.illinois.edu/phys406/sp2017/Student_Projects/Spring14/Matthew_Fischer_Physics_406_Final_Project_Sp14.pdf)
+found 186 Hz with one head and 215 Hz after adding the resonant head at
+unchanged tuning — "this increase is due only to the coupling between heads" — a
+ratio of 1.16. The rigid value also put a partial at 219.7 Hz only 3 dB below the
+fundamental, directly on top of the (2,1) at 221.8 Hz, so it did not merely
+mistune the doublet: it masked a mode.
+
+Two consequences of the rank-one coupling are worth stating, because they bound
+what any choice of \(s\) can do:
+
+- Only the **stiffened** branch moves appreciably. Eigenvalue interlacing keeps
+  the lower branch between the two heads' uncoupled (0,1) frequencies — 104.0
+  and 112.3 Hz here — so it cannot rise 16 % no matter how stiff the air is. The
+  quantity to fit is the separation between the branches, not the absolute
+  position of the audible one.
+- Every \(m>0\) mode has zero swept area, so \(s\) has no effect on them at all.
+
+`Cavity.StiffnessScale` is a fraction rather than a free gain because the rigid,
+sealed, piston-driven enclosure is the stiffest case that exists; 1 is the
+physical ceiling, not a neutral default. The two-head coupling loss that damps
+the (0,1) is a separate mechanism, calibrated from measured decay rates in
+[`physical-calibration.md`](physical-calibration.md), and is unaffected by this
+refit — the model's lumped cavity is not where that loss comes from.
 
 The stored mechanical energy is
 
@@ -92,7 +137,10 @@ All P3 parameters remain SI-valued fields of `PhysicalDrum`:
   `Cavity.SoundSpeedMPerS`;
 - `Cavity.Coupling01` continuously controls passive head/air coupling,
   `Cavity.Enabled` can bypass it, and `Cavity.LossPerSecond` controls pressure
-  loss.
+  loss;
+- `Cavity.StiffnessScale` sets how far below the rigid-enclosure limit the air
+  spring sits. It multiplies the same stiffness the energy term divides by, so
+  the passivity and energy-conservation results above hold for any value of it.
 
 Call `DoubleHead.Config`, edit the returned copy, and pass it to
 `DoubleHead.Reconfigure` from the model's owner goroutine. Reconfiguration
@@ -121,8 +169,11 @@ and the modal system is the diagonal-plus-rank-one solve
 
 The implementation uses the Sherman-Morrison form. A deterministic test drives
 the real-time model with a sinusoid and compares its steady-state raw-radiation
-magnitude with this independent continuous-time solution. The current
-difference at 137 Hz is below 0.5 percent.
+magnitude with this independent continuous-time solution. It renders with P4
+nonlinearity disabled, because this reference is linearized at rest and leaving
+the tension modulation on compares two different models: the residual then
+depends on drive amplitude and reaches 27 % at 300 Hz, where linear against
+linear agrees to 0.034 percent at 137 Hz.
 
 ## Validation and measured cost
 
@@ -131,6 +182,9 @@ The P3 suite covers:
 - exact single-head output in the zero-coupling limit;
 - independently generated resonant modes and audible resonant-head excitation;
 - analytic swept areas and zero coupling for every non-axisymmetric mode;
+- the fitted (0,1) split inside the measured 10–20 % band, no partial left within
+  10 dB of the fundamental where the (2,1) belongs, and the rigid stiffness still
+  overshooting that band — so the fit cannot be dropped without a failure;
 - earlier in-phase than out-of-phase zero crossings for identically tuned
   heads;
 - lossless total-energy conservation and non-trivial energy exchange;

@@ -168,16 +168,25 @@ Versions below are the pinned ones in `go.mod` / `web/package.json` — check th
 - **Go 1.25** — toolchain for the engine (`go.mod`)
 - **[algo-dsp](https://github.com/cwbudde/algo-dsp) `v0.0.0-20260729115219-8ea972cf5f07`** — compatibility commit for `algo-fft` v0.7.3; used for biquad filters in voices (`biquad.Section`, `design.Highpass`, `design.Bandpass`), master effects (`reverb.FDNReverb`, `dynamics.Limiter`), and physical-analysis metrics
 - **[algo-fft](https://github.com/cwbudde/algo-fft) v0.7.3** — FFT backend used directly by the physical-analysis tooling and transitively by `algo-dsp`
-- **React 19.2.7** (`react` + `react-dom`) — the only runtime npm dependencies; everything else is a devDependency
+- **React 19.2.8** (`react` + `react-dom`) — the only runtime npm dependencies; everything else is a devDependency
 
 **Build & tooling**
 
 - **bun** — package manager and script runner for the frontend
-- **Vite 7.3.1** — frontend bundler; configured with `@vitejs/plugin-react` 4.7.0
-- **TypeScript 5.9.3** — type-check via `tsc --noEmit` (Vite does not type-check on its own)
+- **Vite 8.1.5** — frontend bundler; configured with `@vitejs/plugin-react` 6.0.5
+- **TypeScript 7.0.2 and 6.0.3, side by side** — the native TS 7 compiler is installed under the
+  alias `@typescript/native`, and type-checking runs it explicitly (`bun run typecheck` →
+  `node node_modules/@typescript/native/bin/tsc --noEmit`) rather than via `node_modules/.bin/tsc`,
+  which both packages claim. The bare `typescript` name resolves to 6.0.3 because
+  `typescript-eslint` imports the TS 6 compiler API and hard-fails on TS ≥ 7
+  ([typescript-eslint#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940)).
+  Microsoft's recommended `@typescript/typescript6` shim does not work under bun — its internal
+  `@typescript/old": "npm:typescript@^6"` alias resolves back to the shim itself, so
+  `require('typescript')` yields an empty object. Drop the alias split once typescript-eslint
+  supports TS 7.
 - **Vitest 4.1.10** — unit tests (`bun run test`, config in `web/vitest.config.ts`)
-- **Playwright 1.61.1** (`@playwright/test`) — e2e smoke test (`bun run test:e2e`, config in `web/playwright.config.ts`)
-- **ESLint 10.6.0** with `typescript-eslint` 8.63.0 — frontend linting (`bun run lint`, flat config in `web/eslint.config.js`)
+- **Playwright 1.62.0** (`@playwright/test`) — e2e smoke test (`bun run test:e2e`, config in `web/playwright.config.ts`)
+- **ESLint 10.8.0** with `typescript-eslint` 8.65.0 — frontend linting (`bun run lint`, flat config in `web/eslint.config.js`)
 - **treefmt** — multi-language formatter runner (`treefmt.toml`: gofumpt, gci, shellcheck, shfmt, prettier); note it deliberately excludes `AGENTS.md` and `PLAN.md`
 - **golangci-lint** (v2 config schema, `.golangci.yml`) — Go linting; always run against the `js/wasm` target, since `cmd/wasm/main.go` is invisible on the host GOOS
 

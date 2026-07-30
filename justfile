@@ -70,7 +70,7 @@ web-install:
 
 # Type-check the frontend
 web-typecheck:
-    cd web && bun run tsc --noEmit
+    cd web && bun run typecheck
 
 # Run the frontend unit tests (vitest)
 web-test:

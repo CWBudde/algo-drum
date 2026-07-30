@@ -61,14 +61,20 @@ longest.
 The default 12-inch head's lowest mode is 104.00 Hz with a 0.21 s analytic
 amplitude \(T_{60}\); its highest retained mode at 646 Hz decays in 0.15 s.
 These are model targets, not claims about a commercial drum. The physical
-configuration schema is version 6. Version-1 configurations are migrated by
+configuration schema is version 7. Version-1 configurations are migrated by
 filling the P2 radiation and microphone defaults; version-2 linear double-head
 configurations migrate with P4 nonlinearity disabled so their sound is
 unchanged; version 3 migrates with full cavity coupling, preserving its
 previous equations; version 4 migrates with zero tension asymmetry, preserving
 its ideal circular-head modes exactly; version 5 migrates with \(d_1 = 0\) and
 its decay corrections untouched, which reproduces its flat damping — including
-its 2.21 s fundamental — exactly.
+its 2.21 s fundamental — exactly; version 6 migrates with the cavity stiffness
+scale set to 1, the rigid-enclosure value it derived. That last one is the only
+migration in the chain whose compatibility value is not the zero value, so it has
+to be written explicitly: an absent `stiffnessScale` decodes to 0, which is the
+uncoupled limit rather than the old sound. See
+[`physical-cavity.md`](physical-cavity.md) for why new configurations do not use
+the rigid value.
 
 ## Radiation and microphone response
 

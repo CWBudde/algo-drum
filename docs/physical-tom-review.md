@@ -34,6 +34,11 @@ audible. Ranked by audible return:
 | 4   | Cavity coupling ~5× too strong                  | (0,1) doublet 107.7 / 219.4 Hz, ratio **2.04** | ratio ≈ **1.16**                            |
 | 5   | Pitch glide inaudible but expensive             | 38 cents, costs 6× the voice                   | "a few tenths of a second" of audible glide |
 
+The table is the 2026-07-30 diagnosis, left as written so the corrections stay
+attributable to a measurement. Rows 1, 2 and 4 have since been fixed — see the
+implementation notes in "Recommended plan" — and rows 3 and 5 still describe the
+shipped voice.
+
 Two things I initially flagged turned out to be **fine**, and the literature is
 what corrected me — details in "What I got wrong" below.
 
@@ -285,6 +290,13 @@ damping dominate — **do not copy its radiation weighting.**
    2213 ms to 211 ms and suite RT60 from ~2.1 s to 0.27–0.55 s.
 3. **Refit the cavity split** to a 10–20 % (0,1) separation instead of ρc²/V,
    which will also remove the spurious −9 dB partial at 219 Hz.
+   **Implemented 2026-07-30** as PLAN.md item S3. `Cavity.StiffnessScale = 0.04`
+   moves the doublet from 108.4/219.7 Hz (ratio 2.03) to 105.5/123.0 Hz (ratio
+   1.17), and the partial at 219.7 Hz is gone. One correction to the diagnosis
+   above: the audible **lower** branch cannot rise 16 %, because eigenvalue
+   interlacing pins it between the two heads' uncoupled (0,1) frequencies of
+   104.0 and 112.3 Hz. It is the stiffened branch that carries the coupling
+   shift, and the separation between the branches is what a fit can target.
 4. **Fix the radiated sum**: volume acceleration weighted by `SweptAreaM2` for
    m = 0 and a directivity factor for m > 0; remove `PickupShape` from the
    radiated path. Then delete `physicalTomOutputGain`.

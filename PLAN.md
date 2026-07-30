@@ -513,9 +513,13 @@ No dead files; `docs/voices.md` is linked from the README.
       config pins `go@1.21.0` against a `go 1.25.0` module and duplicates
       gofmt/prettier/shellcheck/shfmt, which `treefmt.toml:45-84` already owns. Decide:
       commit the ignore rule, or commit `.trunk/trunk.yaml` deliberately.
-- [ ] **H5: dependencies are three majors behind** — `vite` 7.3.1 → 8.1.5,
-      `@vitejs/plugin-react` 4.7.0 → 6.0.4, `typescript` 5.9.3 → 7.0.2, plus minor drift
-      in `@playwright/test`, `eslint`, `typescript-eslint`, `react`/`react-dom`.
+- [x] **H5: dependencies are three majors behind** — `vite` 7.3.1 → 8.1.5,
+      `@vitejs/plugin-react` 4.7.0 → 6.0.5, `typescript` 5.9.3 → 7.0.2, plus minor drift
+      in `@playwright/test`, `eslint`, `typescript-eslint`, `react`/`react-dom`. TypeScript
+      is now installed twice on purpose: 7.0.2 under the `@typescript/native` alias for
+      `tsc`, and 6.0.3 as `typescript` for `typescript-eslint`, which still needs the TS 6
+      compiler API (see the TypeScript entry in `AGENTS.md`). Collapse that once
+      typescript-eslint supports TS 7.
 - [x] **H6: no `dependabot.yml` or Renovate config**, so nothing keeps the above or
       `go.mod` current.
 - [ ] **H7: `.editorconfig` is advisory only** — no `editorconfig-checker` in CI, and
@@ -950,8 +954,8 @@ two-headed drum is roughly constant ζ ≈ 1.1 % above the fundamental, with
 alone gives T60 ∝ 1/f², which is the wrong shape.
 
 The table is the 2026-07-30 diagnosis, kept as written so the corrections stay
-attributable to a measurement. Rows 1 and 2 are closed by S1 and S2 below; rows
-3–5 are open, and the numbers in them still describe the shipped voice.
+attributable to a measurement. Rows 1, 2 and 4 are closed by S1, S2 and S3 below;
+rows 3 and 5 are open, and the numbers in them still describe the shipped voice.
 
 Cheap, high-impact, no architecture change:
 
@@ -995,12 +999,39 @@ Cheap, high-impact, no architecture change:
       1.4 s, which a correctly damped fundamental cannot be. It now checks that
       the fundamental leads the _attack_ and that the sustain peak moves above
       it — the pitch envelope a real tom has.
-- [ ] **S3: refit the cavity split** to a 10–20 % (0,1) separation instead of
+- [x] **S3: refit the cavity split** to a 10–20 % (0,1) separation instead of
       deriving it from ρc²/V. The rigid-cavity formula over-predicts ~5× because
       the shell is compliant, the vent leaks and the heads are not pistons;
       verified by isolating the air spring (batter only, centre hit:
       104.00 → 191.89 Hz, against an analytic 215.1 Hz). This also removes a
       spurious −9 dB partial at 219 Hz sitting where (2,1) should be.
+      **Done 2026-07-30.** New `Cavity.StiffnessScale` multiplies the rigid
+      ρc²/V, shipped at **0.04**. On a central strike the (0,1) doublet moves from
+      108.4/219.7 Hz (ratio 2.03) to 105.5/123.0 Hz (ratio **1.17**), inside the
+      measured 10–20 % band, and the 219.7 Hz partial — which sat 3 dB below the
+      fundamental, on top of the (2,1) at 221.8 Hz — is gone. The field is a
+      fraction, not a free gain: the rigid, sealed, piston-driven enclosure is
+      the stiffest case there is, so 1 is the physical ceiling. Config schema v7;
+      this is the **only** migration in the chain whose compatibility value is
+      not the zero value, since an absent `stiffnessScale` decodes to 0, which is
+      the uncoupled limit rather than the old sound, so `migrateV6Config` writes
+      1 explicitly. No app-state bump: `StiffnessScale` is calibration, not a
+      control, and AIR (`Cavity.Coupling01`) is unchanged — its top of travel is
+      now the calibrated split instead of the rigid one.
+      One correction to the diagnosis this item was written from: the _audible_
+      fundamental cannot rise 16 %. Eigenvalue interlacing pins the lower branch
+      between the two heads' uncoupled (0,1) frequencies, 104.0 and 112.3 Hz, for
+      any rank-one air coupling; only the stiffened branch carries the shift, so
+      the branch **separation** is the fittable quantity. Level is barely
+      affected — the voice peak at velocity 1 went 0.78 → 0.90, since the peak
+      belongs to the attack transient, not to the fundamental.
+      A pre-existing test defect surfaced here.
+      `TestDoubleHeadReferenceTransferMatchesTimeDomain` compared the nonlinear
+      time-domain model against `ReferenceFrequencyResponse`, which is linearized
+      at rest, so its residual was tension modulation rather than the coupled
+      solve it claims to check: 0.31 % at the chosen 137 Hz but **27 %** at
+      300 Hz. It now runs with nonlinearity off, where the two agree to 0.034 %,
+      and the tolerance is tightened from 5e-3 to 1e-3.
 - [ ] **S4: fix the radiated sum.** Weight volume **acceleration** by
       `SweptAreaM2` for the axisymmetric modes — already computed, currently
       unused in the output — and use a directivity factor for m > 0. Remove
@@ -1058,7 +1089,9 @@ Deliberately **not** doing:
 
 Execution order: **S1 + S2 first** — they are cheap, independent, and should be
 audible immediately — then S4, S3, S5, then S6/S7, then S8. S1 and S2 landed
-together on 2026-07-30; **S4 is next**.
+together on 2026-07-30, and S3 followed the same day ahead of S4, which is
+harmless: they touch different code and S3 does not depend on the radiated sum.
+**S4 is next.**
 
 Exit: per-mode T60 within a documented tolerance of the measured ζ structure,
 the (0,1) the fastest-decaying mode rather than the slowest, audible content
@@ -1073,6 +1106,12 @@ fastest-decaying mode of the low band. Three clauses remain, each owned by a
 later item: bandwidth above 1 kHz (S8), removing `physicalTomOutputGain` (S4),
 and the octave-band envelope check, which is only meaningful once there is
 content in more than two bands to compare.
+
+S3 adds a second shape assertion the criterion did not ask for but needs, in
+`internal/physical/cavity_split_test.go`: the (0,1) split inside the measured
+10–20 % band, nothing left within 10 dB of the fundamental where the (2,1)
+belongs, and the rigid stiffness still overshooting that band — the last so the
+fitted scale cannot be quietly deleted as a redundant coefficient.
 
 One qualification the exit criterion needs: the (0,1) is the fastest-decaying
 mode _of the low band_, not of the whole bank. Constant Q means modes far above

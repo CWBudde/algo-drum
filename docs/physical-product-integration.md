@@ -31,6 +31,12 @@ existing voice tables. The physical bank has stable, append-only indices:
 | AXIS    | non-uniform-tension principal axis                  | −90–90°                  |
 | D.TILT  | frequency-dependent loss terms, relative to DAMP    | 0–3×                     |
 
+AIR spans zero coupling up to the calibrated air spring, not up to the rigid
+enclosure: `Cavity.StiffnessScale` is fitted in the configuration and is not
+exposed as a control, so the knob's top of travel is now the measured 10–20 %
+(0,1) split rather than the 2.03 ratio the rigid formula produced. See
+[`physical-cavity.md`](physical-cavity.md).
+
 The normalized UI value is the command and persistence representation.
 Engineering mappings, bounds, defaults, display units, accessible names, and
 the discrete quality labels all come from the generated descriptor. The
