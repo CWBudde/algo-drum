@@ -96,10 +96,11 @@ func TestModalLossLawAndCorrection(t *testing.T) {
 
 	first := modes[0]
 	wantStructural := config.Batter.Loss0PerSecond +
+		config.Batter.Loss1MPerSecond*first.WavenumberPerM +
 		config.Batter.Loss2M2PerSecond*first.WavenumberPerM*first.WavenumberPerM
 	if first.StructuralDecayPerSecond != wantStructural {
 		t.Fatalf(
-			"first structural decay = %v, want two-parameter law %v",
+			"first structural decay = %v, want three-parameter law %v",
 			first.StructuralDecayPerSecond,
 			wantStructural,
 		)

@@ -17,7 +17,7 @@ existing voice tables. The physical bank has stable, append-only indices:
 | SIZE    | shared batter/resonant diameter                     | 0.16–0.50 m              |
 | B.TUNE  | `Batter.TensionNPerM`                               | 150–1400 N/m             |
 | R.TUNE  | `Resonant.TensionNPerM`                             | 150–1400 N/m             |
-| DAMP    | proportional head loss scale                        | 0.75–12 /s               |
+| DAMP    | overall head loss scale                             | 0.25–4×                  |
 | HIT.R   | `Strike.Radius01`                                   | 0–0.95                   |
 | HIT.A   | `Strike.AngleRad`                                   | −180–180°                |
 | HARD    | `Strike.Hardness01`                                 | 0–1                      |
@@ -29,6 +29,7 @@ existing voice tables. The physical bank has stable, append-only indices:
 | QUAL    | `Draft`, `Standard`, or `High`                      | 24, 48, or 96 modes/head |
 | ASYM    | full cosine/sine pair-frequency separation          | 0–2 %                    |
 | AXIS    | non-uniform-tension principal axis                  | −90–90°                  |
+| D.TILT  | frequency-dependent loss terms, relative to DAMP    | 0–3×                     |
 
 The normalized UI value is the command and persistence representation.
 Engineering mappings, bounds, defaults, display units, accessible names, and

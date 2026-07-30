@@ -85,7 +85,7 @@ func TestNonlinearUpdateMatchesOversampledReference(t *testing.T) {
 	makeModel := func(sampleRate float64) *DoubleHead {
 		config := isolatedNonlinearConfig()
 		config.SampleRateHz = sampleRate
-		config.Batter.Loss0PerSecond = 0
+		silenceLosses(&config.Batter)
 		model, err := NewDoubleHead(config)
 		if err != nil {
 			t.Fatal(err)
@@ -137,12 +137,8 @@ func TestNonlinearDoubleHeadLosslessEnergyIsConserved(t *testing.T) {
 	t.Parallel()
 
 	config := DefaultPhysicalDrum()
-	config.Batter.Loss0PerSecond = 0
-	config.Batter.Loss2M2PerSecond = 0
-	config.Batter.RadiationLossPerSecond = 0
-	config.Resonant.Loss0PerSecond = 0
-	config.Resonant.Loss2M2PerSecond = 0
-	config.Resonant.RadiationLossPerSecond = 0
+	silenceLosses(&config.Batter)
+	silenceLosses(&config.Resonant)
 	config.Cavity.LossPerSecond = 0
 	model, err := NewDoubleHead(config)
 	if err != nil {
@@ -230,7 +226,7 @@ func TestNonlinearMaximumStrengthConservesLosslessEnergy(t *testing.T) {
 	t.Parallel()
 
 	config := isolatedNonlinearConfig()
-	config.Batter.Loss0PerSecond = 0
+	silenceLosses(&config.Batter)
 	config.Nonlinearity.BatterTensionCoefficientNPerM3 = 1e9
 	model, err := NewDoubleHead(config)
 	if err != nil {
@@ -328,7 +324,7 @@ func nonlinearAttackSpectrum(t *testing.T, velocity float64) (float64, float64) 
 
 	const fftSize = 8192
 	config := isolatedNonlinearConfig()
-	config.Batter.Loss0PerSecond = 3
+	setUniformLoss(&config.Batter, 3)
 	model, err := NewDoubleHead(config)
 	if err != nil {
 		t.Fatal(err)
@@ -392,9 +388,10 @@ func isolatedNonlinearConfig() PhysicalDrum {
 	config.Quality = QualityDraft
 	config.Cavity.Enabled = false
 	config.Resonant.Enabled = false
-	config.Batter.Loss0PerSecond = 8
-	config.Batter.Loss2M2PerSecond = 0
-	config.Batter.RadiationLossPerSecond = 0
+	// One flat rate: this configuration measures the nonlinear glide, so the
+	// calibrated frequency-dependent law would only shorten the window the
+	// first mode stays measurable in.
+	setUniformLoss(&config.Batter, 8)
 	config.Strike.Radius01 = 0
 	config.Strike.AngleRad = 0
 

@@ -272,11 +272,17 @@ func splitAngularFrequency(
 	return idealAngularFrequency * multiplier
 }
 
-// ModalDecayRatePerSecond evaluates the two-parameter structural loss law
-// d(k) = d0 + d2*k². Radiation loss and optional measured residuals remain
-// separate in Mode so calibration can distinguish their causes.
+// ModalDecayRatePerSecond evaluates the structural loss law
+// d(k) = d0 + d1*k + d2*k². Radiation loss and optional measured residuals
+// remain separate in Mode so calibration can distinguish their causes.
+//
+// The k¹ term carries constant Q. Without it the law cannot express a fixed
+// fraction of critical damping at all: d0 alone gives T60 independent of
+// frequency and d2 alone gives T60 ∝ 1/f², where the measured membrane
+// behaviour is T60 ∝ 1/f.
 func ModalDecayRatePerSecond(head Head, wavenumberPerM float64) float64 {
 	return head.Loss0PerSecond +
+		head.Loss1MPerSecond*wavenumberPerM +
 		head.Loss2M2PerSecond*wavenumberPerM*wavenumberPerM
 }
 

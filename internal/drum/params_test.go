@@ -55,9 +55,9 @@ func TestParamSpecsWellFormed(t *testing.T) {
 }
 
 func TestPhysicalTomParamSpecsWellFormed(t *testing.T) {
-	if len(physicalTomSpecs) != physicalTomParamAsymmetryAxis+1 {
+	if len(physicalTomSpecs) != physicalTomParamDampingTilt+1 {
 		t.Fatalf("physical Tom has %d specs, want %d",
-			len(physicalTomSpecs), physicalTomParamAsymmetryAxis+1)
+			len(physicalTomSpecs), physicalTomParamDampingTilt+1)
 	}
 
 	seen := make(map[string]bool, len(physicalTomSpecs))

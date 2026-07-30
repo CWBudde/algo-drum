@@ -110,6 +110,24 @@ func (v *physicalTom) ParamSpecs() []ParamSpec {
 	return v.params.ParamSpecs()
 }
 
+// scaleHeadLosses applies the UI's damping scale and frequency tilt to one
+// head's loss law.
+//
+// The measured (0,1) correction scales with the rest: it is a loss like any
+// other, and leaving it fixed would make DAMP and DEC unable to shorten the
+// one mode whose length is most audible. It follows the tilt too, because the
+// coupling loss it stands for is frequency-dependent in origin.
+func scaleHeadLosses(head *physical.Head, lossScale, tilt float64) {
+	head.Loss0PerSecond *= lossScale
+	head.Loss1MPerSecond *= lossScale * tilt
+	head.Loss2M2PerSecond *= lossScale * tilt
+	head.RadiationLossPerSecond *= lossScale
+
+	for index := range head.ModeDecayCorrections {
+		head.ModeDecayCorrections[index].DecayRatePerSecond *= lossScale * tilt
+	}
+}
+
 func (v *physicalTom) reconfigure() error {
 	config := physical.DefaultPhysicalDrum()
 	config.SampleRateHz = v.config.SampleRateHz
@@ -120,19 +138,15 @@ func (v *physicalTom) reconfigure() error {
 	config.Batter.TensionNPerM = v.params.value(physicalTomParamBatterTension)
 	config.Resonant.TensionNPerM = v.params.value(physicalTomParamResonantTension)
 
-	// The one damping control preserves the default frequency-dependent and
-	// radiation-loss proportions on both heads. The strip DEC knob then trims
-	// all rates by its documented reciprocal 0.5×–1.5× time scale.
-	dampingScale := v.params.value(physicalTomParamDamping) /
-		physicalTomSpecs[physicalTomParamDamping].Shipped
-	decayScale := 1 / (decayScaleMin + v.decayAmount)
-	lossScale := dampingScale * decayScale
-	config.Batter.Loss0PerSecond *= lossScale
-	config.Batter.Loss2M2PerSecond *= lossScale
-	config.Batter.RadiationLossPerSecond *= lossScale
-	config.Resonant.Loss0PerSecond *= lossScale
-	config.Resonant.Loss2M2PerSecond *= lossScale
-	config.Resonant.RadiationLossPerSecond *= lossScale
+	// DAMP scales every loss rate together; the strip DEC knob then trims them
+	// all by its documented reciprocal 0.5×–1.5× time scale. D.TILT is applied
+	// on top and only to the frequency-dependent terms, so it changes the shape
+	// of the decay across the mode series rather than its overall level.
+	lossScale := v.params.value(physicalTomParamDamping) /
+		(decayScaleMin + v.decayAmount)
+	tilt := v.params.value(physicalTomParamDampingTilt)
+	scaleHeadLosses(&config.Batter, lossScale, tilt)
+	scaleHeadLosses(&config.Resonant, lossScale, tilt)
 
 	config.Strike.Radius01 = v.params.value(physicalTomParamStrikeRadius)
 	config.Strike.AngleRad = v.params.value(physicalTomParamStrikeAngle) *

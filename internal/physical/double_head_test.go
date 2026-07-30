@@ -381,12 +381,8 @@ func TestDoubleHeadRenderDoesNotAllocate(t *testing.T) {
 func losslessDoubleHeadConfig() PhysicalDrum {
 	config := DefaultPhysicalDrum()
 	config.Nonlinearity.Enabled = false
-	config.Batter.Loss0PerSecond = 0
-	config.Batter.Loss2M2PerSecond = 0
-	config.Batter.RadiationLossPerSecond = 0
-	config.Resonant.Loss0PerSecond = 0
-	config.Resonant.Loss2M2PerSecond = 0
-	config.Resonant.RadiationLossPerSecond = 0
+	silenceLosses(&config.Batter)
+	silenceLosses(&config.Resonant)
 	config.Cavity.LossPerSecond = 0
 
 	return config

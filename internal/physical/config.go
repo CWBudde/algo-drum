@@ -17,8 +17,9 @@ const (
 	linearDoubleHeadConfigVersion = 2
 	nonlinearConfigVersion        = 3
 	fullCouplingConfigVersion     = 4
+	asymmetryConfigVersion        = 5
 	// ConfigVersion is the physical-drum JSON schema emitted by EncodeConfig.
-	ConfigVersion = 5
+	ConfigVersion = 6
 
 	minSampleRateHz = 8_000.0
 	maxSampleRateHz = 384_000.0
@@ -69,6 +70,14 @@ type PhysicalDrum struct {
 }
 
 // Head describes one circular membrane/plate.
+//
+// The three loss coefficients form the structural decay law
+// γ(k) = Loss0 + Loss1·k + Loss2·k², evaluated by ModalDecayRatePerSecond. The
+// k¹ term is the one that expresses constant Q: with ω ≈ c·k on a membrane,
+// Loss1 = ζ·c holds the fraction of critical damping ζ fixed across the mode
+// series, which is the measured behaviour above the fundamental. Loss0 is a
+// frequency-independent floor and Loss2 an excess high-frequency loss; neither
+// can produce constant Q on its own, so both stay small.
 type Head struct {
 	Enabled                  bool                  `json:"enabled"`
 	RadiusM                  float64               `json:"radiusM"`
@@ -77,6 +86,7 @@ type Head struct {
 	TensionAsymmetry         TensionAsymmetry      `json:"tensionAsymmetry"`
 	BendingStiffnessNM       float64               `json:"bendingStiffnessNM"`
 	Loss0PerSecond           float64               `json:"loss0PerSecond"`
+	Loss1MPerSecond          float64               `json:"loss1MPerSecond"`
 	Loss2M2PerSecond         float64               `json:"loss2M2PerSecond"`
 	RadiationLossPerSecond   float64               `json:"radiationLossPerSecond"`
 	ModeDecayCorrections     []ModeDecayCorrection `json:"modeDecayCorrections,omitempty"`
@@ -178,10 +188,20 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			SplitRatio:            0.004,
 			PrincipalAxisAngleRad: 0,
 		},
-		BendingStiffnessNM:       0.001,
-		Loss0PerSecond:           3,
-		Loss2M2PerSecond:         2e-5,
-		RadiationLossPerSecond:   1.5,
+		BendingStiffnessNM: 0.001,
+		// ζ = 1.1 % at c = √(T/σ) = 41.40 m/s. Loss0 is a small floor rather
+		// than the dominant term it used to be: it flattens ζ toward low
+		// frequencies, which is the shape the measurements contradict.
+		Loss0PerSecond:         0.8,
+		Loss1MPerSecond:        0.4554,
+		Loss2M2PerSecond:       2e-5,
+		RadiationLossPerSecond: 1.5,
+		// The (0,1) loses energy fastest of all, into the cavity and the
+		// opposite head: ζ ≈ 5 % at 103.98 Hz is γ = 32.7 /s, of which the
+		// law above already supplies 8.1 /s.
+		ModeDecayCorrections: []ModeDecayCorrection{
+			{AzimuthalOrder: 0, RadialOrder: 1, DecayRatePerSecond: 24.6},
+		},
 		FrequencyLimitFraction:   0.45,
 		InactiveEnergyThresholdJ: 1e-12,
 	}
@@ -200,10 +220,18 @@ func DefaultPhysicalDrum() PhysicalDrum {
 				SplitRatio:            0.003,
 				PrincipalAxisAngleRad: 0,
 			},
-			BendingStiffnessNM:       0.0007,
-			Loss0PerSecond:           4,
-			Loss2M2PerSecond:         2e-5,
-			RadiationLossPerSecond:   1.5,
+			BendingStiffnessNM: 0.0007,
+			// Same ζ, but the thinner, slacker head carries waves at
+			// c = 44.72 m/s, so its k¹ coefficient and its (0,1) correction
+			// (ζ ≈ 5 % at 112.31 Hz = 35.3 /s, less the 8.9 /s from the law)
+			// both differ from the batter's.
+			Loss0PerSecond:         1.0,
+			Loss1MPerSecond:        0.4919,
+			Loss2M2PerSecond:       2e-5,
+			RadiationLossPerSecond: 1.5,
+			ModeDecayCorrections: []ModeDecayCorrection{
+				{AzimuthalOrder: 0, RadialOrder: 1, DecayRatePerSecond: 26.4},
+			},
 			FrequencyLimitFraction:   head.FrequencyLimitFraction,
 			InactiveEnergyThresholdJ: head.InactiveEnergyThresholdJ,
 		},
@@ -370,6 +398,10 @@ func DecodeConfig(data []byte) (PhysicalDrum, error) {
 		migrateV4Config(&config)
 	}
 
+	if config.Version == asymmetryConfigVersion {
+		migrateV5Config(&config)
+	}
+
 	if err := config.Validate(); err != nil {
 		return PhysicalDrum{}, err
 	}
@@ -406,12 +438,22 @@ func migrateV3Config(config *PhysicalDrum) {
 }
 
 func migrateV4Config(config *PhysicalDrum) {
-	config.Version = ConfigVersion
+	config.Version = asymmetryConfigVersion
 	// Version 4 was the ideal circular-head model. Zero-valued asymmetry is an
 	// exact compatibility mode, so decoding an old configuration does not
 	// introduce beating or rotate its mode shapes.
 	config.Batter.TensionAsymmetry = TensionAsymmetry{}
 	config.Resonant.TensionAsymmetry = TensionAsymmetry{}
+}
+
+func migrateV5Config(config *PhysicalDrum) {
+	config.Version = ConfigVersion
+	// Version 5 had no k¹ loss term, so its damping was flat in frequency and
+	// its absent field decodes to the exact zero that reproduces it. Leaving it
+	// there — and leaving the decay corrections alone — keeps an old
+	// configuration sounding as it did, including its ringing fundamental.
+	// Newly created version-6 configurations get the calibrated law from
+	// DefaultPhysicalDrum instead.
 }
 
 func validateNonlinearity(config PhysicalDrum) error {
@@ -502,6 +544,7 @@ func validateHead(name string, head Head, required bool) error {
 		{"tensionNPerM", head.TensionNPerM, 1, 100_000},
 		{"bendingStiffnessNM", head.BendingStiffnessNM, 0, 100},
 		{"loss0PerSecond", head.Loss0PerSecond, 0, 10_000},
+		{"loss1MPerSecond", head.Loss1MPerSecond, 0, 1_000},
 		{"loss2M2PerSecond", head.Loss2M2PerSecond, 0, 10},
 		{"radiationLossPerSecond", head.RadiationLossPerSecond, 0, 10_000},
 		{"frequencyLimitFraction", head.FrequencyLimitFraction, 0.05, 0.49},

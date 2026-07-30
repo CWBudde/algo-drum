@@ -19,7 +19,8 @@ const V2_BYTES = V1_BYTES + LEGACY_TRACK_COUNT * VOICE_PARAM_CAPACITY;
 const V3_BYTES = V2_BYTES + 1;
 const V4_PHYSICAL_TOM_PARAM_CAPACITY = 13;
 const V4_BYTES = V3_BYTES + V4_PHYSICAL_TOM_PARAM_CAPACITY;
-const V6_BYTES = V3_BYTES + PHYSICAL_TOM_PARAM_CAPACITY;
+const V5_PHYSICAL_TOM_PARAM_CAPACITY = 15;
+const V6_BYTES = V3_BYTES + V5_PHYSICAL_TOM_PARAM_CAPACITY;
 const EXTRA_TRACK_COUNT = TRACK_COUNT - LEGACY_TRACK_COUNT;
 const LEGACY_VISUAL_TO_CURRENT = [0, 3, 4, 5, 6] as const;
 const V8_BYTES =
@@ -28,7 +29,13 @@ const V8_BYTES =
   1 +
   (EXTRA_TRACK_COUNT * 16) / 4 +
   EXTRA_TRACK_COUNT * VOICE_PARAM_CAPACITY;
-const TOTAL_BYTES = V8_BYTES + 1 + PHYSICAL_TOM_PARAM_CAPACITY;
+const V9_BYTES = V8_BYTES + 1 + V5_PHYSICAL_TOM_PARAM_CAPACITY;
+// The byte constants above describe the v9 layout. v10 widened the Tom 1 bank
+// in the middle of the record, so anything after it sits one slot later.
+const V10_TOM2_MODEL_OFFSET =
+  V8_BYTES + (PHYSICAL_TOM_PARAM_CAPACITY - V5_PHYSICAL_TOM_PARAM_CAPACITY);
+const TOTAL_BYTES =
+  V9_BYTES + (PHYSICAL_TOM_PARAM_CAPACITY - V5_PHYSICAL_TOM_PARAM_CAPACITY) * 2;
 
 // Scalars are stored as one byte, so only multiples of 1/255 survive a
 // roundtrip exactly. Quantize test inputs so equality is bit-exact.
@@ -118,48 +125,65 @@ function encodeV1(state: PersistedState): string {
   return toB64Url(bytes);
 }
 
-// v3 is a strict one-byte append to v2, so trimming the selector documents
-// and exercises the exact previous layout.
-function encodeV2(state: PersistedState): string {
-  const bytes = toBytes(encodeState(state)).slice(0, V2_BYTES);
-  bytes[0] = 2;
+// Versions 2–9 are all prefixes of the v9 layout, so every fixture below is
+// that layout truncated — which keeps them anchored to encodeState instead of
+// duplicating it, and makes the truncation point the documentation of what each
+// version added.
+//
+// v10 is the first release that is not a strict append: it widened the physical
+// Tom bank sitting in the middle of the record, shifting every later offset.
+// Dropping the appended slot from each of the two physical banks reverses that
+// exactly and recovers the v9 layout.
+function preV10Bytes(state: PersistedState): Uint8Array {
+  const current = toBytes(encodeState(state));
+  const appendedSlots = [
+    V3_BYTES + PHYSICAL_TOM_PARAM_CAPACITY - 1, // end of the Tom 1 bank
+    current.length - 1, // end of the Tom 2 bank
+  ];
+
+  return current.filter((_, index) => !appendedSlots.includes(index));
+}
+
+function encodeLegacy(
+  state: PersistedState,
+  version: number,
+  length: number,
+): string {
+  const bytes = preV10Bytes(state).slice(0, length);
+  bytes[0] = version;
   return toB64Url(bytes);
+}
+
+function encodeV2(state: PersistedState): string {
+  return encodeLegacy(state, 2, V2_BYTES);
 }
 
 function encodeV3(state: PersistedState): string {
-  const bytes = toBytes(encodeState(state)).slice(0, V3_BYTES);
-  bytes[0] = 3;
-  return toB64Url(bytes);
+  return encodeLegacy(state, 3, V3_BYTES);
 }
 
 function encodeV4(state: PersistedState): string {
-  const bytes = toBytes(encodeState(state)).slice(0, V4_BYTES);
-  bytes[0] = 4;
-  return toB64Url(bytes);
+  return encodeLegacy(state, 4, V4_BYTES);
 }
 
 function encodeV5(state: PersistedState): string {
-  const bytes = toBytes(encodeState(state)).slice(0, V6_BYTES);
-  bytes[0] = 5;
-  return toB64Url(bytes);
+  return encodeLegacy(state, 5, V6_BYTES);
 }
 
 function encodeV6(state: PersistedState): string {
-  const bytes = toBytes(encodeState(state)).slice(0, V6_BYTES);
-  bytes[0] = 6;
-  return toB64Url(bytes);
+  return encodeLegacy(state, 6, V6_BYTES);
 }
 
 function encodeV7(state: PersistedState): string {
-  const bytes = toBytes(encodeState(state)).slice(0, V8_BYTES);
-  bytes[0] = 7;
-  return toB64Url(bytes);
+  return encodeLegacy(state, 7, V8_BYTES);
 }
 
 function encodeV8(state: PersistedState): string {
-  const bytes = toBytes(encodeState(state)).slice(0, V8_BYTES);
-  bytes[0] = 8;
-  return toB64Url(bytes);
+  return encodeLegacy(state, 8, V8_BYTES);
+}
+
+function encodeV9(state: PersistedState): string {
+  return encodeLegacy(state, 9, V9_BYTES);
 }
 
 describe("persistence encode/decode", () => {
@@ -267,7 +291,7 @@ describe("persistence encode/decode", () => {
 
     it("rejects an unknown Tom 2 model code", () => {
       const bytes = toBytes(encodeState(makeState()));
-      bytes[V8_BYTES] = 2;
+      bytes[V10_TOM2_MODEL_OFFSET] = 2;
       expect(decodeState(toB64Url(bytes))).toBeNull();
     });
   });
@@ -432,12 +456,25 @@ describe("persistence encode/decode", () => {
       expect(decoded?.physicalTom2Params).toBeUndefined();
     });
 
-    it("re-encodes a decoded v1 state as v9 (one-way upgrade)", () => {
+    it("decodes v9 with both physical banks one slot narrower", () => {
+      const state = makeState();
+      const decoded = decodeState(encodeV9(state));
+
+      expect(decoded?.physicalTomParams).toEqual(
+        state.physicalTomParams?.slice(0, V5_PHYSICAL_TOM_PARAM_CAPACITY),
+      );
+      expect(decoded?.physicalTom2Params).toEqual(
+        state.physicalTom2Params?.slice(0, V5_PHYSICAL_TOM_PARAM_CAPACITY),
+      );
+      expect(decoded?.tom2Model).toBe(state.tom2Model);
+    });
+
+    it("re-encodes a decoded v1 state as v10 (one-way upgrade)", () => {
       const decoded = decodeState(encodeV1(makeState()));
       const bytes = toBytes(encodeState(decoded!));
 
       expect(bytes).toHaveLength(TOTAL_BYTES);
-      expect(bytes[0]).toBe(9);
+      expect(bytes[0]).toBe(10);
     });
 
     it("rejects a v1-length blob whose version byte claims v2", () => {
@@ -454,7 +491,7 @@ describe("persistence encode/decode", () => {
 
     it("rejects an unknown future version at the right length", () => {
       const bytes = toBytes(encodeState(makeState()));
-      bytes[0] = 10;
+      bytes[0] = 11;
       expect(decodeState(toB64Url(bytes))).toBeNull();
     });
   });

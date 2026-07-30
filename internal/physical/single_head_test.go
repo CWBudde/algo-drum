@@ -84,9 +84,7 @@ func TestSingleHeadLosslessEnergyIsBounded(t *testing.T) {
 	t.Parallel()
 
 	config := DefaultPhysicalDrum()
-	config.Batter.Loss0PerSecond = 0
-	config.Batter.Loss2M2PerSecond = 0
-	config.Batter.RadiationLossPerSecond = 0
+	silenceLosses(&config.Batter)
 	model, err := NewSingleHead(config)
 	if err != nil {
 		t.Fatal(err)

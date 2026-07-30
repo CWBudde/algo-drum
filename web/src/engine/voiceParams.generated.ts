@@ -540,12 +540,12 @@ export const PHYSICAL_TOM_PARAMS: readonly VoiceParamSpec[] = [
   {
     id: "physicalTom.damping",
     label: "DAMP",
-    name: "head damping",
-    unit: "/s",
+    name: "head damping scale",
+    unit: "",
     kind: "exp",
-    min: 0.75,
-    max: 12,
-    shipped: 3,
+    min: 0.25,
+    max: 4,
+    shipped: 1,
     default: 0.5,
     digits: 2,
   },
@@ -682,6 +682,18 @@ export const PHYSICAL_TOM_PARAMS: readonly VoiceParamSpec[] = [
     default: 0.5,
     digits: 0,
   },
+  {
+    id: "physicalTom.dampingTilt",
+    label: "D.TILT",
+    name: "damping frequency tilt",
+    unit: "",
+    kind: "lin",
+    min: 0,
+    max: 3,
+    shipped: 1,
+    default: 0.33333333333333331,
+    digits: 2,
+  },
 ];
 
-export const PHYSICAL_TOM_PARAM_CAPACITY = 15;
+export const PHYSICAL_TOM_PARAM_CAPACITY = 16;

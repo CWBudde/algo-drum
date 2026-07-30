@@ -26,9 +26,10 @@ import type { TomModel } from "../engine/tomModel";
 // physical Tom bank, v5 the two tension-asymmetry controls, v6 the corrected
 // central-hit default, and v7 the second Tom and Percussion tracks. V8 keeps
 // the same bytes but migrates the reordered mixer strips; v9 appends Tom 2's
-// physical model choice and independent parameter bank. Older links still
-// decode with values attached to the same voices.
-const FORMAT_VERSION = 9;
+// physical model choice and independent parameter bank. V10 widens both
+// physical banks by one slot for the damping tilt. Older links still decode
+// with values attached to the same voices.
+const FORMAT_VERSION = 10;
 
 // Byte layout: version, 6 scalar knobs, 5 volumes, 5 decays, 1 mute mask,
 // then the 80-cell pattern packed 2 bits per cell (20 bytes)...
@@ -55,7 +56,11 @@ const V4_BYTES = V3_BYTES + V4_PHYSICAL_TOM_PARAM_CAPACITY;
 
 // v5 extends that bank with the P6 asymmetry amount and principal axis. v6 has
 // the same width and migrates only the former shipped strike-radius position.
-const V6_BYTES = V3_BYTES + PHYSICAL_TOM_PARAM_CAPACITY;
+// Pinned for the same reason as v4's width: the generated capacity grows
+// append-only, while a v5–v9 link must keep decoding at the length it was
+// written with.
+const V5_PHYSICAL_TOM_PARAM_CAPACITY = 15;
+const V6_BYTES = V3_BYTES + V5_PHYSICAL_TOM_PARAM_CAPACITY;
 
 // v7 appends all state belonging to engine tracks 5 and 6. The original five
 // tracks keep byte-for-byte v1–v6 offsets, so existing links remain decodable.
@@ -69,7 +74,17 @@ const V7_EXTRA_BYTES =
 const V8_BYTES = V6_BYTES + V7_EXTRA_BYTES;
 
 // v9 gives Tom 2 the same independently persisted physical-model controls.
-const TOTAL_BYTES = V8_BYTES + 1 + PHYSICAL_TOM_PARAM_CAPACITY;
+const V9_BYTES = V8_BYTES + 1 + V5_PHYSICAL_TOM_PARAM_CAPACITY;
+
+// v10 adds the damping tilt to both physical banks. The Tom 1 bank sits in the
+// middle of the record, so widening it moves every offset after it — hence a
+// version bump rather than an append.
+const TOTAL_BYTES =
+  V3_BYTES +
+  PHYSICAL_TOM_PARAM_CAPACITY +
+  V7_EXTRA_BYTES +
+  1 +
+  PHYSICAL_TOM_PARAM_CAPACITY;
 
 const PHYSICAL_STRIKE_RADIUS_INDEX = 4;
 const OLD_PHYSICAL_STRIKE_RADIUS_DEFAULT =
@@ -275,9 +290,11 @@ export function decodeState(text: string): PersistedState | null {
               ? V6_BYTES
               : version === 7 || version === 8
                 ? V8_BYTES
-                : version === FORMAT_VERSION
-                  ? TOTAL_BYTES
-                  : -1;
+                : version === 9
+                  ? V9_BYTES
+                  : version === FORMAT_VERSION
+                    ? TOTAL_BYTES
+                    : -1;
   if (bytes.length !== expected) return null;
 
   let offset = 1;
@@ -360,7 +377,9 @@ export function decodeState(text: string): PersistedState | null {
   const physicalParamCount =
     version === 4
       ? V4_PHYSICAL_TOM_PARAM_CAPACITY
-      : PHYSICAL_TOM_PARAM_CAPACITY;
+      : version < FORMAT_VERSION
+        ? V5_PHYSICAL_TOM_PARAM_CAPACITY
+        : PHYSICAL_TOM_PARAM_CAPACITY;
   for (let i = 0; i < physicalParamCount; i++) {
     physicalTomParams.push(fromByte(bytes[offset++]));
   }
@@ -414,13 +433,14 @@ export function decodeState(text: string): PersistedState | null {
     voiceParams.push(row);
   }
 
-  if (version < FORMAT_VERSION) return stateWithPhysical;
+  if (version < 9) return stateWithPhysical;
 
   const tom2ModelCode = bytes[offset++];
   if (tom2ModelCode > 1) return null;
 
+  // Both banks were widened together, so they share physicalParamCount.
   const physicalTom2Params: number[] = [];
-  for (let i = 0; i < PHYSICAL_TOM_PARAM_CAPACITY; i++) {
+  for (let i = 0; i < physicalParamCount; i++) {
     physicalTom2Params.push(fromByte(bytes[offset++]));
   }
 

@@ -298,6 +298,14 @@ var percSpecs = []ParamSpec{
 // Physical Tom parameters use their own persistence bank, separate from the
 // procedural Tom table above. The application can therefore A/B models
 // without one model reinterpreting or overwriting the other's settings.
+//
+// Damping takes two controls because it needs two degrees of freedom. DAMP
+// scales every loss rate at once, and D.TILT redistributes them across
+// frequency: at 0 the decay law is flat (every mode rings for the same time,
+// which is what the model used to do), at 1 it is the calibrated constant-Q
+// law, and above that the high modes die progressively sooner. One knob could
+// only ever move the whole envelope up and down, never change its shape, and
+// the shape was the defect.
 const (
 	physicalTomParamDiameter = iota
 	physicalTomParamBatterTension
@@ -314,13 +322,14 @@ const (
 	physicalTomParamQuality
 	physicalTomParamAsymmetry
 	physicalTomParamAsymmetryAxis
+	physicalTomParamDampingTilt
 )
 
 var physicalTomSpecs = []ParamSpec{
 	physicalTomParamDiameter:        expSpec("physicalTom.diameter", "SIZE", "head diameter", "m", 0.16, 0.50, 0.3048, 3),
 	physicalTomParamBatterTension:   expSpec("physicalTom.batterTension", "B.TUNE", "batter head tension", "N/m", 150, 1400, 600, 0),
 	physicalTomParamResonantTension: expSpec("physicalTom.resonantTension", "R.TUNE", "resonant head tension", "N/m", 150, 1400, 500, 0),
-	physicalTomParamDamping:         expSpec("physicalTom.damping", "DAMP", "head damping", "/s", 0.75, 12, 3, 2),
+	physicalTomParamDamping:         expSpec("physicalTom.damping", "DAMP", "head damping scale", "", 0.25, 4, 1, 2),
 	physicalTomParamStrikeRadius:    linSpec("physicalTom.strikeRadius", "HIT.R", "strike radius", "", 0, 0.95, 0.12, 2),
 	physicalTomParamStrikeAngle:     linSpec("physicalTom.strikeAngle", "HIT.A", "strike angle", "°", -180, 180, 0.2*180/math.Pi, 0),
 	physicalTomParamHardness:        linSpec("physicalTom.hardness", "HARD", "mallet hardness", "", 0, 1, 0.7, 2),
@@ -332,6 +341,7 @@ var physicalTomSpecs = []ParamSpec{
 	physicalTomParamQuality:         choiceSpec("physicalTom.quality", "QUAL", "quality tier", []string{"Draft", "Standard", "High"}, 1),
 	physicalTomParamAsymmetry:       linSpec("physicalTom.asymmetry", "ASYM", "degenerate mode split", "%", 0, 2, 0.4, 2),
 	physicalTomParamAsymmetryAxis:   linSpec("physicalTom.asymmetryAxis", "AXIS", "tension asymmetry axis", "°", -90, 90, 0, 0),
+	physicalTomParamDampingTilt:     linSpec("physicalTom.dampingTilt", "D.TILT", "damping frequency tilt", "", 0, 3, 1, 2),
 }
 
 // voiceNames labels each track for the editor UI, in engine track order.

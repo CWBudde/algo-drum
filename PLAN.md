@@ -949,18 +949,52 @@ two-headed drum is roughly constant ζ ≈ 1.1 % above the fundamental, with
 ζ ≈ 5.07 % on the (0,1) caused by the two-head coupling itself. Raising `d2`
 alone gives T60 ∝ 1/f², which is the wrong shape.
 
+The table is the 2026-07-30 diagnosis, kept as written so the corrections stay
+attributable to a measurement. Rows 1 and 2 are closed by S1 and S2 below; rows
+3–5 are open, and the numbers in them still describe the shipped voice.
+
 Cheap, high-impact, no architecture change:
 
-- [ ] **S1 (high): add a `d1·k` term to the modal loss law** and calibrate to
+- [x] **S1 (high): add a `d1·k` term to the modal loss law** and calibrate to
       constant Q. For ζ = 1.1 % and this head's wave speed c = 41.40 m/s,
       `d1 = ζ·c ≈ 0.455 m/s`. Raise the `DAMP` ceiling well above its present
       12 /s — the fundamental alone needs ≈ 33 /s — and expose a damping _tilt_
       rather than only a uniform scale. Today `DAMP` and the strip `DEC` both
       scale every loss term by the same factor, so nothing can change the shape.
-- [ ] **S2 (high): damp the (0,1) modes specifically.** ζ ≈ 5 % → γ ≈ 33 /s at
+      **Done 2026-07-30.** `Head.Loss1MPerSecond` makes the law
+      `γ = d0 + d1·k + d2·k²`; the reference set uses `d1 = 0.4554` (batter) and
+      `0.4919` (resonant), with `d0` cut from 3/4 to 0.8/1.0 — it had to be,
+      since `d0` is the term that flattens ζ toward low frequencies. ζ now holds
+      1.12–1.24 % across the retained band. Config schema v6, with v5 migrating
+      at `d1 = 0` so old configurations keep their flat damping exactly. `DAMP`
+      turned out not to need rescaling, only honest labelling: it was a
+      0.75–12 "/s" range that `reconfigure` immediately divided by 3, so its
+      real effect was always a 0.25–4× multiplier and the spec now says so —
+      same 16× span, identical mapping for every persisted position, no
+      migration. The absolute ceiling rose anyway because the law beneath it
+      changed. The new **`D.TILT`** control (0–3, default 1) scales the
+      frequency-dependent terms against `d0`, so the decay _shape_ is
+      adjustable: 0 reproduces the old flat behaviour, 1 is constant Q.
+- [x] **S2 (high): damp the (0,1) modes specifically.** ζ ≈ 5 % → γ ≈ 33 /s at
       104 Hz, sourced to two-head coupling. `Head.ModeDecayCorrections` already
       exists for exactly this. S1 + S2 are a few lines and are most of the
       difference between "boing" and "thump".
+      **Done 2026-07-30.** Default corrections of +24.6 /s (batter (0,1)) and
+      +26.4 /s (resonant), landing both on ζ ≈ 5 %: T60 211 ms and 196 ms
+      against the 2213 ms it shipped with. The corrections scale with `DAMP`,
+      `DEC` and `D.TILT` like every other loss, or those controls would have no
+      authority over the one mode whose length is most audible.
+      Measured across the nine-condition reference suite, RT60 went from a
+      uniform 2.06–2.17 s to 0.27–0.55 s, and per-mode T60 now falls with
+      frequency (211 ms at 104 Hz, 151 ms at 645 Hz) instead of sitting flat at
+      ≈ 2.2 s. Peak level dropped from 1.20 to 0.78 at velocity 1, so the voice
+      no longer arrives at the master limiter already clipping;
+      `physicalTomOutputGain = 4` is left for S4 to delete.
+      One existing test asserted the defect: `TestDefaultBatterSideSoundIs`
+      `FundamentalLed` required the (0,1) to be the strongest partial over
+      1.4 s, which a correctly damped fundamental cannot be. It now checks that
+      the fundamental leads the _attack_ and that the sustain peak moves above
+      it — the pitch envelope a real tom has.
 - [ ] **S3: refit the cavity split** to a 10–20 % (0,1) separation instead of
       deriving it from ρc²/V. The rigid-cavity formula over-predicts ~5× because
       the shell is compliant, the vent leaks and the heads are not pistons;
@@ -1023,13 +1057,28 @@ Deliberately **not** doing:
       was found.
 
 Execution order: **S1 + S2 first** — they are cheap, independent, and should be
-audible immediately — then S4, S3, S5, then S6/S7, then S8.
+audible immediately — then S4, S3, S5, then S6/S7, then S8. S1 and S2 landed
+together on 2026-07-30; **S4 is next**.
 
 Exit: per-mode T60 within a documented tolerance of the measured ζ structure,
 the (0,1) the fastest-decaying mode rather than the slowest, audible content
 above 1 kHz, no compensating output gain, and a hit whose octave-band envelopes
 decay at visibly different rates. The regression suite must assert the damping
 _shape_, not only its scale — today's tests would pass a uniformly damped bank.
+
+Progress against that exit: the first two clauses hold, and
+`internal/physical/damping_test.go` now asserts the shape — constant ζ across
+the series, decay rate near-proportional to frequency, and the (0,1) the
+fastest-decaying mode of the low band. Three clauses remain, each owned by a
+later item: bandwidth above 1 kHz (S8), removing `physicalTomOutputGain` (S4),
+and the octave-band envelope check, which is only meaningful once there is
+content in more than two bands to compare.
+
+One qualification the exit criterion needs: the (0,1) is the fastest-decaying
+mode _of the low band_, not of the whole bank. Constant Q means modes far above
+it legitimately decay faster in absolute rate — the (4,2) at 480 Hz reaches
+34 /s against the fundamental's 33 /s — so the assertion is scoped to modes
+below 3× the fundamental. Requiring it bank-wide would forbid constant Q.
 
 ### Physical-path success criteria
 

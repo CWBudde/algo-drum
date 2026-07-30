@@ -275,10 +275,14 @@ damping dominate — **do not copy its radiation weighting.**
 1. **Rewrite the loss law** as `γ = d0 + d1·k + d2·k²` and calibrate to
    constant Q: `d1 ≈ 0.455 m/s` for ζ ≈ 1.1 %. Raise the `DAMP` ceiling well
    above 12 /s and add a damping _tilt_ control.
+   **Implemented 2026-07-30** as PLAN.md item S1, at ζ = 1.1 % with `d0` cut to
+   a small floor; ζ now holds 1.12–1.24 % across the retained band.
 2. **Add the two-head coupling loss to the (0,1) modes specifically** —
    ζ ≈ 5 % → γ ≈ 33 /s at 104 Hz. `ModeDecayCorrections` already exists for
    exactly this. This single change is most of the difference between "boing"
    and "thump".
+   **Implemented 2026-07-30** as PLAN.md item S2. The (0,1) T60 went from
+   2213 ms to 211 ms and suite RT60 from ~2.1 s to 0.27–0.55 s.
 3. **Refit the cavity split** to a 10–20 % (0,1) separation instead of ρc²/V,
    which will also remove the spurious −9 dB partial at 219 Hz.
 4. **Fix the radiated sum**: volume acceleration weighted by `SweptAreaM2` for

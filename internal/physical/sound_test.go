@@ -124,7 +124,16 @@ func TestContactPulsePreservesPrescribedImpulse(t *testing.T) {
 	}
 }
 
-func TestDefaultBatterSideSoundIsFundamentalLed(t *testing.T) {
+// TestDefaultBatterSideSoundIsFundamentalLedInTheAttack asserts where the
+// fundamental is supposed to lead, which is not the same window it used to.
+//
+// This test formerly required the (0,1) to be the strongest partial over 1.4 s.
+// That is the signature of the defect P8 corrects, not of a drum: the
+// axisymmetric fundamental is the mode that dumps its energy into the cavity
+// and the opposite head fastest, so it defines the initial pitch of the thump
+// and is gone well before the sustain. Once damped correctly it cannot win a
+// long window, and requiring it to would forbid the fix.
+func TestDefaultBatterSideSoundIsFundamentalLedInTheAttack(t *testing.T) {
 	t.Parallel()
 
 	config := DefaultPhysicalDrum()
@@ -136,7 +145,9 @@ func TestDefaultBatterSideSoundIsFundamentalLed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const fftSize = 65_536
+	// 171 ms: long enough to resolve 104 from 165 Hz, short enough to sit
+	// inside the fundamental's 211 ms T60.
+	const fftSize = 8192
 	samples := make([]float64, fftSize)
 	resonantBecameAudible := false
 	for index := range samples {
@@ -158,11 +169,29 @@ func TestDefaultBatterSideSoundIsFundamentalLed(t *testing.T) {
 		t.Fatal("resonant head was not dynamically excited")
 	}
 
-	strongestHz := strongestSpectralPeakHz(t, samples, config.SampleRateHz, 60, 1_000)
-	if strongestHz < 90 || strongestHz > 130 {
+	attackHz := strongestSpectralPeakHz(t, samples, config.SampleRateHz, 60, 1_000)
+	if attackHz < 90 || attackHz > 130 {
 		t.Fatalf(
-			"default strongest sustain peak = %.2f Hz, want fundamental in [90,130] Hz",
-			strongestHz,
+			"default strongest attack peak = %.2f Hz, want fundamental in [90,130] Hz",
+			attackHz,
+		)
+	}
+
+	// And the complementary half of the same property: by the time the
+	// fundamental has decayed the sustain belongs to the higher modes, so the
+	// hit has a pitch envelope instead of one steady tone.
+	sustain := make([]float64, 32_768)
+	for index := range sustain {
+		sustain[index] = model.Tick().Radiated
+	}
+
+	sustainHz := strongestSpectralPeakHz(t, sustain, config.SampleRateHz, 60, 1_000)
+	t.Logf("attack peak %.2f Hz, sustain peak %.2f Hz", attackHz, sustainHz)
+	if sustainHz <= attackHz*1.1 {
+		t.Fatalf(
+			"sustain peak %.2f Hz did not move above the attack peak %.2f Hz",
+			sustainHz,
+			attackHz,
 		)
 	}
 }

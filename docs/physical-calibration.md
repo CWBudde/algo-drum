@@ -10,19 +10,19 @@ For mode \(i\), with membrane wavenumber \(k_i\), the amplitude decay rate is
 
 \[
 \gamma_i =
-d_0 + d_2 k_i^2 +
+d_0 + d_1 k_i + d_2 k_i^2 +
 d_\mathrm{rad} R_i^2 +
 \Delta_i.
 \]
 
-- \(d_0\) and \(d_2\) are the two structural-loss parameters stored on
-  `Head`.
+- \(d_0\), \(d_1\) and \(d_2\) are the three structural-loss parameters stored
+  on `Head`.
 - \(R_i\) is the mode's radiation amplitude described below.
 - \(d_\mathrm{rad}\) keeps radiation loss distinct from structural loss.
 - \(\Delta_i\) is an optional correction keyed by azimuthal and radial mode
   order. It is zero unless a measured fit supplies a residual.
 
-`Mode` exposes all four terms separately as well as their sum. A negative total
+`Mode` exposes all five terms separately as well as their sum. A negative total
 is rejected. The exact state transition uses \(\gamma_i\) directly, and the
 analytic amplitude-decay target is
 
@@ -30,14 +30,45 @@ analytic amplitude-decay target is
 T_{60,i} = \frac{\ln(1000)}{\gamma_i}.
 \]
 
-The default 12-inch head's lowest mode is 104.00 Hz with a 2.21 s analytic
-amplitude \(T_{60}\). These are model targets, not claims about a commercial
-drum. The physical configuration schema is version 5. Version-1
-configurations are migrated by filling the P2 radiation and microphone
-defaults; version-2 linear double-head configurations migrate with P4
-nonlinearity disabled so their sound is unchanged; version 3 migrates with
-full cavity coupling, preserving its previous equations; version 4 migrates
-with zero tension asymmetry, preserving its ideal circular-head modes exactly.
+### Why the \(k^1\) term exists
+
+\(d_1\) carries constant \(Q\), and nothing else in the law can. On a membrane
+\(\omega \approx ck\), so the fraction of critical damping is
+
+\[
+\zeta_i = \frac{\gamma_i}{\omega_i}
+\approx \frac{d_0}{ck_i} + \frac{d_1}{c} + \frac{d_2 k_i}{c},
+\]
+
+whose only frequency-independent contribution is the middle term: choosing
+\(d_1 = \zeta c\) fixes \(\zeta\) across the whole mode series, while \(d_0\)
+alone gives \(T_{60}\) independent of frequency and \(d_2\) alone gives
+\(T_{60} \propto 1/f^2\). Measured membrane behaviour is \(T_{60} \propto 1/f\).
+
+The reference set uses \(\zeta = 1.1\,\%\), so \(d_1 = 0.4554\) m/s on the
+batter (\(c = 41.40\) m/s) and \(0.4919\) m/s on the resonant head
+(\(c = 44.72\) m/s), with \(d_0\) reduced to a small floor. The retained band
+then holds \(\zeta\) between 1.12 % and 1.24 %.
+
+The batter's \((0,1)\) carries a \(\Delta = 24.6\) /s correction and the
+resonant head's \(26.4\) /s, putting both near \(\zeta = 5\,\%\). This is the
+one mode whose loss is not a membrane property: the axisymmetric fundamental is
+the shape that compresses the cavity and drives the opposite head, so it sheds
+energy into the coupled system far faster than its neighbours. Measured
+two-headed drums show it as the shortest partial in the low band, not the
+longest.
+
+The default 12-inch head's lowest mode is 104.00 Hz with a 0.21 s analytic
+amplitude \(T_{60}\); its highest retained mode at 646 Hz decays in 0.15 s.
+These are model targets, not claims about a commercial drum. The physical
+configuration schema is version 6. Version-1 configurations are migrated by
+filling the P2 radiation and microphone defaults; version-2 linear double-head
+configurations migrate with P4 nonlinearity disabled so their sound is
+unchanged; version 3 migrates with full cavity coupling, preserving its
+previous equations; version 4 migrates with zero tension asymmetry, preserving
+its ideal circular-head modes exactly; version 5 migrates with \(d_1 = 0\) and
+its decay corrections untouched, which reproduces its flat damping — including
+its 2.21 s fundamental — exactly.
 
 ## Radiation and microphone response
 
