@@ -889,10 +889,26 @@ fundamental. App-state v6 migrates only the former shipped HIT.R detent. The
 mechanical, observation, persistence, and regression audit is recorded in
 [`docs/physical-sound-audit.md`](docs/physical-sound-audit.md).
 
+**Superseded in part by P8 (2026-07-30).** That audit's contact-duration finding
+holds — 4.5–8 ms is well supported by two independent measurement studies — but
+it drew the wrong conclusion from it. A smooth half-sine force over the whole
+contact interval is 40 dB down at the top of the retained mode bank, and the
+`physicalTomOutputGain = 4` added to recover the level is compensating for a
+missing signal path (a separate stochastic attack layer), not for a mis-scaled
+pulse. The audit also moved the default hit to `Radius01 = 0.12`, effectively the
+geometric centre, which spreads strike coupling over 116 dB; the sources describe
+central playing as a _region_. See
+[`docs/physical-tom-review.md`](docs/physical-tom-review.md).
+
 Exit: a measured tom can be matched within documented tolerances for modal
 frequency, decay, and spectrum across more than one hit.
 
 ### P7 — Snare research extension
+
+Gated behind **P8**. A snare adds mechanisms on top of the two-head/air system,
+so starting it before the tom sounds like a tom would build on an uncalibrated
+foundation and make it impossible to attribute a bad snare sound to its own
+model rather than to the inherited one.
 
 - [ ] First add a clearly labelled reduced snare-contact model driven by the
       resonant head.
@@ -904,6 +920,116 @@ frequency, decay, and spectrum across more than one hit.
 
 Exit: the reduced musical model and the high-fidelity research model have
 separate names, tests, and performance expectations.
+
+### P8 — Sound correction (open, highest priority on this path)
+
+Measured diagnosis **2026-07-30**, with an independent literature check. Full
+evidence, citations and the list of conclusions this pass reversed are in
+[`docs/physical-tom-review.md`](docs/physical-tom-review.md).
+
+The mechanics are correct — mode labels, eigenmodes, exact state transitions, the
+passive cavity solve, the discrete-gradient Berger update and the energy
+bookkeeping all check out. The model sounds wrong because of four calibration
+errors, one architectural mismatch, and a compute budget spent on the least
+audible mechanism. Measured against `DefaultPhysicalDrum()` at 48 kHz, velocity
+0.8:
+
+| Defect                                 | Measured                                     | Target                                      |
+| -------------------------------------- | -------------------------------------------- | ------------------------------------------- |
+| Damping ~4–11× too weak and flat vs. f | γ = 3.1 /s every mode; T60 1.8–2.3 s         | γ = 11–41 /s; T60 ∝ 1/f                     |
+| The fundamental rings **longest**      | (0,1) T60 = 2213 ms                          | (0,1) T60 ≈ 209 ms — the **shortest**       |
+| No usable bandwidth                    | highest retained mode **646 Hz**             | audible content to several kHz              |
+| Cavity coupling ~5× too strong         | (0,1) doublet 107.7/219.4 Hz, ratio **2.04** | ratio ≈ **1.16**                            |
+| Pitch glide inaudible but expensive    | 38 cents, costs 6× the voice                 | audible glide over a few tenths of a second |
+
+Damping is the dominant error and the reason the voice reads as a low ringing
+sine rather than a drum. The two-parameter law `γ = d0 + d2·k²` has no k¹ term,
+so it **cannot express constant Q** — and the measured structure for a
+two-headed drum is roughly constant ζ ≈ 1.1 % above the fundamental, with
+ζ ≈ 5.07 % on the (0,1) caused by the two-head coupling itself. Raising `d2`
+alone gives T60 ∝ 1/f², which is the wrong shape.
+
+Cheap, high-impact, no architecture change:
+
+- [ ] **S1 (high): add a `d1·k` term to the modal loss law** and calibrate to
+      constant Q. For ζ = 1.1 % and this head's wave speed c = 41.40 m/s,
+      `d1 = ζ·c ≈ 0.455 m/s`. Raise the `DAMP` ceiling well above its present
+      12 /s — the fundamental alone needs ≈ 33 /s — and expose a damping _tilt_
+      rather than only a uniform scale. Today `DAMP` and the strip `DEC` both
+      scale every loss term by the same factor, so nothing can change the shape.
+- [ ] **S2 (high): damp the (0,1) modes specifically.** ζ ≈ 5 % → γ ≈ 33 /s at
+      104 Hz, sourced to two-head coupling. `Head.ModeDecayCorrections` already
+      exists for exactly this. S1 + S2 are a few lines and are most of the
+      difference between "boing" and "thump".
+- [ ] **S3: refit the cavity split** to a 10–20 % (0,1) separation instead of
+      deriving it from ρc²/V. The rigid-cavity formula over-predicts ~5× because
+      the shell is compliant, the vent leaks and the heads are not pistons;
+      verified by isolating the air spring (batter only, centre hit:
+      104.00 → 191.89 Hz, against an analytic 215.1 Hz). This also removes a
+      spurious −9 dB partial at 219 Hz sitting where (2,1) should be.
+- [ ] **S4: fix the radiated sum.** Weight volume **acceleration** by
+      `SweptAreaM2` for the axisymmetric modes — already computed, currently
+      unused in the output — and use a directivity factor for m > 0. Remove
+      `PickupShape` from the radiated path; a far-field radiation efficiency and
+      a near-field point mode shape are different objects, and multiplying them
+      nulls modes arbitrarily as the microphone angle moves. Keep the mode shape
+      for the diagnostic contact pickup and for strike-position weighting, where
+      it is correct. Summing velocity also adds a spurious −6 dB/octave tilt.
+      Then delete `physicalTomOutputGain`.
+      The `(ka/√(1+ka²))^(m+1)` rolloff itself is **not** the problem and should
+      be kept: m ≠ 0 modes have null net volume velocity, and a real snare's
+      (1,1) is measurably not a strongly radiated mode.
+- [ ] **S5: move the default strike radius** from 0.12 to ≈ 0.3 of the radius.
+- [ ] **S6: make the glide audible and cheap.** Raise the tension coefficient
+      toward the 157-cent headroom `MaximumTensionRatio = 0.2` already permits,
+      and replace the 8-iteration fixed-point solve with an energy-proportional
+      single-factor detune (Avanzini et al., _JASA_ 131(1) 2012 — the short-time
+      average tension variation is approximately proportional to system energy).
+      Every published tom analysis treats the downward glide as _the_
+      characteristic feature, so this is worth keeping; it is the 6× cost for
+      38 cents that is not.
+- [ ] **S7: jitter mode frequencies per trigger** by a fraction of a percent so
+      repeated hits are not identical (Cook, PhISEM, ICMC 1996). The static
+      degenerate split from P6's `TensionAsymmetry` is a different mechanism and
+      stays.
+
+Then the architecture:
+
+- [ ] **S8 (high): go hybrid.** Pure modal synthesis cannot cover a drum's
+      bandwidth in a browser. Mode count for a membrane grows as f²:
+      N(f) ≈ (a·k)²/4, so this head needs ~130 oscillators for 1 kHz, ~530 for
+      2 kHz and **~3300 for 5 kHz**, against a shipped budget of 48. Keep modal
+      synthesis for the low, individually resolved band and add a **separate
+      1–8 kHz stochastic attack layer** driven by the contact force, with its own
+      fast decay. This is what the published tom-analysis work does — Kirby &
+      Sandler (DAFx-20) found 5–10 key modes sufficient for the _sustain_ of a
+      central strike precisely because the attack is modelled separately — so it
+      is cheaper than what the voice runs today, not more expensive. Fund it from
+      S6 and from reducing the resonant head to the axisymmetric modes that
+      actually couple to the cavity; its 48 oscillators are currently computed
+      and then discarded from the output.
+
+Deliberately **not** doing:
+
+- [ ] ~~Add exterior air loading to harmonicise the mode ratios.~~ Rejected on
+      evidence. Real two-headed drums scatter ±20 % around the ideal Bessel
+      series _in both directions_, so no fixed ratio set is right; the practical
+      target is batter (1,1) ≈ 1.5× the (0,1) (Richardson, Toulson & Nunn,
+      _JASA_ 131(1) 2012), and this model's coupled value is already
+      165.4/107.7 = **1.54**. Timpani-style harmonicisation is a kettle/air-load
+      effect at a much larger diameter.
+- [ ] ~~Model a tom vent (Helmholtz) resonance.~~ A first-principles estimate
+      puts a 12"×9" tom near 30 Hz, far below the (0,1). No measurement of one
+      was found.
+
+Execution order: **S1 + S2 first** — they are cheap, independent, and should be
+audible immediately — then S4, S3, S5, then S6/S7, then S8.
+
+Exit: per-mode T60 within a documented tolerance of the measured ζ structure,
+the (0,1) the fastest-decaying mode rather than the slowest, audible content
+above 1 kHz, no compensating output gain, and a hit whose octave-band envelopes
+decay at visibly different rates. The regression suite must assert the damping
+_shape_, not only its scale — today's tests would pass a uniformly damped bank.
 
 ### Physical-path success criteria
 
@@ -917,3 +1043,9 @@ separate names, tests, and performance expectations.
    in the production Worker/AudioWorklet pipeline.
 5. Claims distinguish analytic prediction, reduced physical approximation,
    empirical calibration, and full numerical simulation.
+6. **It sounds like the instrument.** Per-mode decay, the radiated tonal
+   balance, and the attack transient are each checked against a cited
+   measurement rather than only against the model's own analytic targets, and no
+   compensating output gain, EQ or envelope stands between the physics and the
+   mix. P8 exists because criteria 1–5 were all met while criterion 6 was not:
+   every internal invariant held, and the voice still did not sound like a tom.
