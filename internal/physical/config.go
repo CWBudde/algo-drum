@@ -21,8 +21,9 @@ const (
 	tiltedDampingConfigVersion    = 6
 	fittedCavityConfigVersion     = 7
 	radiatedAccelerationVersion   = 8
+	multiBandAttackConfigVersion  = 9
 	// ConfigVersion is the physical-drum JSON schema emitted by EncodeConfig.
-	ConfigVersion = 9
+	ConfigVersion = 10
 
 	minSampleRateHz = 8_000.0
 	maxSampleRateHz = 384_000.0
@@ -181,6 +182,52 @@ type Strike struct {
 	MalletMassKg   float64 `json:"malletMassKg"`
 	VelocityMPerS  float64 `json:"velocityMPerS"`
 	Hardness01     float64 `json:"hardness01"`
+	Contact        Contact `json:"contact"`
+}
+
+// ContactModel selects how the strike force is produced.
+type ContactModel string
+
+const (
+	// ContactPrescribed writes a half-sine of the measured contact duration
+	// into the force buffer at trigger time. The head never influences it.
+	ContactPrescribed ContactModel = "prescribed"
+	// ContactHertzian integrates the stick as a free mass against a
+	// Hunt-Crossley contact spring, so the force follows from where the head
+	// is. Duration, shape and re-contact are outputs rather than inputs.
+	ContactHertzian ContactModel = "hertzian"
+)
+
+// Contact parameterizes the stick/head interaction.
+//
+// StiffnessNPerMAlpha is the tip's contact stiffness at the reference hardness,
+// in N/m^alpha — the units carry the exponent, which is why it cannot be read as
+// a spring constant. Exponent is Hertz's alpha.
+//
+// Exponent is fixed by measurement rather than assumed. A Hertzian contact time
+// scales as v^(-(alpha-1)/(alpha+1)), and Wagner's Fig. 4.7 crescendo runs
+// 7.5 ms at piano to 5.9 ms at forte; over the three- to fourfold striking
+// velocity that spans, the implied alpha is 1.42 to 1.56. So the canonical
+// spherical-contact 3/2 is not a convenient assumption here, it is what the
+// measured velocity dependence says — which is worth stating plainly, because it
+// means the prescribed model's velocity law is not discarded by this change but
+// reproduced by it.
+//
+// HysteresisSPerM is the Hunt-Crossley coefficient: the elastic force is scaled
+// by (1 + h*compression rate), so the loss vanishes with the compression instead
+// of stepping at impact and at separation the way a linear dashpot does. It sets
+// the tip's restitution, and with it how much of the stick's energy is left to
+// be caught by the returning head.
+//
+// MaxDurationSeconds bounds how long one strike is tracked. It is not a contact
+// time — the stick separates long before it — but the window inside which the
+// head is allowed to rise back into the stick. Past it the player has lifted.
+type Contact struct {
+	Model               ContactModel `json:"model"`
+	StiffnessNPerMAlpha float64      `json:"stiffnessNPerMAlpha"`
+	Exponent            float64      `json:"exponent"`
+	HysteresisSPerM     float64      `json:"hysteresisSPerM"`
+	MaxDurationSeconds  float64      `json:"maxDurationSeconds"`
 }
 
 // Cavity describes the lumped enclosed-air spring and its pressure loss.
@@ -252,6 +299,50 @@ type Pickup struct {
 	HighpassHz     float64 `json:"highpassHz"`
 	LowpassHz      float64 `json:"lowpassHz"`
 	OutputGain     float64 `json:"outputGain"`
+}
+
+// DefaultContact returns the calibrated stick contact.
+//
+// Model is ContactPrescribed, which is the shipped sound and its known defect,
+// not a judgement that it is the better of the two. Switching the default is a
+// change to how the instrument sounds and needs its own re-fit; see
+// docs/physical-contact.md for what ContactHertzian measures against it.
+func DefaultContact() Contact {
+	return Contact{
+		Model: ContactPrescribed,
+		// Chosen for the shipped 15 g mallet, against which it predicts a 7.4 ms
+		// contact — inside the 5.5-8 ms Dahl and Wagner measure, and predicted
+		// rather than prescribed.
+		//
+		// It is not fitted to that number, because it cannot be: the contact time
+		// here is set by the head, not by the tip. Over the four decades from 1e4
+		// to 3e6 the contact runs 14.5 ms down to 7.1 ms and then stops moving,
+		// because the stick is riding the head's own return rather than
+		// rebounding off the tip's compression. 1e6 sits on that plateau, where
+		// the peak indentation is 0.4 mm — a plausible figure for a tip on a
+		// coated head, and the reason to prefer it over any other point on a
+		// plateau the sound cannot distinguish.
+		StiffnessNPerMAlpha: 1e6,
+		// Hertz's 3/2, which here is a measured number rather than an assumed
+		// one: see the note on Contact.
+		Exponent: 1.5,
+		// Tip loss. It buys little here and that is itself informative: it takes
+		// the rebound from 0.91 of the striking speed to 0.90, because the tip
+		// barely compresses. Almost all of the bounce is the head's elasticity
+		// rather than the tip's, which is the same fact as the contact time being
+		// head-dominated, and it is why a stick can be pressed into a roll.
+		//
+		// Larger values were tried and are not admissible: past about 1/v the
+		// Hunt-Crossley factor turns negative and the force is truncated to zero
+		// mid-release, which puts a step into the pulse and a 46 dB notch at
+		// 460 Hz back into its spectrum — reintroducing, by a different route,
+		// exactly the defect this model removes.
+		HysteresisSPerM: 0.3,
+		// 20 ms, against a contact that ends by 8. It bounds the work per strike
+		// and leaves room for a head that rises back into the stick; it does not
+		// shape the result.
+		MaxDurationSeconds: 0.02,
+	}
 }
 
 // DefaultPhysicalDrum returns a conservative 12-inch double-headed tom
@@ -343,6 +434,7 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			MalletMassKg:   0.015,
 			VelocityMPerS:  3,
 			Hardness01:     0.7,
+			Contact:        DefaultContact(),
 		},
 		Cavity: Cavity{
 			Enabled:    true,
@@ -495,6 +587,10 @@ func (d PhysicalDrum) Validate() error {
 		return err
 	}
 
+	if err := validateContact(d.Strike.Contact); err != nil {
+		return err
+	}
+
 	if err := finiteRange("cavity.depthM", d.Cavity.DepthM, 0.01, 2); err != nil {
 		return err
 	}
@@ -607,6 +703,10 @@ func DecodeConfig(data []byte) (PhysicalDrum, error) {
 		migrateV8Config(&config)
 	}
 
+	if config.Version == multiBandAttackConfigVersion {
+		migrateV9Config(&config)
+	}
+
 	if err := config.Validate(); err != nil {
 		return PhysicalDrum{}, err
 	}
@@ -709,8 +809,79 @@ func migrateV7Config(config *PhysicalDrum) {
 // measured content. A version-8 drum keeps the pitch it was saved with, and only
 // new drums start from the retuned default.
 func migrateV8Config(config *PhysicalDrum) {
-	config.Version = ConfigVersion
+	config.Version = multiBandAttackConfigVersion
 	config.Attack.DecayScale = DefaultPhysicalDrum().Attack.DecayScale
+}
+
+// migrateV9Config carries a version-9 document onto the selectable contact
+// model.
+//
+// This one *can* promise the old sound, and does: version 9 had only the
+// prescribed half-sine, so naming it explicitly reproduces the document exactly.
+// The Hertzian coefficients come along because the model is selectable at any
+// time and a document with a zero stiffness would fail validation the moment it
+// was switched — but they are inert until it is.
+func migrateV9Config(config *PhysicalDrum) {
+	config.Version = ConfigVersion
+	config.Strike.Contact = DefaultContact()
+	config.Strike.Contact.Model = ContactPrescribed
+}
+
+func validateContact(contact Contact) error {
+	switch contact.Model {
+	case ContactPrescribed, ContactHertzian:
+	default:
+		return fmt.Errorf(
+			"%w: unknown strike.contact.model %q",
+			ErrInvalidConfig,
+			contact.Model,
+		)
+	}
+
+	if err := finiteRange(
+		"strike.contact.stiffnessNPerMAlpha",
+		contact.StiffnessNPerMAlpha,
+		1,
+		1e12,
+	); err != nil {
+		return err
+	}
+
+	// The lower bound is not cosmetic. Contact duration scales as
+	// v^(-(alpha-1)/(alpha+1)), so alpha = 1 is a linear spring whose contact
+	// time does not depend on how hard the drum is hit at all, and below it the
+	// dependence inverts and a loud stroke would dwell longer than a quiet one.
+	if err := finiteRange(
+		"strike.contact.exponent",
+		contact.Exponent,
+		1,
+		4,
+	); err != nil {
+		return err
+	}
+
+	// The ceiling is the model's validity limit, not a taste bound. The
+	// Hunt-Crossley force is K*d^alpha*(1 + h*ddot), so once h exceeds the
+	// reciprocal of the separation speed the bracket goes negative and the force
+	// is clipped to zero part-way through the release. That is a step
+	// discontinuity, and it costs the pulse the smooth spectrum it exists to
+	// have. One second per metre is above any strike this model admits and well
+	// below where the clipping starts to matter.
+	if err := finiteRange(
+		"strike.contact.hysteresisSPerM",
+		contact.HysteresisSPerM,
+		0,
+		1,
+	); err != nil {
+		return err
+	}
+
+	return finiteRange(
+		"strike.contact.maxDurationSeconds",
+		contact.MaxDurationSeconds,
+		1e-4,
+		0.5,
+	)
 }
 
 func validateNonlinearity(config PhysicalDrum) error {

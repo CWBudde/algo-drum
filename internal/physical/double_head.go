@@ -19,6 +19,7 @@ type DoubleHeadOutput struct {
 	BatterRawRadiated            float64
 	ResonantRawRadiated          float64
 	AttackRawRadiated            float64
+	ContactForceN                float64
 	RawRadiated                  float64
 	Radiated                     float64
 	CavityPressurePa             float64
@@ -57,14 +58,12 @@ type DoubleHead struct {
 	midpointDenom    []float64
 	pressureGain     []float64
 	strainWeight     []float64
+	strikeWeight     []float64
 	radiationHP      biquad.Section
 	radiationLP      biquad.Section
 	attack           attackLayer
 
-	pendingForce   []float64
-	pendingIndex   int
-	pendingSamples int
-	contactSamples int
+	contact contact
 
 	// The radiated sums are formed inside the update loops, where the discrete
 	// acceleration is available without keeping a second velocity history, and
@@ -199,10 +198,15 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 				model.cavityVolumeM3
 	}
 
-	model.pendingForce = make(
-		[]float64,
-		contactSampleCount(config.SampleRateHz, config.Strike.Hardness01, 0),
-	)
+	// Batter modes only: the stick never touches the resonant head, and the
+	// cavity that couples them carries no transverse force to the strike point.
+	model.strikeWeight = make([]float64, len(batterModes))
+	for index, mode := range batterModes {
+		model.strikeWeight[index] = mode.StrikeAccelerationPerN * mode.ModalMassKg
+	}
+
+	model.contact = newContact(config)
+	model.contact.setSubsteps(strikePointMassKg(batterModes))
 
 	return model, nil
 }
@@ -252,8 +256,31 @@ func (d *DoubleHead) ResonantMode(index int) (Mode, bool) {
 	return d.modes[absoluteIndex], true
 }
 
-// PulseSamples reports the most recently triggered strike-contact duration.
-func (d *DoubleHead) PulseSamples() int { return d.contactSamples }
+// PulseSamples reports the window the most recent strike's contact acts over.
+// Under ContactPrescribed that window is the force pulse; under ContactHertzian
+// the force is an output of the model, so it is the interval inside which the
+// stick may still be touched by the head.
+func (d *DoubleHead) PulseSamples() int { return d.contact.pulseSamples() }
+
+// LastContact reports the measured duration, count and impulse of the most
+// recently completed contact. It is populated only under ContactHertzian, where
+// those are results rather than settings.
+func (d *DoubleHead) LastContact() ContactMetrics { return d.contact.metrics() }
+
+// strikePointState returns the batter head's displacement and velocity under
+// the stick. See the note on SingleHead.strikePointState for why the weight is
+// the strike projection multiplied back by the modal mass.
+func (d *DoubleHead) strikePointState() (float64, float64) {
+	displacementM := 0.0
+	velocityMPerS := 0.0
+
+	for index, weight := range d.strikeWeight {
+		displacementM += weight * d.displacement[index]
+		velocityMPerS += weight * d.velocity[index]
+	}
+
+	return displacementM, velocityMPerS
+}
 
 // CavityVolumeM3 reports the ideal cylindrical cavity volume.
 func (d *DoubleHead) CavityVolumeM3() float64 { return d.cavityVolumeM3 }
@@ -264,30 +291,15 @@ func (d *DoubleHead) CavityBulkStiffnessPaPerM3() float64 {
 	return d.cavityBulkStiffnessPaPerM3
 }
 
-// Trigger starts a finite batter-head contact pulse.
+// Trigger starts a finite batter-head contact.
 func (d *DoubleHead) Trigger(velocity01 float64) error {
 	if math.IsNaN(velocity01) || math.IsInf(velocity01, 0) ||
 		velocity01 < 0 || velocity01 > 1 {
 		return ErrInvalidVelocity
 	}
 
-	impulseKgMPerS := d.config.Strike.MalletMassKg *
-		d.config.Strike.VelocityMPerS * velocity01
-
-	sampleCount := contactSampleCount(
-		d.config.SampleRateHz,
-		d.config.Strike.Hardness01,
-		velocity01,
-	)
-	pulseScale := impulseKgMPerS * d.config.SampleRateHz
-	addContactPulse(
-		d.pendingForce,
-		d.pendingIndex,
-		sampleCount,
-		pulseScale,
-	)
-	d.pendingSamples = max(d.pendingSamples, sampleCount)
-	d.contactSamples = sampleCount
+	strikePointM, _ := d.strikePointState()
+	d.contact.trigger(velocity01, strikePointM)
 
 	return nil
 }
@@ -297,10 +309,7 @@ func (d *DoubleHead) Reset() {
 	clear(d.displacement)
 	clear(d.velocity)
 	clear(d.midpointVelocity)
-	clear(d.pendingForce)
-	d.pendingIndex = 0
-	d.pendingSamples = 0
-	d.contactSamples = 0
+	d.contact.reset()
 	d.attackRadiatedM3PerS2 = 0
 	d.cavityPressurePa = 0
 	d.batterNonlinear.strainMeasureM2 = 0
@@ -322,23 +331,28 @@ func (d *DoubleHead) IsActive() bool {
 		threshold = min(threshold, d.config.Resonant.InactiveEnergyThresholdJ)
 	}
 
-	return d.pendingSamples > 0 || d.energy > threshold ||
+	return d.contact.isActive() || d.energy > threshold ||
 		d.attack.isRinging()
 }
 
 // Tick advances both modal banks and the cavity by one sample.
 func (d *DoubleHead) Tick() DoubleHeadOutput {
-	forceN := d.nextForce()
+	forceN := d.contact.nextForce(d.strikePointState())
 	// Advanced before the modal update so the layer sees the same contact sample
 	// the modes do, and so it keeps running once the pulse is over.
 	d.attackRadiatedM3PerS2 = d.attack.tick(forceN)
 
+	var output DoubleHeadOutput
 	if (!d.config.Cavity.Enabled || d.config.Cavity.Coupling01 == 0) &&
 		!d.config.Nonlinearity.Enabled {
-		return d.tickUncoupled(forceN)
+		output = d.tickUncoupled(forceN)
+	} else {
+		output = d.tickCoupled(forceN)
 	}
 
-	return d.tickCoupled(forceN)
+	output.ContactForceN = forceN
+
+	return output
 }
 
 // Render writes the filtered batter-side microphone signal into dst.
@@ -346,24 +360,6 @@ func (d *DoubleHead) Render(dst []float64) {
 	for index := range dst {
 		dst[index] = d.Tick().Radiated
 	}
-}
-
-func (d *DoubleHead) nextForce() float64 {
-	if d.pendingSamples == 0 {
-		return 0
-	}
-
-	forceN := d.pendingForce[d.pendingIndex]
-	d.pendingForce[d.pendingIndex] = 0
-
-	d.pendingIndex++
-	if d.pendingIndex == len(d.pendingForce) {
-		d.pendingIndex = 0
-	}
-
-	d.pendingSamples--
-
-	return forceN
 }
 
 func (d *DoubleHead) tickUncoupled(forceN float64) DoubleHeadOutput {

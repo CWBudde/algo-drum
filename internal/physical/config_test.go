@@ -384,3 +384,74 @@ func TestQualityModeLimits(t *testing.T) {
 		}
 	}
 }
+
+func TestDecodeConfigMigratesVersionNineToThePrescribedContact(t *testing.T) {
+	t.Parallel()
+
+	legacy := DefaultPhysicalDrum()
+	legacy.Version = multiBandAttackConfigVersion
+	legacy.Strike.Contact = Contact{}
+	encoded, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Version 9 had no contact block at all, so a real document carries none.
+	var document map[string]any
+	if err := json.Unmarshal(encoded, &document); err != nil {
+		t.Fatal(err)
+	}
+	strike, ok := document["strike"].(map[string]any)
+	if !ok {
+		t.Fatalf("strike is not an object: %#v", document["strike"])
+	}
+	delete(strike, "contact")
+	encoded, err = json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decoded, err := DecodeConfig(encoded)
+	if err != nil {
+		t.Fatalf("DecodeConfig(v9) error = %v", err)
+	}
+	if decoded.Version != ConfigVersion {
+		t.Fatalf("migrated v9 version = %d, want %d", decoded.Version, ConfigVersion)
+	}
+	// Version 9 had only the half-sine, so naming it reproduces the sound exactly.
+	if decoded.Strike.Contact.Model != ContactPrescribed {
+		t.Errorf("migrated v9 contact model = %q, want %q",
+			decoded.Strike.Contact.Model, ContactPrescribed)
+	}
+	// The Hertzian coefficients come along inert, so the model can be switched
+	// without the document first failing validation.
+	if decoded.Strike.Contact.StiffnessNPerMAlpha != DefaultContact().StiffnessNPerMAlpha ||
+		decoded.Strike.Contact.Exponent != DefaultContact().Exponent {
+		t.Errorf("migrated v9 contact = %#v", decoded.Strike.Contact)
+	}
+}
+
+func TestConfigRejectsInvalidContact(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]func(*Contact){
+		"unknown model":       func(c *Contact) { c.Model = "hertz" },
+		"empty model":         func(c *Contact) { c.Model = "" },
+		"zero stiffness":      func(c *Contact) { c.StiffnessNPerMAlpha = 0 },
+		"linear exponent":     func(c *Contact) { c.Exponent = 0.9 },
+		"clipping hysteresis": func(c *Contact) { c.HysteresisSPerM = 1.5 },
+		"unbounded window":    func(c *Contact) { c.MaxDurationSeconds = 0 },
+	}
+
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			config := DefaultPhysicalDrum()
+			mutate(&config.Strike.Contact)
+
+			if err := config.Validate(); err == nil {
+				t.Errorf("Validate() accepted %s: %#v", name, config.Strike.Contact)
+			}
+		})
+	}
+}

@@ -138,8 +138,9 @@ go run ./cmd/fit-physical -reference reference/tom.wav \
 
 Driving mayfly from outside its own examples surfaced two defects. Both are
 fixed upstream and released as
-[v0.2.0](https://github.com/CWBudde/mayfly/releases/tag/v0.2.0), which is what
-`go.mod` now pins.
+[v0.2.0](https://github.com/CWBudde/mayfly/releases/tag/v0.2.0); `go.mod` pins
+[v0.2.1](https://github.com/CWBudde/mayfly/releases/tag/v0.2.1), which adds only
+CI, lint and documentation fixes on top.
 
 - **`Result.BestSolution` is not a solution.** It holds the best cost after each
   iteration — a convergence curve of `MaxIterations` entries. The name is the
@@ -256,6 +257,14 @@ not a budget: within the range the product exposes, this model does not put nine
 resolvable partials in that band. Whether that is the two-head mode series
 itself, the cavity split, or the absence of shell and lug modes is the next
 question, and it is a **P8 finding rather than a fitting failure**.
+
+> **Answered 2026-07-30**, and it is none of those three. The modes are there —
+> 58 of them lie in the band at High quality — and the force that should excite
+> them is not: a smooth half-sine over the measured 5.5–8 ms contact is 34 dB
+> down at 635 Hz, which is the size of the measured deficit. Microphone
+> geometry, strike footprint, cavity coupling, tension asymmetry and mode count
+> were each measured and eliminated. See
+> [`physical-excitation-gap.md`](physical-excitation-gap.md).
 
 So the fit ships as a preset and a fixture, and **the shipped default is
 unchanged**. Moving `DefaultPhysicalDrum()` was the third deliverable of this

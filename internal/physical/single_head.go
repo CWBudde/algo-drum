@@ -9,12 +9,6 @@ import (
 	"github.com/cwbudde/algo-dsp/dsp/filter/design"
 )
 
-const (
-	quietStickContactSeconds = 0.008
-	loudStickContactSeconds  = 0.0055
-	referenceStickHardness   = 0.7
-)
-
 var ErrInvalidVelocity = errors.New("physical strike velocity must be finite and in [0,1]")
 
 // Output exposes point-pickup head motion, the unfiltered modal radiation sum,
@@ -22,6 +16,7 @@ var ErrInvalidVelocity = errors.New("physical strike velocity must be finite and
 type Output struct {
 	DisplacementM     float64
 	VelocityMPerS     float64
+	ContactForceN     float64
 	RawRadiated       float64
 	Radiated          float64
 	MechanicalEnergyJ float64
@@ -39,14 +34,12 @@ type SingleHead struct {
 	matrix12     []float64
 	matrix21     []float64
 	matrix22     []float64
+	strikeWeight []float64
 	radiationHP  biquad.Section
 	radiationLP  biquad.Section
 
-	pendingForce   []float64
-	pendingIndex   int
-	pendingSamples int
-	contactSamples int
-	energy         float64
+	contact contact
+	energy  float64
 }
 
 // NewSingleHead precomputes the circular modes, exact damped state-transition
@@ -101,10 +94,13 @@ func NewSingleHead(config PhysicalDrum) (*SingleHead, error) {
 		model.matrix22[index] = matrix22
 	}
 
-	model.pendingForce = make(
-		[]float64,
-		contactSampleCount(config.SampleRateHz, config.Strike.Hardness01, 0),
-	)
+	model.strikeWeight = make([]float64, modeCount)
+	for index, mode := range modes {
+		model.strikeWeight[index] = mode.StrikeAccelerationPerN * mode.ModalMassKg
+	}
+
+	model.contact = newContact(config)
+	model.contact.setSubsteps(strikePointMassKg(modes))
 
 	return model, nil
 }
@@ -121,45 +117,37 @@ func (s *SingleHead) Mode(index int) (Mode, bool) {
 	return s.modes[index], true
 }
 
-// PulseSamples reports the most recently triggered strike-contact duration.
-func (s *SingleHead) PulseSamples() int { return s.contactSamples }
+// PulseSamples reports the window the most recent strike's contact acts over.
+// Under ContactPrescribed that window is the force pulse; under ContactHertzian
+// the force is an output of the model, so it is the interval inside which the
+// stick may still be touched by the head. See ContactMetrics for what the
+// contact then actually did.
+func (s *SingleHead) PulseSamples() int { return s.contact.pulseSamples() }
 
-// Trigger starts a finite, velocity- and hardness-dependent contact pulse.
-// Existing modal motion is retained, so closely spaced hits superpose instead
-// of restarting the drum.
+// LastContact reports the measured duration, count and impulse of the most
+// recently completed contact. It is populated only under ContactHertzian, where
+// those are results rather than settings.
+func (s *SingleHead) LastContact() ContactMetrics { return s.contact.metrics() }
+
+// Trigger starts a finite, velocity- and hardness-dependent contact. Existing
+// modal motion is retained, so closely spaced hits superpose instead of
+// restarting the drum.
 func (s *SingleHead) Trigger(velocity01 float64) error {
 	if math.IsNaN(velocity01) || math.IsInf(velocity01, 0) || velocity01 < 0 || velocity01 > 1 {
 		return ErrInvalidVelocity
 	}
 
-	impulseKgMPerS := s.config.Strike.MalletMassKg * s.config.Strike.VelocityMPerS * velocity01
-
-	sampleCount := contactSampleCount(
-		s.config.SampleRateHz,
-		s.config.Strike.Hardness01,
-		velocity01,
-	)
-	pulseScale := impulseKgMPerS * s.config.SampleRateHz
-	addContactPulse(
-		s.pendingForce,
-		s.pendingIndex,
-		sampleCount,
-		pulseScale,
-	)
-	s.pendingSamples = max(s.pendingSamples, sampleCount)
-	s.contactSamples = sampleCount
+	strikePointM, _ := s.strikePointState()
+	s.contact.trigger(velocity01, strikePointM)
 
 	return nil
 }
 
-// Reset silences the head and discards any pending contact pulse.
+// Reset silences the head and discards any pending contact.
 func (s *SingleHead) Reset() {
 	clear(s.displacement)
 	clear(s.velocity)
-	clear(s.pendingForce)
-	s.pendingIndex = 0
-	s.pendingSamples = 0
-	s.contactSamples = 0
+	s.contact.reset()
 	s.energy = 0
 	s.radiationHP.Reset()
 	s.radiationLP.Reset()
@@ -168,28 +156,17 @@ func (s *SingleHead) Reset() {
 // IsActive reports whether contact is pending or mechanical energy is above
 // the configured threshold.
 func (s *SingleHead) IsActive() bool {
-	return s.pendingSamples > 0 ||
+	return s.contact.isActive() ||
 		s.energy > s.config.Batter.InactiveEnergyThresholdJ
 }
 
 // Tick advances the exact linear modal state by one sample.
 func (s *SingleHead) Tick() Output {
-	forceN := 0.0
-	if s.pendingSamples > 0 {
-		forceN = s.pendingForce[s.pendingIndex]
-		s.pendingForce[s.pendingIndex] = 0
-
-		s.pendingIndex++
-		if s.pendingIndex == len(s.pendingForce) {
-			s.pendingIndex = 0
-		}
-
-		s.pendingSamples--
-	}
+	forceN := s.contact.nextForce(s.strikePointState())
 
 	inverseSampleRate := 1 / s.config.SampleRateHz
 
-	var output Output
+	output := Output{ContactForceN: forceN}
 
 	for index, mode := range s.modes {
 		oldDisplacement := s.displacement[index]
@@ -275,29 +252,39 @@ func stateTransition(
 		nil
 }
 
-func contactSampleCount(sampleRate, hardness01, velocity01 float64) int {
-	stickDuration := quietStickContactSeconds +
-		(loudStickContactSeconds-quietStickContactSeconds)*velocity01
-	hardnessScale := math.Exp2(referenceStickHardness - hardness01)
+// strikePointState returns the head's displacement and velocity under the
+// stick.
+//
+// The weight is the strike projection multiplied back by the modal mass, which
+// is the mode shape times the contact footprint — the same quantity the force is
+// distributed over. Using it on the way back guarantees that force times this
+// velocity is exactly the power the modes receive, so the contact cannot inject
+// or destroy energy through an inconsistent projection.
+func (s *SingleHead) strikePointState() (float64, float64) {
+	displacementM := 0.0
+	velocityMPerS := 0.0
 
-	return max(2, int(math.Round(stickDuration*hardnessScale*sampleRate)))
+	for index, weight := range s.strikeWeight {
+		displacementM += weight * s.displacement[index]
+		velocityMPerS += weight * s.velocity[index]
+	}
+
+	return displacementM, velocityMPerS
 }
 
-func addContactPulse(
-	pending []float64,
-	start, sampleCount int,
-	scale float64,
-) {
-	// The exact sum of sin(pi*(k+1/2)/N), k=0..N-1, is
-	// 1/sin(pi/(2N)). This keeps the prescribed impulse invariant while
-	// allowing velocity-dependent contact duration without allocation.
-	normalizer := math.Sin(math.Pi / (2 * float64(sampleCount)))
-
-	for index := range sampleCount {
-		sample := math.Sin(
-			math.Pi*(float64(index)+0.5)/float64(sampleCount),
-		) * normalizer
-		pendingIndex := (start + index) % len(pending)
-		pending[pendingIndex] += scale * sample
+// strikePointMassKg is the head's driving-point mass under the stick: the
+// instantaneous velocity a unit impulse there produces is its reciprocal. The
+// contact integrator sizes its substeps against it.
+func strikePointMassKg(modes []Mode) float64 {
+	sum := 0.0
+	for _, mode := range modes {
+		sum += mode.StrikeAccelerationPerN * mode.StrikeAccelerationPerN *
+			mode.ModalMassKg
 	}
+
+	if sum <= 0 {
+		return math.Inf(1)
+	}
+
+	return 1 / sum
 }

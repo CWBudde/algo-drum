@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"sync"
 )
 
 const (
@@ -488,7 +489,36 @@ func modeShape(
 		azimuthalDirectivity(azimuthalOrder, orientation, angleRad)
 }
 
+// besselZeroTable holds the first maxModeOrder positive zeros of J_order for
+// every order the mode generator can ask for.
+//
+// The zeros are mathematical constants: they depend on nothing the caller
+// passes but the two indices. Computing them is a scan plus 64 bisection steps
+// per root, each step a math.Jn call, which made mode generation the single
+// most expensive part of building a drum — and the fitter builds a new drum for
+// every candidate it evaluates. Filling the whole table costs one such
+// generation, once per process, after which besselZeros is a slice header.
+var besselZeroTable = sync.OnceValue(func() [][]float64 {
+	table := make([][]float64, maxModeOrder+1)
+	for order := range table {
+		table[order] = computeBesselZeros(order, maxModeOrder)
+	}
+
+	return table
+})
+
+// besselZeros returns the first count positive zeros of J_order.
+//
+// The result aliases a shared table and must not be modified by the caller.
 func besselZeros(order, count int) []float64 {
+	if order < 0 || order > maxModeOrder || count > maxModeOrder {
+		return computeBesselZeros(order, count)
+	}
+
+	return besselZeroTable()[order][:count]
+}
+
+func computeBesselZeros(order, count int) []float64 {
 	zeros := make([]float64, 0, count)
 	left := 1e-8
 	leftValue := math.Jn(order, left)

@@ -935,9 +935,93 @@ parameter bound — the range is adequate, which was genuinely in doubt. Spectru
 is not, and the reason is specific and reproducible: the reference carries nine
 resolvable partials between 476 and 700 Hz and the model produces none there, at
 any quality tier (Draft 13.3 dB, Standard 13.1, High 13.1 — mode count is not
-the constraint). Closing P8 needs that band explained: the two-head mode series,
-the cavity split, or the absent shell and lug modes. Also still outstanding:
-"across more than one hit" — this is a single strike from a single file.
+the constraint). Also still outstanding: "across more than one hit" — this is a
+single strike from a single file.
+
+**That band is now explained**, in
+[`docs/physical-excitation-gap.md`](docs/physical-excitation-gap.md). It is not
+the two-head mode series, the cavity split or the absent shell modes. The modes
+are present — 58 of them lie in the band at High quality and none is audible —
+and the excitation is not. `addContactPulse` prescribes a smooth half-sine over
+the whole contact interval, whose spectrum nulls at 1.5/τ and falls as 1/f²
+after it; at the fitted τ = 8.23 ms that is −28.7 dB at 504 Hz and −34.2 dB at
+635 Hz, against a measured band deficit of −22.6 and −30.4 dB. Microphone
+height, near-field balance, strike footprint, cavity coupling and tension
+asymmetry were each measured and eliminated — twenty decibels of microphone tilt
+buys 0.9 dB.
+
+An independent literature check sharpened this into a second, separable error.
+The 5.5–8 ms the shipped law prescribes is well supported, but it is a **contact
+dwell time, not a force-pulse width**, and the model spends it as the latter.
+Wagner (KTH 2006 §4.1.1, §4.2.1) measured contact electrically and force
+separately: the stick "would already leave the drumhead after approximately
+3.5 ms", and the dwell runs on only because the wave reflected from the rim
+returns under it, producing two further weaker impacts at 3.75 ms and 5.6 ms. So
+the measured excitation is three discrete impacts inside an 8 ms window and
+`addContactPulse` replaces them with one smooth half-sine across the whole of it
+— too long *and* too smooth. Prescribing the main pulse at 3.5 ms is worth ~7 dB
+in the band; holding duration and impulse fixed and skewing the rise to 0.49 ms
+is worth a further ~13 dB. The shape half is exactly what
+[`docs/physical-tom-review.md`](docs/physical-tom-review.md) §6 predicted by
+inspection.
+
+**The width and the shape are not separable.** Prescribing the pulse at
+Wagner's 3.5 ms and leaving the shape alone looked like the cheap half and was
+tried: it raises the default drum's 60–1000 Hz peak by 14.1 dB with the
+nonlinearity disabled, because a half-sine nulls at 1.5/τ and shortening the
+pulse drags that zero from 273 Hz to 429 Hz through the low mode cluster. That
+is the review's "the nulls move with the knob" bullet, measured. It is not a
+level shift the output gain can absorb — τ varies with velocity and hardness, so
+the zero lands on different modes at every dynamic. The constants are therefore
+left as they are with the defect recorded beside them, and the correction has to
+be one change rather than two.
+
+**The Hertzian contact was built and measured (2026-07-30).**
+`Strike.Contact.Model` now selects it; it is off by default;
+[`docs/physical-contact.md`](docs/physical-contact.md) is the record. It did not
+close the gap, and it corrected two things written above.
+
+The gap is a **comb**, not a tilt. The half-sine's spectrum
+`|cos(πfτ)|/|1−(2fτ)²|` has exact analytic zeros every `(k+½)/τ`, and at the
+fitted 8.23 ms two of them — 547 and 668 Hz — fall inside the gap at −309 and
+−315 dB. A tilt leaves modes quiet; a zero leaves them unexcited. That is the
+complete explanation of why mode count, microphone geometry, cavity coupling and
+the loss law were each eliminated, and of why shortening τ cost 14 dB: it slides
+the comb, and the comb must land somewhere.
+
+The Hertzian contact turns those zeros into −26 and −29 dB and moves them, but it
+does **not** remove the comb — it is still one smooth touch, and one touch of
+duration τ interferes with itself wherever it sits, leaving a −51 dB dip of its
+own at 465 Hz. Below 700 Hz it is worth 0–4 dB. Above 800 Hz it is worth
+**+11.8 dB at 800 Hz, +15.1 at 1.5 kHz, +22.9 at 2.5 kHz** in the modal-only
+render, which is the *seam*, not the gap.
+
+It also does not reproduce Wagner's separation and re-contacts. The version that
+appeared to — 4.15 ms lobe inside a 7.48 ms dwell, seven impacts — was a
+discretization artifact and converged away under substep refinement; the
+converged contact is one smooth touch. That near-miss is written up in full
+because it imitated the exact phenomenon being looked for.
+
+What it did establish, and this is the useful part: **contact time here is set by
+the head, not by the tip.** The head's driving-point mass under the stick is
+0.31 g against a 15 g mallet, so a 900-fold stiffness range spans only 1.51 in
+duration while mass moves it almost proportionally. Three consequences. The
+7.26 ms it predicts is a genuine prediction, and it lands inside Dahl's and
+Wagner's 5.5–8 ms. HARD loses most of its authority, since tip stiffness cannot
+reach the measured factor of two. And `Strike.MalletMassKg` stops being a free
+loudness knob and becomes measurable — the measurement says 4–6 g, not the
+shipped 15 g, because that is what reproduces the measured velocity law
+(0.65–0.66 against Dahl's 0.69, where 15 g gives 0.92).
+
+Closing P8 therefore still needs: structure *inside* the contact interval, which
+is the one thing neither model supplies and the only thing that removes a comb;
+the seam between the modal bank's top and the attack layer's lowest band closed
+at low tunings — for which the Hertzian contact is now the precondition, since it
+puts real excitation where `ATK.T` was dragged down to fake it; and the
+transverse-cavity hypothesis tested. Adopting the Hertzian contact is a
+calibration pass in its own right: it delivers 1.9× the impulse, and
+`Pickup.OutputGain`, the nonlinear tension coefficients, `Attack.LevelRelative`,
+`Strike.MalletMassKg` and the fitted preset would all have to move with it.
 
 ### P7 — Snare research extension
 
