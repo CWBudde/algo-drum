@@ -21,6 +21,12 @@ interface KnobProps {
   defaultValue?: number;
   size?: number; // diameter in px, default 48
   color?: string;
+  /**
+   * Show the floating drag readout and the hover tooltip. Turn off where the
+   * value is already printed next to the knob (the voice editor), so the same
+   * number is not shown twice.
+   */
+  showReadout?: boolean;
 }
 
 function polarToXY(cx: number, cy: number, r: number, angleDeg: number) {
@@ -50,6 +56,7 @@ export default function Knob({
   defaultValue,
   size = 48,
   color = "#C87828",
+  showReadout = true,
 }: KnobProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<{
@@ -153,7 +160,9 @@ export default function Knob({
 
   return (
     <div className="knob">
-      {dragging && <span className="knob-readout">{readout}</span>}
+      {showReadout && dragging && (
+        <span className="knob-readout">{readout}</span>
+      )}
       <svg
         ref={svgRef}
         width={size}
@@ -170,7 +179,9 @@ export default function Knob({
         onDoubleClick={handleDoubleClick}
         style={{ overflow: "visible" }}
       >
-        <title>{readout}</title>
+        {/* Hover tooltip. aria-valuetext carries the same string for AT, so
+            dropping it costs nothing where the value is printed below. */}
+        {showReadout && <title>{readout}</title>}
         <defs>
           {/* Body: radial gradient — light top-left, shadow bottom-right */}
           <radialGradient id={`kb_${id}`} cx="34%" cy="28%" r="70%">
