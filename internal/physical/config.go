@@ -18,8 +18,9 @@ const (
 	nonlinearConfigVersion        = 3
 	fullCouplingConfigVersion     = 4
 	asymmetryConfigVersion        = 5
+	tiltedDampingConfigVersion    = 6
 	// ConfigVersion is the physical-drum JSON schema emitted by EncodeConfig.
-	ConfigVersion = 6
+	ConfigVersion = 7
 
 	minSampleRateHz = 8_000.0
 	maxSampleRateHz = 384_000.0
@@ -143,10 +144,19 @@ type Strike struct {
 }
 
 // Cavity describes the lumped enclosed-air spring and its pressure loss.
+//
+// StiffnessScale multiplies the rigid-enclosure bulk stiffness rho*c^2/V. A real
+// shell is not rigid, the vent leaks, and the heads are not pistons, so the
+// rigid formula badly over-predicts how much the air stiffens the axisymmetric
+// modes; the scale is the one place that discrepancy is absorbed. It is a
+// fraction rather than a free gain because the rigid, sealed, piston-driven
+// enclosure is the stiffest case there is — 1 is the physical ceiling, not a
+// neutral setting.
 type Cavity struct {
 	Enabled           bool    `json:"enabled"`
 	DepthM            float64 `json:"depthM"`
 	Coupling01        float64 `json:"coupling01"`
+	StiffnessScale    float64 `json:"stiffnessScale"`
 	AirDensityKgPerM3 float64 `json:"airDensityKgPerM3"`
 	SoundSpeedMPerS   float64 `json:"soundSpeedMPerS"`
 	LossPerSecond     float64 `json:"lossPerSecond"`
@@ -244,9 +254,14 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			Hardness01:     0.7,
 		},
 		Cavity: Cavity{
-			Enabled:           true,
-			DepthM:            0.20,
-			Coupling01:        1,
+			Enabled:    true,
+			DepthM:     0.20,
+			Coupling01: 1,
+			// Fitted, not derived. The rigid formula puts the stiffened (0,1)
+			// branch at 219.5 Hz against an unstiffened 107.5 — a doublet ratio
+			// of 2.04, where a measured drum separates its two (0,1) branches by
+			// 10–20 %. This scale gives 106.6/124.2 Hz, a ratio of 1.16.
+			StiffnessScale:    0.04,
 			AirDensityKgPerM3: 1.204,
 			SoundSpeedMPerS:   343,
 			LossPerSecond:     5,
@@ -319,6 +334,10 @@ func (d PhysicalDrum) Validate() error {
 	}
 
 	if err := finiteRange("cavity.coupling01", d.Cavity.Coupling01, 0, 1); err != nil {
+		return err
+	}
+
+	if err := finiteRange("cavity.stiffnessScale", d.Cavity.StiffnessScale, 0, 1); err != nil {
 		return err
 	}
 
@@ -402,6 +421,10 @@ func DecodeConfig(data []byte) (PhysicalDrum, error) {
 		migrateV5Config(&config)
 	}
 
+	if config.Version == tiltedDampingConfigVersion {
+		migrateV6Config(&config)
+	}
+
 	if err := config.Validate(); err != nil {
 		return PhysicalDrum{}, err
 	}
@@ -447,13 +470,23 @@ func migrateV4Config(config *PhysicalDrum) {
 }
 
 func migrateV5Config(config *PhysicalDrum) {
-	config.Version = ConfigVersion
+	config.Version = tiltedDampingConfigVersion
 	// Version 5 had no k¹ loss term, so its damping was flat in frequency and
 	// its absent field decodes to the exact zero that reproduces it. Leaving it
 	// there — and leaving the decay corrections alone — keeps an old
 	// configuration sounding as it did, including its ringing fundamental.
 	// Newly created version-6 configurations get the calibrated law from
 	// DefaultPhysicalDrum instead.
+}
+
+func migrateV6Config(config *PhysicalDrum) {
+	config.Version = ConfigVersion
+	// Version 6 derived the cavity stiffness from the rigid rho*c²/V, so the
+	// unscaled value is what reproduces it. Unlike the other compatibility
+	// migrations this one cannot rely on the zero value: an absent
+	// stiffnessScale decodes to 0, which is the uncoupled limit rather than the
+	// old sound, so it has to be written explicitly.
+	config.Cavity.StiffnessScale = 1
 }
 
 func validateNonlinearity(config PhysicalDrum) error {

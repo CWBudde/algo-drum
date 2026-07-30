@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { PHYSICAL_TOM_PARAMS } from "../src/engine/voiceParams.generated";
+
 // End-to-end smoke test against the production build: the page loads, the WASM
 // engine reports ready, a grid cell toggles, Play starts the playhead, and
 // Space toggles the transport. Audio output can't be asserted headlessly, so
@@ -201,7 +203,14 @@ test("Tom can select, audition, and persist the physical model", async ({
   await expect(
     dialog.getByRole("tooltip", { name: /Double-headed physical drum/ }),
   ).toBeVisible();
-  await expect(dialog.getByRole("slider")).toHaveCount(15);
+  // Derived from the generated table so adding a physical parameter doesn't
+  // break this test; the named check keeps it from degrading into "16 knobs".
+  await expect(dialog.getByRole("slider")).toHaveCount(
+    PHYSICAL_TOM_PARAMS.length,
+  );
+  await expect(
+    dialog.getByRole("slider", { name: "Tom damping frequency tilt" }),
+  ).toBeVisible();
 
   const tuning = dialog.getByRole("slider", {
     name: "Tom batter head tension",

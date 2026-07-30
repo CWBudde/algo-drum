@@ -180,7 +180,8 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 		config.Batter.RadiusM * config.Cavity.DepthM
 	if config.Cavity.Enabled {
 		model.cavityBulkStiffnessPaPerM3 =
-			config.Cavity.AirDensityKgPerM3 *
+			config.Cavity.StiffnessScale *
+				config.Cavity.AirDensityKgPerM3 *
 				config.Cavity.SoundSpeedMPerS *
 				config.Cavity.SoundSpeedMPerS /
 				model.cavityVolumeM3
@@ -245,7 +246,8 @@ func (d *DoubleHead) PulseSamples() int { return d.contactSamples }
 // CavityVolumeM3 reports the ideal cylindrical cavity volume.
 func (d *DoubleHead) CavityVolumeM3() float64 { return d.cavityVolumeM3 }
 
-// CavityBulkStiffnessPaPerM3 reports rho*c²/V, or zero when coupling is off.
+// CavityBulkStiffnessPaPerM3 reports the fitted stiffness scale times rho*c²/V,
+// or zero when coupling is off.
 func (d *DoubleHead) CavityBulkStiffnessPaPerM3() float64 {
 	return d.cavityBulkStiffnessPaPerM3
 }
