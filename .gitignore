@@ -37,3 +37,17 @@ Thumbs.db
 /wasm
 *.out
 *.test
+
+# Fitting inputs and outputs (cmd/fit-physical).
+#
+# reference/ holds recordings used as timbre-match targets. They are not the
+# repository's to redistribute and nothing in the test suite may depend on
+# them — see docs/physical-measured-fit.md.
+reference/
+fit-report.json
+fit-summary.txt
+fit-progress.txt
+*.wav
+
+# Built by `go build ./cmd/fit-physical`
+/fit-physical

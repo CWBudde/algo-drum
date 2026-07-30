@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Knob from "./Knob";
 import { formatParam, type VoiceParamSpec } from "../engine/voiceParams";
+import { PHYSICAL_TOM_PRESETS, presetValues } from "../algo/physicalTomPresets";
 import type { TomModel } from "../engine/tomModel";
 import "./VoiceEditor.css";
 
@@ -43,9 +44,36 @@ export default function VoiceEditor({
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const physicalInfoId = useId();
+  const presetId = useId();
   const [resetNotice, setResetNotice] = useState("");
   const noticeTimer = useRef<number | undefined>(undefined);
   const showProceduralParams = model !== "physical";
+
+  // Applying a preset walks the bank one knob at a time rather than replacing
+  // it wholesale, because onChange is the only channel to the engine and every
+  // other edit in this dialog goes through it. One extra message per knob, once
+  // per selection, is not worth a second path that could drift from the first.
+  const handlePreset = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      const preset = PHYSICAL_TOM_PRESETS[Number(event.target.value)];
+      if (!preset) return;
+
+      presetValues(preset, specs).forEach((value, index) => {
+        if (value !== values[index]) onChange(index, value);
+      });
+
+      setResetNotice(`${preset.name} loaded`);
+
+      if (noticeTimer.current !== undefined) {
+        window.clearTimeout(noticeTimer.current);
+      }
+      noticeTimer.current = window.setTimeout(
+        () => setResetNotice(""),
+        RESET_NOTICE_MS,
+      );
+    },
+    [onChange, specs, values],
+  );
 
   const handleAudition = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -198,6 +226,22 @@ export default function VoiceEditor({
             </span>
           </span>
         </fieldset>
+      )}
+
+      {!showProceduralParams && PHYSICAL_TOM_PRESETS.length > 1 && (
+        <div className="dm-voice-preset">
+          <label htmlFor={presetId}>Preset</label>
+          <select id={presetId} defaultValue="" onChange={handlePreset}>
+            <option value="" disabled>
+              Choose…
+            </option>
+            {PHYSICAL_TOM_PRESETS.map((preset, index) => (
+              <option key={preset.name} value={index}>
+                {preset.name} — {preset.description}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
 
       <div className="dm-voice-knobs" data-params={specs.length}>

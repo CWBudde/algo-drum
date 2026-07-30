@@ -876,8 +876,10 @@ and production-browser coverage are documented in
       accepted without an instrument-specific measurement residual; the
       acceptance gate is documented in
       [`docs/physical-real-instrument-departures.md`](docs/physical-real-instrument-departures.md).
-- [ ] Fit documented presets from measurement while preserving the underlying
-      SI parameters and provenance.
+- [~] Fit documented presets from measurement while preserving the underlying
+      SI parameters and provenance. The machinery exists and has produced one
+      fit; the *provenance* half of the item does not, and cannot with the
+      recording available. See below.
 - [x] Consider measured modal transfer functions as an optional calibration
       layer, not a replacement for the physical state. The documented decision
       is to fit interpretable modal residuals first and require phase-coherent,
@@ -908,8 +910,34 @@ geometric centre, which spreads strike coupling over 116 dB; the sources describ
 central playing as a _region_. See
 [`docs/physical-tom-review.md`](docs/physical-tom-review.md).
 
+**Measurement fitting added 2026-07-30.** `internal/physical/match` reduces a
+recorded or rendered hit to one feature vector and scores two of them on eight
+perceptual terms; `cmd/fit-physical` searches the exposed parameter bank against
+a recording with the Mayfly algorithm. Both are offline only — the shipped WASM
+binary is unchanged. Recorded in
+[`docs/physical-measured-fit.md`](docs/physical-measured-fit.md), with the
+fitted bank in `testdata/physical-fit-tom.json` and a **Measured tom** preset in
+the voice editor.
+
+The item stays open, for two reasons rather than one. The recording is of
+unknown provenance, so the SI-parameter and provenance half of this item is
+untouched — there is nothing to preserve. And the fit itself does not meet its
+own adoption gate: modal frequency (21.5 ¢) and decay (0.179 log-ratio) pass
+comfortably, spectrum (13.6 dB against a 4 dB gate) does not, so
+`DefaultPhysicalDrum()` is deliberately unchanged.
+
 Exit: a measured tom can be matched within documented tolerances for modal
 frequency, decay, and spectrum across more than one hit.
+
+**Progress against this exit criterion, and the one thing blocking it.**
+Frequency and decay are inside tolerance on one hit, and nothing is pinned at a
+parameter bound — the range is adequate, which was genuinely in doubt. Spectrum
+is not, and the reason is specific and reproducible: the reference carries nine
+resolvable partials between 476 and 700 Hz and the model produces none there, at
+any quality tier (Draft 13.3 dB, Standard 13.1, High 13.1 — mode count is not
+the constraint). Closing P8 needs that band explained: the two-head mode series,
+the cavity split, or the absent shell and lug modes. Also still outstanding:
+"across more than one hit" — this is a single strike from a single file.
 
 ### P7 — Snare research extension
 

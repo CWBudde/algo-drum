@@ -1,6 +1,8 @@
 package drum
 
 import (
+	"errors"
+	"fmt"
 	"math"
 
 	"github.com/cwbudde/algo-drum/internal/physical"
@@ -124,56 +126,88 @@ func scaleHeadLosses(head *physical.Head, lossScale, tilt float64) {
 	}
 }
 
-func (v *physicalTom) reconfigure() error {
-	config := physical.DefaultPhysicalDrum()
-	config.SampleRateHz = v.config.SampleRateHz
+// ErrPhysicalTomParamCount reports a normalized bank of the wrong width.
+var ErrPhysicalTomParamCount = errors.New("physical tom parameter count")
 
-	diameterM := v.params.value(physicalTomParamDiameter)
+// NeutralDecayAmount is the strip DEC position at which the knob contributes
+// nothing: decayScaleMin + amount == 1, so the loss law is left as the
+// parameter bank set it. Offline callers that want to fit DAMP alone should
+// pass it rather than reaching for a bare 0.5.
+const NeutralDecayAmount = 1 - decayScaleMin
+
+// PhysicalTomConfig maps a normalized parameter bank to the SI configuration
+// the physical model consumes.
+//
+// values01 holds one 0..1 knob position per PhysicalTomSpecs() entry, in the
+// same order; decayAmount is the strip DEC position, also 0..1. Both are
+// clamped rather than rejected, matching the setter contract everywhere else.
+//
+// It is exported because it is the *only* correct spelling of this mapping —
+// the constant-ζ retune rule, the DAMP/DEC/D.TILT composition and the resonant
+// head's reduced asymmetry are all calibration decisions with their own
+// evidence. Offline tools that build a configuration from knob positions must
+// reuse it, or they measure a different instrument than the one that ships.
+func PhysicalTomConfig(values01 []float64, decayAmount, sampleRateHz float64) (physical.PhysicalDrum, error) {
+	if len(values01) != len(physicalTomSpecs) {
+		return physical.PhysicalDrum{}, fmt.Errorf(
+			"%w: got %d, want %d", ErrPhysicalTomParamCount,
+			len(values01), len(physicalTomSpecs),
+		)
+	}
+
+	value := func(index int) float64 {
+		return physicalTomSpecs[index].Map(clamp01(values01[index]))
+	}
+
+	config := physical.DefaultPhysicalDrum()
+	config.SampleRateHz = sampleRateHz
+
+	diameterM := value(physicalTomParamDiameter)
 	config.Batter.RadiusM = diameterM / 2
 	config.Resonant.RadiusM = diameterM / 2
 	// RetuneTension, not a bare assignment: the loss coefficients in the default
 	// config are quoted at its tension, so writing a new tension over them would
 	// leave ζ — and with it the whole decay calibration — drifting with the
 	// tuning knob. It used to, by a factor of three across B.TUNE's travel.
-	physical.RetuneTension(&config.Batter, v.params.value(physicalTomParamBatterTension))
-	physical.RetuneTension(&config.Resonant, v.params.value(physicalTomParamResonantTension))
+	physical.RetuneTension(&config.Batter, value(physicalTomParamBatterTension))
+	physical.RetuneTension(&config.Resonant, value(physicalTomParamResonantTension))
 
 	// DAMP scales every loss rate together; the strip DEC knob then trims them
 	// all by its documented reciprocal 0.5×–1.5× time scale. D.TILT is applied
 	// on top and only to the frequency-dependent terms, so it changes the shape
 	// of the decay across the mode series rather than its overall level.
-	lossScale := v.params.value(physicalTomParamDamping) /
-		(decayScaleMin + v.decayAmount)
-	tilt := v.params.value(physicalTomParamDampingTilt)
+	lossScale := value(physicalTomParamDamping) /
+		(decayScaleMin + clamp01(decayAmount))
+	tilt := value(physicalTomParamDampingTilt)
 	scaleHeadLosses(&config.Batter, lossScale, tilt)
 	scaleHeadLosses(&config.Resonant, lossScale, tilt)
 
-	config.Strike.Radius01 = v.params.value(physicalTomParamStrikeRadius)
-	config.Strike.AngleRad = v.params.value(physicalTomParamStrikeAngle) *
+	config.Strike.Radius01 = value(physicalTomParamStrikeRadius)
+	config.Strike.AngleRad = value(physicalTomParamStrikeAngle) *
 		math.Pi / 180
-	config.Strike.Hardness01 = v.params.value(physicalTomParamHardness)
-	config.Cavity.DepthM = v.params.value(physicalTomParamShellDepth)
-	config.Cavity.Coupling01 = v.params.value(physicalTomParamCavityCoupling)
+	config.Strike.Hardness01 = value(physicalTomParamHardness)
+	config.Cavity.DepthM = value(physicalTomParamShellDepth)
+	config.Cavity.Coupling01 = value(physicalTomParamCavityCoupling)
 
-	nonlinearScale := v.params.value(physicalTomParamNonlinearity)
+	nonlinearScale := value(physicalTomParamNonlinearity)
 	config.Nonlinearity.Enabled = nonlinearScale > 0
 	config.Nonlinearity.BatterTensionCoefficientNPerM3 *= nonlinearScale
 	config.Nonlinearity.ResonantTensionCoefficientNPerM3 *= nonlinearScale
 
-	config.Attack.LevelRelative = v.params.value(physicalTomParamAttackLevel)
-	config.Attack.CentreHz = v.params.value(physicalTomParamAttackTone)
+	config.Attack.LevelRelative = value(physicalTomParamAttackLevel)
+	config.Attack.CentreHz = value(physicalTomParamAttackTone)
 	// Nothing to do for the layer's decay: it is derived from the batter head's
 	// loss law, which scaleHeadLosses has already scaled. So DAMP, the strip DEC
 	// and D.TILT all reach the attack for free, and D.TILT now genuinely applies
 	// to it — three bands at different rates are a shape to tilt, where the single
 	// band this replaced was not.
 
-	config.Pickup.Radius01 = v.params.value(physicalTomParamPickupRadius)
-	config.Pickup.AngleRad = v.params.value(physicalTomParamPickupAngle) *
+	config.Pickup.Radius01 = value(physicalTomParamPickupRadius)
+	config.Pickup.AngleRad = value(physicalTomParamPickupAngle) *
 		math.Pi / 180
 
-	splitRatio := v.params.value(physicalTomParamAsymmetry) / 100
-	asymmetryAxis := v.params.value(physicalTomParamAsymmetryAxis) *
+	splitRatio := value(physicalTomParamAsymmetry) / 100
+	asymmetryAxis := value(physicalTomParamAsymmetryAxis) *
 		math.Pi / 180
 	config.Batter.TensionAsymmetry.SplitRatio = splitRatio
 	config.Batter.TensionAsymmetry.PrincipalAxisAngleRad = asymmetryAxis
@@ -182,13 +216,22 @@ func (v *physicalTom) reconfigure() error {
 	config.Resonant.TensionAsymmetry.SplitRatio = splitRatio * 0.75
 	config.Resonant.TensionAsymmetry.PrincipalAxisAngleRad = asymmetryAxis
 
-	switch int(v.params.value(physicalTomParamQuality)) {
+	switch int(value(physicalTomParamQuality)) {
 	case 0:
 		config.Quality = physical.QualityDraft
 	case 1:
 		config.Quality = physical.QualityStandard
 	case 2:
 		config.Quality = physical.QualityHigh
+	}
+
+	return config, nil
+}
+
+func (v *physicalTom) reconfigure() error {
+	config, err := PhysicalTomConfig(v.params.vals, v.decayAmount, v.config.SampleRateHz)
+	if err != nil {
+		return err
 	}
 
 	if err := v.model.Reconfigure(config); err != nil {

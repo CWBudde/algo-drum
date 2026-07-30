@@ -1,0 +1,296 @@
+{
+  "_readme": "Best fit of the physical Tom to a tom recording of unknown provenance, from cmd/fit-physical. NOT a validated acoustic calibration and NOT the shipped default: the spectral envelope misses by 13.6 dB. See docs/physical-measured-fit.md. Nothing in the test suite depends on the recording, which is gitignored.",
+  "reference": {
+    "path": "reference/tom.wav",
+    "channel": "mono",
+    "sampleRateHz": 44100,
+    "channels": 2,
+    "bitDepth": 16,
+    "frames": 198026
+  },
+  "search": {
+    "variant": "ma",
+    "iterations": 80,
+    "population": 16,
+    "restarts": 8,
+    "seed": 1,
+    "evaluations": 31616,
+    "durationSeconds": 1.2,
+    "quality": "draft",
+    "fixedParams": {
+      "physicalTom.quality": 0
+    }
+  },
+  "velocity01": 0.478204893426907,
+  "terms": {
+    "partialFrequencyCents": 21.49803442652433,
+    "partialLevelDB": 1.9570510586276553,
+    "partialDecayLogRatio": 0.17918416608489546,
+    "spectralEnvelopeDB": 13.620603969453555,
+    "envelopeDB": 1.1283736541246157,
+    "glideCents": 18.197889869038292,
+    "attackBalanceDB": 0.3016592456737328,
+    "unmatchedEnergyFraction": 0.026597561431080736,
+    "total": 6.363920944451419
+  },
+  "baselineTerms": {
+    "partialFrequencyCents": 119.3816755846538,
+    "partialLevelDB": 12.409952635797818,
+    "partialDecayLogRatio": 1.1060079439800954,
+    "spectralEnvelopeDB": 20.642235256010302,
+    "envelopeDB": 37.25915918237634,
+    "glideCents": 60.900453935034186,
+    "attackBalanceDB": 1.9258296203379697,
+    "unmatchedEnergyFraction": 0.9796128485139705,
+    "total": 33.45492778932622
+  },
+  "params": [
+    {
+      "index": 0,
+      "id": "physicalTom.diameter",
+      "label": "SIZE",
+      "unit": "m",
+      "normalized": 0.5995157021337522,
+      "value": 0.3168037698203024,
+      "fixed": false
+    },
+    {
+      "index": 1,
+      "id": "physicalTom.batterTension",
+      "label": "B.TUNE",
+      "unit": "N/m",
+      "normalized": 0.04345638189078846,
+      "value": 333.800437737913,
+      "fixed": false
+    },
+    {
+      "index": 2,
+      "id": "physicalTom.resonantTension",
+      "label": "R.TUNE",
+      "unit": "N/m",
+      "normalized": 0.19869814626949903,
+      "value": 488.7892028852349,
+      "fixed": false
+    },
+    {
+      "index": 3,
+      "id": "physicalTom.damping",
+      "label": "DAMP",
+      "normalized": 0.5826190452653797,
+      "value": 1.2574283373097572,
+      "fixed": false
+    },
+    {
+      "index": 4,
+      "id": "physicalTom.strikeRadius",
+      "label": "HIT.R",
+      "normalized": 0.6328912858794579,
+      "value": 0.601246721585485,
+      "fixed": false
+    },
+    {
+      "index": 5,
+      "id": "physicalTom.strikeAngle",
+      "label": "HIT.A",
+      "unit": "\u00b0",
+      "normalized": 0.5347979270183333,
+      "value": 12.52725372659998,
+      "fixed": false
+    },
+    {
+      "index": 6,
+      "id": "physicalTom.hardness",
+      "label": "HARD",
+      "normalized": 0.4265487006575536,
+      "value": 0.4265487006575536,
+      "fixed": false
+    },
+    {
+      "index": 7,
+      "id": "physicalTom.shellDepth",
+      "label": "DEPTH",
+      "unit": "m",
+      "normalized": 0.2231442221112472,
+      "value": 0.08705286404434037,
+      "fixed": false
+    },
+    {
+      "index": 8,
+      "id": "physicalTom.cavityCoupling",
+      "label": "AIR",
+      "normalized": 0.45468790472091847,
+      "value": 0.45468790472091847,
+      "fixed": false
+    },
+    {
+      "index": 9,
+      "id": "physicalTom.nonlinearity",
+      "label": "NLIN",
+      "normalized": 0.18123691273000098,
+      "value": 0.36247382546000195,
+      "fixed": false
+    },
+    {
+      "index": 10,
+      "id": "physicalTom.pickupRadius",
+      "label": "MIC.R",
+      "normalized": 0.599914858962385,
+      "value": 0.5699191160142657,
+      "fixed": false
+    },
+    {
+      "index": 11,
+      "id": "physicalTom.pickupAngle",
+      "label": "MIC.A",
+      "unit": "\u00b0",
+      "normalized": 0.5256779429224312,
+      "value": 9.24405945207522,
+      "fixed": false
+    },
+    {
+      "index": 12,
+      "id": "physicalTom.quality",
+      "label": "QUAL",
+      "normalized": 0,
+      "value": 0,
+      "fixed": true
+    },
+    {
+      "index": 13,
+      "id": "physicalTom.asymmetry",
+      "label": "ASYM",
+      "unit": "%",
+      "normalized": 0.5397590345876901,
+      "value": 1.0795180691753803,
+      "fixed": false
+    },
+    {
+      "index": 14,
+      "id": "physicalTom.asymmetryAxis",
+      "label": "AXIS",
+      "unit": "\u00b0",
+      "normalized": 0.4737025813980783,
+      "value": -4.73353534834591,
+      "fixed": false
+    },
+    {
+      "index": 15,
+      "id": "physicalTom.dampingTilt",
+      "label": "D.TILT",
+      "normalized": 0.13750951282458201,
+      "value": 0.41252853847374604,
+      "fixed": false
+    },
+    {
+      "index": 16,
+      "id": "physicalTom.attackLevel",
+      "label": "ATK.L",
+      "normalized": 0.1419513358068549,
+      "value": 0.021292700371028234,
+      "fixed": false
+    },
+    {
+      "index": 17,
+      "id": "physicalTom.attackTone",
+      "label": "ATK.T",
+      "unit": "Hz",
+      "normalized": 0.42934082356056047,
+      "value": 1644.1743524973851,
+      "fixed": false
+    }
+  ],
+  "config": {
+    "version": 9,
+    "sampleRateHz": 44100,
+    "quality": "draft",
+    "batter": {
+      "enabled": true,
+      "axisymmetricOnly": false,
+      "radiusM": 0.1584018849101512,
+      "surfaceDensityKgPerM2": 0.35,
+      "tensionNPerM": 333.800437737913,
+      "tensionAsymmetry": {
+        "splitRatio": 0.010795180691753803,
+        "principalAxisAngleRad": -0.08261577708817286
+      },
+      "bendingStiffnessNM": 0.001,
+      "loss0PerSecond": 1.0059426698478058,
+      "loss1MPerSecond": 0.11534453751118676,
+      "loss2M2PerSecond": 5.093065797612243e-6,
+      "radiationLossPerSecond": 1.886142505964636,
+      "modeDecayCorrections": [
+        {
+          "azimuthalOrder": 0,
+          "radialOrder": 1,
+          "decayRatePerSecond": 6.594179927434799
+        }
+      ],
+      "frequencyLimitFraction": 0.45,
+      "inactiveEnergyThresholdJ": 1e-12
+    },
+    "resonant": {
+      "enabled": true,
+      "axisymmetricOnly": true,
+      "radiusM": 0.1584018849101512,
+      "surfaceDensityKgPerM2": 0.25,
+      "tensionNPerM": 488.7892028852349,
+      "tensionAsymmetry": {
+        "splitRatio": 0.008096385518815353,
+        "principalAxisAngleRad": -0.08261577708817286
+      },
+      "bendingStiffnessNM": 0.0007,
+      "loss0PerSecond": 1.2574283373097572,
+      "loss1MPerSecond": 0.1651481012710232,
+      "loss2M2PerSecond": 6.756705263026358e-6,
+      "radiationLossPerSecond": 1.886142505964636,
+      "modeDecayCorrections": [
+        {
+          "azimuthalOrder": 0,
+          "radialOrder": 1,
+          "decayRatePerSecond": 9.388264154941886
+        }
+      ],
+      "frequencyLimitFraction": 0.45,
+      "inactiveEnergyThresholdJ": 1e-12
+    },
+    "strike": {
+      "radius01": 0.601246721585485,
+      "angleRad": 0.2186418237618992,
+      "contactRadiusM": 0.01,
+      "malletMassKg": 0.015,
+      "velocityMPerS": 3,
+      "hardness01": 0.4265487006575536
+    },
+    "cavity": {
+      "enabled": true,
+      "depthM": 0.08705286404434037,
+      "coupling01": 0.45468790472091847,
+      "stiffnessScale": 0.083,
+      "airDensityKgPerM3": 1.204,
+      "soundSpeedMPerS": 343,
+      "lossPerSecond": 5
+    },
+    "nonlinearity": {
+      "enabled": true,
+      "batterTensionCoefficientNPerM3": 3479748.724416019,
+      "resonantTensionCoefficientNPerM3": 2319832.4829440126,
+      "maximumTensionRatio": 0.2
+    },
+    "attack": {
+      "enabled": true,
+      "levelRelative": 0.021292700371028234,
+      "centreHz": 1644.1743524973851,
+      "qualityFactor": 0.7,
+      "decayScale": 1
+    },
+    "pickup": {
+      "radius01": 0.5699191160142657,
+      "angleRad": 0.16133927368881554,
+      "distanceM": 0.03,
+      "nearFieldScale": 1,
+      "highpassHz": 35,
+      "lowpassHz": 12000,
+      "outputGain": 0.0048
+    }
+  }
+}

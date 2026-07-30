@@ -309,3 +309,29 @@
     flex-wrap: wrap;
   }
 }
+
+/* Physical-tom preset selector. Sits between the model radio group and the
+   knob grid, so the order reads: which model, which preset, which knobs. */
+.dm-voice-preset {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9a9a9a;
+}
+
+.dm-voice-preset select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 6px;
+  font: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+  color: #ddd;
+  background: #1c1c1c;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+}
