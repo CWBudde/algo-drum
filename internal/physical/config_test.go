@@ -312,13 +312,18 @@ func TestDisabledNonlinearityStillRejectsNonFiniteFields(t *testing.T) {
 func TestQualityModeLimits(t *testing.T) {
 	t.Parallel()
 
+	// The tiers doubled once the resonant head stopped spending a full bank on
+	// modes nothing can excite. Zero for an unknown tier is not a fourth data
+	// point but a contract: Validate uses ModeLimit() == 0 as its is-this-a-known
+	// -quality test, so a tier that returned a real budget for a bogus name would
+	// make every configuration validate.
 	tests := []struct {
 		quality Quality
 		want    int
 	}{
-		{QualityDraft, 24},
-		{QualityStandard, 48},
-		{QualityHigh, 96},
+		{QualityDraft, 48},
+		{QualityStandard, 96},
+		{QualityHigh, 160},
 		{Quality("unknown"), 0},
 	}
 

@@ -12,6 +12,11 @@ func TestDoubleHeadZeroCouplingMatchesSingleHead(t *testing.T) {
 	config := DefaultPhysicalDrum()
 	config.Cavity.Enabled = false
 	config.Nonlinearity.Enabled = false
+	// SingleHead is the P2 linear modal reference and deliberately has no attack
+	// layer, so the equivalence being checked is between the two modal
+	// implementations. Leaving the layer on would compare a hybrid model against
+	// a modal one and prove nothing about either.
+	config.Attack.Enabled = false
 	single, err := NewSingleHead(config)
 	if err != nil {
 		t.Fatal(err)

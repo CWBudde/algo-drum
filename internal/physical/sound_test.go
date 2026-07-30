@@ -124,19 +124,33 @@ func TestContactPulsePreservesPrescribedImpulse(t *testing.T) {
 	}
 }
 
-// TestDefaultBatterSideSoundIsFundamentalLedInTheAttack asserts where the
-// fundamental is supposed to lead, which is not the same window it used to.
+// TestCentreStrikeSoundIsFundamentalLedInTheAttack asserts where the
+// fundamental is supposed to lead, which is neither the window nor the strike
+// position this test used to use.
 //
-// This test formerly required the (0,1) to be the strongest partial over 1.4 s.
-// That is the signature of the defect P8 corrects, not of a drum: the
-// axisymmetric fundamental is the mode that dumps its energy into the cavity
-// and the opposite head fastest, so it defines the initial pitch of the thump
-// and is gone well before the sustain. Once damped correctly it cannot win a
-// long window, and requiring it to would forbid the fix.
-func TestDefaultBatterSideSoundIsFundamentalLedInTheAttack(t *testing.T) {
+// It first required the (0,1) to be the strongest partial over 1.4 s. That is
+// the signature of the defect P8 corrects, not of a drum: the axisymmetric
+// fundamental dumps its energy into the cavity and the opposite head fastest, so
+// it defines the initial pitch of the thump and is gone well before the sustain.
+//
+// It then required the same of the *default* configuration's attack, which the
+// corrected microphone model shows is not a property of the model at all but of
+// where the drum is hit. Measured across strike radius and window length:
+//
+//	radius  43 ms   85 ms   171 ms
+//	0.00    117.2   105.5   105.5    fundamental throughout
+//	0.12    117.2   105.5   164.1
+//	0.30    164.1   164.1   164.1    the (1,1) pair throughout
+//
+// A centre hit is fundamental-led and an off-centre hit is (1,1)-led. That is
+// the real behaviour of a tom — it is why players strike toward the middle for a
+// full tone — so the invariant belongs to the centre hit, and pinning it to
+// whatever the shipped strike radius happens to be would forbid moving it.
+func TestCentreStrikeSoundIsFundamentalLedInTheAttack(t *testing.T) {
 	t.Parallel()
 
 	config := DefaultPhysicalDrum()
+	config.Strike.Radius01 = 0
 	model, err := NewDoubleHead(config)
 	if err != nil {
 		t.Fatal(err)
@@ -153,12 +167,18 @@ func TestDefaultBatterSideSoundIsFundamentalLedInTheAttack(t *testing.T) {
 	for index := range samples {
 		output := model.Tick()
 		samples[index] = output.Radiated
-		if output.RawRadiated != output.BatterRawRadiated {
+		// The microphone hears the batter head plus the attack layer, and
+		// specifically not the resonant head's own outward radiation — that
+		// leaves the far side of the shell and needs a propagation transfer
+		// nothing here supplies.
+		if output.RawRadiated !=
+			output.BatterRawRadiated+output.AttackRawRadiated {
 			t.Fatalf(
-				"sample %d batter-side pickup %v differs from batter radiation %v",
+				"sample %d pickup %v is not the batter radiation %v plus the attack layer %v",
 				index,
 				output.RawRadiated,
 				output.BatterRawRadiated,
+				output.AttackRawRadiated,
 			)
 		}
 		if output.ResonantRawRadiated != 0 {
@@ -172,7 +192,7 @@ func TestDefaultBatterSideSoundIsFundamentalLedInTheAttack(t *testing.T) {
 	attackHz := strongestSpectralPeakHz(t, samples, config.SampleRateHz, 60, 1_000)
 	if attackHz < 90 || attackHz > 130 {
 		t.Fatalf(
-			"default strongest attack peak = %.2f Hz, want fundamental in [90,130] Hz",
+			"centre-strike strongest attack peak = %.2f Hz, want fundamental in [90,130] Hz",
 			attackHz,
 		)
 	}
@@ -194,6 +214,104 @@ func TestDefaultBatterSideSoundIsFundamentalLedInTheAttack(t *testing.T) {
 			attackHz,
 		)
 	}
+}
+
+// TestDefaultSoundKeepsTheFundamentalAudible is the other half of the property
+// above. The shipped strike is off centre, so the fundamental is not required to
+// lead — but a drum whose fundamental has gone missing has no body at all, and
+// with the (1,1) pair leading nothing else in the suite would notice.
+//
+// The bound is a regression guard, not a target. Measured against strike radius,
+// the fundamental sits 2.07 dB below the strongest partial at 0.12, 7.23 at
+// 0.22, 9.78 at the shipped 0.30 and 11.22 at 0.36 — monotone, with no sweet
+// spot to find. So this catches the fundamental disappearing, and where inside
+// the range the drum sits is a tuning decision that HIT.R exposes.
+func TestDefaultSoundKeepsTheFundamentalAudible(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultPhysicalDrum()
+	model, err := NewDoubleHead(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fundamental, ok := model.BatterMode(0)
+	if !ok {
+		t.Fatal("batter head has no modes")
+	}
+	if fundamental.AzimuthalOrder != 0 || fundamental.RadialOrder != 1 {
+		t.Fatalf(
+			"lowest batter mode is (%d,%d), want the (0,1)",
+			fundamental.AzimuthalOrder,
+			fundamental.RadialOrder,
+		)
+	}
+	if err := model.Trigger(0.8); err != nil {
+		t.Fatal(err)
+	}
+
+	samples := make([]float64, 8192)
+	for index := range samples {
+		samples[index] = model.Tick().Radiated
+	}
+
+	magnitudes := spectralMagnitudes(t, samples)
+	binHz := config.SampleRateHz / float64(len(samples))
+	fundamentalBin := int(math.Round(fundamental.FrequencyHz / binHz))
+	// One bin either side: the coupled and tension-modulated frequency is close
+	// to the analytic one but not identical to it.
+	fundamentalMagnitude := 0.0
+	for offset := -1; offset <= 1; offset++ {
+		fundamentalMagnitude = max(
+			fundamentalMagnitude,
+			magnitudes[fundamentalBin+offset],
+		)
+	}
+
+	strongest := 0.0
+	for index := max(1, int(60/binHz)); index <= int(1_000/binHz); index++ {
+		strongest = max(strongest, magnitudes[index])
+	}
+
+	belowStrongestDB := 20 * math.Log10(strongest/fundamentalMagnitude)
+	t.Logf(
+		"fundamental %.2f Hz sits %.2f dB below the strongest partial",
+		fundamental.FrequencyHz,
+		belowStrongestDB,
+	)
+	if belowStrongestDB > 12 {
+		t.Fatalf(
+			"fundamental is %.2f dB below the strongest partial, want within 12 dB",
+			belowStrongestDB,
+		)
+	}
+}
+
+func spectralMagnitudes(t *testing.T, samples []float64) []float64 {
+	t.Helper()
+
+	windowed := make([]float64, len(samples))
+	for index, sample := range samples {
+		windowed[index] = sample * (0.5 - 0.5*math.Cos(
+			2*math.Pi*float64(index)/float64(len(samples)-1),
+		))
+	}
+
+	plan, err := algofft.NewPlanReal64(len(windowed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bins := make([]complex128, plan.SpectrumLen())
+	if err := plan.Forward(bins, windowed); err != nil {
+		t.Fatal(err)
+	}
+
+	magnitudes := make([]float64, len(bins))
+	for index, bin := range bins {
+		magnitudes[index] = math.Hypot(real(bin), imag(bin))
+	}
+
+	return magnitudes
 }
 
 func strongestSpectralPeakHz(

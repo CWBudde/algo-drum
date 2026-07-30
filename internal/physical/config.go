@@ -19,8 +19,9 @@ const (
 	fullCouplingConfigVersion     = 4
 	asymmetryConfigVersion        = 5
 	tiltedDampingConfigVersion    = 6
+	fittedCavityConfigVersion     = 7
 	// ConfigVersion is the physical-drum JSON schema emitted by EncodeConfig.
-	ConfigVersion = 7
+	ConfigVersion = 8
 
 	minSampleRateHz = 8_000.0
 	maxSampleRateHz = 384_000.0
@@ -42,16 +43,28 @@ const (
 	QualityHigh     Quality = "high"
 )
 
-// ModeLimit returns the maximum number of individual modal oscillators.
+// ModeLimit returns the modal-oscillator budget one head selects from.
 // Non-axisymmetric eigenmodes consume two slots (cosine and sine orientation).
+//
+// This is effectively the batter head's budget. A head with AxisymmetricOnly set
+// runs the same selection and then keeps only its m = 0 modes, so the resonant
+// head costs a handful of oscillators rather than a second full bank — 7 of the
+// 96 at Standard. Total cost is therefore about 103 oscillators where the same
+// tier used to be 96, for twice the mode count on the head that is heard.
+//
+// The tiers doubled when the resonant head stopped being computed and discarded.
+// Bandwidth grows only as the square root of the count, because a membrane's mode
+// count grows as f²: 48 to 96 slots moves the top retained mode from 646 Hz to
+// about 914 Hz, which is 0.6 of an octave, not one. Reaching several kHz modally
+// would need thousands of oscillators, which is why the attack layer exists.
 func (q Quality) ModeLimit() int {
 	switch q {
 	case QualityDraft:
-		return 24
-	case QualityStandard:
 		return 48
-	case QualityHigh:
+	case QualityStandard:
 		return 96
+	case QualityHigh:
+		return 160
 	default:
 		return 0
 	}
@@ -67,6 +80,7 @@ type PhysicalDrum struct {
 	Strike       Strike       `json:"strike"`
 	Cavity       Cavity       `json:"cavity"`
 	Nonlinearity Nonlinearity `json:"nonlinearity"`
+	Attack       Attack       `json:"attack"`
 	Pickup       Pickup       `json:"pickup"`
 }
 
@@ -79,8 +93,18 @@ type PhysicalDrum struct {
 // series, which is the measured behaviour above the fundamental. Loss0 is a
 // frequency-independent floor and Loss2 an excess high-frequency loss; neither
 // can produce constant Q on its own, so both stay small.
+//
+// AxisymmetricOnly retains just the m = 0 modes. On the resonant head this is
+// free rather than approximate: nothing can excite an m > 0 resonant mode. The
+// strike force reaches only batter modes, and the cavity — the sole path between
+// the heads — couples through the swept area, which is exactly zero for every
+// m > 0 mode. Their displacement, their strain contribution to the tension law
+// and their stored energy are therefore all exactly zero for all time, so
+// dropping them is bit-exact and reclaims 44 of the resonant head's 48
+// oscillators. On the batter head it would silence most of the instrument.
 type Head struct {
 	Enabled                  bool                  `json:"enabled"`
+	AxisymmetricOnly         bool                  `json:"axisymmetricOnly"`
 	RadiusM                  float64               `json:"radiusM"`
 	SurfaceDensityKgPerM2    float64               `json:"surfaceDensityKgPerM2"`
 	TensionNPerM             float64               `json:"tensionNPerM"`
@@ -114,6 +138,19 @@ type ModeDecayCorrection struct {
 }
 
 // Mode describes one retained circular-head oscillator.
+//
+// Three of these fields are easy to confuse, so they are named for what they
+// are rather than for where they are used:
+//
+//   - SweptAreaM2 is the signed *net* area the mode sweeps, and is exactly zero
+//     for every m > 0 mode. It is the cavity's coupling coefficient and nothing
+//     else.
+//   - RadiatingMomentM2 is the far-field geometric factor: the exact Rayleigh
+//     integral of the mode shape against the observation direction. It equals
+//     SweptAreaM2 when the microphone is on axis and is non-zero for m > 0.
+//   - PickupShape is the mode shape at a point on the head. It belongs to the
+//     near-field contact diagnostics and to strike weighting, and must not
+//     appear in a far-field weight.
 type Mode struct {
 	AzimuthalOrder           int
 	RadialOrder              int
@@ -130,6 +167,8 @@ type Mode struct {
 	StrikeAccelerationPerN   float64
 	PickupShape              float64
 	RadiationWeight          float64
+	RadiatingMomentM2        float64
+	RadiationDirectivity     float64
 	SweptAreaM2              float64
 }
 
@@ -174,16 +213,37 @@ type Nonlinearity struct {
 	MaximumTensionRatio              float64 `json:"maximumTensionRatio"`
 }
 
-// Pickup selects a diagnostic observation point and compact microphone
-// response. Radius01 and AngleRad locate the microphone projection over the
-// head; DistanceM controls geometric attenuation.
+// Attack is the stochastic high-band layer that stands in for the modes this
+// model cannot afford to resolve. LevelRelative is fitted against the modal
+// layer; CentreHz and QualityFactor place its band; DecaySeconds is its own
+// release, independent of any head's loss law because what it represents decays
+// far faster than the resolved modes do.
+type Attack struct {
+	Enabled       bool    `json:"enabled"`
+	LevelRelative float64 `json:"levelRelative"`
+	CentreHz      float64 `json:"centreHz"`
+	QualityFactor float64 `json:"qualityFactor"`
+	DecaySeconds  float64 `json:"decaySeconds"`
+}
+
+// Pickup places the microphone and sets the balance of the two mechanisms it
+// hears. Radius01 and AngleRad locate it over the head and DistanceM sets its
+// height, and between them they decide both the observation direction used by
+// the far-field weight and how much of the non-propagating near field survives.
+//
+// NearFieldScale sets how much of that near field the microphone picks up. It is
+// fitted, not derived — the effective area of an evanescent patch is outside
+// what this reduced model can compute — and it matters more than any other
+// number here: in the far field a drum this size is nearly a monopole, so with
+// the scale at zero the output is very nearly the axisymmetric modes alone.
 type Pickup struct {
-	Radius01   float64 `json:"radius01"`
-	AngleRad   float64 `json:"angleRad"`
-	DistanceM  float64 `json:"distanceM"`
-	HighpassHz float64 `json:"highpassHz"`
-	LowpassHz  float64 `json:"lowpassHz"`
-	OutputGain float64 `json:"outputGain"`
+	Radius01       float64 `json:"radius01"`
+	AngleRad       float64 `json:"angleRad"`
+	DistanceM      float64 `json:"distanceM"`
+	NearFieldScale float64 `json:"nearFieldScale"`
+	HighpassHz     float64 `json:"highpassHz"`
+	LowpassHz      float64 `json:"lowpassHz"`
+	OutputGain     float64 `json:"outputGain"`
 }
 
 // DefaultPhysicalDrum returns a conservative 12-inch double-headed tom
@@ -222,7 +282,10 @@ func DefaultPhysicalDrum() PhysicalDrum {
 		Quality:      QualityStandard,
 		Batter:       head,
 		Resonant: Head{
-			Enabled:               true,
+			Enabled: true,
+			// Free: see the note on Head. The 44 oscillators this reclaims are
+			// what pays for the batter head's wider band.
+			AxisymmetricOnly:      true,
 			RadiusM:               head.RadiusM,
 			SurfaceDensityKgPerM2: 0.25,
 			TensionNPerM:          500,
@@ -246,7 +309,13 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			InactiveEnergyThresholdJ: head.InactiveEnergyThresholdJ,
 		},
 		Strike: Strike{
-			Radius01:       0.12,
+			// 0.30 of the radius, not the near-centre 0.12 it shipped with. A
+			// centre hit excites the axisymmetric modes and very little else, so
+			// it is a tuned thump rather than a tom; at 0.30 the (1,1) family is
+			// properly excited (J1(1.15) = 0.47) while the fundamental still is
+			// (J0(0.72) = 0.87). Off-centre is also where a tom is actually
+			// struck.
+			Radius01:       0.30,
 			AngleRad:       0.2,
 			ContactRadiusM: 0.01,
 			MalletMassKg:   0.015,
@@ -267,18 +336,73 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			LossPerSecond:     5,
 		},
 		Nonlinearity: Nonlinearity{
-			Enabled:                          true,
-			BatterTensionCoefficientNPerM3:   3.0e5,
-			ResonantTensionCoefficientNPerM3: 2.0e5,
+			Enabled: true,
+			// Four times the coefficients this shipped with. Every published tom
+			// analysis treats the downward glide as the characteristic feature,
+			// and at the old value it was 38 cents on the loudest hit — real, but
+			// below what anyone hears as a bend. Measured against the multiplier:
+			//
+			//	x1   37.9 cents loud, 1.5 quiet
+			//	x2   65.7 cents loud, 2.3 quiet
+			//	x4  102.8 cents loud, 3.0 quiet
+			//	x8  135.7 cents loud, 7.5 quiet
+			//	x16 152.0 cents loud, 14.3 quiet
+			//
+			// x4 is an audible semitone that still leaves the tanh cap well
+			// clear: past x8 the loud hit sits on the plateau, which flattens the
+			// glide into a hold-then-drop and erodes the velocity dependence that
+			// makes it expressive. The discretization error against a 4x
+			// oversampled reference goes 0.0773 % to 0.0833 % against a 1.5 %
+			// ceiling, and the solve costs nothing extra — see the note in
+			// nonlinear.go.
+			BatterTensionCoefficientNPerM3:   1.2e6,
+			ResonantTensionCoefficientNPerM3: 8.0e5,
 			MaximumTensionRatio:              0.2,
 		},
+		Attack: Attack{
+			Enabled: true,
+			// Fitted by spectral balance, like the near-field scale. Measured in
+			// the 43 ms attack window, against the strongest low partial:
+			//
+			//	level   1-2 kHz   2-5 kHz   5-10 kHz
+			//	0        -66.9     -83.9     -99.8
+			//	0.05     -38.3     -33.0     -33.9
+			//	0.1      -32.3     -27.0     -27.9
+			//	0.2      -26.3     -20.9     -21.9
+			//
+			// The first row is the defect: with modal synthesis alone there is
+			// nothing above 1 kHz at all. 0.1 is a stick that is clearly present
+			// and still well under the fundamental; 0.2 reads as a click.
+			LevelRelative: 0.1,
+			CentreHz:      3000,
+			// Broad on purpose. This band stands in for a dense thicket of
+			// unresolved modes, so a resonant peak would be a worse lie than a
+			// gentle hump: Q = 0.7 spans roughly 1 to 8 kHz.
+			QualityFactor: 0.7,
+			// Much shorter than any resolved mode's decay, because what it stands
+			// for genuinely decays faster: high modes have the most radiation and
+			// structural loss, and constant Q means their absolute rate is highest.
+			DecaySeconds: 0.02,
+		},
 		Pickup: Pickup{
-			Radius01:   0.32,
-			AngleRad:   0.6,
-			DistanceM:  0.30,
-			HighpassHz: 35,
-			LowpassHz:  12_000,
-			OutputGain: 0.6,
+			// A tom microphone is a close one, a few centimetres off the head
+			// and out toward the rim, and this model is unusually sensitive to
+			// that: the far-field term alone leaves every m > 0 mode at least
+			// 23 dB down, because a 12-inch head below 600 Hz really is nearly a
+			// monopole. Fitted here, the partial structure is (0,1) 0 dB, (1,1)
+			// -7.1 and -10.4, (0,2) -8.5, (2,1) -9.3 and -17.5, falling to
+			// -34.5 dB at the top of the retained band.
+			Radius01:       0.65,
+			AngleRad:       0.6,
+			DistanceM:      0.03,
+			NearFieldScale: 1,
+			HighpassHz:     35,
+			LowpassHz:      12_000,
+			// Fitted so a velocity-1 hit peaks at 0.9 with no compensating gain
+			// in the voice, with the attack layer included. Small because the
+			// radiated sum is now a volume acceleration in m³/s² rather than a
+			// bare modal velocity.
+			OutputGain: 0.0033,
 		},
 	}
 }
@@ -365,6 +489,14 @@ func (d PhysicalDrum) Validate() error {
 		return err
 	}
 
+	if err := validateAttack(d); err != nil {
+		return err
+	}
+
+	if err := finiteRange("pickup.nearFieldScale", d.Pickup.NearFieldScale, 0, 10); err != nil {
+		return err
+	}
+
 	if err := finiteRange("pickup.distanceM", d.Pickup.DistanceM, 0.01, 10); err != nil {
 		return err
 	}
@@ -425,6 +557,10 @@ func DecodeConfig(data []byte) (PhysicalDrum, error) {
 		migrateV6Config(&config)
 	}
 
+	if config.Version == fittedCavityConfigVersion {
+		migrateV7Config(&config)
+	}
+
 	if err := config.Validate(); err != nil {
 		return PhysicalDrum{}, err
 	}
@@ -480,13 +616,38 @@ func migrateV5Config(config *PhysicalDrum) {
 }
 
 func migrateV6Config(config *PhysicalDrum) {
-	config.Version = ConfigVersion
+	// Named, not ConfigVersion: assigning the latest here would let a version-6
+	// document skip every migration added after this one, silently and without
+	// failing this migration's own test.
+	config.Version = fittedCavityConfigVersion
 	// Version 6 derived the cavity stiffness from the rigid rho*c²/V, so the
 	// unscaled value is what reproduces it. Unlike the other compatibility
 	// migrations this one cannot rely on the zero value: an absent
 	// stiffnessScale decodes to 0, which is the uncoupled limit rather than the
 	// old sound, so it has to be written explicitly.
 	config.Cavity.StiffnessScale = 1
+}
+
+// migrateV7Config carries a version-7 document onto the corrected microphone
+// model. Unlike the migrations above it cannot promise the old sound: version 7
+// summed modal velocity weighted by a far-field radiation efficiency times a
+// near-field point mode shape, which is not a physical quantity and is not
+// reconstructible from a scale factor. The radiated sum is corrected for old and
+// new configurations alike; only the mixture of the two mechanisms is
+// migratable, and zero — pure far field — is its exact absence.
+func migrateV7Config(config *PhysicalDrum) {
+	config.Version = ConfigVersion
+	// Version 7 had no separate near-field term, so its absent field decodes to
+	// the zero that means "propagating part only". That is a meaningful setting
+	// rather than a broken one: it is what a distant microphone hears.
+	//
+	// Its output gain, however, was fitted against the old sum and would be
+	// roughly two orders of magnitude hot against this one, so it moves to the
+	// calibrated default. Note this migration has no production caller —
+	// EncodeConfig/DecodeConfig are used by tests, and the voice rebuilds from
+	// DefaultPhysicalDrum on every edit — so it is for internal consistency, not
+	// for user state.
+	config.Pickup.OutputGain = DefaultPhysicalDrum().Pickup.OutputGain
 }
 
 func validateNonlinearity(config PhysicalDrum) error {
@@ -659,4 +820,36 @@ func finiteRange(name string, value, minValue, maxValue float64) error {
 	}
 
 	return nil
+}
+
+func validateAttack(config PhysicalDrum) error {
+	attack := config.Attack
+	if err := finiteRange(
+		"attack.levelRelative",
+		attack.LevelRelative,
+		0,
+		1_000,
+	); err != nil {
+		return err
+	}
+
+	if err := finiteRange(
+		"attack.centreHz",
+		attack.CentreHz,
+		20,
+		config.SampleRateHz/2,
+	); err != nil {
+		return err
+	}
+
+	if err := finiteRange(
+		"attack.qualityFactor",
+		attack.QualityFactor,
+		0.1,
+		20,
+	); err != nil {
+		return err
+	}
+
+	return finiteRange("attack.decaySeconds", attack.DecaySeconds, 0, 1)
 }

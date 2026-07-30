@@ -59,9 +59,10 @@ two-headed drums show it as the shortest partial in the low band, not the
 longest.
 
 The default 12-inch head's lowest mode is 104.00 Hz with a 0.21 s analytic
-amplitude \(T_{60}\); its highest retained mode at 646 Hz decays in 0.15 s.
-These are model targets, not claims about a commercial drum. The physical
-configuration schema is version 7. Version-1 configurations are migrated by
+amplitude \(T_{60}\); its highest retained mode, at 915 Hz once the reclaimed
+resonant-head budget went to the batter head, decays in about 0.13 s. These are
+model targets, not claims about a commercial drum. The physical
+configuration schema is version 8. Version-1 configurations are migrated by
 filling the P2 radiation and microphone defaults; version-2 linear double-head
 configurations migrate with P4 nonlinearity disabled so their sound is
 unchanged; version 3 migrates with full cavity coupling, preserving its
@@ -78,21 +79,97 @@ the rigid value.
 
 ## Radiation and microphone response
 
-The head-point diagnostic remains the modal sum weighted by the circular mode
-shape at the pickup projection. The radiated diagnostic instead uses
+The observable is **volume acceleration**, because far-field pressure from a
+compact source is \(p = \rho\ddot V/4\pi r\) with no further frequency
+dependence. The head-point diagnostics remain the modal sum weighted by the
+circular mode shape at the pickup projection; the microphone signal does not use
+that mode shape at all — a near-field point shape and a far-field efficiency are
+different objects, and multiplying them nulls modes arbitrarily as the microphone
+moves.
+
+### The far-field term
+
+The Rayleigh integral of one circular mode against the observation direction is a
+Lommel integral, and because \(J_m(z_{mn}) = 0\) by construction it collapses to
+a closed form with nothing left over:
+
+\[
+G_{mn} =
+2\pi R^2 \, z \, J_{m+1}(z) \, \frac{J_m(u)}{z^2 - u^2},
+\qquad
+u = \frac{\omega_{mn} R}{c}\sin\theta .
+\]
+
+Two properties carry the physics:
+
+- at \(u = 0\) it is *exactly* the swept area \(2\pi R^2 J_1(z)/z\) for m = 0 and
+  exactly zero for m > 0, so an on-axis microphone hears the axisymmetric modes
+  and nothing else, which is the correct and measurable result;
+- \(J_m(u) \sim (u/2)^m/m!\) for small \(u\), so multipole cancellation comes out
+  of the integral instead of being approximated by a rolloff exponent.
+
+The observation angle comes from the microphone geometry already in the
+configuration, \(\sin\theta = r_\mathrm{mic}/\sqrt{r_\mathrm{mic}^2 + d^2}\).
+Because a membrane carries waves far slower than air does, \(u/z\) is bounded by
+\(c_\mathrm{membrane}/c_\mathrm{air}\) — about 0.12 here — so the denominator
+cannot vanish for any real head. The coincidence limit \(\pi R^2 J_{m+1}(z)^2\)
+is implemented anyway rather than dividing by something unchecked.
+
+The compact approximation is good to \(ka\) of about 3, which covers the retained
+band.
+
+### The near-field term, and why it is needed
+
+The far-field term alone is not what a tom microphone hears. Measured on the
+default configuration, multipole cancellation leaves every m > 0 mode at least
+23 dB down even with the microphone against the head — correct for a distant
+microphone, because a 12-inch head below 600 Hz really is nearly a monopole, and
+wrong for the close one a tom is actually recorded with, at \(d/a\) of about a
+third.
+
+What a close microphone picks up there is the part of the field that never
+radiates. For a structural wave slower than sound that part is evanescent,
+decaying as \(e^{-k d}\) with the mode's own structural wavenumber, so higher
+modes fade out of it faster than low ones; its shape at the microphone is the
+mode shape. So the weight is a **sum of two terms**, not a product:
+
+\[
+W_i = G_{mn}\,D_m(\phi)\,\frac{1}{1+d/a}
+\;+\;
+s_\mathrm{nf}\,2\pi R^2 e^{-z_{mn} d/R}\,\Phi_i .
+\]
+
+\(D_m(\phi) = \cos m(\phi-\phi_0)\) or \(\sin\) is the far-field azimuthal
+pattern, which depends on the microphone's angle and never on its radius — the
+polar dependence lives in \(u\). \(\Phi_i\) is `PickupShape`, which is the right
+object here and only here. `Pickup.NearFieldScale` is \(s_\mathrm{nf}\); it is
+fitted, because the effective area of an evanescent patch is not something this
+reduced model can compute. The exponential carries this term's whole distance
+law, so the geometric spreading factor deliberately does not appear in it.
+
+Both terms multiply the same per-mode acceleration, so the weight stays one
+precomputed scalar and the per-sample cost is unchanged.
+
+The fitted result at the shipped close-microphone geometry — 0.65 of the radius,
+30 mm up — is a partial structure of (0,1) 0 dB, (1,1) −7.1 and −10.4, (0,2)
+−8.5, (2,1) −9.3 and −17.5, falling to −34.5 dB at the top of the retained band.
+
+### What the efficiency factor is still for
 
 \[
 R_i =
-\left(\frac{ka}{\sqrt{1+(ka)^2}}\right)^{m_i+1},
-\qquad
-ka = \frac{\omega_i a}{c}.
+\left(\frac{ka}{\sqrt{1+(ka)^2}}\right)^{m_i+1}
 \]
 
-Each azimuthal order adds one multipole-cancellation factor. The final modal
-weight combines \(R_i\), the microphone projection's mode shape, and the compact
-distance term \(1/(1+d/a)\). This is a deliberately reduced radiation model:
-it distinguishes axisymmetric, dipole-like, and higher modes without claiming
-to replace a boundary-element radiation solve.
+remains, but only to apportion **radiation damping** across the mode series. It
+is deliberately not the output weight. As an amplitude ratio against modal
+velocity it already contains one factor of \(ka\), so using it beside the
+volume-acceleration observable would count that factor twice — about +10 dB of
+unjustified tilt across the retained band, which a refitted output gain would
+have concealed. And raising it to \(m+1\) stands in for a multipole cancellation
+whose true magnitude is \(1/(2^m m!)\), which is off by seven orders at the
+highest retained azimuthal order.
+
 
 The raw radiation sum passes through Butterworth high-pass and low-pass
 biquads from `algo-dsp`. Defaults are 35 Hz and 12 kHz. `Output` exposes the

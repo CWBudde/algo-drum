@@ -193,7 +193,11 @@ func (s *SingleHead) Tick() Output {
 
 	for index, mode := range s.modes {
 		oldDisplacement := s.displacement[index]
-		oldVelocity := s.velocity[index] +
+		// Captured before the contact impulse, so the acceleration below
+		// includes it. Taking it afterwards would leave only
+		// (matrix22 - 1)*F*a*dt of the strike, which is very nearly nothing.
+		previousVelocity := s.velocity[index]
+		oldVelocity := previousVelocity +
 			forceN*mode.StrikeAccelerationPerN*inverseSampleRate
 		newDisplacement := s.matrix11[index]*oldDisplacement +
 			s.matrix12[index]*oldVelocity
@@ -205,7 +209,8 @@ func (s *SingleHead) Tick() Output {
 
 		output.DisplacementM += mode.PickupShape * newDisplacement
 		output.VelocityMPerS += mode.PickupShape * newVelocity
-		output.RawRadiated += mode.RadiationWeight * newVelocity
+		output.RawRadiated += mode.RadiationWeight *
+			(newVelocity - previousVelocity) * s.config.SampleRateHz
 		output.MechanicalEnergyJ += 0.5 * mode.ModalMassKg *
 			(newVelocity*newVelocity +
 				mode.AngularFrequency*mode.AngularFrequency*newDisplacement*newDisplacement)

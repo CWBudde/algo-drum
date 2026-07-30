@@ -55,9 +55,9 @@ func TestParamSpecsWellFormed(t *testing.T) {
 }
 
 func TestPhysicalTomParamSpecsWellFormed(t *testing.T) {
-	if len(physicalTomSpecs) != physicalTomParamDampingTilt+1 {
+	if len(physicalTomSpecs) != physicalTomParamAttackTone+1 {
 		t.Fatalf("physical Tom has %d specs, want %d",
-			len(physicalTomSpecs), physicalTomParamDampingTilt+1)
+			len(physicalTomSpecs), physicalTomParamAttackTone+1)
 	}
 
 	seen := make(map[string]bool, len(physicalTomSpecs))
@@ -98,6 +98,20 @@ func TestPhysicalTomParamIDsAreStable(t *testing.T) {
 		"physicalTom.quality",
 		"physicalTom.asymmetry",
 		"physicalTom.asymmetryAxis",
+		"physicalTom.dampingTilt",
+		"physicalTom.attackLevel",
+		"physicalTom.attackTone",
+	}
+
+	// Covering every index matters: the list had fallen one entry behind, so the
+	// damping tilt added at index 15 was outside the guard that exists to stop a
+	// slot's meaning changing under links already in the wild.
+	if len(want) != len(physicalTomSpecs) {
+		t.Fatalf(
+			"pinned %d IDs for %d specs; every index must be pinned",
+			len(want),
+			len(physicalTomSpecs),
+		)
 	}
 
 	for index, id := range want {

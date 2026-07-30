@@ -20,6 +20,17 @@ func TestNonlinearTensionProducesVelocityDependentPitchGlide(t *testing.T) {
 		loudLate,
 	)
 
+	// In cents, because that is the unit the property is stated in: a glide has
+	// to be heard as a bend, and the ratio test below passes at 38 cents, which
+	// is not. 60 is a floor with the shipped 102.8 well clear of it; the ceiling
+	// is there because the tension cap is at 157 cents and a glide pressed
+	// against it stops being velocity-dependent.
+	glideCents := 1200 * math.Log2(loudEarly/loudLate)
+	t.Logf("loud glide %.1f cents", glideCents)
+
+	if glideCents < 60 || glideCents > 140 {
+		t.Fatalf("loud glide %.1f cents outside [60, 140]", glideCents)
+	}
 	if loudEarly <= loudLate*1.015 {
 		t.Fatalf(
 			"loud frequency did not glide down enough: %.3f -> %.3f Hz",
@@ -49,7 +60,7 @@ func TestNonlinearAttackSpectrumBrightensWithVelocityAndAvoidsNyquist(t *testing
 	quietCentroid, quietAlias := nonlinearAttackSpectrum(t, 0.2)
 	loudCentroid, loudAlias := nonlinearAttackSpectrum(t, 1)
 	t.Logf(
-		"attack centroid: quiet %.1f Hz, loud %.1f Hz; top-band energy %.3g / %.3g",
+		"overtone centroid: quiet %.1f Hz, loud %.1f Hz; top-band energy %.3g / %.3g",
 		quietCentroid,
 		loudCentroid,
 		quietAlias,
@@ -58,7 +69,7 @@ func TestNonlinearAttackSpectrumBrightensWithVelocityAndAvoidsNyquist(t *testing
 
 	if loudCentroid <= quietCentroid*1.01 {
 		t.Fatalf(
-			"loud attack centroid %.3f Hz not above quiet %.3f Hz",
+			"loud overtone centroid %.3f Hz not above quiet %.3f Hz",
 			loudCentroid,
 			quietCentroid,
 		)
@@ -287,7 +298,16 @@ func TestNonlinearFrequencyBoundKeepsRetainedModesBelowNyquist(t *testing.T) {
 func nonlinearFirstModeFrequencies(t *testing.T, velocity float64) (float64, float64) {
 	t.Helper()
 
-	config := isolatedNonlinearConfig()
+	return nonlinearFirstModeFrequenciesFor(t, isolatedNonlinearConfig(), velocity)
+}
+
+func nonlinearFirstModeFrequenciesFor(
+	t *testing.T,
+	config PhysicalDrum,
+	velocity float64,
+) (float64, float64) {
+	t.Helper()
+
 	model, err := NewDoubleHead(config)
 	if err != nil {
 		t.Fatal(err)
@@ -358,19 +378,36 @@ func nonlinearAttackSpectrum(t *testing.T, velocity float64) (float64, float64) 
 		t.Fatal(err)
 	}
 
-	totalPower := 0.0
+	// The centroid is taken above the fundamental, not across the whole band.
+	// Tension modulation shifts every partial upward; it does not move energy
+	// into the top of the spectrum. A full-band centroid is dominated by the
+	// fundamental's *level* instead, and with the corrected microphone model —
+	// where a centre hit is almost entirely (0,1) — it barely moves at all:
+	// 112.373 Hz quiet against 112.377 Hz loud, which is not a measurement of
+	// anything. Above the fundamental the mechanism is unambiguous.
+	fundamental, ok := model.BatterMode(0)
+	if !ok {
+		t.Fatal("batter head has no modes")
+	}
+
+	overtoneFloorHz := 1.4 * fundamental.FrequencyHz
+	fullPower := 0.0
+	overtonePower := 0.0
 	weightedFrequency := 0.0
 	topBandPower := 0.0
 	for index, bin := range bins {
 		power := real(bin)*real(bin) + imag(bin)*imag(bin)
 		frequency := float64(index) * config.SampleRateHz / fftSize
-		totalPower += power
-		weightedFrequency += frequency * power
+		fullPower += power
+		if frequency >= overtoneFloorHz {
+			overtonePower += power
+			weightedFrequency += frequency * power
+		}
 		if frequency >= 0.99*config.SampleRateHz/2 {
 			topBandPower += power
 		}
 	}
-	if totalPower == 0 {
+	if fullPower == 0 || overtonePower == 0 {
 		t.Fatal("zero attack spectrum")
 	}
 	t.Logf(
@@ -380,7 +417,7 @@ func nonlinearAttackSpectrum(t *testing.T, velocity float64) (float64, float64) 
 		maximumIterations,
 	)
 
-	return weightedFrequency / totalPower, topBandPower / totalPower
+	return weightedFrequency / overtonePower, topBandPower / fullPower
 }
 
 func isolatedNonlinearConfig() PhysicalDrum {

@@ -18,6 +18,7 @@ type DoubleHeadOutput struct {
 	ResonantVelocityMPerS        float64
 	BatterRawRadiated            float64
 	ResonantRawRadiated          float64
+	AttackRawRadiated            float64
 	RawRadiated                  float64
 	Radiated                     float64
 	CavityPressurePa             float64
@@ -58,11 +59,20 @@ type DoubleHead struct {
 	strainWeight     []float64
 	radiationHP      biquad.Section
 	radiationLP      biquad.Section
+	attack           attackLayer
 
 	pendingForce   []float64
 	pendingIndex   int
 	pendingSamples int
 	contactSamples int
+
+	// The radiated sums are formed inside the update loops, where the discrete
+	// acceleration is available without keeping a second velocity history, and
+	// read back by observe. A consequence worth knowing: observe called on its
+	// own, without a preceding update, reports the previous tick's radiation.
+	batterRadiatedM3PerS2   float64
+	resonantRadiatedM3PerS2 float64
+	attackRadiatedM3PerS2   float64
 
 	cavityVolumeM3             float64
 	cavityBulkStiffnessPaPerM3 float64
@@ -175,6 +185,8 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 		config.Nonlinearity.MaximumTensionRatio,
 		config.Resonant.TensionNPerM,
 	)
+
+	model.attack = newAttackLayer(config.Attack, config.SampleRateHz)
 
 	model.cavityVolumeM3 = math.Pi * config.Batter.RadiusM *
 		config.Batter.RadiusM * config.Cavity.DepthM
@@ -289,10 +301,14 @@ func (d *DoubleHead) Reset() {
 	d.pendingIndex = 0
 	d.pendingSamples = 0
 	d.contactSamples = 0
+	d.attackRadiatedM3PerS2 = 0
 	d.cavityPressurePa = 0
 	d.batterNonlinear.strainMeasureM2 = 0
 	d.resonantNonlinear.strainMeasureM2 = 0
 	d.nonlinearSolveIterations = 0
+	d.batterRadiatedM3PerS2 = 0
+	d.resonantRadiatedM3PerS2 = 0
+	d.attack.reset()
 	d.energy = 0
 	d.radiationHP.Reset()
 	d.radiationLP.Reset()
@@ -306,12 +322,17 @@ func (d *DoubleHead) IsActive() bool {
 		threshold = min(threshold, d.config.Resonant.InactiveEnergyThresholdJ)
 	}
 
-	return d.pendingSamples > 0 || d.energy > threshold
+	return d.pendingSamples > 0 || d.energy > threshold ||
+		d.attack.isRinging()
 }
 
 // Tick advances both modal banks and the cavity by one sample.
 func (d *DoubleHead) Tick() DoubleHeadOutput {
 	forceN := d.nextForce()
+	// Advanced before the modal update so the layer sees the same contact sample
+	// the modes do, and so it keeps running once the pulse is over.
+	d.attackRadiatedM3PerS2 = d.attack.tick(forceN)
+
 	if (!d.config.Cavity.Enabled || d.config.Cavity.Coupling01 == 0) &&
 		!d.config.Nonlinearity.Enabled {
 		return d.tickUncoupled(forceN)
@@ -347,8 +368,16 @@ func (d *DoubleHead) nextForce() float64 {
 
 func (d *DoubleHead) tickUncoupled(forceN float64) DoubleHeadOutput {
 	inverseSampleRate := 1 / d.config.SampleRateHz
+	batterRadiated := 0.0
+	resonantRadiated := 0.0
+
 	for index, mode := range d.modes {
-		oldVelocity := d.velocity[index]
+		// Captured before the contact impulse, so the acceleration below
+		// includes it. Taking it afterwards would leave only
+		// (matrix22 - 1)*F*a*dt of the strike, which is very nearly nothing.
+		previousVelocity := d.velocity[index]
+
+		oldVelocity := previousVelocity
 		if index < d.batterModeCount {
 			oldVelocity += forceN * mode.StrikeAccelerationPerN * inverseSampleRate
 		}
@@ -356,9 +385,23 @@ func (d *DoubleHead) tickUncoupled(forceN float64) DoubleHeadOutput {
 		oldDisplacement := d.displacement[index]
 		d.displacement[index] = d.matrix11[index]*oldDisplacement +
 			d.matrix12[index]*oldVelocity
-		d.velocity[index] = d.matrix21[index]*oldDisplacement +
+		newVelocity := d.matrix21[index]*oldDisplacement +
 			d.matrix22[index]*oldVelocity
+		d.velocity[index] = newVelocity
+
+		// Written identically in SingleHead.Tick. The zero-coupling equivalence
+		// test compares the two to the last bit, so the operand order matters.
+		radiated := mode.RadiationWeight *
+			(newVelocity - previousVelocity) * d.config.SampleRateHz
+		if index < d.batterModeCount {
+			batterRadiated += radiated
+		} else {
+			resonantRadiated += radiated
+		}
 	}
+
+	d.batterRadiatedM3PerS2 = batterRadiated
+	d.resonantRadiatedM3PerS2 = resonantRadiated
 
 	return d.observe()
 }
@@ -415,11 +458,31 @@ func (d *DoubleHead) tickCoupled(forceN float64) DoubleHeadOutput {
 		d.nonlinearSolveIterations = 0
 	}
 
-	for index := range d.modes {
+	batterRadiated := 0.0
+	resonantRadiated := 0.0
+
+	for index, mode := range d.modes {
 		midpointVelocity := d.midpointVelocity[index]
 		d.displacement[index] += timeStep * midpointVelocity
-		d.velocity[index] = 2*midpointVelocity - d.velocity[index]
+		newVelocity := 2*midpointVelocity - d.velocity[index]
+		d.velocity[index] = newVelocity
+
+		// For the midpoint rule v_new - v_old = 2*(v_new - v_mid), so this is
+		// the same discrete acceleration the uncoupled path forms directly. The
+		// contact force is included even though it never appears as a velocity
+		// increment here: it enters solveMidpoint as an acceleration, v_mid
+		// gains F*a*dt/2 from it, and the reflection above doubles that.
+		radiated := mode.RadiationWeight *
+			2 * (newVelocity - midpointVelocity) * d.config.SampleRateHz
+		if index < d.batterModeCount {
+			batterRadiated += radiated
+		} else {
+			resonantRadiated += radiated
+		}
 	}
+
+	d.batterRadiatedM3PerS2 = batterRadiated
+	d.resonantRadiatedM3PerS2 = resonantRadiated
 
 	if d.config.Cavity.Enabled {
 		d.cavityPressurePa = 2*pressureMidpoint - d.cavityPressurePa
@@ -518,18 +581,15 @@ func (d *DoubleHead) observe() DoubleHeadOutput {
 		velocity := d.velocity[index]
 		pickupDisplacement := mode.PickupShape * displacement
 		pickupVelocity := mode.PickupShape * velocity
-		rawRadiated := mode.RadiationWeight * velocity
 
 		if index < d.batterModeCount {
 			output.BatterDisplacementM += pickupDisplacement
 			output.BatterVelocityMPerS += pickupVelocity
-			output.BatterRawRadiated += rawRadiated
 			batterStrain += d.strainWeight[index] *
 				displacement * displacement
 		} else {
 			output.ResonantDisplacementM += pickupDisplacement
 			output.ResonantVelocityMPerS += pickupVelocity
-			output.ResonantRawRadiated += rawRadiated
 			resonantStrain += d.strainWeight[index] *
 				displacement * displacement
 		}
@@ -562,12 +622,15 @@ func (d *DoubleHead) observe() DoubleHeadOutput {
 	output.TotalMechanicalEnergyJ = output.HeadMechanicalEnergyJ +
 		output.CavityMechanicalEnergyJ
 	output.CavityPressurePa = d.cavityPressurePa
+	output.BatterRawRadiated = d.batterRadiatedM3PerS2
+	output.ResonantRawRadiated = d.resonantRadiatedM3PerS2
+	output.AttackRawRadiated = d.attackRadiatedM3PerS2
 	// Pickup describes a batter-side microphone projection. The resonant head
 	// remains fully coupled into the batter dynamics, but its outward
 	// radiation leaves the opposite side of the shell and cannot be added at
 	// the same point, phase, distance, and polarity. Keep its raw diagnostic
 	// separate until a propagation/diffraction model supplies that transfer.
-	output.RawRadiated = output.BatterRawRadiated
+	output.RawRadiated = output.BatterRawRadiated + output.AttackRawRadiated
 
 	radiated := d.radiationHP.ProcessSample(output.RawRadiated)
 	radiated = d.radiationLP.ProcessSample(radiated)

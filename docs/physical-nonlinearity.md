@@ -117,10 +117,15 @@ checks that the top one percent below Nyquist remains negligible.
 The deterministic P4 suite covers:
 
 - velocity-dependent first-mode glide: with the isolated default batter
-  fixture, velocity 0.2 measures about 104.1 to 104.0 Hz, while velocity 1.0
-  measures about 106.3 to 104.0 Hz;
-- attack-spectrum change: its normalized raw-radiation centroid rises from
-  about 126 Hz to 142 Hz between those velocities;
+  fixture, velocity 0.2 measures about 104.2 to 104.0 Hz, while velocity 1.0
+  measures about 110.3 to 104.0 Hz — a 102.8-cent glide, up from 37.9 cents
+  before the tension coefficients were raised fourfold;
+- attack-spectrum change: the centroid _above the fundamental_ rises from about
+  244 Hz to 310 Hz between those velocities. It is measured above the fundamental
+  because tension modulation shifts every partial upward rather than moving
+  energy into the top of the spectrum, and a full-band centroid is dominated by
+  the fundamental's level instead — with the corrected microphone model it moves
+  only from 112.373 to 112.377 Hz, which measures nothing;
 - a 48 kHz trajectory against the same nonlinear system oversampled at
   192 kHz (0.08 percent maximum displacement error in the test fixture);
 - lossless nonlinear energy conservation for both the isolated head and the
@@ -128,11 +133,40 @@ The deterministic P4 suite covers:
 - monotonic dissipation with configured losses, finite output at the maximum
   allowed coefficient, modal Nyquist headroom, and zero render allocations.
 
-The Standard 96-mode model was also benchmarked with a full-velocity retrigger
-before every 512-sample chunk, keeping the nonlinear solve continuously
-active. On the 2026-07-29 development machine it measured 103 ksamples/s
-(2.14 times real time) on Linux/amd64 and 71 ksamples/s (1.48 times real time)
-on `js/wasm` under Node, with zero allocations.
+The Standard model was also benchmarked with a full-velocity retrigger before
+every 512-sample chunk, keeping the nonlinear solve continuously active. On the
+2026-07-29 development machine, at 96 total oscillators, it measured
+103 ksamples/s (2.14 times real time) on Linux/amd64 and 71 ksamples/s
+(1.48 times real time) on `js/wasm` under Node, with zero allocations. After P8
+the same worst case measures 79.5 ksamples/s (1.66 times real time) on `js/wasm`
+at 102 oscillators — a wider modal band and an added noise layer for slightly
+less cost. See [`physical-hybrid.md`](physical-hybrid.md).
+
+## The solve cost, measured
+
+`nonlinearSolveIterations = 8` is a cap, not a cost. The fixed-point iteration
+exits as soon as the tension stops moving, and at full velocity on the shipped
+configuration that is a mean of **2.88** iterations. It also does not grow when
+the glide is made audible: sweeping the tension coefficient over a 32-fold range
+moves the mean only from 2.88 to 3.09, because a stiffer law both perturbs the
+tension more and contracts faster once `tanh` begins to saturate.
+
+This retires a planned change. P8 proposed replacing this solve with an explicit
+energy-proportional detune (Avanzini et al., _JASA_ 131(1) 2012) to buy back
+"6 times the voice", on the assumption that all eight iterations ran. They do
+not, the real figure is about three, and it does not move — so the
+discrete-gradient solve keeps its exact energy bookkeeping and nothing was traded
+away for a saving that was never there.
+
+The real limit on the tension coefficient is accuracy, not cost, and it is not
+the Nyquist-bound test: that computes its bound from `MaximumTensionRatio` and
+the mode wavenumbers alone, so the coefficient does not appear in it and it
+cannot fail however far the coefficient is raised. What binds is the 4x
+oversampled trajectory comparison, whose error grows from 0.0773 % to 0.0833 % at
+the shipped fourfold coefficient against a 1.5 % ceiling, and the requirement
+that the glide stay velocity-dependent: past about eight times the original
+coefficient the loud hit sits on the `tanh` plateau, which flattens the glide
+into a hold-then-drop and erodes exactly the expressiveness it exists for.
 
 ## Contact-model correction
 

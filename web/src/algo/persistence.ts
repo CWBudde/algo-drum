@@ -27,9 +27,12 @@ import type { TomModel } from "../engine/tomModel";
 // central-hit default, and v7 the second Tom and Percussion tracks. V8 keeps
 // the same bytes but migrates the reordered mixer strips; v9 appends Tom 2's
 // physical model choice and independent parameter bank. V10 widens both
-// physical banks by one slot for the damping tilt. Older links still decode
-// with values attached to the same voices.
-const FORMAT_VERSION = 10;
+// physical banks by one slot for the damping tilt. V11 keeps v10's bytes and
+// migrates the former shipped strike-radius position again, this time off the
+// near-centre 0.12 detent. V12 widens both physical banks by two more slots for
+// the attack layer's level and tone. Older links still decode with values
+// attached to the same voices.
+const FORMAT_VERSION = 12;
 
 // Byte layout: version, 6 scalar knobs, 5 volumes, 5 decays, 1 mute mask,
 // then the 80-cell pattern packed 2 bits per cell (20 bytes)...
@@ -78,7 +81,19 @@ const V9_BYTES = V8_BYTES + 1 + V5_PHYSICAL_TOM_PARAM_CAPACITY;
 
 // v10 adds the damping tilt to both physical banks. The Tom 1 bank sits in the
 // middle of the record, so widening it moves every offset after it — hence a
-// version bump rather than an append.
+// version bump rather than an append. Pinned like v4's and v5's widths: v10 and
+// v11 links must keep decoding at 16 even after the generated capacity grows.
+const V10_PHYSICAL_TOM_PARAM_CAPACITY = 16;
+const V10_BYTES =
+  V3_BYTES +
+  V10_PHYSICAL_TOM_PARAM_CAPACITY +
+  V7_EXTRA_BYTES +
+  1 +
+  V10_PHYSICAL_TOM_PARAM_CAPACITY;
+
+// v11 changed no bytes, only the meaning of one stored position, so it shares
+// v10's length. v12 widens both banks again, for the attack layer.
+const V11_BYTES = V10_BYTES;
 const TOTAL_BYTES =
   V3_BYTES +
   PHYSICAL_TOM_PARAM_CAPACITY +
@@ -86,9 +101,54 @@ const TOTAL_BYTES =
   1 +
   PHYSICAL_TOM_PARAM_CAPACITY;
 
+// migrateStrikeRadius moves the *exact* shipped strike-radius detent onto the
+// current default, twice over, and leaves every edited position alone.
+//
+// The two rules stay separately gated. v4/v5 shipped a peripheral 45% hit; v6
+// corrected that to a near-central 0.12, which turned out to be the other
+// extreme — a centre hit excites the axisymmetric modes and almost nothing else
+// — and v11 moves it to 0.30. Merging the gates would overwrite a v6–v10 blob
+// that a user had deliberately dragged back to 0.45.
+//
+// One accepted false positive: a v4/v5 blob edited to exactly 0.1255 is treated
+// as the shipped detent. There is no way to tell those apart from one byte.
+function migrateStrikeRadius(version: number, bank: number[]): void {
+  const shipped = PHYSICAL_TOM_PARAMS[PHYSICAL_STRIKE_RADIUS_INDEX].default;
+  if (
+    version < 6 &&
+    bank[PHYSICAL_STRIKE_RADIUS_INDEX] === OLD_PHYSICAL_STRIKE_RADIUS_DEFAULT
+  ) {
+    bank[PHYSICAL_STRIKE_RADIUS_INDEX] = shipped;
+  }
+  if (
+    version < 11 &&
+    bank[PHYSICAL_STRIKE_RADIUS_INDEX] ===
+      CENTRAL_PHYSICAL_STRIKE_RADIUS_DEFAULT
+  ) {
+    bank[PHYSICAL_STRIKE_RADIUS_INDEX] = shipped;
+  }
+}
+
+// physicalBankWidth is a table rather than a "below the current version" test on
+// purpose. The old form read every earlier version at the v5 width, which is
+// correct only until a bump makes the previous version wider than that — and then
+// it misreads the bank and desynchronizes the offset of everything after it: the
+// extra tracks, the mute mask, the pattern and the whole Tom 2 record.
+function physicalBankWidth(version: number): number {
+  if (version === 4) return V4_PHYSICAL_TOM_PARAM_CAPACITY;
+  if (version <= 9) return V5_PHYSICAL_TOM_PARAM_CAPACITY;
+  if (version <= 11) return V10_PHYSICAL_TOM_PARAM_CAPACITY;
+
+  return PHYSICAL_TOM_PARAM_CAPACITY;
+}
+
 const PHYSICAL_STRIKE_RADIUS_INDEX = 4;
 const OLD_PHYSICAL_STRIKE_RADIUS_DEFAULT =
   Math.round((0.45 / 0.95) * 255) / 255;
+// The v6–v10 shipped detent, corrected again by v11. Encoded exactly as
+// toByte(0.12 / 0.95) so only the untouched default matches it.
+const CENTRAL_PHYSICAL_STRIKE_RADIUS_DEFAULT =
+  Math.round((0.12 / 0.95) * 255) / 255;
 
 // Names the storage slot, not the blob version — it never tracked
 // FORMAT_VERSION, and the decoder is version-tolerant. Bumping it would orphan
@@ -292,9 +352,13 @@ export function decodeState(text: string): PersistedState | null {
                 ? V8_BYTES
                 : version === 9
                   ? V9_BYTES
-                  : version === FORMAT_VERSION
-                    ? TOTAL_BYTES
-                    : -1;
+                  : version === 10
+                    ? V10_BYTES
+                    : version === 11
+                      ? V11_BYTES
+                      : version === FORMAT_VERSION
+                        ? TOTAL_BYTES
+                        : -1;
   if (bytes.length !== expected) return null;
 
   let offset = 1;
@@ -374,28 +438,12 @@ export function decodeState(text: string): PersistedState | null {
   if (version === 3) return stateWithModel;
 
   const physicalTomParams: number[] = [];
-  const physicalParamCount =
-    version === 4
-      ? V4_PHYSICAL_TOM_PARAM_CAPACITY
-      : version < FORMAT_VERSION
-        ? V5_PHYSICAL_TOM_PARAM_CAPACITY
-        : PHYSICAL_TOM_PARAM_CAPACITY;
+  const physicalParamCount = physicalBankWidth(version);
   for (let i = 0; i < physicalParamCount; i++) {
     physicalTomParams.push(fromByte(bytes[offset++]));
   }
 
-  // The former shipped hit was 45% from center, which is a peripheral tom
-  // stroke and was one cause of the overly metallic default. Preserve every
-  // edited position, but move the exact old detent to the corrected central
-  // default when upgrading v4/v5 state.
-  if (
-    version < 6 &&
-    physicalTomParams[PHYSICAL_STRIKE_RADIUS_INDEX] ===
-      OLD_PHYSICAL_STRIKE_RADIUS_DEFAULT
-  ) {
-    physicalTomParams[PHYSICAL_STRIKE_RADIUS_INDEX] =
-      PHYSICAL_TOM_PARAMS[PHYSICAL_STRIKE_RADIUS_INDEX].default;
-  }
+  migrateStrikeRadius(version, physicalTomParams);
 
   const stateWithPhysical = { ...stateWithModel, physicalTomParams };
   if (version < 7) return stateWithPhysical;
@@ -443,6 +491,12 @@ export function decodeState(text: string): PersistedState | null {
   for (let i = 0; i < physicalParamCount; i++) {
     physicalTom2Params.push(fromByte(bytes[offset++]));
   }
+
+  // Tom 2's bank needs the same correction. The v6 rule above deliberately did
+  // not touch it, which was right at the time — this bank did not exist before
+  // v9, so it could never hold a pre-v6 detent — but v9 and v10 blobs do carry
+  // the 0.12 one, and leaving them alone would strand Tom 2 on a centre hit.
+  migrateStrikeRadius(version, physicalTom2Params);
 
   return {
     ...stateWithPhysical,

@@ -95,6 +95,11 @@ internal/drum/validate.go — Engine.Validate(): every invariant Render relies o
 internal/drum/assert.go   — assertValid(): a no-op in shipped builds; `-tags drumassert` (assert_debug.go) makes Render panic on a broken invariant (`just test-assert`)
 cmd/gen-voiceparams/      — Generates web/src/engine/voiceParams.generated.ts from params.go (`just gen-params`; CI diffs it)
 internal/drum/*_test.go   — Go unit tests: sequencing, clamping, bit-exact render determinism, per-voice envelopes
+internal/physical/        — The experimental double-headed physical Tom, selectable per Tom track and independent of the procedural voices. Modal banks per head (modes.go), the two-head + lumped-cavity + Berger-tension real-time model (double_head.go), the P2 linear single-head reference (single_head.go), the stochastic 1–8 kHz attack layer that covers what modal synthesis cannot reach (attack.go), a versioned SI-valued config with a migration chain (config.go), and an offline continuous-time reference solve (frequency_response.go)
+internal/physical/analysis/ — Offline report/suite generation for `cmd/analyze-physical`; backs testdata/physical-reference-v2.json
+cmd/analyze-physical/     — Emits the analysis report and regenerates the reference fixture (`just gen-physical-reference`; CI diffs it)
+cmd/render-physical/      — Renders the physical Tom to a WAV for offline auditioning
+docs/physical-*.md        — The physical model's design record: calibration and the microphone model, the cavity, nonlinear tension, the hybrid architecture, product integration, and the measured review the P8 work came from
 web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands, exposes onPattern (engine-owned pattern snapshots) and dispose() (tears the worker + audio graph down)
 web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; renders audio chunks on demand, echoes the authoritative pattern after each edit
 web/src/engine/patternMirror.ts — Reconciles the engine's pattern echoes with in-flight optimistic UI edits (engine = single source of truth)

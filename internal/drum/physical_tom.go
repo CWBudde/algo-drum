@@ -6,12 +6,6 @@ import (
 	"github.com/cwbudde/algo-drum/internal/physical"
 )
 
-// The corrected 5.5–8 ms stick contact transfers far less broadband energy
-// than the former 0.7 ms pulse. This gain restores product level after the
-// physical model's batter-side microphone filter; it is not part of the
-// mechanical state or its energy balance.
-const physicalTomOutputGain = 4
-
 // TomModel selects the implementation used by either Tom track.
 type TomModel uint8
 
@@ -56,7 +50,9 @@ func (v *physicalTom) Tick() float64 {
 		return 0
 	}
 
-	return v.model.Tick().Radiated * physicalTomOutputGain
+	// No compensating gain: the radiated sum is a calibrated volume
+	// acceleration and Pickup.OutputGain is fitted to reach product level.
+	return v.model.Tick().Radiated
 }
 
 func (v *physicalTom) IsActive() bool {
@@ -159,6 +155,15 @@ func (v *physicalTom) reconfigure() error {
 	config.Nonlinearity.Enabled = nonlinearScale > 0
 	config.Nonlinearity.BatterTensionCoefficientNPerM3 *= nonlinearScale
 	config.Nonlinearity.ResonantTensionCoefficientNPerM3 *= nonlinearScale
+
+	config.Attack.LevelRelative = v.params.value(physicalTomParamAttackLevel)
+	config.Attack.CentreHz = v.params.value(physicalTomParamAttackTone)
+	// The attack layer's decay follows DAMP and the strip DEC for the same reason
+	// the (0,1) correction does: a damping control that cannot shorten the stick
+	// has no authority over the part of the sound people notice first. D.TILT is
+	// deliberately not applied — this layer is one band, so it has no shape to
+	// tilt.
+	config.Attack.DecaySeconds /= lossScale
 
 	config.Pickup.Radius01 = v.params.value(physicalTomParamPickupRadius)
 	config.Pickup.AngleRad = v.params.value(physicalTomParamPickupAngle) *

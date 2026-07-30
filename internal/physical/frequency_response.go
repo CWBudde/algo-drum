@@ -82,7 +82,13 @@ func (d *DoubleHead) ReferenceFrequencyResponse(
 			pressureDisplacement[index]*pressure
 		velocity := imaginaryAngularFrequency * displacement
 		pickupVelocity := complex(mode.PickupShape, 0) * velocity
-		rawRadiated := complex(mode.RadiationWeight, 0) * velocity
+		// The radiated observable is volume acceleration, so one more jOmega.
+		// The real-time model forms it as a first difference, whose magnitude is
+		// 2*sin(w*dt/2)/dt rather than w — 1.3e-5 low at the transfer test's
+		// probe frequency, with a half-sample advance the test does not see
+		// because it compares magnitudes.
+		acceleration := imaginaryAngularFrequency * velocity
+		rawRadiated := complex(mode.RadiationWeight, 0) * acceleration
 
 		if index < d.batterModeCount {
 			response.BatterVelocityMPerS += pickupVelocity

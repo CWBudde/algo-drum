@@ -557,8 +557,8 @@ export const PHYSICAL_TOM_PARAMS: readonly VoiceParamSpec[] = [
     kind: "lin",
     min: 0,
     max: 0.94999999999999996,
-    shipped: 0.12,
-    default: 0.12631578947368421,
+    shipped: 0.29999999999999999,
+    default: 0.31578947368421051,
     digits: 2,
   },
   {
@@ -694,6 +694,30 @@ export const PHYSICAL_TOM_PARAMS: readonly VoiceParamSpec[] = [
     default: 0.33333333333333331,
     digits: 2,
   },
+  {
+    id: "physicalTom.attackLevel",
+    label: "ATK.L",
+    name: "attack layer level",
+    unit: "",
+    kind: "lin",
+    min: 0,
+    max: 0.29999999999999999,
+    shipped: 0.10000000000000001,
+    default: 0.33333333333333337,
+    digits: 3,
+  },
+  {
+    id: "physicalTom.attackTone",
+    label: "ATK.T",
+    name: "attack layer centre",
+    unit: "Hz",
+    kind: "exp",
+    min: 500,
+    max: 8000,
+    shipped: 3000,
+    default: 0.64624062518028902,
+    digits: 0,
+  },
 ];
 
-export const PHYSICAL_TOM_PARAM_CAPACITY = 16;
+export const PHYSICAL_TOM_PARAM_CAPACITY = 18;

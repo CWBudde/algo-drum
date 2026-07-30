@@ -35,9 +35,11 @@ audible. Ranked by audible return:
 | 5   | Pitch glide inaudible but expensive             | 38 cents, costs 6× the voice                   | "a few tenths of a second" of audible glide |
 
 The table is the 2026-07-30 diagnosis, left as written so the corrections stay
-attributable to a measurement. Rows 1, 2 and 4 have since been fixed — see the
-implementation notes in "Recommended plan" — and rows 3 and 5 still describe the
-shipped voice.
+attributable to a measurement. Every row has since been addressed — see the
+implementation notes below — though rows 3 and 5 were addressed differently from
+how they are described here: the bandwidth came from a hybrid noise layer rather
+than from more modes, and the glide's cost premise turned out not to exist. The
+numbers in the table describe the voice as diagnosed, not as it now stands.
 
 Two things I initially flagged turned out to be **fine**, and the literature is
 what corrected me — details in "What I got wrong" below.
@@ -175,12 +177,29 @@ short-time average tension variation is approximately proportional to system
 energy, which gives a single-factor detune per sample instead of an 8-iteration
 solve over 96 modes.
 
+> **Half implemented 2026-07-30** as PLAN.md item S6. The glide is now 102.8
+> cents at full velocity, up from 37.9, by raising the tension coefficients
+> fourfold — measured, and stopped short of the `tanh` plateau where the glide
+> would flatten into a hold-then-drop.
+>
+> The single-factor detune was **not** implemented, because its premise does not
+> hold: the solve early-exits at a mean of **2.88** iterations, not 8, and
+> sweeping the coefficient over a 32-fold range moves that only to 3.09. There is
+> no 6× cost to buy back, so replacing the discrete-gradient solve would have
+> given up its exact energy bookkeeping for nothing.
+
 Also worth noting: Avanzini & Marogna warn that "using an **insufficient number
 of modes** produces an **unnaturally slowly decaying tension**" — so the mode
 truncation is corrupting the glide as well as the brightness.
 
 Meanwhile the resonant head's 48 oscillators are computed and then discarded
 from the output (`output.RawRadiated = output.BatterRawRadiated`).
+
+> **Implemented 2026-07-30** as PLAN.md item S8, and stronger than stated here:
+> 44 of those 48 are not merely discarded but provably never excited, so removing
+> them is bit-exact. They paid for doubling the batter head's budget — 646 Hz to
+> 915 Hz — and for the stochastic attack layer that covers 1–8 kHz. See
+> [`physical-hybrid.md`](physical-hybrid.md).
 
 ### 6. Excitation: right duration, wrong force shape, missing second path (01, 07)
 
@@ -234,6 +253,33 @@ RawRadiated    += RadiationWeight × velocity
 - **Summing velocity adds a spurious −6 dB/octave tilt.** Far-field pressure
   follows volume _acceleration_.
 
+> **Implemented 2026-07-30** as PLAN.md item S4, with two of the three claims
+> above corrected by measurement first.
+>
+> The **−6 dB/octave claim is wrong.** `(ka/√(1+(ka)²))^(m+1)` is ≈ ka at m = 0,
+> so weighting velocity by it already carries the acceleration tilt. Multiplying
+> by ω as well while keeping the exponent would have added about +10 dB of
+> unjustified tilt across the retained band, which the refitted output gain would
+> have concealed. In the acceleration domain the m = 0 weight must be
+> frequency-independent, and a test now asserts exactly that.
+>
+> The **generalization of the swept area is not the naive one.** Extending
+> 2πR²J₁(z)/z to 2πR²J\_{m+1}(z)/z and letting the existing rolloff carry the
+> m > 0 normalization drops the multipole factor 1/(2^m·m!) — 1.03e7 at m = 8.
+> Measured on the shipped basis it would have raised the (10,1) edge mode
+> **401×**, to a quarter of the fundamental's weight, where multipole theory puts
+> it seven orders down. The implemented weight is the exact Rayleigh/Lommel form
+> 2πR²·z·J\_{m+1}(z)·J_m(u)/(z²−u²), which reduces identically to the swept area
+> on axis and supplies 1/(2^m·m!) from J_m(u)'s own small-argument behaviour.
+>
+> Dropping `PickupShape` from the far-field weight was right, and the consequence
+> is larger than expected: it leaves every m > 0 mode at least 23 dB down even
+> with the microphone against the head. That is correct far-field physics for a
+> head this size, and not what a close microphone hears, so the model gained an
+> explicitly fitted evanescent near-field term alongside the far-field one — a
+> sum, not the product the two used to form. See
+> [`physical-calibration.md`](physical-calibration.md).
+
 Correct weights, computed from the mode shapes: for the axisymmetric modes the
 net-volume factor 2J₁(j₀ₙ)/j₀ₙ is 0.4318, −0.1233, 0.0627 for n = 1,2,3 — the
 model already carries this as `SweptAreaM2`, it just isn't used in the output.
@@ -247,6 +293,15 @@ from Dahl's "central playing is normal", which is about the _region_, not the
 geometric centre — Wagner's own centre measurements are at a nominal centre but
 real playing scatters. Combined with defect 2, the output's loudest partial is
 the (0,1) by 13 dB: a boom, not a pitched drum.
+
+> **Implemented 2026-07-30** as PLAN.md item S5: the default moved to 0.30.
+> Measured against strike radius, with the corrected microphone model, the
+> fundamental sits 2.07 dB below the strongest partial at 0.12, 7.23 at 0.22,
+> 9.78 at 0.30 and 11.22 at 0.36 — monotone, with no sweet spot. So the choice
+> trades low-end weight for the (1,1) family rather than optimizing anything, and
+> HIT.R exposes it. Note that the (1,1) already leads at 0.12 once the radiated
+> sum is correct, so this deepens an effect S4 introduced rather than creating
+> one.
 
 ## What I got wrong, and what the literature settled
 

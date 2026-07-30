@@ -10,8 +10,11 @@ nonlinear tension are disabled.
 
 Each head has its own frequency-ordered circular modal bank. The batter and
 resonant heads may use different tension, surface density, stiffness, and loss
-parameters. Both use the same quality tier, so the Standard configuration
-retains 48 oscillators per head.
+parameters. Both draw on the same quality tier, but the resonant head keeps only
+its axisymmetric modes — the only ones anything can excite through the cavity — so
+the Standard configuration retains 96 batter oscillators against 6 resonant ones.
+See [`physical-hybrid.md`](physical-hybrid.md) for why that reduction is
+bit-exact rather than approximate.
 
 For an axisymmetric mode with Bessel zero \(z\_{0n}\), the signed swept area is
 
@@ -128,6 +131,10 @@ separate until a propagation/diffraction transfer around the shell is
 available. The output also reports swept volume, cavity pressure, head energy,
 cavity energy, and total energy for validation.
 
+The microphone signal is therefore the batter contribution plus the stochastic
+attack layer described in [`physical-hybrid.md`](physical-hybrid.md), and
+specifically not the resonant head's own radiation.
+
 All P3 parameters remain SI-valued fields of `PhysicalDrum`:
 
 - batter and resonant tuning use each head's `TensionNPerM`,
@@ -195,7 +202,11 @@ The P3 suite covers:
 Before P4 nonlinear tension was enabled, the Standard linear two-head model
 (96 total oscillators, 48 kHz, 512-sample chunks) measured 292 ksamples/s or
 6.09 times real time on Linux/amd64, and 244 ksamples/s or 5.08 times real time
-on `js/wasm` under Node, with zero render allocations.
+on `js/wasm` under Node, with zero render allocations. Both figures predate the
+nonlinear solve and are not the cost of the shipped voice; current measurements,
+which do include it, are in
+[`physical-nonlinearity.md`](physical-nonlinearity.md) and
+[`physical-hybrid.md`](physical-hybrid.md).
 
 The P4 equations, energy extension, active-solve benchmarks, and validation
 results are documented in

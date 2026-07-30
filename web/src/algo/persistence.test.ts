@@ -30,6 +30,7 @@ const V8_BYTES =
   (EXTRA_TRACK_COUNT * 16) / 4 +
   EXTRA_TRACK_COUNT * VOICE_PARAM_CAPACITY;
 const V9_BYTES = V8_BYTES + 1 + V5_PHYSICAL_TOM_PARAM_CAPACITY;
+const V10_PHYSICAL_TOM_PARAM_CAPACITY = 16;
 // The byte constants above describe the v9 layout. v10 widened the Tom 1 bank
 // in the middle of the record, so anything after it sits one slot later.
 const V10_TOM2_MODEL_OFFSET =
@@ -131,17 +132,35 @@ function encodeV1(state: PersistedState): string {
 // version added.
 //
 // v10 is the first release that is not a strict append: it widened the physical
-// Tom bank sitting in the middle of the record, shifting every later offset.
-// Dropping the appended slot from each of the two physical banks reverses that
-// exactly and recovers the v9 layout.
-function preV10Bytes(state: PersistedState): Uint8Array {
+// Tom bank sitting in the middle of the record, shifting every later offset, and
+// v12 widened it again. So the reversal is parameterized by the target width
+// rather than hard-coded to one slot — hard-coding it silently stops reversing
+// anything the next time a bank grows.
+function bytesAtBankWidth(state: PersistedState, width: number): Uint8Array {
   const current = toBytes(encodeState(state));
-  const appendedSlots = [
-    V3_BYTES + PHYSICAL_TOM_PARAM_CAPACITY - 1, // end of the Tom 1 bank
-    current.length - 1, // end of the Tom 2 bank
-  ];
+  const dropped = new Set<number>();
+  for (let i = 0; i < PHYSICAL_TOM_PARAM_CAPACITY - width; i++) {
+    dropped.add(V3_BYTES + PHYSICAL_TOM_PARAM_CAPACITY - 1 - i); // Tom 1 tail
+    dropped.add(current.length - 1 - i); // Tom 2 tail
+  }
 
-  return current.filter((_, index) => !appendedSlots.includes(index));
+  return current.filter((_, index) => !dropped.has(index));
+}
+
+function preV10Bytes(state: PersistedState): Uint8Array {
+  return bytesAtBankWidth(state, V5_PHYSICAL_TOM_PARAM_CAPACITY);
+}
+
+// v11 changed no bytes at all, only the meaning of one stored position, so v10
+// and v11 share a layout and differ only in their version byte.
+function encodeAtV10Width(state: PersistedState, version: number): string {
+  const bytes = bytesAtBankWidth(state, V10_PHYSICAL_TOM_PARAM_CAPACITY);
+  bytes[0] = version;
+  return toB64Url(bytes);
+}
+
+function encodeV10(state: PersistedState): string {
+  return encodeAtV10Width(state, 10);
 }
 
 function encodeLegacy(
@@ -411,6 +430,36 @@ describe("persistence encode/decode", () => {
       expect(decodeState(encodeV5(state))?.physicalTomParams?.[4]).toBe(q(0.8));
     });
 
+    it("moves the v6 central strike detent off centre in both banks", () => {
+      const state = makeState();
+      state.physicalTomParams![4] = q(0.12 / 0.95);
+      state.physicalTom2Params![4] = q(0.12 / 0.95);
+
+      // v9 is the first version with a Tom 2 bank, so it and v10 are the two
+      // that can carry the detent there. The v6 rule deliberately skipped that
+      // bank; this one must not.
+      for (const encoded of [encodeV9(state), encodeV10(state)]) {
+        const decoded = decodeState(encoded);
+        expect(decoded?.physicalTomParams?.[4]).toBe(
+          PHYSICAL_TOM_PARAMS[4].default,
+        );
+        expect(decoded?.physicalTom2Params?.[4]).toBe(
+          PHYSICAL_TOM_PARAMS[4].default,
+        );
+      }
+    });
+
+    it("preserves a strike radius edited back to the v4 detent", () => {
+      const state = makeState();
+      state.physicalTomParams![4] = q(0.45 / 0.95);
+
+      // A v6-or-later blob sitting at 0.45 is a deliberate edit, not the
+      // shipped position, so the two detent rules must stay separately gated.
+      expect(decodeState(encodeV10(state))?.physicalTomParams?.[4]).toBe(
+        q(0.45 / 0.95),
+      );
+    });
+
     it("decodes v6 with the two added tracks at defaults", () => {
       const decoded = decodeState(encodeV6(makeState()));
 
@@ -469,12 +518,12 @@ describe("persistence encode/decode", () => {
       expect(decoded?.tom2Model).toBe(state.tom2Model);
     });
 
-    it("re-encodes a decoded v1 state as v10 (one-way upgrade)", () => {
+    it("re-encodes a decoded v1 state as v12 (one-way upgrade)", () => {
       const decoded = decodeState(encodeV1(makeState()));
       const bytes = toBytes(encodeState(decoded!));
 
       expect(bytes).toHaveLength(TOTAL_BYTES);
-      expect(bytes[0]).toBe(10);
+      expect(bytes[0]).toBe(12);
     });
 
     it("rejects a v1-length blob whose version byte claims v2", () => {
@@ -491,8 +540,34 @@ describe("persistence encode/decode", () => {
 
     it("rejects an unknown future version at the right length", () => {
       const bytes = toBytes(encodeState(makeState()));
-      bytes[0] = 11;
+      bytes[0] = 13;
       expect(decodeState(toB64Url(bytes))).toBeNull();
+    });
+
+    // This is the case a version bump is most likely to break, and breaking it
+    // loses every pattern in every user's localStorage and every share link
+    // already sent: the previous version needs its own length and its own bank
+    // width, and the fixtures only ever covered versions older than that.
+    it.each([10, 11])("decodes v%i at its own bank width", (version) => {
+      const state = makeState();
+      const decoded = decodeState(encodeAtV10Width(state, version));
+
+      expect(decoded).not.toBeNull();
+      expect(decoded?.physicalTomParams).toHaveLength(
+        V10_PHYSICAL_TOM_PARAM_CAPACITY,
+      );
+      expect(decoded?.physicalTom2Params).toHaveLength(
+        V10_PHYSICAL_TOM_PARAM_CAPACITY,
+      );
+      // Everything after the Tom 1 bank decodes at the right offset only if the
+      // bank width is right, so these are the desynchronization detectors.
+      expect(decoded?.pattern).toEqual(state.pattern);
+      expect(decoded?.muted).toEqual(state.muted);
+      expect(decoded?.voiceParams).toEqual(state.voiceParams);
+      expect(decoded?.tom2Model).toBe(state.tom2Model);
+      expect(decoded?.physicalTom2Params).toEqual(
+        state.physicalTom2Params?.slice(0, V10_PHYSICAL_TOM_PARAM_CAPACITY),
+      );
     });
   });
 

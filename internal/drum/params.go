@@ -323,6 +323,8 @@ const (
 	physicalTomParamAsymmetry
 	physicalTomParamAsymmetryAxis
 	physicalTomParamDampingTilt
+	physicalTomParamAttackLevel
+	physicalTomParamAttackTone
 )
 
 var physicalTomSpecs = []ParamSpec{
@@ -330,7 +332,7 @@ var physicalTomSpecs = []ParamSpec{
 	physicalTomParamBatterTension:   expSpec("physicalTom.batterTension", "B.TUNE", "batter head tension", "N/m", 150, 1400, 600, 0),
 	physicalTomParamResonantTension: expSpec("physicalTom.resonantTension", "R.TUNE", "resonant head tension", "N/m", 150, 1400, 500, 0),
 	physicalTomParamDamping:         expSpec("physicalTom.damping", "DAMP", "head damping scale", "", 0.25, 4, 1, 2),
-	physicalTomParamStrikeRadius:    linSpec("physicalTom.strikeRadius", "HIT.R", "strike radius", "", 0, 0.95, 0.12, 2),
+	physicalTomParamStrikeRadius:    linSpec("physicalTom.strikeRadius", "HIT.R", "strike radius", "", 0, 0.95, 0.30, 2),
 	physicalTomParamStrikeAngle:     linSpec("physicalTom.strikeAngle", "HIT.A", "strike angle", "°", -180, 180, 0.2*180/math.Pi, 0),
 	physicalTomParamHardness:        linSpec("physicalTom.hardness", "HARD", "mallet hardness", "", 0, 1, 0.7, 2),
 	physicalTomParamShellDepth:      expSpec("physicalTom.shellDepth", "DEPTH", "shell depth", "m", 0.05, 0.60, 0.20, 3),
@@ -342,6 +344,8 @@ var physicalTomSpecs = []ParamSpec{
 	physicalTomParamAsymmetry:       linSpec("physicalTom.asymmetry", "ASYM", "degenerate mode split", "%", 0, 2, 0.4, 2),
 	physicalTomParamAsymmetryAxis:   linSpec("physicalTom.asymmetryAxis", "AXIS", "tension asymmetry axis", "°", -90, 90, 0, 0),
 	physicalTomParamDampingTilt:     linSpec("physicalTom.dampingTilt", "D.TILT", "damping frequency tilt", "", 0, 3, 1, 2),
+	physicalTomParamAttackLevel:     linSpec("physicalTom.attackLevel", "ATK.L", "attack layer level", "", 0, 0.3, 0.1, 3),
+	physicalTomParamAttackTone:      expSpec("physicalTom.attackTone", "ATK.T", "attack layer centre", "Hz", 500, 8000, 3000, 0),
 }
 
 // voiceNames labels each track for the editor UI, in engine track order.
