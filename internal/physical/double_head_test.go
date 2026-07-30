@@ -256,10 +256,22 @@ func TestDoubleHeadInPhaseAndOutOfPhaseModesSplit(t *testing.T) {
 	}
 }
 
+// TestDoubleHeadReferenceTransferMatchesTimeDomain checks the real-time coupled
+// update against the independent continuous-time solve.
+//
+// Nonlinearity is disabled because ReferenceFrequencyResponse is linearized at
+// rest, so leaving it on compares two different models and the residual is
+// dominated by tension modulation rather than by anything this test is for. It
+// used to run with the default configuration, where that residual happens to be
+// small at 137 Hz and reaches 27 % elsewhere in the band — a tolerance that only
+// held because of the chosen probe frequency. Linear against linear agrees to
+// 3.4e-4 here.
 func TestDoubleHeadReferenceTransferMatchesTimeDomain(t *testing.T) {
 	t.Parallel()
 
-	model, err := NewDoubleHead(DefaultPhysicalDrum())
+	config := DefaultPhysicalDrum()
+	config.Nonlinearity.Enabled = false
+	model, err := NewDoubleHead(config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +304,7 @@ func TestDoubleHeadReferenceTransferMatchesTimeDomain(t *testing.T) {
 	if difference := relativeDifference(
 		cmplx.Abs(measured),
 		cmplx.Abs(reference.RawRadiated),
-	); difference > 5e-3 {
+	); difference > 1e-3 {
 		t.Fatalf(
 			"time-domain transfer magnitude %.15g, reference %.15g (relative difference %.3g)",
 			cmplx.Abs(measured),
