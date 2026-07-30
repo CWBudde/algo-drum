@@ -457,7 +457,9 @@ func (d *DoubleHead) tickCoupled(forceN float64) DoubleHeadOutput {
 	batterRadiated := 0.0
 	resonantRadiated := 0.0
 
-	for index, mode := range d.modes {
+	for index := range d.modes {
+		mode := &d.modes[index]
+
 		midpointVelocity := d.midpointVelocity[index]
 		d.displacement[index] += timeStep * midpointVelocity
 		newVelocity := 2*midpointVelocity - d.velocity[index]
@@ -498,12 +500,22 @@ func (d *DoubleHead) solveMidpoint(
 	sweptMidpointVelocity := 0.0
 	pressureFeedback := 0.0
 
-	for index, mode := range d.modes {
-		surfaceDensity := d.config.Batter.SurfaceDensityKgPerM2
+	// Hoisted out of the loop below: this is the innermost code the model has,
+	// run once per mode per nonlinear iteration per sample, and each d.config
+	// reach walked a nested struct to reload a constant.
+	batterDensity := d.config.Batter.SurfaceDensityKgPerM2
+	resonantDensity := d.config.Resonant.SurfaceDensityKgPerM2
+
+	coupling := d.config.Cavity.Coupling01
+
+	for index := range d.modes {
+		mode := &d.modes[index]
+
+		surfaceDensity := batterDensity
 		tensionIncrease := batterTensionNPerM
 
 		if index >= d.batterModeCount {
-			surfaceDensity = d.config.Resonant.SurfaceDensityKgPerM2
+			surfaceDensity = resonantDensity
 			tensionIncrease = resonantTensionNPerM
 		}
 
@@ -522,7 +534,7 @@ func (d *DoubleHead) solveMidpoint(
 
 		uncoupledMidpointVelocity := numerator / denominator
 		d.midpointVelocity[index] = uncoupledMidpointVelocity
-		effectiveSweptArea := d.config.Cavity.Coupling01 * mode.SweptAreaM2
+		effectiveSweptArea := coupling * mode.SweptAreaM2
 		d.pressureGain[index] = effectiveSweptArea /
 			(mode.ModalMassKg * denominator)
 		sweptMidpointVelocity += effectiveSweptArea * uncoupledMidpointVelocity
@@ -572,7 +584,11 @@ func (d *DoubleHead) observe() DoubleHeadOutput {
 	batterStrain := 0.0
 	resonantStrain := 0.0
 
-	for index, mode := range d.modes {
+	coupling := d.config.Cavity.Coupling01
+
+	for index := range d.modes {
+		mode := &d.modes[index]
+
 		displacement := d.displacement[index]
 		velocity := d.velocity[index]
 		pickupDisplacement := mode.PickupShape * displacement
@@ -590,7 +606,7 @@ func (d *DoubleHead) observe() DoubleHeadOutput {
 				displacement * displacement
 		}
 
-		output.SweptVolumeM3 += d.config.Cavity.Coupling01 *
+		output.SweptVolumeM3 += coupling *
 			mode.SweptAreaM2 * displacement
 		output.LinearHeadMechanicalEnergyJ += 0.5 * mode.ModalMassKg *
 			(velocity*velocity +

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"sync"
 
 	"github.com/cwbudde/algo-dsp/dsp/filter/biquad"
 	"github.com/cwbudde/algo-dsp/dsp/filter/design"
@@ -297,6 +298,55 @@ func normalizePeak(samples []float64) []float64 {
 	return out
 }
 
+// hannWindows caches periodic Hann windows by length, and realPlans caches real
+// FFT plans by size.
+//
+// Both are functions of a length alone, and a fitting run measures many
+// thousands of candidates at the same handful of lengths — so without a cache
+// every measurement pays to rebuild the identical window (a cosine per sample)
+// and the identical twiddle tables. algo-fft documents plans as safe for
+// concurrent transforms, which is what lets one plan serve every restart
+// goroutine.
+var (
+	hannWindows sync.Map // int -> []float64
+	realPlans   sync.Map // int -> *algofft.PlanReal[float64, complex128]
+)
+
+// hannWindow returns a cached periodic Hann window of the given length. The
+// result is shared and must not be modified by the caller.
+func hannWindow(length int) []float64 {
+	if cached, ok := hannWindows.Load(length); ok {
+		coefficients, _ := cached.([]float64)
+
+		return coefficients
+	}
+
+	coefficients := window.Generate(window.TypeHann, length, window.WithPeriodic())
+	shared, _ := hannWindows.LoadOrStore(length, coefficients)
+	result, _ := shared.([]float64)
+
+	return result
+}
+
+// realPlan returns a cached real FFT plan for the given size.
+func realPlan(size int) (*algofft.PlanReal[float64, complex128], error) {
+	if cached, ok := realPlans.Load(size); ok {
+		plan, _ := cached.(*algofft.PlanReal[float64, complex128])
+
+		return plan, nil
+	}
+
+	plan, err := algofft.NewPlanReal64(size)
+	if err != nil {
+		return nil, err
+	}
+
+	shared, _ := realPlans.LoadOrStore(size, plan)
+	result, _ := shared.(*algofft.PlanReal[float64, complex128])
+
+	return result, nil
+}
+
 // magnitudeSpectrum is a Hann-windowed, zero-padded real FFT magnitude.
 func magnitudeSpectrum(segment []float64, fftSize int) ([]float64, error) {
 	if len(segment) == 0 {
@@ -304,14 +354,14 @@ func magnitudeSpectrum(segment []float64, fftSize int) ([]float64, error) {
 	}
 
 	size := min(len(segment), fftSize)
-	coefficients := window.Generate(window.TypeHann, size, window.WithPeriodic())
+	coefficients := hannWindow(size)
 
 	input := make([]float64, fftSize)
 	for i := range size {
 		input[i] = segment[i] * coefficients[i]
 	}
 
-	plan, err := algofft.NewPlanReal64(fftSize)
+	plan, err := realPlan(fftSize)
 	if err != nil {
 		return nil, err
 	}
@@ -471,7 +521,7 @@ func (w sustainWindow) decayAttenuation(decayPerSecond float64) float64 {
 		return 0
 	}
 
-	coefficients := window.Generate(window.TypeHann, w.length, window.WithPeriodic())
+	coefficients := hannWindow(w.length)
 
 	sum := 0.0
 	for n, coefficient := range coefficients {
@@ -534,6 +584,28 @@ func parabolicOffset(left, centre, right float64) float64 {
 	return offset
 }
 
+// phasorAnchorInterval is how many samples the heterodyne phasor advances by
+// recurrence before it is re-derived from math.Sincos.
+//
+// Rotating a unit phasor by a constant is one complex multiply per sample
+// instead of a sine and a cosine, and it was the single most expensive thing
+// left in a fit — the old form also handed Sincos an argument that grew to tens
+// of thousands of radians, which forces the slow exact argument reduction. But
+// the rotor's modulus is not exactly one in floating point, so a free-running
+// phasor's amplitude creeps and its phase shears, compounding over the tens of
+// thousands of samples a partial is measured across.
+//
+// Re-anchoring bounds that: the error inside a block grows like the block
+// length times the rounding unit and is then discarded, so it never
+// accumulates across the signal. At 512 the worst case is a few parts in
+// 10^13 — far below the reference's own precision — while 511 of every 512
+// Sincos calls still disappear.
+//
+// A variable only so that the accuracy test can set it to 1, which re-derives
+// every sample and so reproduces the exact per-sample Sincos form this
+// replaced. Nothing outside tests writes it.
+var phasorAnchorInterval = 512
+
 // heterodyne shifts one partial to DC and low-passes it, returning the complex
 // baseband envelope.
 //
@@ -554,10 +626,22 @@ func heterodyne(hit []float64, sampleRateHz, frequencyHz, cutoffHz float64, sect
 	quadrature = make([]float64, len(hit))
 
 	step := -2 * math.Pi * frequencyHz / sampleRateHz
+	stepSine, stepCosine := math.Sincos(step)
 
-	for n, sample := range hit {
-		sine, cosine := math.Sincos(step * float64(n))
-		inPhase[n], quadrature[n] = sample*cosine, sample*sine
+	// The phasor advances by one complex multiply per sample rather than a
+	// Sincos per sample, and is re-derived exactly every phasorAnchorInterval
+	// samples. See phasorAnchorInterval for why it cannot simply run free.
+	for start := 0; start < len(hit); start += phasorAnchorInterval {
+		end := min(start+phasorAnchorInterval, len(hit))
+		sine, cosine := math.Sincos(step * float64(start))
+
+		for n := start; n < end; n++ {
+			sample := hit[n]
+			inPhase[n], quadrature[n] = sample*cosine, sample*sine
+
+			cosine, sine = cosine*stepCosine-sine*stepSine,
+				sine*stepCosine+cosine*stepSine
+		}
 	}
 
 	// Zero phase, by filtering forwards and then backwards. The filter is real

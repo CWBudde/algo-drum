@@ -292,3 +292,46 @@ Hz gap, because that gap does not move with search effort.
 The run is deterministic given the seed; `TestSearchIsDeterministic` keeps it
 that way. It is not part of `just ci`: it takes minutes, and it needs a
 reference recording the repository does not contain.
+
+### Stopping one, and picking it up again
+
+A fit takes the better part of an hour, which is long enough that something
+else will want the machine. `-checkpoint FILE` makes that cheap, and
+`just fit-physical` passes one by default.
+
+A true continuation is not available: mayfly runs its whole loop inside
+`Optimize`, offers no per-iteration hook and cannot be handed a starting
+population, so a stopped swarm's velocities and personal bests are gone for
+good. Two things can be saved instead, and between them they cover both ways a
+run ends.
+
+**Finished restarts.** Multi-start is the outer loop, so a restart that
+finished is finished; a resumed run skips it and replays its position through
+this build's measurement code rather than trusting a stored number. A restart an
+interrupt cut short is recorded but marked incomplete, and re-run.
+
+**The best point, continuously.** This is the one that matters, and the first
+design missed it. Every restart runs concurrently, so they all finish at roughly
+the same moment — interrupt a run half way and typically _none_ of them is
+complete, and restart-level checkpointing alone would save nothing at all. The
+best position any restart has reached is therefore recorded from inside the
+objective, every 250 evaluations, which bounds what a stop can destroy to a
+quarter of a percent of the run.
+
+`SIGINT`/`SIGTERM` asks the search to wind up rather than killing the process:
+the objective starts returning `+Inf` without rendering, so mayfly keeps the
+incumbent it already had and every restart still reports the best it genuinely
+found. A stopped run therefore writes a normal report, marked
+`"interrupted": true` — which also qualifies its evaluation count, since the
+tail of that count is refusals rather than measured candidates. A second signal
+kills it the usual way.
+
+Resuming onto a checkpoint from a different run is refused, naming the field
+that changed. The guard that matters is not the flags but **`baselineCost`** —
+the shipped bank's distance from the reference, measured end to end through the
+same synthesis and feature extraction the search uses, and computed on every run
+anyway. Any edit that moves a rendered sample or a measured feature moves it
+too, and that is exactly the case a resume must refuse: a best-of taken across
+two different models is not a fit, and nothing downstream would reveal the mix.
+A performance change that really is bit-exact leaves it untouched and resumes
+cleanly, so the guard doubles as a test of that claim.

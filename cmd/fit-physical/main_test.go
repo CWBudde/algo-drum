@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/cwbudde/algo-drum/internal/drum"
+	"github.com/cwbudde/algo-drum/internal/physical"
 	"github.com/cwbudde/wav"
 	"github.com/go-audio/audio"
 )
@@ -84,6 +85,9 @@ func TestRunRejectsInvalidOptions(t *testing.T) {
 		"malformed fix":     {"-reference", reference, "-fix", "DAMP"},
 		"stray argument":    {"-reference", reference, "extra"},
 		"unknown channel":   {"-reference", reference, "-channel", "centre"},
+		"unknown contact":   {"-reference", reference, "-contact", "impulse"},
+		"negative mallet":   {"-reference", reference, "-mallet-g", "-1"},
+		"absurd mallet":     {"-reference", reference, "-mallet-g", "5000"},
 	}
 
 	for name, args := range cases {
@@ -154,6 +158,50 @@ func TestReportOnlyMeasuresTheShippedDefaults(t *testing.T) {
 
 	if info, err := os.Stat(report); err != nil || info.Size() == 0 {
 		t.Errorf("report file: %v (size %v)", err, info)
+	}
+}
+
+// TestContactOverridesReachTheRenderedDrum pins the two settings the fitter
+// applies on top of the product bank. Neither is in PhysicalTomSpecs, so if
+// they stopped being applied nothing else in the report would notice — a
+// -contact hertzian run would quietly fit the prescribed model instead.
+func TestContactOverridesReachTheRenderedDrum(t *testing.T) {
+	t.Parallel()
+
+	specs := drum.PhysicalTomSpecs()
+
+	bank := make([]float64, len(specs))
+	for index, spec := range specs {
+		bank[index] = spec.Default
+	}
+
+	subject := &evaluator{bank: bank, sampleRateHz: 44100}
+
+	unchanged, err := subject.config()
+	if err != nil {
+		t.Fatalf("config() error = %v", err)
+	}
+
+	if unchanged.Strike.Contact.Model != physical.ContactPrescribed {
+		t.Errorf("without an override the model is %q, want %q",
+			unchanged.Strike.Contact.Model, physical.ContactPrescribed)
+	}
+
+	subject.contact = physical.ContactHertzian
+	subject.malletMassKg = 0.005
+
+	overridden, err := subject.config()
+	if err != nil {
+		t.Fatalf("config() error = %v", err)
+	}
+
+	if overridden.Strike.Contact.Model != physical.ContactHertzian {
+		t.Errorf("contact model = %q, want %q",
+			overridden.Strike.Contact.Model, physical.ContactHertzian)
+	}
+
+	if overridden.Strike.MalletMassKg != 0.005 {
+		t.Errorf("mallet mass = %v kg, want 0.005", overridden.Strike.MalletMassKg)
 	}
 }
 

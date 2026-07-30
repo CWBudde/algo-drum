@@ -45,6 +45,7 @@ Thumbs.db
 # them — see docs/physical-measured-fit.md.
 reference/
 fit-report.json
+fit-report.checkpoint
 fit-summary.txt
 fit-progress.txt
 *.wav

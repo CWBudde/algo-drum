@@ -30,11 +30,23 @@ type tracker struct {
 	expected int
 	started  time.Time
 
+	// checkpoint receives the best position seen, so an interrupted run leaves
+	// behind the drum it found rather than only the number it reached. It is
+	// nil when no -checkpoint was given.
+	checkpoint *store
+
 	mu        sync.Mutex
 	count     int
 	nextPrint int
+	nextFlush int
 	best      float64
 }
+
+// flushInterval is how many evaluations pass between checkpoint writes. The
+// file is a few kilobytes and the evaluations either side of it are half-second
+// renders, so writing this often costs nothing measurable and bounds what an
+// interrupt can destroy to a quarter of a percent of a run.
+const flushInterval = 250
 
 func newTracker(writer io.Writer, interval, expected int, started time.Time) *tracker {
 	return &tracker{
@@ -43,6 +55,7 @@ func newTracker(writer io.Writer, interval, expected int, started time.Time) *tr
 		expected:  expected,
 		started:   started,
 		nextPrint: interval,
+		nextFlush: flushInterval,
 		best:      math.Inf(1),
 	}
 }
@@ -64,8 +77,8 @@ func expectedEvaluations(restarts, iterations, population, offspring int) int {
 // The cost is passed in rather than read back from the optimizer so that the
 // reported best is the best actually evaluated, including candidates a restart
 // discards later.
-func (t *tracker) observe(cost float64) {
-	if t == nil || t.interval <= 0 {
+func (t *tracker) observe(cost float64, position []float64) {
+	if t == nil {
 		return
 	}
 
@@ -76,9 +89,22 @@ func (t *tracker) observe(cost float64) {
 
 	if cost < t.best {
 		t.best = cost
+		// Recorded here rather than when a restart finishes because every
+		// restart runs concurrently: stop a fit half way and typically none of
+		// them has finished, so this is the only record of what the search
+		// found. mayfly reuses the position slice, so the store clones it.
+		t.checkpoint.recordBest(cost, position, t.count)
 	}
 
-	if t.count < t.nextPrint {
+	if t.count >= t.nextFlush {
+		t.nextFlush += flushInterval
+
+		if err := t.checkpoint.flush(); err != nil {
+			_, _ = fmt.Fprintf(t.writer, "  checkpoint: %v\n", err)
+		}
+	}
+
+	if t.interval <= 0 || t.count < t.nextPrint {
 		return
 	}
 

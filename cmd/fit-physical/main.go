@@ -9,16 +9,20 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"os"
+	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/cwbudde/algo-drum/internal/drum"
@@ -86,15 +90,22 @@ type ReferenceInfo struct {
 
 // SearchInfo records enough to repeat the run.
 type SearchInfo struct {
-	Variant         string             `json:"variant"`
-	Iterations      int                `json:"iterations"`
-	Population      int                `json:"population"`
-	Restarts        int                `json:"restarts"`
-	Seed            int64              `json:"seed"`
-	Evaluations     int                `json:"evaluations"`
-	DurationSeconds float64            `json:"durationSeconds"`
-	Quality         string             `json:"quality"`
-	FixedParams     map[string]float64 `json:"fixedParams,omitempty"`
+	Variant         string  `json:"variant"`
+	Iterations      int     `json:"iterations"`
+	Population      int     `json:"population"`
+	Restarts        int     `json:"restarts"`
+	Seed            int64   `json:"seed"`
+	Evaluations     int     `json:"evaluations"`
+	DurationSeconds float64 `json:"durationSeconds"`
+	Quality         string  `json:"quality"`
+	Contact         string  `json:"contact,omitempty"`
+	MalletGrams     float64 `json:"malletGrams,omitempty"`
+	// Interrupted marks a report the search did not finish producing. It also
+	// qualifies Evaluations, which counts mayfly's calls rather than rendered
+	// candidates: after an interrupt the objective refuses work without
+	// measuring it, so the tail of that count is the search winding up.
+	Interrupted bool               `json:"interrupted,omitempty"`
+	FixedParams map[string]float64 `json:"fixedParams,omitempty"`
 }
 
 func run(args []string, stdout, stderr io.Writer) error {
@@ -107,6 +118,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 	duration := flags.Float64("duration", 1.2, "candidate render duration in seconds")
 	quality := flags.String("quality", string(physical.QualityDraft),
 		"mode budget during the search: draft, standard or high")
+	contact := flags.String("contact", "",
+		"excitation model: prescribed, hertzian, or empty for the configured default")
+	malletGrams := flags.Float64("mallet-g", 0,
+		"stick mass in grams, or 0 for the configured default")
 	variant := flags.String("variant", "ma", "mayfly variant: ma, desma, olce, eobbma, gsasma, mpma or aoblmoa")
 	iterations := flags.Int("iterations", 150, "mayfly iterations per restart")
 	population := flags.Int("pop", 20, "mayfly males, and as many females")
@@ -115,6 +130,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 	reportOnly := flags.Bool("report-only", false, "measure the shipped defaults against the reference and stop")
 	progressEvery := flags.Int("progress", 500,
 		"print a progress line every N objective evaluations; 0 silences it")
+	checkpointPath := flags.String("checkpoint", "",
+		"file to save finished restarts and the best point to, and to resume from")
 
 	fixed := assignmentFlag{}
 	flags.Var(fixed, "fix", "freeze one parameter at a normalized position, as ID=value (repeatable)")
@@ -146,6 +163,19 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	if *progressEvery < 0 {
 		return fmt.Errorf("%w: progress %d", errInvalidFitOption, *progressEvery)
+	}
+
+	switch physical.ContactModel(*contact) {
+	case "", physical.ContactPrescribed, physical.ContactHertzian:
+	default:
+		return fmt.Errorf("%w: contact %q is neither %q nor %q",
+			errInvalidFitOption, *contact, physical.ContactPrescribed, physical.ContactHertzian)
+	}
+
+	// Bounded by physical.Validate's own range for the mass, so an out-of-range
+	// value is rejected here rather than turning every candidate into +Inf.
+	if *malletGrams < 0 || *malletGrams > 1000 {
+		return fmt.Errorf("%w: mallet mass %v g", errInvalidFitOption, *malletGrams)
 	}
 
 	if *restarts == 0 {
@@ -185,6 +215,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		free:            free,
 		sampleRateHz:    reference.SampleRateHz,
 		durationSeconds: *duration,
+		contact:         physical.ContactModel(*contact),
+		malletMassKg:    *malletGrams / 1000,
 		// Rendered at the reference's own rate, so no resampler ever enters
 		// the measurement path on either side.
 		buffer: make([]float64, int(*duration*reference.SampleRateHz)),
@@ -210,6 +242,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 			Seed:            *seed,
 			DurationSeconds: *duration,
 			Quality:         *quality,
+			Contact:         *contact,
+			MalletGrams:     *malletGrams,
 			FixedParams:     fixed,
 		},
 	}
@@ -227,15 +261,61 @@ func run(args []string, stdout, stderr io.Writer) error {
 	_, _ = fmt.Fprintf(stderr, "baseline:  %s\n", summarize(report.Baseline.Terms))
 
 	if !*reportOnly {
+		// The baseline goes into the fingerprint, so it has to be measured
+		// before the checkpoint is opened — which it is, just above.
+		checkpoint, err := loadStore(*checkpointPath, Fingerprint{
+			Reference:       *referencePath,
+			Channel:         *channel,
+			Contact:         *contact,
+			MalletGrams:     *malletGrams,
+			Quality:         *quality,
+			Variant:         *variant,
+			DurationSeconds: *duration,
+			Iterations:      *iterations,
+			Population:      *population,
+			Restarts:        *restarts,
+			Seed:            *seed,
+			Fixed:           fixed,
+			BaselineCost:    report.Baseline.Terms.Total,
+		})
+		if err != nil {
+			return err
+		}
+
+		if resumed := len(checkpoint.completed()); resumed > 0 {
+			_, _ = fmt.Fprintf(stderr, "resuming:  %d of %d restarts already finished\n",
+				resumed, *restarts)
+		}
+
+		// An interrupt asks the search to wind up, not the process to die: the
+		// objective starts refusing work, every restart returns the best it
+		// actually found, and the report and checkpoint are written as usual. A
+		// second signal takes the default behaviour and kills it outright.
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
 		offspring := *population - *population%2
 		progress := newTracker(stderr, *progressEvery,
 			expectedEvaluations(*restarts, *iterations, *population, offspring), time.Now())
+		progress.checkpoint = checkpoint
 
 		best, evaluations, err := search(
-			base, *variant, *iterations, *population, *restarts, *seed, stderr, progress,
+			ctx, base, *variant, *iterations, *population, *restarts, *seed,
+			stderr, progress, checkpoint,
 		)
 		if err != nil {
 			return err
+		}
+
+		if err := checkpoint.flush(); err != nil {
+			return err
+		}
+
+		if ctx.Err() != nil {
+			report.Search.Interrupted = true
+
+			_, _ = fmt.Fprintf(stderr,
+				"interrupted; the report below is the best point found so far\n")
 		}
 
 		report.Best = &best
@@ -297,13 +377,21 @@ func pinQuality(fixed assignmentFlag, quality string) error {
 // the detent in every knob's mapping puts a small flat spot at each default,
 // and a single swarm can settle into one.
 func search(
+	ctx context.Context,
 	base *evaluator,
 	variant string,
 	iterations, population, restarts int,
 	seed int64,
 	stderr io.Writer,
 	progress *tracker,
+	checkpoint *store,
 ) (Candidate, int, error) {
+	// Restarts a previous run finished are not re-run. Their positions are
+	// replayed through describe rather than stored as candidates, so the report
+	// is written by this build's measurement code and a resumed report says the
+	// same thing an uninterrupted one would.
+	done := checkpoint.completed()
+
 	type outcome struct {
 		candidate   Candidate
 		evaluations int
@@ -337,12 +425,41 @@ func search(
 
 			local := newEvaluator(base)
 
+			if record, ok := done[run]; ok {
+				candidate, err := local.describe(record.Position)
+				if err != nil {
+					results[run] = outcome{err: err}
+
+					return
+				}
+
+				_, _ = fmt.Fprintf(stderr, "  restart %d/%d: total %.3f from the checkpoint\n",
+					run+1, restarts, candidate.Terms.Total)
+
+				results[run] = outcome{
+					candidate:   candidate,
+					evaluations: record.Evaluations,
+					convergence: record.Convergence,
+				}
+
+				return
+			}
+
 			// Progress is reported from inside the objective because mayfly has
 			// no per-iteration hook: without this the run says nothing until a
 			// whole restart finishes.
 			objective := func(position []float64) float64 {
+				// Cancellation is cooperative for the same reason: Optimize
+				// cannot be interrupted, so an abandoned evaluation returns the
+				// cost of a configuration that is not a drum. mayfly keeps its
+				// incumbent, so the restart still reports the best it genuinely
+				// found — the run unwinds in seconds without discarding it.
+				if ctx.Err() != nil {
+					return math.Inf(1)
+				}
+
 				cost := local.cost(position)
-				progress.observe(cost)
+				progress.observe(cost, position)
 
 				return cost
 			}
@@ -381,8 +498,32 @@ func search(
 				return
 			}
 
-			_, _ = fmt.Fprintf(stderr, "  restart %d/%d: total %.3f after %d evaluations\n",
-				run+1, restarts, result.GlobalBest.Cost, result.FuncEvalCount)
+			// A restart the interrupt cut short is recorded but not marked
+			// complete: it saw fewer real evaluations than the run asked for, so
+			// a later resume must run it again rather than adopt its answer.
+			complete := ctx.Err() == nil
+
+			state := "after"
+			if !complete {
+				state = "interrupted after"
+			}
+
+			_, _ = fmt.Fprintf(stderr, "  restart %d/%d: total %.3f %s %d evaluations\n",
+				run+1, restarts, result.GlobalBest.Cost, state, result.FuncEvalCount)
+
+			if err := checkpoint.recordRestart(RestartRecord{
+				Run:         run,
+				Seed:        seed + int64(run),
+				Complete:    complete,
+				Cost:        result.GlobalBest.Cost,
+				Position:    result.GlobalBest.Position,
+				Evaluations: result.FuncEvalCount,
+				Convergence: result.ConvergenceCurve,
+			}); err != nil {
+				results[run] = outcome{err: err}
+
+				return
+			}
 
 			results[run] = outcome{
 				candidate:   candidate,
@@ -408,6 +549,24 @@ func search(
 		if !found || result.candidate.Terms.Total < best.Terms.Total {
 			best, found = result.candidate, true
 			best.Convergence = result.convergence
+		}
+	}
+
+	// The running snapshot is a candidate in its own right. It is usually
+	// beaten by the restart that produced it — a swarm's incumbent is its own
+	// global best — but after an interrupt it can be the only thing left, and a
+	// point that measured better is better whatever produced it.
+	if snapshot := checkpoint.best(); snapshot != nil && (!found || snapshot.Cost < best.Terms.Total) {
+		candidate, err := newEvaluator(base).describe(snapshot.Position)
+		if err != nil {
+			return Candidate{}, 0, err
+		}
+
+		if !found || candidate.Terms.Total < best.Terms.Total {
+			_, _ = fmt.Fprintf(stderr, "  best point came from the checkpoint: total %.3f\n",
+				candidate.Terms.Total)
+
+			best, found = candidate, true
 		}
 	}
 

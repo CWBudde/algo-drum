@@ -64,7 +64,8 @@ check-params: gen-params
 # repository — so it is deliberately not part of `just ci`. See
 # docs/physical-measured-fit.md.
 fit-physical reference="reference/tom.wav" *args="":
-    go run ./cmd/fit-physical -reference {{reference}} -o fit-report.json {{args}}
+    go run ./cmd/fit-physical -reference {{reference}} -o fit-report.json \
+        -checkpoint fit-report.checkpoint {{args}}
 
 # Fail if the physical-model calibration metrics are stale
 check-physical-reference: gen-physical-reference

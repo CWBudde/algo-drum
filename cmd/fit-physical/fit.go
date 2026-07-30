@@ -28,6 +28,16 @@ type evaluator struct {
 	sampleRateHz    float64
 	durationSeconds float64
 
+	// contact overrides the excitation model, and malletMassKg the stick's
+	// mass, on top of whatever the parameter bank produced. Neither is in the
+	// bank: the contact model is a build-level choice about how the strike is
+	// computed rather than a knob, and the mallet mass is a property of the
+	// player's stick. They are here because the head-dominated contact time
+	// makes the mass the strongest lever the Hertzian model has, so a fit run
+	// at one mass says nothing about the other.
+	contact      physical.ContactModel
+	malletMassKg float64
+
 	buffer []float64
 }
 
@@ -66,7 +76,20 @@ func (e *evaluator) config() (physical.PhysicalDrum, error) {
 	// NeutralDecayAmount, not the shipped 0.5-equivalent by accident: the
 	// strip DEC knob multiplies DAMP, so leaving it anywhere else would fold a
 	// second, unrecorded factor into every fitted damping value.
-	return drum.PhysicalTomConfig(e.bank, drum.NeutralDecayAmount, e.sampleRateHz)
+	config, err := drum.PhysicalTomConfig(e.bank, drum.NeutralDecayAmount, e.sampleRateHz)
+	if err != nil {
+		return config, err
+	}
+
+	if e.contact != "" {
+		config.Strike.Contact.Model = e.contact
+	}
+
+	if e.malletMassKg > 0 {
+		config.Strike.MalletMassKg = e.malletMassKg
+	}
+
+	return config, nil
 }
 
 func (e *evaluator) render(velocity01 float64) ([]float64, error) {
