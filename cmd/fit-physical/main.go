@@ -446,27 +446,40 @@ func run(args []string, stdout, stderr io.Writer) error {
 		_, _ = fmt.Fprintf(stderr, "best:      %s\n", summarize(best.Terms))
 	}
 
+	return finish(stdout, stderr, report, *wavPath, *wavDuration, *outputPath)
+}
+
+// finish writes what a run leaves behind: the summary, the optional WAV, and
+// the JSON report. Shared so that -inspect leaves the same things behind as a
+// completed run, rather than a subset of them.
+func finish(
+	stdout, stderr io.Writer,
+	report Report,
+	wavPath string,
+	wavDuration time.Duration,
+	outputPath string,
+) error {
 	writeSummary(stdout, report)
 
 	// The baseline is the fallback for the same reason writeSummary uses it: with
 	// -report-only there is no fitted bank, and the shipped one is what the run
 	// measured.
-	if *wavPath != "" {
+	if wavPath != "" {
 		exported := report.Baseline
 		if report.Best != nil {
 			exported = *report.Best
 		}
 
-		peak, err := exportCandidate(*wavPath, exported, *wavDuration)
+		peak, err := exportCandidate(wavPath, exported, wavDuration)
 		if err != nil {
 			return err
 		}
 
 		_, _ = fmt.Fprintf(stderr, "wrote %s: %.2fs at velocity %.3f, source peak %.6g\n",
-			*wavPath, wavDuration.Seconds(), exported.Velocity01, peak)
+			wavPath, wavDuration.Seconds(), exported.Velocity01, peak)
 	}
 
-	return writeReport(*outputPath, report)
+	return writeReport(outputPath, report)
 }
 
 // defaultVelocity is the audition level the VoiceEditor triggers at, and the

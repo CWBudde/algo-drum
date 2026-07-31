@@ -871,7 +871,7 @@ sum:
 
 **The two baselines moved in opposite directions across the correction** —
 prescribed 33.236 → 33.094, Hertzian 32.585 → 33.544. That is the plainest
-available statement that the correction changed *what is being measured* rather
+available statement that the correction changed _what is being measured_ rather
 than applying an offset to it, and it is why no baseline or total from either
 side of the correction can be compared with one from the other.
 
@@ -882,10 +882,10 @@ side of the correction can be compared with one from the other.
 The margin is small — 11.252 against 11.535 — and the restart spreads say how
 much weight it carries. Best first:
 
-| Run        | Restart totals                                                          |
-| ---------- | ----------------------------------------------------------------------- |
-| Prescribed | **11.252**, 11.741, 12.038, 12.389, 13.220, 14.189, 14.924, 15.461       |
-| Hertzian   | **11.535**, 13.141, 13.169, 13.574, 14.446, 17.355, 17.770, 18.904       |
+| Run        | Restart totals                                                     |
+| ---------- | ------------------------------------------------------------------ |
+| Prescribed | **11.252**, 11.741, 12.038, 12.389, 13.220, 14.189, 14.924, 15.461 |
+| Hertzian   | **11.535**, 13.141, 13.169, 13.574, 14.446, 17.355, 17.770, 18.904 |
 
 The spreads overlap at the top and separate below it: Hertzian's best would rank
 **second** among the prescribed restarts, while its remaining seven all fall
@@ -976,7 +976,7 @@ way as in the two earlier rounds.
 The partial counts show the fit is a drum rather than either degenerate extreme,
 and also where it still is not the target: both winning banks produce **16
 partials, 5 of them between 476 and 700 Hz**, against the reference's 7 in that
-band. The band is no longer *empty* — that was the pre-correction finding — but
+band. The band is no longer _empty_ — that was the pre-correction finding — but
 neither bank reproduces the density there.
 
 Worth recording separately: `DAMP` fits to **0.709 (normalized 0.376)** in the

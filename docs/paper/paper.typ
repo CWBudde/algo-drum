@@ -30,40 +30,43 @@
     modes the budget can afford. Which of its numbers are derived, which are
     measured and which are fitted is reported alongside them.
 
-    Applied to that tom, the apparatus takes the distance from 32.6 at
-    the shipped default to 11.6, bringing five of the nine terms below their
+    Applied to that tom, the apparatus takes the distance from 33.1 at
+    the shipped default to 11.3, bringing five of the nine terms below their
     thresholds --- amplitude envelope, glide, attack balance and both coverage
-    shares --- and it localises what remains. What remains is a *tilt* in the
-    decay structure: the model's mid-band partials ring two to five times longer
-    than the reference's while its fundamental rings less than half as long, and
-    the head-damping parameter, which scales all loss rates together, is fitted
-    against the lower bound of its range. That is a specific, testable statement,
-    and it is put to the test here: given four times the head-damping headroom
-    through a build-time multiplier that leaves the shipped parameter range
-    untouched, the search chooses the same physical damping to within 2%. The
-    residual is therefore a question about the *shape* of the loss law rather
-    than about its range. A second experiment exploits the fact that mode
+    shares --- and it localises what remains. What remains is a *shape* the loss
+    law cannot make: the model delivers a nearly flat 0.6--1.0 s ring across
+    370--700 Hz where the reference scatters over a factor of four, and rings
+    about three-quarters as long as the reference at its fundamental. The
+    head-damping parameter, which scales all loss rates together, was fitted
+    against the lower bound of its range in an earlier run. That is a specific,
+    testable statement, and it is put to the test here: given four times the
+    head-damping headroom through a build-time multiplier that leaves the shipped
+    parameter range untouched, the search chooses the same physical damping to
+    within 2%, so the residual is a question about the shape of the loss law
+    rather than about its range. The same per-term reading separates two contact
+    models fitted at identical budget --- 11.252 against 11.535, winning on
+    different terms --- and a second experiment exploits the fact that mode
     frequencies are analytic: a pre-solve seeds restarts with banks whose modes
-    already lie on the reference's partials, worth 12% at identical cost once the
-    seeded box is restricted to the dimensions the pre-solve has evidence about.
+    already lie on the reference's partials, worth 12% at identical cost against
+    a target it reaches to a cent, and worth nothing against one it reaches only
+    to thirty-six --- a distinction the pre-solve itself reports before the search
+    begins.
   ],
   status-body: [
-    The fitted numbers in @results come from one complete report, produced by a
-    run that was stopped by hand at 47% of its restart budget so the machine
-    could be given the next experiment; the figures and every number in that
-    section are read from it. @lossscale and @seeding report further runs at
-    their own stated budgets, each paired against a control measured at the same
-    budget.
+    The fitted numbers in @results come from two complete reports, one per contact
+    model, each a full-budget run of eight restarts under the corrected reduction
+    of @levels; the figures and every number in that section are read from the
+    better of the two. @lossscale and @seeding report earlier runs at their own
+    stated budgets, each paired against a control measured at the same budget.
 
-    Those runs predate the correction to the partial-level estimator reported in
-    @levels (2026-07-31), which changed the reference's partial list and every
-    candidate's. Their totals and term values are therefore *not comparable to
-    anything measured after that date*, and are reported here for the method they
-    establish rather than as current results; @levels reports the correction and
-    what it re-scopes. Under the corrected reduction the shipped bank measures 33.094
-    with prescribed contact and 33.544 with Hertzian, at the Standard tier
-    against the right channel. Full-budget fits on the corrected metric are in
-    progress and are not reported here.
+    Those earlier runs predate the correction to the partial-level estimator
+    reported in @levels (2026-07-31), which changed the reference's partial list
+    and every candidate's. Their totals and term values are therefore *not
+    comparable to anything measured after that date*, and are reported here for
+    the method they establish rather than as current results; @levels reports the
+    correction and what it re-scopes. Under the corrected reduction the shipped
+    bank measures 33.094 with prescribed contact and 33.544 with Hertzian, at the
+    Standard tier against the right channel.
   ],
 )
 
@@ -852,9 +855,11 @@ and at the same weight. @partials-figure is the picture they score.
     caption: [
       What the two coverage terms see. Grey links join matched pairs; shading marks
       the span between the lowest and highest reference partial, within which the
-      spurious share is counted. The two reference partials without counterparts
-      sit at $-41$ dB, close to the detection floor, and are correspondingly cheap
-      to miss.
+      spurious share is counted. Eleven of the reference's fourteen partials find a
+      counterpart. Of the three that do not, two sit near the detection floor and
+      are correspondingly cheap to miss, while the third stands 26 dB below the
+      strongest and carries most of the unmatched share on its own --- which is
+      the audibility weighting doing exactly what it is for.
     ],
   ) <partials-figure>
 ]
@@ -1009,7 +1014,7 @@ $0.42times$ (1.27 dB against 3), glide $0.44times$ (17.6 cents against 40),
 attack balance $0.004times$ (0.03 dB against 6), and both coverage shares ---
 unmatched $0.30times$, spurious $0.55times$. The coverage pair is the useful
 confirmation: the candidate accounts for most of the reference's audible partial
-content while inventing moderately, so the remaining terms are being computed
+content while inventing little of its own, so the remaining terms are computed
 over a genuine correspondence rather than over one lucky pair. The reference
 reduces to fourteen partials and the candidate to sixteen; eleven pair up, and
 the three reference partials left over are what the unmatched share prices
@@ -1064,14 +1069,63 @@ fit that gets the mid band right must get the fundamental wrong, and the reverse
 Locating the residual as a shape of the loss law rather than as a level is
 exactly the discrimination the per-term units were built for.
 
-*And the fit reports a parameter against its bound.* Head damping is fitted to
-0.276 on a range whose lower bound is 0.25 --- normalised position 0.036, against
-the edge. Since that parameter scales all loss rates together, the fit at that
-position is asking for *less* overall loss than the bank expresses there, and it
-spent its remaining freedom elsewhere, tuning the batter head to 933 N/m and
-shifting the pickup. Reporting the normalised position beside the engineering
-value is what makes that visible, and it turns the residual into a question that
-can be put to the model directly.
+*The same apparatus settles a design question.* The prescribed contact model and
+the Hertzian alternative were fitted separately at identical budget,
+seed and reduction --- the only difference being the flag --- so the comparison
+is between two excitations over the same bank rather than between one excitation
+and a default that happens to suit it.
+
+#figure(
+  table(
+    columns: 4,
+    align: (left, right, right, right),
+    table.header(
+      [Term],
+      [Threshold],
+      [Prescribed],
+      [Hertzian],
+    ),
+    [Partial frequency], [25 cents], [56.9], [*47.2*],
+    [Partial decay], [0.25], [*0.581*], [0.728],
+    [Spectral envelope], [4 dB], [12.28], [12.30],
+    [Partial level], [3 dB], [*7.58*], [9.18],
+    [Amplitude envelope], [3 dB], [1.27], [*1.18*],
+    [Glide], [40 cents], [17.6], [*0.12*],
+    [Attack balance], [6 dB], [*0.03*], [1.31],
+    [Unmatched share], [0.5], [0.151], [*0.047*],
+    [Spurious share], [0.5], [*0.275*], [0.359],
+    [*Total*], [], [*11.252*], [11.535],
+    [Baseline], [], [33.094], [33.544],
+  ),
+  caption: [
+    Two contact models at identical budget, seed and reduction. Bold marks the
+    better of the pair on each term. The prescribed model wins the sum, and the
+    two win on different terms --- which is the reading the per-term units exist
+    to make available.
+  ],
+) <contact-table>
+
+The prescribed model takes the sum, 11.252 against 11.535, and the restart
+spreads say how firmly. Its eight restarts run 11.252 to 15.461 and the
+Hertzian's 11.535 to 18.904; the Hertzian best would rank second among the
+prescribed restarts while its remaining seven fall outside the prescribed range's
+better half. That is a *consistent* ordering rather than a decisive one, and it
+is worth stating in those terms: the prescribed excitation earns the default it
+already holds, and nothing here claims it is the better physics.
+
+What the per-term reading adds is that the two do not merely differ in size. The
+Hertzian fit is better placed in frequency, has essentially no glide error and
+leaves less of the reference uncovered; the prescribed fit has the better decay,
+partial balance, attack balance and tidiness. A single number would report one
+winner and conceal that the two are good at different things --- which is the
+information a next iteration of the excitation model would want.
+
+*A normalised position beside an engineering value turns a fitted parameter into
+a question.* Head damping here is fitted to 0.709 at normalised position 0.376,
+comfortably inside its range. An earlier run under the superseded reduction
+fitted the same parameter to 0.276 at position 0.036 --- against the edge --- and
+it was the position rather than the value that made that legible. @lossscale puts
+that question to the model directly.
 
 = Testing a bound without widening it <lossscale>
 
@@ -1178,19 +1232,29 @@ evaluation. That makes it cheap to ask a question the fit itself cannot afford
     table.header([Measurement], [Audibility-weighted frequency error]),
     [20,000 random banks, best], [11.5 cents],
     [the same, hill-climbed], [10.5 cents],
-    [the fit of @results], [59.7 cents],
+    [converged pre-solve, corrected target], [35.9--37.0 cents],
     [gate], [25 cents],
   ),
   caption: [
-    What the analytic pre-solve can reach, against what the fit reached and what
-    the gate asks for.
+    What the analytic pre-solve reaches, against what the gate asks for. The
+    first two rows are measured against the reduction of the reference as it
+    stood before the correction of @levels; the third against the corrected
+    reduction, whose fourteen partials include seven inside a 224 Hz span. The
+    pre-solve is the same in both cases --- it is the target that changed.
   ],
 ) <presolve-table>
 
-The model can place its modes on this drum, so mode placement is available to be
-used as a starting point. `-seeded-restarts N` does that: a pre-solve finds $N$
-diverse frequency-optimal banks, and those $N$ restarts search a box around them
-while the remainder search the whole cube. The seeded restarts come first and the
+Read that table as a property of the *searchable space* rather than of any
+search: it reports how close the modes of the best bank the pre-solve can
+construct come to the partials it is asked to hit, before a single sample is
+rendered. Against the earlier reduction the answer was around a cent, well inside
+the gate. Against the corrected one it is around 36 cents, outside it. Obtaining
+that answer costs roughly one full evaluation, which makes it a cheap thing to
+know in advance and, as below, a decision procedure rather than only a diagnostic.
+
+`-seeded-restarts N` puts it to use: a pre-solve finds $N$ diverse
+frequency-optimal banks, and those $N$ restarts search a box around them while
+the remainder search the whole cube. The seeded restarts come first and the
 unseeded ones keep their RNG seeds, so they are bit-for-bit what they were
 without the flag and the comparison is paired.
 
@@ -1202,7 +1266,8 @@ therefore found by *probing* which ones move the mode frequencies, rather than b
 listing them, so the mask stays true when the parameter table changes. Here it
 selects 4 of 17 free parameters --- overall size, the two head tunings and the
 head asymmetry, which are the wave speed, the two tensions and the mode split ---
-and the pre-solve's two seeds land at 1.0 and 1.3 cents.
+and, against the reduction as it then stood, the pre-solve's two seeds land at
+1.0 and 1.3 cents.
 
 #figure(
   table(
@@ -1230,11 +1295,25 @@ rises, 0.413 to 0.638, which is the honest price of the method: a bank chosen to
 have a mode near every reference partial also has modes elsewhere, and
 @coverage's second share is what reports it.
 
-The pre-solve aims at the reference's detected partials, so the correction of
-@levels changes the target it is given and supersedes the values in
-@presolve-table and @seeding-table. The mechanism, the two defects the first
-version exposed, and the paired design that makes @seeding-table readable are
-unaffected, and the pre-solve is cheap enough to re-run against any reduction.
+*A seed helps in proportion to how good it is, and the pre-solve says how good it
+is before the search starts.* @seeding-table is a 1-cent seed, and it buys 12%.
+The corrected reduction of @levels gives the same pre-solve a harder target, its
+seeds floor at 36 cents, and the two full-budget fits of @results --- eight
+restarts each, four of them seeded --- were both *won by an unseeded restart*:
+11.252 against a best seeded 11.741 with the prescribed contact, 11.535 against
+13.574 with the Hertzian. A box is range spent to buy a head start. At one cent
+the head start is a real selection from the distribution below and the trade is
+worth making; at thirty-six the seed is barely a selection, and the box only
+removes room. The flag therefore stays off by default, and the number that
+decides whether to raise it is printed by the pre-solve for the price of one
+evaluation.
+
+That is the durable part of this section. @seeding-table and the cent figures in
+it are measured against the earlier reduction and do not transfer, but the
+mechanism, the two defects the first version exposed, the paired design that
+makes the table readable, and the rule above all survive the change of target
+--- and the rule is only visible *because* the method was tried against two
+targets of very different difficulty.
 
 = The conditioning of a level estimate <levels>
 
@@ -1344,18 +1423,29 @@ detected at all.
   ],
 ) <corrected-table>
 
-@corrected-table re-scopes a standing claim. The fits of @results reproduced
-little in 476--700 Hz while the reference was busiest there, and the reference
-still is --- but part of that gap was the target not asking for those partials
-either, because they sat below the floor the level estimate set. Whether a real
-excitation deficit remains in that band is an open question on the corrected
-metric. Fits at full budget are in progress; the honest statement today is that
-the measurement has been repaired and the question re-opened, not that it has been
-answered in either direction.
+@corrected-table re-scopes a standing claim, and the fits of @results then
+narrow it. Fits under the earlier reduction reproduced little in 476--700 Hz
+while the reference was busiest there, and the reference still is --- but part of
+that gap was the target not asking for those partials either, because they sat
+below the floor the level estimate set. On the corrected metric both full-budget
+fits place *five of their sixteen partials* in that band against the reference's
+seven, so the model does populate it. Whether the remaining difference in density
+is an excitation deficit or a mode-density one is open, and the corrected
+reduction is what makes it answerable: the target now asks for the partials the
+question is about.
+
+One quantity to keep in view while answering it: the analytic pre-solve of
+@seeding floors at 36 cents against this target, so the frequency gate's
+reachability within the shipped bank is itself an open question. The gate was
+calibrated against a reduction with half as many partials, and a per-partial cent
+tolerance does not ask the same thing of a model when seven partials must be
+placed inside a 224 Hz span. Re-deriving it against the corrected reduction is
+the natural next step, and it is a question the apparatus can now be pointed at
+directly.
 
 = What to watch for
 
-Eight points generalise beyond this instrument, each learned by measurement.
+Ten points generalise beyond this instrument, each learned by measurement.
 
 *An exact formula can be an unusable estimator; probe it before trusting it.*
 Correctness and conditioning are different properties, and a derivation
@@ -1400,9 +1490,35 @@ analytic mode frequencies scores the distance to the nearest *mode*; the gate
 scores the distance to the nearest *detected partial*. A mode can sit exactly on
 a reference partial and never be heard --- wrong radiation weight, in a pickup
 null, or buried under a louder neighbour --- so a 1.0-cent seed does not promise
-a 1.0-cent frequency term, and the 46.1 cents the seeded fit reached is the
-measure of the gap. Mode placement is necessary for that term and nowhere near
-sufficient.
+a 1.0-cent frequency term, and the tens of cents the seeded fit actually reached
+is the measure of the gap. Mode placement is necessary for that term and nowhere
+near sufficient.
+
+*Let a cheap pre-solve decide whether its own output is worth using.* Seeding a
+restart trades range for a head start, and the trade is only worth making when
+the head start is large. The useful part is that the same computation which
+produces the seed also reports how good it is, in the units the gate is written
+in and before any expensive evaluation --- so the flag can be raised or left down
+on evidence rather than on hope. Here the identical mechanism gained 12% against
+a target it could reach to a cent and lost against one it could only reach to
+thirty-six, with the winning restart unseeded in both full-budget fits. Prefer a
+warm start whose quality you can read in advance, and treat "seeding helps" as a
+statement about a target rather than about a method.
+
+*A term that will not move under any intervention is a question about the term.*
+Where the other eight terms of this distance respond to the contact model, to the
+damping range, to seeding and to a corrected reduction, the spectral envelope sat
+at 12.3 dB through all four and is the largest single contributor in both fits of
+@contact-table. That pattern is worth reading as evidence about the measurement
+as much as about the model: this term is mean-removed band shape out to 12.5 kHz,
+and above roughly 3 kHz the model offers only its stochastic attack layer --- no
+shell, no bearing edge, no hardware. A threshold applied over a
+span the model cannot structurally populate asks for something no parameter
+reaches, and the remedy is then to restrict the band or re-derive the threshold
+rather than to keep fitting against it. Whether that is the case here is not
+settled and is being measured; the transferable point is that immobility under
+independent interventions is a signal, and a per-term apparatus is what lets it
+be seen.
 
 *Check a cheap objective for discrimination before quoting its numbers.* Reading
 both heads roughly doubles the mode count, and a dense enough bank is near *any*
