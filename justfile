@@ -71,6 +71,16 @@ fit-physical reference="reference/tom.wav" *args="":
 check-physical-reference: gen-physical-reference
     git diff --exit-code testdata/physical-reference-v2.json
 
+# Build the fit-audit paper (docs/paper/paper.typ -> PDF).
+#
+# Needs typst on PATH. Deliberately not part of `just ci`: the figures are
+# committed, so the PDF is reproducible from the repository alone, but nothing
+# in the build depends on it.
+paper:
+    cd docs/paper && typst compile --root . \
+        --input revision="$(git rev-parse --short HEAD)" \
+        paper.typ physical-tom-fit-audit.pdf
+
 # ── Frontend ─────────────────────────────────────────────────────────────────
 
 # Install frontend dependencies

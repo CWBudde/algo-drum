@@ -160,3 +160,90 @@ func TestDecodeReferenceRejectsSomethingThatIsNotAWAV(t *testing.T) {
 		t.Error("decoding arbitrary bytes succeeded")
 	}
 }
+
+// A stereo pair of one hit is usually two microphones at different distances.
+// Averaging that without taking the delay out is a comb filter, and the notches
+// it carves are a property of the microphone spacing rather than of the drum —
+// which is exactly the kind of thing a fit will happily chase. This is the
+// regression for that: it is the defect that made the tom reference look as
+// though it had nine partials between 476 and 700 Hz.
+func TestMonoAlignsADelayedPairBeforeSummingIt(t *testing.T) {
+	t.Parallel()
+
+	const (
+		sampleRate = 44100
+		delay      = 69
+		frames     = 8192
+		toneHz     = 320.0 // sits on the comb's first notch for this delay
+	)
+
+	pair := make([][]float64, frames)
+	for index := range pair {
+		phase := 2 * math.Pi * toneHz * float64(index) / sampleRate
+		late := 2 * math.Pi * toneHz * float64(index-delay) / sampleRate
+
+		second := 0.0
+		if index >= delay {
+			second = 0.5 * math.Sin(late)
+		}
+
+		pair[index] = []float64{0.5 * math.Sin(phase), second}
+	}
+
+	got, err := decodeReference(encodeWAV(t, pair, sampleRate), ChannelMono)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.ChannelDelaySamples != delay {
+		t.Errorf("measured delay = %d samples, want %d", got.ChannelDelaySamples, delay)
+	}
+
+	if got.ChannelCorrelation < 0.9 {
+		t.Errorf("aligned correlation = %.3f, want > 0.9", got.ChannelCorrelation)
+	}
+
+	// A naive sum puts this tone in the comb's first null and all but erases
+	// it. Aligned, the two copies add and the tone survives at full level.
+	peak := 0.0
+	for _, sample := range got.Samples[delay : frames-delay] {
+		peak = math.Max(peak, math.Abs(sample))
+	}
+
+	if peak < 0.45 {
+		t.Errorf("aligned peak = %.4f, want the tone to survive at ~0.5", peak)
+	}
+}
+
+// Two unrelated channels must be left alone: shifting one to chase the best of
+// a bad set of correlations would invent an alignment rather than recover one.
+func TestMonoLeavesAnUncorrelatedPairAlone(t *testing.T) {
+	t.Parallel()
+
+	const (
+		sampleRate = 44100
+		frames     = 8192
+	)
+
+	pair := make([][]float64, frames)
+	for index := range pair {
+		left := 0.4 * math.Sin(2*math.Pi*220*float64(index)/sampleRate)
+		right := 0.4 * math.Sin(2*math.Pi*991*float64(index)/sampleRate)
+		pair[index] = []float64{left, right}
+	}
+
+	got, err := decodeReference(encodeWAV(t, pair, sampleRate), ChannelMono)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const tolerance = 4.0 / 32768
+
+	for index := range got.Samples {
+		want := (pair[index][0] + pair[index][1]) / 2
+		if math.Abs(got.Samples[index]-want) > tolerance {
+			t.Fatalf("sample %d = %.6f, want the plain average %.6f",
+				index, got.Samples[index], want)
+		}
+	}
+}
