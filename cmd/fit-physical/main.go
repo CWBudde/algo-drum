@@ -132,6 +132,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		"print a progress line every N objective evaluations; 0 silences it")
 	checkpointPath := flags.String("checkpoint", "",
 		"file to save finished restarts and the best point to, and to resume from")
+	inspect := flags.Bool("inspect", false,
+		"describe the -checkpoint file's best point and stop, without searching")
 	wavPath := flags.String("wav", "",
 		"also render the fitted bank to this mono WAV file, for listening to")
 	wavDuration := flags.Duration("wav-duration", 3*time.Second,
@@ -289,6 +291,36 @@ func run(args []string, stdout, stderr io.Writer) error {
 		if resumed := len(checkpoint.completed()); resumed > 0 {
 			_, _ = fmt.Fprintf(stderr, "resuming:  %d of %d restarts already finished\n",
 				resumed, *restarts)
+		}
+
+		// -inspect reads a checkpoint and stops. The point is to see a running
+		// fit's best candidate broken down by term without interrupting it:
+		// checkpoints are written atomically, so a reader gets one whole version
+		// or another, and the search never learns it was read. The fingerprint
+		// guard still applies, which is what stops this describing one run's
+		// point against another run's reference.
+		if *inspect {
+			snapshot := checkpoint.best()
+			if snapshot == nil {
+				return fmt.Errorf("%w: %s holds no best point yet",
+					errInvalidFitOption, *checkpointPath)
+			}
+
+			candidate, err := base.describe(snapshot.Position)
+			if err != nil {
+				return err
+			}
+
+			report.Best = &candidate
+			report.Search.Evaluations = snapshot.Evaluations
+			report.Search.Interrupted = true
+
+			_, _ = fmt.Fprintf(stderr, "inspected: %s after %d evaluations\n",
+				summarize(candidate.Terms), snapshot.Evaluations)
+
+			writeSummary(stdout, report)
+
+			return writeReport(*outputPath, report)
 		}
 
 		// An interrupt asks the search to wind up, not the process to die: the

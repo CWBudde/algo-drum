@@ -210,3 +210,51 @@ func TestNoCheckpointIsNotAnError(t *testing.T) {
 		t.Errorf("flush() = %v", err)
 	}
 }
+
+// -inspect exists so that a long run can be read while it is still going: the
+// checkpoint holds the best point, writes are atomic, and describing it costs
+// the search nothing. The property worth pinning is that inspecting reports the
+// same candidate the search itself would report, so an early reading and the
+// final one are the same measurement rather than two different ones.
+func TestInspectDescribesTheCheckpointsBestPoint(t *testing.T) {
+	t.Parallel()
+
+	reference := writeSyntheticReference(t)
+	path := filepath.Join(t.TempDir(), "fit.checkpoint")
+
+	var searched, searchErrors strings.Builder
+	if err := run(tinySearch(reference, path), &searched, &searchErrors); err != nil {
+		t.Fatalf("search run: %v", err)
+	}
+
+	var inspected, inspectErrors strings.Builder
+	if err := run(tinySearch(reference, path, "-inspect"), &inspected, &inspectErrors); err != nil {
+		t.Fatalf("inspect run: %v", err)
+	}
+
+	if !strings.Contains(inspectErrors.String(), "inspected:") {
+		t.Errorf("inspect did not report a candidate:\n%s", inspectErrors.String())
+	}
+
+	if searched.String() != inspected.String() {
+		t.Errorf("inspecting the checkpoint described a different candidate than the search reported")
+	}
+}
+
+func TestInspectNeedsACheckpointThatHasSomethingInIt(t *testing.T) {
+	t.Parallel()
+
+	reference := writeSyntheticReference(t)
+	empty := filepath.Join(t.TempDir(), "unwritten.checkpoint")
+
+	var out, errors strings.Builder
+
+	err := run(tinySearch(reference, empty, "-inspect"), &out, &errors)
+	if err == nil {
+		t.Fatal("inspecting a checkpoint with no best point should fail")
+	}
+
+	if !strings.Contains(err.Error(), "no best point") {
+		t.Errorf("error = %v, want it to say the checkpoint holds no best point", err)
+	}
+}

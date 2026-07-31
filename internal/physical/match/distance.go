@@ -31,18 +31,30 @@ type Terms struct {
 	Glide float64 `json:"glideCents"`
 	// AttackBalance is the dB error of the click-to-body ratio.
 	AttackBalance float64 `json:"attackBalanceDB"`
-	// Unmatched is the share of the reference's partial *energy* that no
-	// candidate partial accounts for. It is mostly a diagnostic — the three
-	// terms above already carry the cost of what is missing — but it keeps a
-	// small weight of its own, because a drum with the right partials and one
-	// gone is worse than the terms alone say.
+	// Unmatched is the share of the reference's partial *audibility* that no
+	// candidate partial accounts for, where a partial is worth how far it
+	// stands above the level at which it would not have been detected at all.
+	// It is both a diagnostic and the blend that makes the three terms above
+	// pay for what is missing rather than averaging over whatever happened to
+	// match.
 	//
-	// Energy-weighted rather than counted, because a missing partial matters
-	// exactly as much as it is loud. The reference tom has a genuine, isolated
-	// component at 87 Hz that is 39 dB down; counting would make failing to
-	// reproduce it as expensive as losing the fundamental, and a floor tuned to
-	// exclude it would also throw away the 500–700 Hz cluster that does matter.
-	Unmatched float64 `json:"unmatchedEnergyFraction"`
+	// This was energy-weighted, as $10^(dB/10)$, and that was wrong in a way
+	// that took a listening test to notice. Energy is dominated by whichever
+	// partial is loudest: on this repository's tom reference the 212.78 Hz
+	// partial carries 99.4 % of it, so a candidate that reproduced that one
+	// partial and nothing else scored an unmatched share of 0.006 — and every
+	// partial term, averaging over the single pair that matched, reported an
+	// excellent number for a drum with one mode in it. Six of eight terms were
+	// effectively scoring one partial.
+	//
+	// Counting instead would overcorrect: the same reference has a genuine but
+	// isolated component 39 dB down that no two-headed drum will produce, and
+	// missing it must not cost what missing the loudest partial costs.
+	// Weighting by dB above the detection floor is the compromise that keeps
+	// both properties — it is monotone in loudness, so the loud partials still
+	// dominate, but it is compressed enough that six missing quiet ones cannot
+	// be rounded away.
+	Unmatched float64 `json:"unmatchedShare"`
 	// Total is the weighted sum.
 	Total float64 `json:"total"`
 }
@@ -144,6 +156,13 @@ const (
 	unmatchedFrequencyCents = 120
 	unmatchedLevelDB        = 12
 	unmatchedDecayLogRatio  = 1.0986 // ln 3
+
+	// partialAudibilityFloorDB is the level, relative to the strongest partial,
+	// at which a partial stops counting for anything — because it is the level
+	// at which the detector stops finding it. It must track
+	// Options.PartialFloorDB, and TestAudibilityFloorTracksTheDetectionFloor
+	// fails if the two drift apart.
+	partialAudibilityFloorDB = -42
 )
 
 // blend mixes a measured error with the penalty for what could not be
@@ -166,7 +185,7 @@ type pair struct {
 // Greedy by closeness rather than in order, so one badly placed candidate
 // cannot cascade a mis-identification through the whole series. Each candidate
 // is claimed at most once, so a candidate cannot explain two reference modes.
-func matchPartials(reference, candidate []Partial, toleranceCents float64) (pairs []pair, unmatchedEnergy float64) {
+func matchPartials(reference, candidate []Partial, toleranceCents float64) (pairs []pair, unmatchedShare float64) {
 	if len(reference) == 0 {
 		return nil, 0
 	}
@@ -229,12 +248,12 @@ func matchPartials(reference, candidate []Partial, toleranceCents float64) (pair
 	var missing, total float64
 
 	for index, used := range usedRef {
-		energy := math.Pow(10, reference[index].LevelDB/10)
+		weight := partialAudibility(reference[index].LevelDB)
 
-		total += energy
+		total += weight
 
 		if !used {
-			missing += energy
+			missing += weight
 		}
 	}
 
@@ -243,6 +262,15 @@ func matchPartials(reference, candidate []Partial, toleranceCents float64) (pair
 	}
 
 	return pairs, missing / total
+}
+
+// partialAudibility is what one reference partial is worth: how far it stands,
+// in dB, above the level at which the detector would not have found it. Levels
+// are relative to the strongest partial, so this is zero at the floor and grows
+// with prominence, and it is the compressed alternative to the power weighting
+// described on Terms.Unmatched.
+func partialAudibility(levelDB float64) float64 {
+	return max(0, levelDB-partialAudibilityFloorDB)
 }
 
 func partialFrequencyError(pairs []pair) float64 {
