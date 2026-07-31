@@ -34,35 +34,45 @@ export const DEFAULT_PHYSICAL_TOM_PRESET: PhysicalTomPreset = {
  * The best fit to `reference/tom.wav`, from `cmd/fit-physical`.
  *
  * A preset rather than the shipped default on purpose: it matches the
- * recording's pitch, ring and envelope closely, but its spectral envelope is
- * 13.6 dB off — the reference has a dense 476–700 Hz cluster this model does
- * not produce at any quality tier. See docs/physical-measured-fit.md; the
- * reference itself is of unknown provenance and is not in the repository.
+ * recording's envelope, glide and attack balance closely and covers most of its
+ * partials, but it misses all three adoption-gate terms — partial frequency
+ * 56.9 ¢ against 25, partial decay 0.581 against 0.25, spectral envelope
+ * 12.3 dB against 4. See docs/physical-measured-fit.md; the reference itself is
+ * of unknown provenance and is not in the repository.
  *
- * QUAL is deliberately absent: the fit pinned it to Draft because mode count is
- * a CPU budget decision, so the preset leaves whatever the user has chosen.
+ * Re-derived 2026-07-31 from the run that supersedes every earlier one: the
+ * right channel rather than the combed mono downmix, and the corrected partial
+ * measurement — the level is now read off each partial's own decay fit, which
+ * changed both which partials the reference is found to have (14, not 7) and
+ * how loud they are. 8 restarts × 150 iterations, Standard quality, prescribed
+ * contact.
+ *
+ * QUAL is deliberately absent: the fit pinned it because mode count is a CPU
+ * budget decision, so the preset leaves whatever the user has chosen.
+ *
+ * Total 11.252 from a 33.094 baseline.
  */
 export const FITTED_PHYSICAL_TOM_PRESET: PhysicalTomPreset = {
   name: "Measured tom",
   description: "Fitted to a recorded tom — deep, long ring",
   values: {
-    "physicalTom.diameter": 0.599516,
-    "physicalTom.batterTension": 0.043456,
-    "physicalTom.resonantTension": 0.198698,
-    "physicalTom.damping": 0.582619,
-    "physicalTom.strikeRadius": 0.632891,
-    "physicalTom.strikeAngle": 0.534798,
-    "physicalTom.hardness": 0.426549,
-    "physicalTom.shellDepth": 0.223144,
-    "physicalTom.cavityCoupling": 0.454688,
-    "physicalTom.nonlinearity": 0.181237,
-    "physicalTom.pickupRadius": 0.599915,
-    "physicalTom.pickupAngle": 0.525678,
-    "physicalTom.asymmetry": 0.539759,
-    "physicalTom.asymmetryAxis": 0.473703,
-    "physicalTom.dampingTilt": 0.13751,
-    "physicalTom.attackLevel": 0.141951,
-    "physicalTom.attackTone": 0.429341,
+    "physicalTom.diameter": 0.52171,
+    "physicalTom.batterTension": 0.325094,
+    "physicalTom.resonantTension": 0.372115,
+    "physicalTom.damping": 0.375914,
+    "physicalTom.strikeRadius": 0.240823,
+    "physicalTom.strikeAngle": 0.506931,
+    "physicalTom.hardness": 0.612176,
+    "physicalTom.shellDepth": 0.480795,
+    "physicalTom.cavityCoupling": 0.326593,
+    "physicalTom.nonlinearity": 0.538102,
+    "physicalTom.pickupRadius": 0.271435,
+    "physicalTom.pickupAngle": 0.062234,
+    "physicalTom.asymmetry": 0.38292,
+    "physicalTom.asymmetryAxis": 0.236722,
+    "physicalTom.dampingTilt": 0.103796,
+    "physicalTom.attackLevel": 0.346311,
+    "physicalTom.attackTone": 0.255992,
   },
 };
 

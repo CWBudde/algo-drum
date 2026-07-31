@@ -25,6 +25,15 @@ A\_{0n} = 2\pi R^2\frac{J_1(z\_{0n})}{z\_{0n}}.
 The angular integral of every \(m>0\) mode is zero, so those modes have exactly
 zero cavity coupling. No empirical cross-coupling terms are present.
 
+That zero is exact, and it is exact _because of the lumped reduction_ rather than
+because a drum behaves that way. The cavity here is a single compliance whose
+only observable is total swept volume, and an \(m>0\) shape sweeps none of it. A
+real cylindrical cavity also has transverse modes — the \(j'\_{mn}\) series —
+which carry azimuthal structure of their own and couple to \(m>0\) head modes
+with a coefficient that is not zero. Nothing below weakens the claim; it states
+what the claim rests on. See [Open: what the one-mode cavity may be
+hiding](#open-what-the-one-mode-cavity-may-be-hiding).
+
 With modal displacement \(q_i\), modal mass \(m_i\), loss rate \(d_i\), cavity
 pressure \(p\), and the product control \(g\in[0,1]\), define the effective
 swept area \(\widetilde A_i=gA_i\). The coupled equations are
@@ -89,7 +98,8 @@ what any choice of \(s\) can do:
   and 112.3 Hz here — so it cannot rise 16 % no matter how stiff the air is. The
   quantity to fit is the separation between the branches, not the absolute
   position of the audible one.
-- Every \(m>0\) mode has zero swept area, so \(s\) has no effect on them at all.
+- Every \(m>0\) mode has zero swept area, so \(s\) has no effect on them at all —
+  again, exactly, and again only under the lumped compliance.
 
 `Cavity.StiffnessScale` is a fraction rather than a free gain because the rigid,
 sealed, piston-driven enclosure is the stiffest case that exists; 1 is the
@@ -119,6 +129,29 @@ midpoint rule. For this linear quadratic system it conserves the lossless
 energy to roundoff and makes the configured losses passive. The solve is
 linear in retained mode count and uses preallocated structure-of-arrays
 storage.
+
+## Open: what the one-mode cavity may be hiding
+
+The fitted \(s=0.083\) is a factor of **12** below the rigid ceiling, and the
+section above attributes the whole of that to shell flex, vent leakage and the
+non-flat mode shape. That is a lot to hang on three effects none of which has
+been measured here separately. Part of it may instead be the one-mode reduction
+itself mis-setting the compliance: a single uniform-pressure state has to stand
+in for the whole enclosed field, and there is no reason its best-fit stiffness
+should equal the true bulk value even in a drum where the shell were rigid and
+sealed. The fit measures whatever makes the (0,1) split come out right; it does
+not decide which mechanism owes the difference.
+
+Two threads to pull, and they may be the same thread.
+[`physical-excitation-gap.md`](physical-excitation-gap.md#an-observation-offered-as-a-hypothesis)
+records a testable transverse-cavity hypothesis — the reference's 624.4 / 1018.4
+/ 1331.3 Hz partials against \(j'\_{11}, j'\_{21}, j'\_{01}\times c/2\pi a\) =
+634 / 1052 / 1320 Hz, with the measured band deficit peaking at 635 Hz — offered
+there as a hypothesis and not as a finding. It is the same missing structure seen
+from the other side: transverse modes would both couple to the \(m>0\) heads that
+the lumped model decouples exactly, and change what the axisymmetric compliance
+should have been. Neither has been tested. The claims in this document stand as
+written under the reduction they are stated for.
 
 ## Output and parameter updates
 

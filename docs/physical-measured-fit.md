@@ -1,13 +1,20 @@
 # Fitting the physical Tom to a recording
 
-This document records the measurement, the search, what the first fit found, and
-the later refit that gave each contact model the same budget over the same bank.
+This document records the measurement, the search, what the first fit found, the
+refits that gave each contact model the same budget over the same bank, and the
+correction to the measurement itself that superseded everything before it.
 
 It does **not** close P6's _"fit documented presets from measurement"_ item, and
 it does not meet P8's exit criterion. It builds the machinery both of those need
-and reports honestly how far one recording gets: modal frequency and decay land
-inside tolerance, spectrum does not, and the shipped default is left alone as a
-result. The gap it leaves is specific enough to be the next piece of work.
+and reports honestly how far one recording gets: on the corrected measurement all
+three gate terms are missed, and the shipped default is left alone as a result.
+The gap it leaves is specific enough to be the next piece of work.
+
+The current result is
+[the corrected head-to-head](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31);
+every fit number recorded before
+[the measurement correction](#a-correction-to-the-partial-measurement-2026-07-31)
+carries a superseded banner and should not be quoted.
 
 ## Provenance, and its limits
 
@@ -43,17 +50,17 @@ Both sides are peak-normalized at the onset and every term is **gain
 invariant**, which is forced on us: the reference is normalized, so its
 loudness carries no information at all.
 
-| Feature            | How                                                                                                                                                    | Reused from                              |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
-| Onset              | impulse-start detection                                                                                                                                | `measure/ir`                             |
-| Partials           | Hann-windowed 64k transform of the sustain, topographic peak prominence, log-domain parabolic interpolation                                            | `dsp/window`, `algo-fft`, `dsp/spectrum` |
-| Per-partial decay  | heterodyne to baseband, zero-phase Butterworth low-pass whose cutoff is set from the measured spacing to the nearest neighbour, log-linear fit with R² | `dsp/filter/design`, `dsp/filter/biquad` |
-| Per-partial level  | the sustain transform's magnitude, divided by the attenuation that window applies to a partial decaying at the fitted rate                             | —                                        |
-| Glide              | residual phase slope of the loudest partial at 30 ms against 400 ms                                                                                    | as above                                 |
-| Spectral shape     | ⅓-octave band levels, mean-removed, in four windows (attack / early / body / tail)                                                                     | `stats/frequency`                        |
-| Amplitude envelope | frame RMS in dB, peak-referred                                                                                                                         | `stats/time`                             |
-| Attack balance     | 1–8 kHz against 100–500 Hz in the first 20 ms                                                                                                          | —                                        |
-| Decay metrics      | RT60, EDT, T20, T30, C50, C80 (reported, not fitted)                                                                                                   | `measure/ir`                             |
+| Feature            | How                                                                                                                                                                                                                               | Reused from                              |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| Onset              | impulse-start detection                                                                                                                                                                                                           | `measure/ir`                             |
+| Partials           | Hann-windowed 64k transform of two windows — the sustain, and an earlier 0.05–0.30 s window — topographic peak prominence, log-domain parabolic interpolation; each window admits candidates relative to its _own_ strongest peak | `dsp/window`, `algo-fft`, `dsp/spectrum` |
+| Per-partial decay  | heterodyne to baseband, zero-phase Butterworth low-pass whose cutoff is set from the measured spacing to the nearest neighbour, log-linear fit with R²                                                                            | `dsp/filter/design`, `dsp/filter/biquad` |
+| Per-partial level  | the intercept of that same decay fit — the fitted line's value at t = 0, read off the partial's heterodyned envelope                                                                                                              | —                                        |
+| Glide              | residual phase slope of the loudest partial at 30 ms against 400 ms                                                                                                                                                               | as above                                 |
+| Spectral shape     | ⅓-octave band levels, mean-removed, in four windows (attack / early / body / tail)                                                                                                                                                | `stats/frequency`                        |
+| Amplitude envelope | frame RMS in dB, peak-referred                                                                                                                                                                                                    | `stats/time`                             |
+| Attack balance     | 1–8 kHz against 100–500 Hz in the first 20 ms                                                                                                                                                                                     | —                                        |
+| Decay metrics      | RT60, EDT, T20, T30, C50, C80 (reported, not fitted)                                                                                                                                                                              | `measure/ir`                             |
 
 ### The distance
 
@@ -276,7 +283,8 @@ tom**.
 > since corrected. They are kept because the reasoning around them is still
 > instructive and because the corrections were found by asking why these numbers
 > disagreed with listening — but they are not comparable to anything measured
-> after, and none of them should be quoted as a result.
+> after, and none of them should be quoted as a result. The current fit is
+> [the corrected head-to-head](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31).
 
 | Term                  | Shipped default | Fitted    | Adoption gate |
 | --------------------- | --------------- | --------- | ------------- |
@@ -312,6 +320,16 @@ three times its threshold, and the partial lists say why:
 | Partials found | 16        | 5      |
 | 476–700 Hz     | 9         | 0      |
 
+> **Re-scoped 2026-07-31.** The reference column here was measured with the
+> superseded partial-level estimator and the single-window detector; see
+> [the correction below](#a-correction-to-the-partial-measurement-2026-07-31).
+> The reference is still busiest in this band — the corrected reduction of the
+> right channel puts seven of its fourteen partials between 476 and 700 Hz — but
+> the size of the deficit measured here is not a number that survives, and part
+> of the gap was the target not asking for those partials either. Whether a real
+> excitation gap remains in this band is an **open question** on the corrected
+> metric, not a settled finding.
+
 The recording's character lives in a dense cluster of nine partials between 476
 and 700 Hz. The fitted drum has none there. It matches the fundamental
 (118.06 → 118.68 Hz, T60 1.53 → 1.52 s), the envelope and the glide almost
@@ -339,6 +357,10 @@ question, and it is a **P8 finding rather than a fitting failure**.
 > geometry, strike footprint, cavity coupling, tension asymmetry and mode count
 > were each measured and eliminated. See
 > [`physical-excitation-gap.md`](physical-excitation-gap.md).
+>
+> **Reopened 2026-07-31.** That answer was reasoning about a deficit whose size
+> came from the superseded measurement. It is pending re-measurement, in either
+> direction.
 
 So the fit ships as a preset and a fixture, and **the shipped default is
 unchanged**. Moving `DefaultPhysicalDrum()` was the third deliverable of this
@@ -362,6 +384,17 @@ would find a better total; on the evidence above it would not close the 476–70
 Hz gap, because that gap does not move with search effort.
 
 ## The contact-model head-to-head (2026-07-31)
+
+> **Superseded** by
+> [the re-run on the corrected measurement](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31),
+> which asks the same question with the same budget and answers it the same way.
+> Every number in this section was measured with the partial-level estimator
+> corrected [below](#a-correction-to-the-partial-measurement-2026-07-31), which
+> changed both the reference's partial list and every candidate's. The reasoning is
+> kept — the seam-closing argument and the 5 g run's exposure of the
+> spectral-envelope term stand on their own — but the totals, the term values and
+> the partial counts are not comparable to anything measured after the correction,
+> and none of them should be quoted as a result.
 
 `ContactHertzian` closes the excitation gap measured in
 [`physical-excitation-gap.md`](physical-excitation-gap.md), so the question was
@@ -428,9 +461,12 @@ It does not close the gap:
 
 Hertzian finds two more partials overall and still none in the band carrying
 more than half the reference's character. The contact model buys 12–23 dB above
-800 Hz and 0–4 dB below 700, and the deficit is below 700. **The excitation model
-was never the binding constraint on this fit**; the mode density in that band is,
-which is the P8 question and stays open.
+800 Hz and 0–4 dB below 700, and the deficit is below 700.
+
+> **Re-scoped 2026-07-31.** The conclusion drawn here — that the excitation model
+> was never the binding constraint and mode density in the band is — was drawn
+> from a reference partial list the correction below has changed, on both sides of
+> the comparison. It is an open question again.
 
 ### The 5 g mallet, and what it exposes about the metric
 
@@ -478,6 +514,18 @@ quality. It is not enough to say the prescribed excitation is better physics, an
 the excitation-gap measurements say it is not.
 
 ## Is the head-damping range the constraint? (2026-07-31)
+
+> **Superseded.** Every total, term value and baseline below was measured with the
+> partial-level estimator corrected
+> [further down](#a-correction-to-the-partial-measurement-2026-07-31). The
+> question this section asks and the way it answers it — put a bound to the test
+> with a build-time multiplier rather than by widening the shipped spec — are
+> unaffected, and so is the qualitative finding that the search reaches the same
+> physical damping from three different ranges. The numbers are not comparable to
+> anything measured after the correction. The conclusion is independently
+> confirmed by
+> [the corrected head-to-head](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31):
+> `DAMP` fits well clear of its lower bound in both of those runs.
 
 The run under the nine-term distance (`fit-v4-hertzian`, Standard, Hertzian,
 stopped by hand at 47 % of its restart budget, **11.630** from a 32.585
@@ -536,7 +584,10 @@ coincidence, not a limit**, and the head-damping range needs no change.
 
 The reference's decay is **non-monotone in frequency**, and no single loss law is:
 its loudest partial at 212.8 Hz dies in 0.146 s while the fundamental at 118.1 Hz,
-25 dB quieter, sustains 1.490 s. The fitted candidate has the opposite tilt —
+12.1 dB quieter, sustains 1.490 s. (Both ring times survive the correction below
+unchanged; the level difference is quoted from the corrected measurement, which
+puts it at 12.1 dB rather than the 25 dB the superseded estimator reported.) The
+fitted candidate has the opposite tilt —
 0.597 s at the fundamental, and 0.71–1.47 s across 240–500 Hz where the reference
 spends 0.26–0.55 s.
 
@@ -547,6 +598,18 @@ measured (0,1) correction — is where a per-mode answer would go. That touches 
 shipped instrument's sound, so it is not a change this document makes.
 
 ## Seeding a restart from the reference's partials (2026-07-31)
+
+> **Superseded, and the recommendation is reversed.** The reference partial list
+> the pre-solve aims at, and every fit total in the comparison table, were measured
+> with the partial-level estimator corrected
+> [below](#a-correction-to-the-partial-measurement-2026-07-31). The mechanism, the
+> two defects it exposed, and the paired-comparison design are unaffected; the cent
+> figures and totals are not comparable to anything measured after the correction,
+> and the pre-solve targets a different set of partials now. On that corrected
+> target seeding **lost** — see
+> [the corrected head-to-head](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31)
+> — and `-seeded-restarts` stays off by default. The 12 % win below is a result
+> about a seed that was worth 1 ¢, not about seeding as such.
 
 Mode frequencies are analytic — `physical.GenerateDrumModes` reads them off the
 tension, radius and cavity without rendering a sample — at about a hundredth of a
@@ -565,6 +628,14 @@ mode placement and not about the gate: these figures count the distance to the
 nearest mode, while the gate counts the distance to the nearest partial the
 candidate is actually heard to produce. The two are not the same number, and the
 gap between them is the subject of the cautions below.
+
+> **Retired 2026-07-31.** The 11.5 ¢ and 10.5 ¢ figures — and with them the reading
+> that "the modes are reachable and the search was not reaching them" — were
+> measured against the pre-correction 7-partial target. Against the corrected
+> 14-partial target the same pre-solve floors at **35.9–37.0 ¢**, so the conclusion
+> does not survive: within the searchable space no bank places its modes on this
+> target much better than that. See
+> [the corrected head-to-head](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31).
 
 `-seeded-restarts N` acts on that: a pre-solve finds N diverse frequency-optimal
 banks, and those N restarts search a box around them while the rest search the
@@ -601,7 +672,9 @@ unseeded restarts are bit-for-bit identical between the runs.
 | Best    | **14.917** | **14.917**             | **13.056**     |
 
 Both seeded restarts improved and neither regressed, for a 12 % better result at
-the same cost. The frequency term fell from 94.4 ¢ to 46.1 ¢, partial decay from
+the same cost — **against a target the pre-solve could reach to 1 ¢**, which the
+corrected target is not, and which is why the flag is off by default. The
+frequency term fell from 94.4 ¢ to 46.1 ¢, partial decay from
 0.966 to 0.766, and the unmatched share from 0.461 to 0.011 — the seeded drum
 produces the reference's partials rather than a handful of them. The spurious
 share rose, 0.413 to 0.638, which is the honest cost: a bank chosen to have a
@@ -621,6 +694,319 @@ anything, because reading both heads roughly doubles the mode count and a dense
 enough bank is near _any_ frequency by accident. Measured over 2000 random banks:
 median 164.8 ¢, p10 56.2 ¢, best 4.1 ¢. A 1.0 ¢ seed is a real selection from
 that distribution, not a free lunch.
+
+## A correction to the partial measurement (2026-07-31)
+
+Two defects in `internal/physical/match/features.go`, both found by probing the
+reference rather than by reading the code, and both now fixed. Together they
+supersede every fit result measured before this date.
+
+### The partial level estimator was ill-conditioned
+
+`measureDecays` computed a partial's strike level as its magnitude in the sustain
+transform divided by the attenuation that window applies to a partial decaying at
+the fitted rate (`sustainWindow.decayAttenuation`). That is exact for an isolated
+exponential. It is unusable as an estimator, because for the default sustain
+window (0.05–0.85 s) the divisor is enormous and depends violently on the fitted
+decay:
+
+| T60     | correction gain |
+| ------- | --------------- |
+| 2.0 s   | 12.4 dB         |
+| 1.5 s   | 16.1 dB         |
+| 1.0 s   | 22.9 dB         |
+| 0.6 s   | 34.2 dB         |
+| 0.3 s   | 54.9 dB         |
+| 0.15 s  | 82.3 dB         |
+| 0.11 s  | 97.5 dB         |
+| 0.073 s | 122.0 dB        |
+
+So the reported level was largely a restatement of the fitted decay rate. A 10 %
+error in T60 at 0.12 s moves the level by 4.5 dB.
+
+The consequence on the reference is concrete. At a 5 Hz peak separation, a **73 ms**
+component (T60 0.073, R² 0.865) was reported as the **loudest partial in the
+recording**, which pushed the fundamental (T60 1.49 s, R² 0.984) to −33.6 dB.
+Levels are all relative to the strongest, so genuine partials then fell below
+`PartialFloorDB` and vanished. That is also why the detected set was non-monotone
+in the level floor.
+
+**Capping the correction was considered and rejected with a measurement.** The
+reference's loudest partial (212.8 Hz) itself carries an 83.7 dB correction, so
+any cap tight enough to exclude the runaways excludes it too.
+
+**The fix** is to take the level from the decay fit's own intercept — the fitted
+line's value at t = 0, read off the partial's heterodyned envelope. It is the same
+quantity, measured directly: it extrapolates back only as far as
+`DecayFitStartSeconds` instead of through the whole Hann taper, and it is a
+least-squares fit over hundreds of samples rather than a ratio of two numbers.
+
+The pre-existing warning in that code still holds and is respected: the level must
+**not** be the envelope's _peak_ inside the fit window, because a strike transient
+smeared through a 150 ms filter once put the 212 Hz partial 32 dB too loud. The
+fit starts after the transient, and the intercept is an extrapolation of the
+fitted decay, not a reading of the peak.
+
+### Detection was blind to short-ringing partials
+
+The sustain transform spans 800 ms, so a partial ringing a tenth of that stands
+roughly 90 dB lower in it. Both detection guards — a relative floor with 20 dB
+headroom, and a count limit of `MaxPartials × 2` — rank on that uncorrected
+magnitude, and they bind _together_. On the reference, loosening either alone
+changes nothing: sweeping headroom 20 → 80 dB at surplus 2 gives 7 partials
+throughout, and sweeping surplus 2 → 32 at headroom 20 also gives 7 throughout.
+Only both loosened (60 dB / 8) reached 9.
+
+`detectPartials` now also reads a second, earlier window
+(`EarlyDetectionStartSecs` 0.05 → `EarlyDetectionEndSecs` 0.30, both new
+`Options` fields), and **each window admits candidates relative to its own
+strongest peak**, so a short partial competes against short-lived content rather
+than against the fundamental's whole ring. The sustain window is admitted first,
+so where both windows see a partial the better-resolved frequency is kept. The
+early window starts after the strike transient, because a broadband click would
+otherwise offer a peak at every frequency. The shipped guard constants are
+unchanged (20 dB, ×2).
+
+### The ordering mattered
+
+The tight guards were, accidentally, what kept the unstable estimator from firing:
+they excluded precisely the short-ringing population where the correction ran
+away. Fixing detection first would have made the measurement worse. Bound the
+estimator, then open the aperture.
+
+`TestShortPartialsDoNotOutrankLongOnes` (`internal/physical/match/level_test.go`)
+pins both on a synthetic two-partial signal — a loud partial at amplitude 1.0
+ringing T60 1.2 s and a quiet one at 0.5 ringing 0.12 s — and depends on no
+recording. It failed twice while being developed: first because the levels were
+inverted, then because the short partial was not detected at all.
+
+### The corrected target
+
+The reference (`-channel right`) now reduces to **14 partials**, against 7 before:
+
+| Hz     | dB    | T60 s | R²   |
+| ------ | ----- | ----- | ---- |
+| 118.1  | −12.1 | 1.490 | 0.98 |
+| 139.6  | −38.2 | 1.552 | 0.77 |
+| 212.8  | 0.0   | 0.146 | 0.94 |
+| 259.1  | −30.9 | 0.260 | 0.75 |
+| 296.7  | −26.8 | 0.554 | 0.98 |
+| 380.5  | −36.5 | 0.468 | 0.41 |
+| 476.6  | −36.7 | 1.137 | 0.79 |
+| 502.6  | −26.6 | 0.257 | 0.92 |
+| 530.1  | −40.9 | 1.198 | 0.96 |
+| 546.9  | −35.7 | 0.843 | 0.94 |
+| 624.6  | −39.4 | 0.599 | 0.94 |
+| 675.8  | −29.9 | 0.629 | 0.93 |
+| 696.9  | −26.6 | 0.344 | 0.91 |
+| 1598.0 | −38.9 | 0.283 | 0.93 |
+
+**Seven of those fourteen lie between 476 and 700 Hz** — the band this document
+calls the recording's character. The previous measurement found two there.
+
+New baselines at the shipped bank, `-channel right`, Standard quality:
+**33.094** prescribed, **33.544** Hertzian.
+
+### What this supersedes
+
+Every fit result measured before this date, without exception. That includes the
+contact-model head-to-head, the `-loss-scale` damping sweep and the seeding
+comparison, each of which now carries a note. The reasoning in those sections is
+kept because it is about method and still holds; the numbers are not comparable
+to anything measured after.
+
+The standing claim that the fit is _empty_ across 476–700 Hz while the reference
+is busiest there is **re-scoped, not resolved**. The reference is still busiest
+there — seven of fourteen partials — but part of the measured gap was the target
+not asking for those partials either, because they were below the floor. Whether
+a real excitation gap remains is an open question.
+
+Both full-budget fits on the corrected metric have since completed; see
+[the head-to-head below](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31).
+They narrow the claim without closing it: both winning banks put **5 of their 16
+partials** in 476–700 Hz against the reference's 7, so the band is no longer
+empty, but neither reproduces its density.
+
+The general lesson is worth as much as the fix: **the conditioning of a
+measurement is a result in its own right.** An exact formula can still be an
+unusable estimator, and the way to find out is to probe it — sweep the parameter,
+look at what the correction factor does across the range it is asked to span, and
+check whether the answer is a measurement or a restatement of one of its inputs.
+
+## The head-to-head, re-run on the corrected measurement (2026-07-31)
+
+Both contact models were refitted from scratch on the corrected partial
+measurement above. These are the first fit numbers on this page that are not
+superseded, and they replace the [earlier
+head-to-head](#the-contact-model-head-to-head-2026-07-31) outright.
+
+Two runs, identical but for `-contact`: `reference/tom.wav`, `-channel right`,
+Standard quality, 8 restarts × 150 iterations at population 16, seed 1,
+`-seeded-restarts 4`, **59 056 evaluations** each, all restarts complete and
+neither interrupted. Reports are `fit-final-prescribed.json` and
+`fit-final-hertzian.json`; both are gitignored, so the numbers below are quoted
+rather than linked.
+
+**Prescribed wins, 11.252 against 11.535**, from baselines of **33.094** and
+**33.544** at the shipped bank.
+
+Each term is given with its threshold and with its contribution to the total
+(value × weight; a term sitting exactly at its threshold contributes 1.0), which
+is what makes the two columns comparable term by term rather than only in the
+sum:
+
+| Term                         | Threshold | Prescribed | contrib  | Hertzian | contrib  |
+| ---------------------------- | --------- | ---------- | -------- | -------- | -------- |
+| Partial frequency (gate)     | 25 ¢      | 56.9 ¢     | 2.28     | 47.2 ¢   | 1.89     |
+| Partial decay (gate)         | 0.25      | 0.581      | 1.66     | 0.728    | 2.08     |
+| **Spectral envelope** (gate) | 4 dB      | 12.28 dB   | **3.07** | 12.30 dB | **3.08** |
+| Partial level                | 3 dB      | 7.58 dB    | 2.53     | 9.18 dB  | 3.06     |
+| Amplitude envelope           | 3 dB      | 1.27 dB    | 0.42     | 1.18 dB  | 0.40     |
+| Glide                        | 40 ¢      | 17.6 ¢     | 0.44     | 0.12 ¢   | 0.00     |
+| Attack balance               | 6 dB      | 0.03 dB    | 0.00     | 1.31 dB  | 0.22     |
+| Unmatched share              | 0.5       | 0.151      | 0.30     | 0.047    | 0.10     |
+| Spurious share               | 0.5       | 0.275      | 0.55     | 0.359    | 0.72     |
+| **Total**                    | —         | **11.252** | —        | 11.535   | —        |
+| Baseline                     | —         | 33.094     | —        | 33.544   | —        |
+
+**The two baselines moved in opposite directions across the correction** —
+prescribed 33.236 → 33.094, Hertzian 32.585 → 33.544. That is the plainest
+available statement that the correction changed *what is being measured* rather
+than applying an offset to it, and it is why no baseline or total from either
+side of the correction can be compared with one from the other.
+
+### Verdict: unchanged, on better evidence
+
+`DefaultContact().Model` **stays `ContactPrescribed`**.
+
+The margin is small — 11.252 against 11.535 — and the restart spreads say how
+much weight it carries. Best first:
+
+| Run        | Restart totals                                                          |
+| ---------- | ----------------------------------------------------------------------- |
+| Prescribed | **11.252**, 11.741, 12.038, 12.389, 13.220, 14.189, 14.924, 15.461       |
+| Hertzian   | **11.535**, 13.141, 13.169, 13.574, 14.446, 17.355, 17.770, 18.904       |
+
+The spreads overlap at the top and separate below it: Hertzian's best would rank
+**second** among the prescribed restarts, while its remaining seven all fall
+outside the prescribed range's better half. So this is a **consistent ordering
+rather than a decisive one** — the same reading the earlier head-to-head arrived
+at, now on a measurement that survives.
+
+The two also win on **different terms**, which is worth more than the margin:
+
+- **Hertzian is better** on partial frequency (47.2 ¢ against 56.9 ¢), glide
+  (0.12 ¢ against 17.6 ¢, i.e. essentially none) and unmatched share (0.047
+  against 0.151).
+- **Prescribed is better** on partial decay (0.581 against 0.728), partial level
+  (7.58 dB against 9.18 dB), attack balance (0.03 dB against 1.31 dB) and
+  spurious share (0.275 against 0.359).
+
+Prescribed wins the sum because it wins the terms that carry weight here, not
+because it is better everywhere. Nothing in this says the prescribed excitation
+is better physics; the excitation-gap measurements still say it is not.
+
+### Seeding lost, and this supersedes the 12 % win
+
+Restarts 1–4 are seeded and 5–8 are not, so each run is its own paired
+comparison:
+
+|            | Seeded best | Unseeded best | Seeded mean | Unseeded mean |
+| ---------- | ----------- | ------------- | ----------- | ------------- |
+| Prescribed | 11.741      | **11.252**    | 13.20       | 13.10         |
+| Hertzian   | 13.574      | **11.535**    | 15.79       | 14.19         |
+
+**The winning restart in both runs was unseeded.** This supersedes the 12 %
+improvement recorded in [the seeding
+section](#seeding-a-restart-from-the-references-partials-2026-07-31).
+`-seeded-restarts` stays **off by default**, and the recommendation there is
+corrected in place; the method and the masking result are unaffected.
+
+The mechanism is visible in the reports rather than inferred. On the corrected
+target the pre-solve's four converged seeds land at **35.9, 37.0, 37.0 and
+37.0 cents**. On the old target the same pre-solve landed at **1.0–1.5 cents**.
+
+That is the whole story, and it generalizes: **a box around a seed is worth its
+cost in proportion to how good the seed is.** A 1 ¢ seed is a strong selection
+from the random distribution and buys a restart a head start worth more than the
+range it gives up. A 36 ¢ seed against a 25 ¢ gate is barely a selection at all,
+so boxing four dimensions around it only removes range. The pre-solve reports its
+own error before any rendering happens, so this is decidable in advance rather
+than after an hour of search — which makes it a usable rule and not just a
+result.
+
+### The seed error is itself a result about the model's reach
+
+Four converged analytic pre-solves flooring at 35.9–37.0 ¢ against a 25 ¢ gate is
+a statement about the searchable space, not about the search: **no bank the
+product can express places its modes on this target much better than that.**
+
+This **retires** the claim recorded in the seeding section that "the model can
+place its modes on this drum" — 11.5 ¢ over 20 000 random banks, hill-climbed to
+10.5 ¢, read at the time as evidence that the modes were reachable and the search
+was not reaching them. Those figures were measured against the pre-correction
+7-partial target. The corrected target has **14 partials, seven of them between
+476 and 700 Hz** — a seven-partial cluster inside a 224 Hz span — and the analytic
+pre-solve cannot get near it.
+
+Two consequences, both open:
+
+- Whether the 25 ¢ frequency gate is reachable **at all** by tuning within this
+  bank is now an open question, where before it was thought settled in the
+  affirmative.
+- The gate itself may need re-deriving. It was calibrated against a target with
+  half as many partials, and a per-partial cent tolerance does not mean the same
+  thing when seven partials must be placed inside a 224 Hz span.
+
+### What moved and what did not
+
+`testdata/physical-fit-tom.json` and the **Measured tom** preset in
+`web/src/algo/physicalTomPresets.ts` have been re-derived from the prescribed
+winner, because they are what makes the fit auditionable and reproducible and
+they should describe the best fit measured under the current metric.
+
+`DefaultPhysicalDrum()` and `DefaultContact()` are **unchanged**, because the fit
+**misses all three gate terms** — partial frequency at 2.28×, partial decay at
+1.66×, spectral envelope at 3.07× their thresholds. The fixture and the preset
+record what was found; the defaults are a claim about what the model should sound
+like out of the box, and a candidate that fails every gated term does not earn
+that on a total-cost improvement alone. This is the same rule applied the same
+way as in the two earlier rounds.
+
+The partial counts show the fit is a drum rather than either degenerate extreme,
+and also where it still is not the target: both winning banks produce **16
+partials, 5 of them between 476 and 700 Hz**, against the reference's 7 in that
+band. The band is no longer *empty* — that was the pre-correction finding — but
+neither bank reproduces the density there.
+
+Worth recording separately: `DAMP` fits to **0.709 (normalized 0.376)** in the
+prescribed winner and 0.524 (0.267) in the Hertzian one. Neither is near the
+0.25 lower bound, which is consistent with
+[the loss-scale experiment's](#is-the-head-damping-range-the-constraint-2026-07-31)
+conclusion that the earlier pin was a property of that basin and not of the range.
+
+### The spectral envelope has not moved for anything
+
+12.28 dB prescribed, 12.30 dB Hertzian. To two decimal places the term does not
+distinguish the two contact models, and it is the **largest single contributor in
+both runs** at just over 3× its threshold.
+
+It has now survived every intervention tried against it: contact model, head
+damping range (`-loss-scale`, four times the headroom, flat near 13 dB), seeding,
+and a corrected target that changed every other term. A quantity that does not
+move under four independent interventions is behaving less like a hard problem
+than like a badly posed one.
+
+**An open suggestion, not a conclusion:** the term may be ill-posed for this
+model rather than the model failing it. It is mean-removed third-octave band
+shape out to 12.5 kHz, and above about 3 kHz this model has nothing but the
+stochastic attack layer — no shell, no bearing edge, no lug or hardware
+resonances, no room. A 4 dB threshold over that full span may be asking for
+content the model structurally cannot produce, in which case the honest fix is to
+band-limit the term or to re-derive its threshold, not to keep fitting against it.
+Settling that means measuring what the term's value would be over a restricted
+band, which has not been done. Until it is, this is a question and the 4 dB gate
+stands.
 
 ## Reproducing
 

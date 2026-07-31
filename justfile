@@ -75,7 +75,16 @@ fit-physical reference="reference/tom.wav" *args="":
 check-physical-reference: gen-physical-reference
     git diff --exit-code testdata/physical-reference-v2.json
 
-# Regenerate the paper's figures from a fit report.
+# Regenerate the derived artefact behind the paper's model figures.
+#
+# Unlike testdata/physical-reference-v2.json this is not CI-diffed: it is a paper
+# artefact, regenerated deliberately when the model changes, in the same way the
+# committed PNGs are. Everything in it is closed-form — the modal bank and the
+# continuous-time cavity solve — so it needs no render and no recording.
+paper-data:
+    go run ./cmd/analyze-physical -paper-data -o docs/paper/model-data.json
+
+# Regenerate the paper's figures.
 #
 # tools/paper-figures is its own module so that matplotlib-go's graphics tree
 # stays out of the engine's go.mod; `purego` selects its pure-Go rasteriser, so
@@ -85,6 +94,7 @@ paper-figures report="fit-v4-hertzian.json":
     report="$(realpath {{report}})"; \
     cd tools/paper-figures && go run -tags purego . \
         -report "$report" \
+        -model-data "{{justfile_directory()}}/docs/paper/model-data.json" \
         -o "{{justfile_directory()}}/docs/paper/figures"
 
 # Build the model-matching paper (docs/paper/paper.typ -> PDF).

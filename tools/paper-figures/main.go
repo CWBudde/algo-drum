@@ -47,49 +47,96 @@ func fade(c render.Color, alpha float64) render.Color {
 
 func main() {
 	reportPath := flag.String("report", "", "fit report JSON written by cmd/fit-physical -o")
+	modelPath := flag.String(
+		"model-data",
+		"",
+		"model artefact JSON written by cmd/analyze-physical -paper-data",
+	)
 	outDir := flag.String("o", "docs/paper/figures", "directory to write the PNGs into")
 
 	flag.Parse()
 
-	if *reportPath == "" {
-		fmt.Fprintln(os.Stderr, "usage: paper-figures -report <fit.json> [-o docs/paper/figures]")
+	// Either input alone is a complete job: the fit figures and the model figures
+	// answer different questions and are regenerated on different occasions — the
+	// former when a fit is re-run, the latter when the model changes.
+	if *reportPath == "" && *modelPath == "" {
+		fmt.Fprintln(os.Stderr,
+			"usage: paper-figures [-report <fit.json>] [-model-data <model.json>] "+
+				"[-o docs/paper/figures]")
 		os.Exit(2)
 	}
 
-	if err := run(*reportPath, *outDir); err != nil {
+	if err := run(*reportPath, *modelPath, *outDir); err != nil {
 		fmt.Fprintln(os.Stderr, "paper-figures:", err)
 		os.Exit(1)
 	}
 }
 
-func run(reportPath, outDir string) error {
-	parsed, err := loadReport(reportPath)
-	if err != nil {
-		return err
-	}
-
+func run(reportPath, modelPath, outDir string) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
 
-	figures := []struct {
-		name string
-		draw func(*report, string) error
-	}{
-		{"partials.png", drawPartials},
-		{"terms.png", drawTerms},
-		{"decay.png", drawDecay},
-		{"bands.png", drawBands},
-	}
+	written := 0
 
-	for _, figure := range figures {
-		if err := figure.draw(parsed, filepath.Join(outDir, figure.name)); err != nil {
-			return fmt.Errorf("%s: %w", figure.name, err)
+	if reportPath != "" {
+		parsed, err := loadReport(reportPath)
+		if err != nil {
+			return err
 		}
+
+		figures := []struct {
+			name string
+			draw func(*report, string) error
+		}{
+			{"partials.png", drawPartials},
+			{"terms.png", drawTerms},
+			{"decay.png", drawDecay},
+			{"bands.png", drawBands},
+		}
+
+		for _, figure := range figures {
+			if err := figure.draw(parsed, filepath.Join(outDir, figure.name)); err != nil {
+				return fmt.Errorf("%s: %w", figure.name, err)
+			}
+		}
+
+		written += len(figures)
+
+		fmt.Printf("wrote %d fit figures from %s (total %.3f)\n",
+			len(figures), reportPath, parsed.Best.Terms.Total)
 	}
 
-	fmt.Printf("wrote %d figures to %s from %s (total %.3f)\n",
-		len(figures), outDir, reportPath, parsed.Best.Terms.Total)
+	if modelPath != "" {
+		parsed, err := loadModelData(modelPath)
+		if err != nil {
+			return err
+		}
+
+		figures := []struct {
+			name string
+			draw func(*modelData, string) error
+		}{
+			{"modes.png", drawModes},
+			{"loss.png", drawLoss},
+			{"radiation.png", drawRadiation},
+			{"cavity.png", drawCavity},
+			{"bandwidth.png", drawBandwidth},
+		}
+
+		for _, figure := range figures {
+			if err := figure.draw(parsed, filepath.Join(outDir, figure.name)); err != nil {
+				return fmt.Errorf("%s: %w", figure.name, err)
+			}
+		}
+
+		written += len(figures)
+
+		fmt.Printf("wrote %d model figures from %s (%d modes)\n",
+			len(figures), modelPath, len(parsed.Modes))
+	}
+
+	fmt.Printf("%d figures in %s\n", written, outDir)
 
 	return nil
 }

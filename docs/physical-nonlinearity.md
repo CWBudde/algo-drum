@@ -54,6 +54,63 @@ default uses \(3.0\times10^5\) N/m³ on the batter head,
 are reduced-model calibration values, not claims about a particular film's
 Young modulus.
 
+## What the mean-field reduction cannot do
+
+The Berger law collapses the geometric nonlinearity onto a single scalar
+\(\Delta T(S)\) over the total strain measure. Every mode is therefore detuned by
+the same _relative_ amount, the modal equations stay diagonal, and **no mode can
+transfer energy to any other**. That is not a shortcut in this implementation;
+it is the defining property of the Berger / Kirchhoff–Carrier reduction family,
+and it is what makes the law cheap enough to run at audio rate with exact energy
+bookkeeping.
+
+The consequence is worth stating flatly, because nothing else in the design
+record says it: **this nonlinearity contributes pitch and nothing else.** It
+produces zero spectral content. A loud hit under it is a sharper copy of a quiet
+hit with a glide on it, and the only two mechanisms in the whole model that can
+deposit energy at a given frequency remain the contact force's spectrum and the
+stochastic attack layer of [`physical-hybrid.md`](physical-hybrid.md).
+
+A real head struck hard does more. The full von Kármán membrane coupling is
+quadratic in the modal amplitudes, so a loudly driven mode \(i\) pumps content at
+\(2f_i\), at every \(f_i\pm f_j\), and — where the ratios are close to rational —
+through internal resonances that pour energy up the mode series over the length
+of the tail. That cascade is part of why a hard hit is _brighter_ and not merely
+sharper, which is exactly what Dahl 1997 measures on a 12-inch tom and which
+[`physical-sound-audit.md`](physical-sound-audit.md) already cites for the
+contact law. The reduced law reproduces the sharper and none of the brighter.
+
+### A hypothesis this raises for the excitation gap
+
+[`physical-excitation-gap.md`](physical-excitation-gap.md) eliminates mode count,
+microphone geometry, strike footprint, cavity coupling and tension asymmetry by
+measurement, and lands on the contact force. It never considers a nonlinear
+source term, and the reason is structural: **the model has none to consider.**
+
+That leaves an untested mechanism. A quadratic modal coupling pumped by the very
+loud (0,1) deposits energy at frequencies chosen by the mode pairs, not by
+\(|F(f)|\) — so it does not care that the half-sine's zero comb has driven 547
+and 668 Hz to −309 dB, because it is not driven through the excitation at all. On
+the face of it that is the one known mechanism that could put resolvable content
+into a band the excitation has exactly zeroed.
+
+This is offered as a hypothesis and not as a finding, in the same register as
+that document's transverse-cavity observation. It has not been measured here:
+neither the coupling coefficients for this bank nor the level the cascade would
+reach at realistic strike energies has been computed, and it may well turn out
+to be 30 dB below what the band needs. It is worth testing because it is cheap to
+falsify — the coefficients are a known integral over the retained shapes — and
+because, unlike everything already eliminated, it is a source rather than a
+weighting.
+
+The cost, if it survives testing, is a known quantity rather than an open
+question: nonlinear modal synthesis with the coupling terms retained runs in real
+time today (Diaz, Constanzo & Sandler 2026, in
+[`physical-model-research.md`](physical-model-research.md)). Full von Kármán
+coupling is \(O(N^3)\) in the mode count, so at 96 oscillators it would have to be
+truncated to the dominant couplings from the loudest low modes rather than
+retained wholesale.
+
 ## Discrete passivity
 
 The update retains the P3 implicit-midpoint cavity solve and evaluates the

@@ -43,7 +43,11 @@ type Options struct {
 	MinSeparationHz  float64 `json:"minSeparationHz"`  // rejects one lobe picked twice
 	SustainStartSecs float64 `json:"sustainStartSecs"` // partial detection window
 	SustainEndSecs   float64 `json:"sustainEndSecs"`
-	FFTSize          int     `json:"fftSize"`
+	// A second, earlier detection window. The sustain window cannot see a
+	// partial that is over before it closes; this one can. See detectPartials.
+	EarlyDetectionStartSecs float64 `json:"earlyDetectionStartSecs"`
+	EarlyDetectionEndSecs   float64 `json:"earlyDetectionEndSecs"`
+	FFTSize                 int     `json:"fftSize"`
 
 	// Per-partial decay fitting.
 	DecayFitStartSeconds float64 `json:"decayFitStartSeconds"`
@@ -97,7 +101,12 @@ func DefaultOptions() Options {
 		// and while the modes still stand above the noise.
 		SustainStartSecs: 0.05,
 		SustainEndSecs:   0.85,
-		FFTSize:          1 << 16,
+		// Starts with the sustain — after the strike transient, whose broadband
+		// click would otherwise offer a peak at every frequency — and closes
+		// while a partial ringing for a tenth of a second is still standing.
+		EarlyDetectionStartSecs: 0.05,
+		EarlyDetectionEndSecs:   0.30,
+		FFTSize:                 1 << 16,
 
 		// The fit starts after the contact pulse and the glide have settled and
 		// stops where a room tail would start to dominate a real recording.
@@ -211,12 +220,12 @@ func Extract(samples []float64, sampleRateHz float64, options Options) (Features
 		features.Decay = metrics
 	}
 
-	partials, magnitudes, sustain, err := detectPartials(hit, sampleRateHz, options)
+	partials, err := detectPartials(hit, sampleRateHz, options)
 	if err != nil {
 		return Features{}, err
 	}
 
-	features.Partials = measureDecays(hit, sampleRateHz, options, partials, magnitudes, sustain)
+	features.Partials = measureDecays(hit, sampleRateHz, options, partials)
 
 	// The glide is read off the loudest partial, not the lowest: on a
 	// two-headed drum the lowest peak in the band may be a shell resonance or
@@ -374,36 +383,24 @@ func magnitudeSpectrum(segment []float64, fftSize int) ([]float64, error) {
 	return spectrum.Magnitude(bins), nil
 }
 
-// detectPartials picks interpolated spectral peaks from the sustain.
-func detectPartials(hit []float64, sampleRateHz float64, options Options) ([]Partial, []float64, sustainWindow, error) {
-	start := clampIndex(int(options.SustainStartSecs*sampleRateHz), len(hit))
+// spectralPeak is one prominent interpolated maximum of one transform.
+type spectralPeak struct {
+	frequency float64
+	magnitude float64
+}
 
-	end := clampIndex(int(options.SustainEndSecs*sampleRateHz), len(hit))
-	if end-start < 64 {
-		start, end = 0, len(hit)
-	}
-
-	sustain := sustainWindow{
-		startSample:  start,
-		length:       min(end-start, options.FFTSize),
-		sampleRateHz: sampleRateHz,
-	}
-
-	magnitude, err := magnitudeSpectrum(hit[start:end], options.FFTSize)
+// spectralPeaks returns the prominent peaks of one segment, strongest first.
+func spectralPeaks(segment []float64, sampleRateHz float64, options Options) ([]spectralPeak, error) {
+	magnitude, err := magnitudeSpectrum(segment, options.FFTSize)
 	if err != nil {
-		return nil, nil, sustain, err
+		return nil, err
 	}
 
 	binHz := sampleRateHz / float64(options.FFTSize)
 	lowBin := max(1, int(options.MinFrequencyHz/binHz))
 	highBin := min(len(magnitude)-2, int(options.MaxFrequencyHz/binHz))
 
-	type candidate struct {
-		frequency float64
-		magnitude float64
-	}
-
-	var candidates []candidate
+	var peaks []spectralPeak
 
 	for bin := lowBin; bin <= highBin; bin++ {
 		left, centre, right := magnitude[bin-1], magnitude[bin], magnitude[bin+1]
@@ -416,17 +413,13 @@ func detectPartials(hit []float64, sampleRateHz float64, options Options) ([]Par
 		}
 
 		offset := parabolicOffset(left, centre, right)
-		candidates = append(candidates, candidate{
+		peaks = append(peaks, spectralPeak{
 			frequency: (float64(bin) + offset) * binHz,
 			magnitude: centre,
 		})
 	}
 
-	if len(candidates) == 0 {
-		return nil, nil, sustain, nil
-	}
-
-	slices.SortFunc(candidates, func(a, b candidate) int {
+	slices.SortFunc(peaks, func(a, b spectralPeak) int {
 		switch {
 		case a.magnitude > b.magnitude:
 			return -1
@@ -437,98 +430,110 @@ func detectPartials(hit []float64, sampleRateHz float64, options Options) ([]Par
 		}
 	})
 
+	return peaks, nil
+}
+
+// detectPartials picks interpolated spectral peaks from two views of the hit.
+//
+// The sustain transform is the selective one and does most of the work. It is
+// also blind in a specific way: it spans 800 ms, so a partial that rings for a
+// tenth of that stands roughly 90 dB lower in it than a partial of the same
+// strike amplitude that rings throughout. Both detection guards — the relative
+// floor and the count — rank on that magnitude, so a loud, short-ringing partial
+// was discarded before anything measured it. A synthetic partial at half the
+// fundamental's amplitude, ringing 120 ms, was not detected at all;
+// TestShortPartialsDoNotOutrankLongOnes is that case.
+//
+// So a second, earlier and shorter window is read as well, and each window
+// admits candidates relative to *its own* strongest peak. A short partial
+// competes against the other short-lived content rather than against the
+// fundamental's whole ring, which is the comparison it can win. The early window
+// starts after the strike transient — a broadband click would otherwise supply a
+// peak at every frequency — and is coarser in resolution, which costs a few
+// cents on the candidates only it finds; measureDecays heterodynes each partial
+// at its own frequency afterwards regardless.
+func detectPartials(hit []float64, sampleRateHz float64, options Options) ([]Partial, error) {
+	sustainStart := clampIndex(int(options.SustainStartSecs*sampleRateHz), len(hit))
+
+	sustainEnd := clampIndex(int(options.SustainEndSecs*sampleRateHz), len(hit))
+	if sustainEnd-sustainStart < 64 {
+		sustainStart, sustainEnd = 0, len(hit)
+	}
+
+	sustainPeaks, err := spectralPeaks(hit[sustainStart:sustainEnd], sampleRateHz, options)
+	if err != nil {
+		return nil, err
+	}
+
+	earlyStart := clampIndex(int(options.EarlyDetectionStartSecs*sampleRateHz), len(hit))
+
+	earlyEnd := clampIndex(int(options.EarlyDetectionEndSecs*sampleRateHz), len(hit))
+	if earlyEnd-earlyStart < 64 {
+		earlyStart, earlyEnd = sustainStart, sustainEnd
+	}
+
+	earlyPeaks, err := spectralPeaks(hit[earlyStart:earlyEnd], sampleRateHz, options)
+	if err != nil {
+		return nil, err
+	}
+
 	// Detection is deliberately looser than the final floor, in both level and
-	// count. Its window spans the whole sustain, so a partial that rings for
-	// 200 ms is reported far quieter than one that rings for two seconds at the
-	// same strike level. measureDecays corrects that once each partial's decay
-	// rate is known; here the job is only to not lose anything that will pass
-	// then.
+	// count: the job here is only to not lose anything that will pass then.
 	const (
 		detectionHeadroomDB = 20
 		detectionSurplus    = 2
 	)
 
-	floor := candidates[0].magnitude * math.Pow(10, (options.PartialFloorDB-detectionHeadroomDB)/20)
-	limit := options.MaxPartials * detectionSurplus
+	var kept []Partial
 
-	var (
-		kept       []Partial
-		magnitudes []float64
-	)
-
-	for _, peak := range candidates {
-		if len(kept) >= limit || peak.magnitude < floor {
-			break
+	admit := func(peaks []spectralPeak) {
+		if len(peaks) == 0 {
+			return
 		}
 
-		// One spectral lobe spans several bins; without this the strongest
-		// partial would be "detected" three times and crowd out the rest.
-		if slices.ContainsFunc(kept, func(known Partial) bool {
-			return math.Abs(known.FrequencyHz-peak.frequency) < options.MinSeparationHz
-		}) {
-			continue
+		floor := peaks[0].magnitude * math.Pow(10, (options.PartialFloorDB-detectionHeadroomDB)/20)
+		budget := len(kept) + options.MaxPartials*detectionSurplus
+
+		for _, peak := range peaks {
+			if len(kept) >= budget || peak.magnitude < floor {
+				break
+			}
+
+			// One spectral lobe spans several bins, and the two windows see the
+			// same partials; without this the strongest partial would be
+			// "detected" three times and crowd out the rest.
+			if slices.ContainsFunc(kept, func(known Partial) bool {
+				return math.Abs(known.FrequencyHz-peak.frequency) < options.MinSeparationHz
+			}) {
+				continue
+			}
+
+			kept = append(kept, Partial{FrequencyHz: peak.frequency})
 		}
-
-		kept = append(kept, Partial{FrequencyHz: peak.frequency})
-		magnitudes = append(magnitudes, peak.magnitude)
 	}
 
-	order := make([]int, len(kept))
-	for i := range order {
-		order[i] = i
-	}
+	// Sustain first, so where both windows see a partial the better-resolved
+	// frequency is the one kept.
+	admit(sustainPeaks)
+	admit(earlyPeaks)
 
-	slices.SortFunc(order, func(a, b int) int {
+	slices.SortFunc(kept, func(a, b Partial) int {
 		switch {
-		case kept[a].FrequencyHz < kept[b].FrequencyHz:
+		case a.FrequencyHz < b.FrequencyHz:
 			return -1
-		case kept[a].FrequencyHz > kept[b].FrequencyHz:
+		case a.FrequencyHz > b.FrequencyHz:
 			return 1
 		default:
 			return 0
 		}
 	})
 
-	sortedPartials := make([]Partial, len(order))
-	sortedMagnitudes := make([]float64, len(order))
-
-	for i, from := range order {
-		sortedPartials[i], sortedMagnitudes[i] = kept[from], magnitudes[from]
-	}
-
-	return sortedPartials, sortedMagnitudes, sustain, nil
+	return kept, nil
 }
 
-// sustainWindow records the segment detectPartials measured, so the decay
-// correction below can undo exactly the attenuation that window applied.
-type sustainWindow struct {
-	startSample  int
-	length       int
-	sampleRateHz float64
-}
-
-// decayAttenuation is how much a Hann-windowed transform of this segment
-// under-reports the amplitude a partial had at the strike, for a partial
-// decaying at the given rate.
-//
-// A window spanning 50 to 850 ms sees almost all of a partial that rings for
-// two seconds and almost none of one that rings for two hundred milliseconds,
-// so without this correction the detection magnitudes are a measure of decay
-// as much as of level. The integral is exact for an isolated exponential,
-// which is what a resolved partial is.
-func (w sustainWindow) decayAttenuation(decayPerSecond float64) float64 {
-	if w.length <= 0 {
-		return 0
-	}
-
-	coefficients := hannWindow(w.length)
-
-	sum := 0.0
-	for n, coefficient := range coefficients {
-		sum += coefficient * math.Exp(-decayPerSecond*float64(n)/w.sampleRateHz)
-	}
-
-	return math.Exp(-decayPerSecond*float64(w.startSample)/w.sampleRateHz) * sum
+// t60From converts a log-magnitude slope in dB per second into a ring time.
+func t60From(slopeDBPerSecond float64) float64 {
+	return -60 / slopeDBPerSecond
 }
 
 // prominenceDB is how far a peak stands above the higher of the two valleys
@@ -763,15 +768,26 @@ func glideCutoffHz(partials []Partial, index int) float64 {
 // baseband and low-passed, and the log of the resulting envelope is fitted
 // with a straight line.
 //
-// The *level* comes from the detection spectrum, divided by the attenuation
-// that spectrum's own window applied to a partial decaying at the fitted rate.
-// It cannot come from the envelope: resolving a pair 10 Hz apart needs a
-// filter whose impulse response is longer than 150 ms, and the strike
-// transient smeared through one of those put this reference's 212 Hz partial
-// 32 dB too loud — above the fundamental. A transform over the sustain is far
-// more selective for the same time span, and once the decay rate is known the
-// window's effect on the amplitude is an integral, not a guess.
-func measureDecays(hit []float64, sampleRateHz float64, options Options, partials []Partial, magnitudes []float64, sustain sustainWindow) []Partial {
+// The *level* is that same fitted line's value at the strike — its intercept.
+//
+// It must not be the envelope's peak inside the fit window: resolving a pair
+// 10 Hz apart needs a filter whose impulse response is longer than 150 ms, and
+// the strike transient smeared through one of those put this reference's
+// 212 Hz partial 32 dB too loud, above the fundamental. The intercept is not
+// that reading. The fit starts at DecayFitStartSeconds, after the transient,
+// and the intercept extrapolates the fitted decay back to the origin.
+//
+// Nor can it be the detection spectrum divided by the attenuation that
+// spectrum's window applied to a partial decaying at the fitted rate. That
+// divisor is exact for an isolated exponential and hopelessly ill-conditioned:
+// across the ring times this reference actually contains it spans 16 dB to
+// 100 dB, so the reported level was mostly a restatement of the fitted rate. A
+// ten per cent error in T60 at 0.12 s moved the level by 4.5 dB, and a partial
+// whose fit came back short was promoted past the fundamental — a 73 ms
+// component was reported as the loudest thing in the recording, which pushed
+// every genuine partial below the detection floor, because levels are relative
+// to the strongest. TestShortPartialsDoNotOutrankLongOnes pins it.
+func measureDecays(hit []float64, sampleRateHz float64, options Options, partials []Partial) []Partial {
 	levelLinear := make([]float64, len(partials))
 
 	for index := range partials {
@@ -821,7 +837,7 @@ func measureDecays(hit []float64, sampleRateHz float64, options Options, partial
 			continue
 		}
 
-		slope, _, fitQuality := linearFit(times, trace)
+		slope, interceptDB, fitQuality := linearFit(times, trace)
 		if slope >= 0 {
 			// No decay to speak of: the trace is noise, or a neighbour bleeding
 			// through. Neither its level nor its ring time means anything, so
@@ -830,15 +846,23 @@ func measureDecays(hit []float64, sampleRateHz float64, options Options, partial
 			continue
 		}
 
-		t60 := -60 / slope
-
-		attenuation := sustain.decayAttenuation(math.Log(1000) / t60)
-		if attenuation <= 0 {
-			continue
-		}
-
-		levelLinear[index] = magnitudes[index] / attenuation
-		partials[index].T60Seconds = t60
+		// The level is the fitted line's value at the strike, read off the
+		// partial's own envelope. The previous form divided the sustain
+		// transform's magnitude by that window's attenuation integral, which is
+		// exact for an isolated exponential and hopelessly ill-conditioned: over
+		// the T60 range this reference actually contains, that divisor spans
+		// 16 dB to 100 dB, so the reported level was mostly a restatement of the
+		// fitted decay rate. A ten per cent error in T60 at 0.12 s moved the
+		// level by 4.5 dB, and a partial whose fit came back short could be
+		// promoted past the fundamental — which is what happened, repeatedly,
+		// and what made the detection guards load-bearing.
+		//
+		// The intercept is the same quantity — amplitude at t=0 — measured
+		// directly. It extrapolates back only as far as DecayFitStartSeconds
+		// rather than through the whole Hann taper, and it is a least-squares
+		// fit over hundreds of samples rather than a ratio of two numbers.
+		levelLinear[index] = math.Pow(10, interceptDB/20)
+		partials[index].T60Seconds = t60From(slope)
 		partials[index].FitQuality = fitQuality
 	}
 

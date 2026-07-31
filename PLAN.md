@@ -1480,6 +1480,260 @@ it legitimately decay faster in absolute rate — the (4,2) at 480 Hz reaches
 34 /s against the fundamental's 33 /s — so the assertion is scoped to modes
 below 3× the fundamental. Requiring it bank-wide would forbid constant Q.
 
+### P9 — Model-structure gaps
+
+Opened **2026-07-31** from a review of the shipped model against
+[`docs/paper/paper.typ`](docs/paper/paper.typ) and against recent literature.
+P8 is a calibration phase: every one of its items moves a number the model
+already has. These four are different — each is a mechanism the model does not
+have, or a piece of evidence the path does not have, and each changes either the
+shipped sound or the method rather than a coefficient. None of them is a
+prerequisite for closing P8, and none of them is optional if the path's own
+success criterion 6 is to mean anything.
+
+- [ ] **M1: the nonlinearity contributes pitch and no spectral content.** The
+      Berger law collapses the geometric nonlinearity to a **single scalar over
+      total strain**: `nonlinearHead.tensionAt` takes one strain measure
+      `S = Σ Γᵢqᵢ²` and returns one tension, and every mode is then detuned by
+      the same relative amount, `Δωᵢ² = ΔT·kᵢ²/σ`. No mode can transfer energy
+      to any other, at any amplitude. So the only two mechanisms in the model
+      that can put energy _at_ a frequency are the contact force's spectrum and
+      the stochastic attack layer, and P8's entire spectral investigation is
+      constrained by that without ever saying so.
+      Real heads struck hard do not behave this way. Von Kármán coupling
+      generates `2fᵢ`, `fᵢ ± fⱼ` and internal resonances between commensurate
+      modes, and Dahl (TMH-QPSR 38(1), 1997) measures the resulting brightening
+      _with striking force_ — which this model currently attributes entirely to
+      the contact pulse shortening with velocity and to the attack layer's
+      force-driven envelopes.
+      **Why this is now actionable rather than aspirational.** Diaz, Constanzo &
+      Sandler, "nlm: Real-Time Non-linear Modal Synthesis in Max",
+      arXiv:2603.10240 (2026), https://arxiv.org/abs/2603.10240, code at
+      https://github.com/rodrigodzf/nlm — coupled nonlinear modal oscillators for
+      strings, membranes and plates, with energy-conserving integration, running
+      in real time as Max externals. That is the architecture this repository
+      already has: a precomputed modal bank, an implicit energy-conserving step,
+      and a fixed-point closure that measures 2.88 mean iterations. Feasibility
+      is not the open question.
+      **Truncation is.** The cubic von Kármán term carries a coupling tensor over
+      mode _quadruples_, `Γᵢⱼₖₗ`; even factored, evaluating it is cubic in the
+      retained modes per sample, and at 96 batter oscillators that is not
+      affordable against a shipped worst case of **1.66× real time on js/wasm**
+      (and ≈0.8× for two simultaneous toms, i.e. already unaffordable). So the
+      item is not "add von Kármán"; it is **measure how few couplings carry the
+      audible effect** — pairwise terms from the three to five loudest low modes
+      first — with the cost re-measured on `js/wasm` under the same worst case
+      (retrigger before every chunk, nonlinear solve never idling) and the same
+      zero-allocation contract.
+      **Test P8's band first, because it is the cheapest falsification.**
+      [`docs/physical-excitation-gap.md`](docs/physical-excitation-gap.md)
+      eliminates mode count, microphone geometry, strike footprint, cavity
+      coupling and tension asymmetry and lands on the contact force. It never
+      considers a nonlinear _source_ term, because the model has none. This
+      matters specifically: the excitation deficit is a **comb of exact zeros**
+      at every `(k+½)/τ`, and a mode pumped by coupling from the loud (0,1) does
+      not depend on `|F(f)|` at its own frequency, so it can be excited where the
+      comb has deleted the excitation outright. Hypothesis: pairwise coupling
+      from the (0,1) deposits energy at `2f₀₁` and at `f₀₁ ± fⱼ` inside the gap.
+      Falsified if, with coupling at its passivity-bounded maximum, the partial
+      count in 476–700 Hz measured by `cmd/fit-physical -report-only` against the
+      fitted bank stays at 0 — the number every P8 experiment has returned.
+      Second measurement, independent of any recording: the attack centroid's
+      slope against striking velocity, compared with Dahl's measured slope, with
+      the contact pulse and the attack layer both disabled so the slope can only
+      come from coupling.
+      Two constraints on any implementation. It must keep the discrete-gradient
+      energy argument — the coupling has to be the gradient of a single potential
+      or the passivity result in
+      [`docs/physical-nonlinearity.md`](docs/physical-nonlinearity.md) stops
+      holding — and it must respect the anti-alias bound `r < 1/(4ν²) − 1`, which
+      currently bounds a _uniform_ detune and says nothing about energy moved to a
+      sum frequency above Nyquist.
+
+- [ ] **M2: the cavity has no transverse modes, and that may be visible in the
+      reference.** `Cavity` is one lumped compliance with one scalar pressure
+      state, so head modes couple to it only through swept area
+      `A₀ₙ = 2πR²J₁(z₀ₙ)/z₀ₙ` — which is **identically zero for every m > 0
+      mode**. `Head.AxisymmetricOnly` is bit-exact for exactly that reason, and a
+      test asserts it sample for sample. That is a property of the model, not of
+      a drum: in a real shell the m = 1 and m = 2 transverse air modes exist and
+      do couple to the head modes of matching angular order.
+      The hypothesis is already recorded in
+      [`docs/physical-excitation-gap.md`](docs/physical-excitation-gap.md) §"An
+      observation, offered as a hypothesis". The reference's partials at
+      **624.4 / 1018.4 / 1331.3 Hz** sit close to the transverse cylinder series
+      `j′₁₁, j′₂₁, j′₀₁ × c/2πa` = **634 / 1052 / 1320 Hz** at a = 0.1584 m, and
+      the measured ⅓-octave band deficit peaks at **635 Hz**. A transverse cavity
+      mode would give m > 0 head modes the coupling path they currently lack, and
+      would lend radiating efficiency to the m = 1 modes near it — which is a
+      mechanism for why the reference's cluster reads as a sparse ~27 Hz comb
+      rather than the dense membrane thicket the model puts there.
+      **This is three numbers agreeing on a recording of unknown provenance,
+      whose diameter is unknown, so the item is a test and not an
+      implementation.** Two further cautions, both from the sources: the
+      excitation-gap document is flagged pending re-measurement, because the
+      corrected partial estimator finds 14 partials in the right channel rather
+      than 7 and changes the size of the deficit every number there rests on; and
+      the transverse series depends on the shell radius and on `c`, neither of
+      which is known for that recording, so a fit that "confirms" it by choosing a
+      radius has confirmed nothing.
+      **The cheap version.** Replace the single scalar pressure state with a
+      handful of cavity modes (the axisymmetric one the model already has, plus
+      m = 1 and m = 2), each with its own overlap coefficient against the head
+      modes of matching angular order. The rank-one Sherman–Morrison elimination
+      becomes a k × k Woodbury solve, which for k ≤ 4 is still two passes and a
+      tiny dense solve rather than the dense system the paper says the coupling
+      would otherwise be — so the cost claim is checkable before the physics is.
+      Confirmed if a partial appears near the predicted transverse frequency
+      whose position moves with **shell radius and sound speed and not with head
+      tension**, and if m = 1 head modes acquire measurable output through the
+      cavity path with the near-field pickup term removed. Killed if the added
+      partials track head tension (then they are head modes, and the coupling
+      coefficients are wrong) or if `Head.AxisymmetricOnly` remains bit-exact
+      after the change (then nothing was actually coupled).
+      **The related suspicion, worth recording with it.**
+      `Cavity.StiffnessScale` is fitted at **0.083**, a factor of 12 below the
+      rigid ceiling of 1. [`docs/physical-cavity.md`](docs/physical-cavity.md)
+      attributes that to shell flex, vent leakage and non-piston mode shapes, and
+      those are all real — but a factor of 12 is a lot to hang on them, and part
+      of it may be the one-mode reduction mis-setting the compliance. If
+      separating the transverse modes moves the fitted scale materially toward
+      the ceiling at an unchanged split ratio, that is evidence for the reduction
+      being the cause; if it does not move, the shell-and-leak explanation stands
+      and should be restated as measured rather than assumed.
+
+- [ ] **M3 (do this one first): measure one real tom.** This is the weakest
+      thing on the whole path and the cheapest to fix. Every number in the
+      physical model has been checked **against the model**. The committed
+      fixture `testdata/physical-reference-v2.json` is generated from the model
+      itself, deterministically — the paper says so in "What the model is not":
+      it is a regression reference, not an acoustic validation reference. The one
+      recording is of unknown provenance, unlicensed, not in the repository, and
+      **no test depends on it or may**.
+      [`docs/physical-tom-review.md`](docs/physical-tom-review.md) §"Where the
+      literature is genuinely thin" states the resulting position plainly: no
+      published modal table for a mounted 12–14" tom, no measured felt-mallet
+      contact time, no numeric radiation-vs-internal damping split for any drum,
+      no published overall T60 for a tom hit. The anchors actually in use are a
+      snare (Rossing), a student tom report (Sørensen) and a student snare
+      project (Fischer) — and the cavity split ratio, one of only four _measured_
+      rows in the paper's provenance table, comes from the snare.
+      A phone microphone plus a contact mic or a cheap accelerometer produces a
+      modal table and a T60 curve in an afternoon. What to capture:
+      - modal frequencies and their ratios to the (0,1), for the model's ±20 %
+        scatter claim and for `TensionAsymmetry`;
+      - per-mode T60, which is the ζ-versus-frequency structure S1/S2 were
+        calibrated to from the literature and never checked on an instrument;
+      - the coupled (0,1) doublet **with and without the resonant head at
+        unchanged batter tuning** — Fischer's protocol, applied to a tom instead
+        of a snare, which is the direct measurement of the cavity split ratio
+        that `Cavity.StiffnessScale` is fitted to;
+      - a strike-position series (centre, 0.30 R, near the rim), since S5 showed
+        HIT.R trades low-end weight monotonically and S4 made MIC.R the strongest
+        timbral control — both currently unfalsifiable;
+      - repeated hits at one dynamic, which is the only thing that can size S7's
+        per-trigger jitter;
+      - contact time across dynamics if a piezo on the stick is feasible, against
+        Wagner's 3.5 ms pulse inside an 8 ms dwell.
+      Record provenance with it and commit the **derived tables** — drum make and
+      size, heads, tuning, mic distance and angle, room, rig, and a licence — so
+      a test may finally depend on a measurement. The audio itself need not be
+      committed for the tables to be usable.
+      What it buys: it converts fitted rows of the paper's provenance table into
+      measured ones, and it converts measured-from-a-different-instrument rows
+      into instrument-matched ones. **M1 and M2 are worth materially less without
+      it**, because a model-structure change with no external reference can only
+      be judged by ear — which is how S9 and S10 arrived, and both of those
+      turned out to be right for reasons the ear could not have supplied.
+
+- [ ] **M4: the fitting method is derivative-free over a differentiable model.**
+      The paper's "The search" describes a Mayfly swarm over an expensive render;
+      "Seeding a restart from the reference's partials" then observes that mode
+      frequencies are **analytic** — read off tension, radius and cavity without
+      rendering a sample, at roughly a hundredth of the cost of one evaluation —
+      and uses that observation to seed 2 of 8 restarts, for a measured 12 %
+      better result at equal budget.
+      That observation is stronger than the use it is put to. The modal bank is a
+      sum of exponentially damped sinusoids in its own parameters: ∂f/∂T and
+      ∂f/∂σ follow from `f ∝ √(T/σ)`, and ∂γ/∂d₀, ∂γ/∂d₁, ∂γ/∂d₂ are linear by
+      construction of the loss law. A large part of the search space has closed-
+      form derivatives that the search does not use at all.
+      References. Zheleznov, Bilbao, Wright & King, "Stable Differentiable Modal
+      Synthesis for Learning Nonlinear Dynamics", arXiv:2601.10453 (JAES, DAFx
+      special issue) — gradient-based learning of _nonlinear_ modal dynamics with
+      the physical parameters kept accessible and constrained to stay physical
+      through training, which is exactly the failure mode a naive autodiff fit
+      hits. One correction to how it is usually cited here: it is demonstrated on
+      **synthetic** data from a nonlinear string, not on real recordings, so it
+      establishes the technique and not the result. Also Lee, Choi, Kim et al.,
+      "Differentiable Modal Synthesis for Physical Modeling of Planar String
+      Sound and Motion", NeurIPS 2024.
+      **Which of the two this proposes to change: the offline fitting tool, not
+      the runtime.** The engine is Go and compiles to WASM; the differentiable-
+      synthesis ecosystem is PyTorch/JAX. Two honest options, and the item is to
+      choose between them rather than to assume the second:
+      - _Gradients in Go._ Extend the analytic pre-solve from frequencies to
+        decay rates and per-mode levels and gradient-descend that sub-problem,
+        leaving Mayfly for the parameters that genuinely need a render (contact,
+        attack layer, microphone). No second model, no drift, and it reuses
+        machinery that already exists and is already paired-tested.
+      - _A second implementation._ A PyTorch/JAX mirror of the modal bank would
+        buy full end-to-end gradients and cost a duplicate model that must be
+        kept numerically equal to the Go one across every config-schema
+        migration. Given that the schema is at version 10 with an explicit
+        migration for each, drift is the main risk and a cross-check test against
+        the Go render is the minimum price of entry.
+      One obstacle that belongs to either option: the objective in
+      `internal/physical/match` is **not differentiable end to end** — partial
+      detection, peak picking and the coverage shares are all discrete. A
+      gradient method needs a differentiable surrogate (multi-resolution STFT is
+      the usual choice), which is a _different_ distance from the one the paper
+      defines and gates on, so the surrogate would have to be shown to correlate
+      with the gated terms before any result from it counts.
+      Related, and the reason this item touches the attack layer too:
+      [`docs/physical-excitation-gap.md`](docs/physical-excitation-gap.md)
+      records the seam as a fit pathology — the search dragged `ATK.T` from its
+      4 kHz default down to **1644 Hz** and pinned `ATK.L` at **0.021**, spending
+      both attack parameters on a band neither was built for (1261 Hz in the
+      later prescribed-contact fit; 3426 Hz under Hertzian, where the seam
+      closes). Shier, Caspe, Robertson, Sandler, Saitis & McPherson,
+      "Differentiable Modelling of Percussive Audio with Transient and Spectral
+      Synthesis", https://arxiv.org/pdf/2309.06649, train transient and spectral
+      encoders **jointly** rather than layering one over the other's ceiling,
+      which is the same seam approached from the fitting side rather than the
+      model side.
+
+Exit: one measured tom exists in the repository as a licensed, provenance-
+carrying derived table that at least one test depends on; M1 and M2 have each
+been either implemented with a measured improvement against that table and a
+re-measured `js/wasm` cost, or closed by the measurement that rejected them,
+with the rejecting measurement written down; and M4 is resolved as a documented
+decision between the two options above with a cost attached — code is not
+required for it to exit, a decision is.
+
+Ordering: **M3, then M2, then M1, then M4.** M3 first because it is the only
+item that makes the others falsifiable — M2's whole hypothesis rests on three
+numbers from a recording whose diameter is unknown, and M1's brightening claim
+needs a measured centroid-versus-force slope to be checked against. M2 second
+because it is one experiment, already specified, that would explain two open
+anomalies at once (the 635 Hz deficit and the factor-of-12 stiffness scale) and
+because a rank-4 Woodbury solve is a smaller change than any coupling scheme.
+M1 third: it is the real physics gap and it is now demonstrably real-time, but
+it is also the one item that can move the shipped sound in ways no current test
+would catch, so it wants an external reference in place first. M4 last because
+it changes the method rather than the instrument — a better search cannot find
+what the model cannot produce, which is the same argument
+[`docs/physical-excitation-gap.md`](docs/physical-excitation-gap.md) uses to
+rule out a longer run.
+
+One qualification on that order, from reading the sources rather than from
+assuming it: M2 is partly testable _before_ M3, because its confirm/kill
+criteria above (partials that move with radius and not tension;
+`AxisymmetricOnly` ceasing to be bit-exact) are internal to the model and need
+no recording at all. Only the last step — checking the predicted transverse
+frequencies against a real shell — needs M3. So M2's implementation can start in
+parallel; only its verdict has to wait.
+
 ### Physical-path success criteria
 
 1. Existing procedural renders and old persisted/share states are bit-for-bit

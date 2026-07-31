@@ -84,6 +84,18 @@ type DoubleHead struct {
 
 // NewDoubleHead precomputes two independently tuned modal banks and their
 // axisymmetric swept-volume coupling to the enclosed air.
+//
+// Every m > 0 mode has identically zero swept area, so its pressureGain below is
+// exactly zero and it neither drives the cavity nor is driven by it. That is
+// what makes Head.AxisymmetricOnly bit-exact rather than approximate. The
+// exactness is real, but it is a property of *this* reduction and not of a drum:
+// the cavity here is one lumped compliance, whose only observable is total swept
+// volume, and an m > 0 shape sweeps none. A real cylindrical cavity has
+// transverse modes — the j'_mn series — which have azimuthal structure of their
+// own and couple to m > 0 head modes with a coefficient that is not zero. Under
+// that model the m > 0 modes would be coupled and dropping them would change the
+// sound. See docs/physical-cavity.md and the transverse-cavity hypothesis in
+// docs/physical-excitation-gap.md.
 func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err

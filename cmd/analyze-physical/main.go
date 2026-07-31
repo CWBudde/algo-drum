@@ -28,6 +28,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	outputPath := flags.String("o", "-", "JSON output path, or - for stdout")
 	suite := flags.Bool("suite", false, "generate the committed multi-condition reference suite")
+	paperData := flags.Bool(
+		"paper-data",
+		false,
+		"generate the derived artefact behind docs/paper's model figures",
+	)
 	duration := flags.Float64("duration", 2, "render duration in seconds")
 	velocity := flags.Float64("velocity", 0.8, "normalized strike velocity [0,1]")
 	strikeRadius := flags.Float64(
@@ -64,16 +69,28 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("unexpected positional arguments: %v", flags.Args())
 	}
 
+	if *suite && *paperData {
+		return fmt.Errorf("-suite and -paper-data produce different artefacts; pick one")
+	}
+
 	var value any
 
-	if *suite {
+	switch {
+	case *paperData:
+		data, err := physicalanalysis.GeneratePaperData(physical.DefaultPhysicalDrum())
+		if err != nil {
+			return err
+		}
+
+		value = data
+	case *suite:
 		report, err := physicalanalysis.GenerateReferenceSuite()
 		if err != nil {
 			return err
 		}
 
 		value = report
-	} else {
+	default:
 		config := physical.DefaultPhysicalDrum()
 		config.Strike.Radius01 = *strikeRadius
 		config.Pickup.Radius01 = *pickupRadius

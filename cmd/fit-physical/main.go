@@ -400,9 +400,13 @@ func run(args []string, stdout, stderr io.Writer) error {
 			_, _ = fmt.Fprintf(stderr, "inspected: %s after %d evaluations\n",
 				summarize(candidate.Terms), snapshot.Evaluations)
 
-			writeSummary(stdout, report)
-
-			return writeReport(*outputPath, report)
+			// Same tail as a finished run, -wav included. A checkpoint holds the
+			// bank, so the point it describes can be listened to as well as read
+			// — which matters here more than the convenience suggests: twice now
+			// a defect in this metric has been found by hearing something the
+			// distance called good, and a run one has to finish before it can be
+			// auditioned is one nobody auditions.
+			return finish(stdout, stderr, report, *wavPath, *wavDuration, *outputPath)
 		}
 
 		// An interrupt asks the search to wind up, not the process to die: the

@@ -210,6 +210,29 @@ func NaturalFrequencyHz(head Head, besselZero float64) float64 {
 	return naturalAngularFrequency(head, wavenumber) / (2 * math.Pi)
 }
 
+// naturalAngularFrequency evaluates ω² = (T/σ)k² + (D/σ)k⁴.
+//
+// The bending term is a perturbation on a membrane basis, and only the
+// frequencies carry it. The wavenumbers come from J_m(kR) = 0 — the fixed-edge
+// *membrane* condition — and the shapes used everywhere downstream (modeShape,
+// modalMass, sweptArea, radiatingMomentM2) are the pure Fourier-Bessel J_m of
+// that same condition. A fourth-order operator is not that: it needs two
+// boundary conditions rather than one, and its eigenfunctions are J_m/I_m
+// combinations with an edge layer the J_m alone cannot represent. So this model
+// pays for D in pitch and gets none of its shape change.
+//
+// The cost is small only because D is small. Measured on the shipped default
+// (D = 0.001 N·m, T = 1250 N/m, R = 0.1524 m), the highest retained batter mode
+// is (12,2) at k = 136.4 m⁻¹, where Dk²/T = 1.49 % — so bending is 1.5 % of ω²
+// there, 0.74 % of ω, 12.8 cents. Every lower mode is smaller by k². The
+// neglected shape correction is first order in that same ratio, which is why
+// the membrane eigenfunctions are usable at all; the ratio scales as D k², so
+// raising D an order of magnitude puts it near 15 % and this stops being a
+// perturbation rather than becoming gradually worse.
+//
+// P4's tension modulation moves it the safe way: ΔT raises T by up to 20 % at
+// full excursion, which drops the ratio at the top mode to 1.24 %. The worst
+// case for the approximation is the quiet hit, not the loud one.
 func naturalAngularFrequency(head Head, wavenumber float64) float64 {
 	wavenumberSquared := wavenumber * wavenumber
 	angularFreqSquared := head.TensionNPerM/head.SurfaceDensityKgPerM2*wavenumberSquared +

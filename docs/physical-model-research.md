@@ -337,3 +337,28 @@ third-party or newly recorded audio without a clear license and provenance.
   Functions"](https://doi.org/10.1177/10775463241272937), Journal of Vibration
   and Control, 2025. Measured acoustic modal transfer functions as a practical
   calibration/validation route.
+- R. Diaz, G. Constanzo and M. Sandler, ["nlm: Real-Time Non-linear Modal
+  Synthesis in Max"](https://arxiv.org/abs/2603.10240), arXiv:2603.10240, 2026;
+  code at https://github.com/rodrigodzf/nlm. Modal synthesis with the nonlinear
+  _coupling_ terms retained rather than reduced away, running in real time inside
+  Max. It is the reference that turns "keep the mode-to-mode coupling" from a
+  feasibility question into a cost question — relevant because this repository's
+  Berger law deliberately drops exactly those terms
+  ([`physical-nonlinearity.md`](physical-nonlinearity.md) § What the mean-field
+  reduction cannot do). Full von Kármán coupling is \(O(N^3)\) in the mode count,
+  so at this model's 96 oscillators it would have to be truncated to the dominant
+  couplings from the loudest low modes.
+- R. Marogna, F. Avanzini and S. Bank, ["Energy-Based Synthesis of Tension
+  Modulation in
+  Membranes"](https://dafx10.iem.at/papers/MarognaAvanziniBank_DAFx10_P49.pdf),
+  DAFx-10 (Graz 2010). Short-time tension variation taken as proportional to
+  system energy. This is the reduction family the shipped law belongs to, and it
+  is the direct source for the "explicit energy-proportional detune" idea that
+  [`physical-nonlinearity.md`](physical-nonlinearity.md) § The solve cost,
+  measured retires on cost grounds.
+- V. Zheleznov, S. Bilbao, A. Wright and S. King, ["Stable Differentiable Modal
+  Synthesis for Learning Nonlinear Dynamics"](https://arxiv.org/abs/2601.10453),
+  arXiv:2601.10453. Gradient-based fitting of nonlinear modal models to
+  recordings with the parameters constrained to remain physical throughout
+  training — a route to calibration that the derivative-free fitter in
+  `cmd/fit-physical` does not have.

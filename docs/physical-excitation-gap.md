@@ -1,5 +1,14 @@
 # Where the 476–700 Hz band went
 
+> **Pending re-measurement (2026-07-31).** Everything in this document rests on a
+> reference reduction taken with a partial-level estimator that has since been
+> corrected — see
+> [`physical-measured-fit.md` § A correction to the partial measurement](physical-measured-fit.md#a-correction-to-the-partial-measurement-2026-07-31).
+> The corrected reduction of the right channel finds 14 partials rather than 7,
+> seven of them in this band, so both the size of the deficit measured here and
+> the conclusions drawn from it are pending re-measurement. Nothing below is
+> retracted; none of it should be quoted as current either.
+
 [`physical-measured-fit.md`](physical-measured-fit.md) ended on one unexplained
 number. The fit matched the reference's pitch, ring and envelope closely and
 missed its spectral envelope by 13.6 dB against a 4 dB gate, because the

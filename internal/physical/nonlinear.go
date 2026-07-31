@@ -29,6 +29,20 @@ const (
 // Near rest this is the ordinary Berger law DeltaT = beta S and
 // U = beta S²/4. The smooth cap keeps every retained mode below Nyquist under
 // the validated MaximumTensionRatio without clipping stored energy.
+//
+// This reduction is mean-field, and that is a stated limitation rather than an
+// implementation detail. Collapsing the geometric nonlinearity onto one scalar
+// DeltaT over total strain detunes every mode by the same *relative* amount and
+// leaves the modal equations diagonal, so no mode can transfer energy to any
+// other — the defining property of the Berger / Kirchhoff-Carrier family. The
+// consequence is that this nonlinearity contributes pitch and nothing else: it
+// generates no spectral content at all. The only things in the whole model that
+// can put energy at a given frequency are the contact force's spectrum and the
+// stochastic attack layer, and a real head struck hard does more than that — von
+// Kármán coupling puts content at 2f_i, at f_i ± f_j and through internal
+// resonances, which is part of why a hard hit is brighter and not merely
+// sharper (Dahl, TMH-QPSR 38(1) 1997). See docs/physical-nonlinearity.md
+// § "What the mean-field reduction cannot do".
 type nonlinearHead struct {
 	coefficientNPerM3 float64
 	maxTensionNPerM   float64
