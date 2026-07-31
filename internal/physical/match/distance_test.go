@@ -120,17 +120,77 @@ func TestUnmatchedIsWeightedByLoudness(t *testing.T) {
 	if quiet.Unmatched <= 0 {
 		t.Error("dropping a partial left nothing unmatched")
 	}
+
 	if loud.Unmatched <= quiet.Unmatched {
-		t.Errorf("dropping the fundamental (%.4f) cost no more than dropping the quietest partial (%.4f)",
+		t.Errorf("dropping the loudest partial (%.4f) cost no more than dropping the quietest (%.4f)",
 			loud.Unmatched, quiet.Unmatched)
 	}
-	// The quietest of the four is 18.4 dB down, so it carries well under a
-	// tenth of the partial energy; the loudest carries most of it.
-	if quiet.Unmatched > 0.05 {
-		t.Errorf("dropping an 18 dB-down partial cost %.4f of the energy, want a small share", quiet.Unmatched)
+
+	// The thresholds below are the point of the audibility weighting, and they
+	// are deliberately not the ones a power weighting produces. Under
+	// 10^(dB/10) the quietest of these four tones is 18.4 dB down and carries
+	// under 2 % of the total, so losing it rounded to nothing and a candidate
+	// could drop most of a drum for free. Weighted by dB above the detection
+	// floor it costs a tenth or so — still much less than the fundamental, but
+	// no longer free.
+	if quiet.Unmatched < 0.10 {
+		t.Errorf("dropping an 18 dB-down partial cost %.4f, want it to cost something", quiet.Unmatched)
 	}
-	if loud.Unmatched < 0.5 {
-		t.Errorf("dropping the fundamental cost %.4f of the energy, want most of it", loud.Unmatched)
+
+	if ratio := loud.Unmatched / quiet.Unmatched; ratio > 3 {
+		t.Errorf("loudest cost %.1fx the quietest, want the weighting compressed enough to stay under 3x",
+			ratio)
+	}
+}
+
+// The defect this whole weighting exists to prevent, stated directly.
+//
+// A reference whose energy sits almost entirely in one partial — which the
+// repository's tom reference does, at 99.4 % — used to let a candidate holding
+// only that partial score as though it had reproduced the drum: every partial
+// term averaged over the single pair that matched, and the unmatched share
+// rounded to 0.006. The distance must prefer the drum with all four partials by
+// a wide margin.
+func TestOneLoudPartialIsNotADrum(t *testing.T) {
+	t.Parallel()
+
+	lopsided := []tone{
+		{frequencyHz: 120, amplitude: 0.05, t60Seconds: 1.20},
+		{frequencyHz: 213, amplitude: 1.00, t60Seconds: 0.60},
+		{frequencyHz: 331, amplitude: 0.04, t60Seconds: 0.55},
+		{frequencyHz: 512, amplitude: 0.04, t60Seconds: 0.40},
+	}
+
+	reference := extractTones(t, lopsided)
+	whole := Distance(reference, extractTones(t, lopsided), DefaultWeights())
+	sparse := Distance(reference, extractTones(t, lopsided[1:2]), DefaultWeights())
+
+	if sparse.Unmatched < 0.4 {
+		t.Errorf("a candidate with only the loudest partial left %.4f unmatched, want a large share",
+			sparse.Unmatched)
+	}
+
+	if sparse.Total <= whole.Total {
+		t.Fatalf("one partial scored %.3f against the whole drum's %.3f", sparse.Total, whole.Total)
+	}
+
+	// The blend has to reach the partial terms too, or the sparse candidate
+	// still reports an excellent frequency error over its one matched pair.
+	if sparse.PartialFrequency <= whole.PartialFrequency*4 {
+		t.Errorf("sparse candidate reported %.1f cents against the whole drum's %.1f; "+
+			"the unmatched share is not reaching the partial terms",
+			sparse.PartialFrequency, whole.PartialFrequency)
+	}
+}
+
+// The audibility weighting is meaningless if it disagrees with the level at
+// which partials actually stop being detected.
+func TestAudibilityFloorTracksTheDetectionFloor(t *testing.T) {
+	t.Parallel()
+
+	if got := DefaultOptions().PartialFloorDB; got != partialAudibilityFloorDB {
+		t.Fatalf("detection floor %v and audibility floor %v have drifted apart",
+			got, partialAudibilityFloorDB)
 	}
 }
 
