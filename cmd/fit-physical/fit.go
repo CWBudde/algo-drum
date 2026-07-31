@@ -38,6 +38,14 @@ type evaluator struct {
 	contact      physical.ContactModel
 	malletMassKg float64
 
+	// lossScale multiplies every head loss rate on top of DAMP, and is 1 unless
+	// -loss-scale says otherwise. It is not in the bank either, and for a
+	// sharper reason than the other two: it is not a knob at all but a way to
+	// search past DAMP's own lower bound, which a fit can pin itself against.
+	// A run with lossScale != 1 measures a drum the product cannot currently be
+	// set to, so its result is evidence about the bound and not a bank to ship.
+	lossScale float64
+
 	buffer []float64
 }
 
@@ -87,6 +95,11 @@ func (e *evaluator) config() (physical.PhysicalDrum, error) {
 
 	if e.malletMassKg > 0 {
 		config.Strike.MalletMassKg = e.malletMassKg
+	}
+
+	if e.lossScale > 0 && e.lossScale != 1 {
+		drum.ScaleHeadLosses(&config.Batter, e.lossScale)
+		drum.ScaleHeadLosses(&config.Resonant, e.lossScale)
 	}
 
 	return config, nil

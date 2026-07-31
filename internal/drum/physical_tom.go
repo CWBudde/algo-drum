@@ -126,6 +126,23 @@ func scaleHeadLosses(head *physical.Head, lossScale, tilt float64) {
 	}
 }
 
+// ScaleHeadLosses multiplies one head's whole loss law by scale, which is
+// exactly what DAMP does and nothing else: the frequency tilt is left alone, so
+// the shape of the decay across the mode series does not move.
+//
+// It exists for offline experiments that need to reach outside DAMP's own
+// range. A fit that pins DAMP against a bound has said something about the
+// bound rather than about the drum, and the only way to tell which is to look
+// past it — but widening the shipped spec to find out would move every stored
+// preset, since presets hold normalized positions. Applying an extra factor
+// here answers the question without touching the product.
+//
+// Nothing in the engine calls it. If a fitted value ever justifies moving the
+// spec, that is a calibration decision with its own migration, not this.
+func ScaleHeadLosses(head *physical.Head, scale float64) {
+	scaleHeadLosses(head, scale, 1)
+}
+
 // ErrPhysicalTomParamCount reports a normalized bank of the wrong width.
 var ErrPhysicalTomParamCount = errors.New("physical tom parameter count")
 

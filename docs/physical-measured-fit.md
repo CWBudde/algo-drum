@@ -477,6 +477,66 @@ enough to say the Hertzian contact does not earn a calibration pass on fit
 quality. It is not enough to say the prescribed excitation is better physics, and
 the excitation-gap measurements say it is not.
 
+## Is the head-damping range the constraint? (2026-07-31)
+
+The run under the nine-term distance (`fit-v4-hertzian`, Standard, Hertzian,
+stopped by hand at 47 % of its restart budget, **11.630** from a 32.585
+baseline) fitted `DAMP` to **0.276 against a lower bound of 0.25** — normalized
+position 0.036, effectively pinned. A parameter resting on its bound is a
+statement about the bound, not about the drum, and the only way to tell which is
+to look past it.
+
+Widening the shipped spec to find out is not available: presets store
+_normalized_ positions, so moving `expSpec("physicalTom.damping", …, 0.25, 4, …)`
+would silently retune every saved patch. `-loss-scale` answers the question
+without touching the product — it multiplies every head loss rate on top of
+`DAMP`, so a run at 0.25 searches a range whose floor is four times lower. It is
+not a knob and never will be: a bank fitted at `-loss-scale ≠ 1` describes a drum
+the product cannot be set to. Both the report and the checkpoint fingerprint
+record it, so such a run cannot be mistaken for a normal one or resumed into one.
+
+Three fits, equal budget (4 restarts × 60 iterations, population 12, seed 1),
+identical but for the multiplier:
+
+| Loss scale    | Baseline | **Best**   | Partial decay | Spectral env. | `DAMP` (norm) | Effective |
+| ------------- | -------- | ---------- | ------------- | ------------- | ------------- | --------- |
+| 1.0 (control) | 32.585   | **14.917** | 0.966         | 13.27 dB      | 0.475 (0.231) | 0.475     |
+| 0.5           | 26.388   | **14.924** | 1.263         | 13.01 dB      | 0.866 (0.448) | 0.433     |
+| 0.25          | 26.325   | **14.076** | 1.295         | 12.82 dB      | 2.122 (0.771) | 0.531     |
+
+**The range is not the constraint.** Four times the headroom moves the total by
+0.8 — less than the spread between restarts at this budget — and the search
+converges on the same physical damping regardless of the range it is given:
+effective scales of 0.43–0.53 across all three. `DAMP`'s normalized position
+travels 0.23 → 0.45 → 0.77 to compensate for the multiplier, which is exactly
+what a parameter does when the model can already reach the value the reference
+implies.
+
+**And the two terms do not fall together**, which was the hypothesis. Removing
+loss makes partial decay _worse_ (0.966 → 1.295) while the spectral envelope sits
+flat at ~13 dB and never approaches its 4 dB gate. The envelope's excess is not
+made of over-long modes, so it will not be fixed by damping at all.
+
+One caveat, stated because it limits the claim: at this short budget `DAMP` does
+not pin even in the control — it fits 0.475, not the 0.276 the long run found. So
+this establishes that the bound is not _generally_ binding; it does not reproduce
+that particular pin, which may belong to the deeper optimum. A full-budget run at
+`-loss-scale 0.25` is the deciding test.
+
+### What this points at instead
+
+The reference's decay is **non-monotone in frequency**, and no single loss law is:
+its loudest partial at 212.8 Hz dies in 0.146 s while the fundamental at 118.1 Hz,
+25 dB quieter, sustains 1.490 s. The fitted candidate has the opposite tilt —
+0.597 s at the fundamental, and 0.71–1.47 s across 240–500 Hz where the reference
+spends 0.26–0.55 s.
+
+`DAMP` scales the whole loss law and `D.TILT` slopes it. Neither can bend it, so
+this is a model-structure question rather than a range or a search question.
+`Head.ModeDecayCorrections` — already scaled by both knobs, already used for the
+measured (0,1) correction — is where a per-mode answer would go. That touches the
+shipped instrument's sound, so it is not a change this document makes.
+
 ## Reproducing
 
 The run is deterministic given the seed; `TestSearchIsDeterministic` keeps it

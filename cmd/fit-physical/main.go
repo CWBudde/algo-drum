@@ -100,6 +100,9 @@ type SearchInfo struct {
 	Quality         string  `json:"quality"`
 	Contact         string  `json:"contact,omitempty"`
 	MalletGrams     float64 `json:"malletGrams,omitempty"`
+	// LossScale is 1 for every run that stays inside the shipped ranges, and
+	// anything else marks a report whose bank the product cannot express.
+	LossScale float64 `json:"lossScale,omitempty"`
 	// Interrupted marks a report the search did not finish producing. It also
 	// qualifies Evaluations, which counts mayfly's calls rather than rendered
 	// candidates: after an interrupt the objective refuses work without
@@ -122,6 +125,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		"excitation model: prescribed, hertzian, or empty for the configured default")
 	malletGrams := flags.Float64("mallet-g", 0,
 		"stick mass in grams, or 0 for the configured default")
+	lossScale := flags.Float64("loss-scale", 1,
+		"extra multiplier on every head loss rate, to search past DAMP's own range")
 	variant := flags.String("variant", "ma", "mayfly variant: ma, desma, olce, eobbma, gsasma, mpma or aoblmoa")
 	iterations := flags.Int("iterations", 150, "mayfly iterations per restart")
 	population := flags.Int("pop", 20, "mayfly males, and as many females")
@@ -184,6 +189,13 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("%w: mallet mass %v g", errInvalidFitOption, *malletGrams)
 	}
 
+	// Bounded well inside what the loss law can carry: at zero the heads never
+	// stop and every decay measure degenerates, and past a hundredfold the
+	// modes are gone before the first analysis window closes.
+	if *lossScale <= 0.01 || *lossScale > 100 {
+		return fmt.Errorf("%w: loss scale %v", errInvalidFitOption, *lossScale)
+	}
+
 	if *restarts == 0 {
 		*restarts = max(1, runtime.NumCPU()-1)
 	}
@@ -223,6 +235,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		durationSeconds: *duration,
 		contact:         physical.ContactModel(*contact),
 		malletMassKg:    *malletGrams / 1000,
+		lossScale:       *lossScale,
 		// Rendered at the reference's own rate, so no resampler ever enters
 		// the measurement path on either side.
 		buffer: make([]float64, int(*duration*reference.SampleRateHz)),
@@ -250,6 +263,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 			Quality:         *quality,
 			Contact:         *contact,
 			MalletGrams:     *malletGrams,
+			LossScale:       *lossScale,
 			FixedParams:     fixed,
 		},
 	}
@@ -274,6 +288,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 			Channel:         *channel,
 			Contact:         *contact,
 			MalletGrams:     *malletGrams,
+			LossScale:       *lossScale,
 			Quality:         *quality,
 			Variant:         *variant,
 			DurationSeconds: *duration,

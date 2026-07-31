@@ -88,6 +88,8 @@ func TestRunRejectsInvalidOptions(t *testing.T) {
 		"unknown contact":   {"-reference", reference, "-contact", "impulse"},
 		"negative mallet":   {"-reference", reference, "-mallet-g", "-1"},
 		"absurd mallet":     {"-reference", reference, "-mallet-g", "5000"},
+		"zero loss scale":   {"-reference", reference, "-loss-scale", "0"},
+		"absurd loss scale": {"-reference", reference, "-loss-scale", "1000"},
 	}
 
 	for name, args := range cases {
@@ -202,6 +204,53 @@ func TestContactOverridesReachTheRenderedDrum(t *testing.T) {
 
 	if overridden.Strike.MalletMassKg != 0.005 {
 		t.Errorf("mallet mass = %v kg, want 0.005", overridden.Strike.MalletMassKg)
+	}
+}
+
+// TestLossScaleReachesPastTheDampingRange is the point of the flag: it has to
+// move the loss law by exactly its own factor, or a run made to look past DAMP's
+// bound measures something other than what it claims to.
+func TestLossScaleReachesPastTheDampingRange(t *testing.T) {
+	t.Parallel()
+
+	specs := drum.PhysicalTomSpecs()
+
+	bank := make([]float64, len(specs))
+	for index, spec := range specs {
+		bank[index] = spec.Default
+	}
+
+	subject := &evaluator{bank: bank, sampleRateHz: 44100, lossScale: 1}
+
+	unscaled, err := subject.config()
+	if err != nil {
+		t.Fatalf("config() error = %v", err)
+	}
+
+	subject.lossScale = 0.25
+
+	scaled, err := subject.config()
+	if err != nil {
+		t.Fatalf("config() error = %v", err)
+	}
+
+	if got, want := scaled.Batter.Loss0PerSecond, unscaled.Batter.Loss0PerSecond*0.25; got != want {
+		t.Errorf("batter Loss0 = %v, want %v", got, want)
+	}
+
+	// The resonant head too: scaling one head alone would tilt the drum rather
+	// than damp it, and the two are not independently reachable from the bank.
+	if got, want := scaled.Resonant.Loss0PerSecond, unscaled.Resonant.Loss0PerSecond*0.25; got != want {
+		t.Errorf("resonant Loss0 = %v, want %v", got, want)
+	}
+
+	// The frequency tilt is DAMP's companion, not DAMP, so the ratio between a
+	// tilted term and an untilted one must survive the scaling untouched.
+	before := unscaled.Batter.Loss1MPerSecond / unscaled.Batter.Loss0PerSecond
+	after := scaled.Batter.Loss1MPerSecond / scaled.Batter.Loss0PerSecond
+
+	if math.Abs(after-before) > 1e-12 {
+		t.Errorf("loss tilt moved: %v -> %v", before, after)
 	}
 }
 

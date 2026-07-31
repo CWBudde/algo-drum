@@ -22,21 +22,21 @@
     across a change in the model or the measurement.
 
     Applied to a double-headed tom, the apparatus takes the distance from 32.6 at
-    the shipped default to 11.8, bringing five of the nine terms below their
+    the shipped default to 11.6, bringing five of the nine terms below their
     thresholds --- amplitude envelope, glide, attack balance and both coverage
-    shares --- and it localises what remains. The model rings too long: its ring
-    times sit above the reference across the whole band, its late spectrum runs
-    20--30 dB hot above 1 kHz, and the head-damping parameter is pinned against
-    its lower bound. That is a specific, testable statement about the model's
-    damping range, and it is the kind of statement the apparatus exists to
-    produce.
+    shares --- and it localises what remains. What remains is a *tilt* in the
+    decay structure: the model's mid-band partials ring two to five times longer
+    than the reference's while its fundamental rings less than half as long, and
+    the head-damping parameter, which scales all loss rates together, is fitted
+    against the lower bound of its range. That is a specific, testable statement
+    about the model's damping range, and it is the kind of statement the
+    apparatus exists to produce.
   ],
   status-body: [
-    The fitted numbers here are an interim snapshot from a search still in
-    progress, reported to show what the measurement yields rather than as a
-    converged result. The method, the figures and the properties in
-    #link(<reference>)[Section 5] and #link(<results>)[Section 7] do not depend
-    on that search completing.
+    The fitted numbers here come from one complete report, produced by a run that
+    was stopped by hand at 47% of its restart budget so the machine could be
+    given the next experiment. The figures and every number below are read from
+    that report.
   ],
 )
 
@@ -137,7 +137,7 @@ That share must be weighted, and the weighting is the substantive choice.
 Weighting by *energy* concentrates it on whichever partial is loudest --- on this
 reference, one partial carries 99.4% of the total --- so a candidate holding that
 partial alone reports almost nothing missing. Weighting by *count* overcorrects:
-the reference contains a genuine, isolated component 39 dB down that no
+the reference contains a genuine, isolated component 41 dB down that no
 two-headed drum will produce, and failing to reproduce it must not cost what
 failing to reproduce the fundamental costs. Each partial is therefore worth *how
 far it stands above the detection floor, in dB* --- zero at the floor, growing
@@ -284,8 +284,13 @@ ceiling independent of tuning.
 
 = What the fit establishes <results>
 
-Against the right channel at the shipped Standard tier with Hertzian contact, the
-distance falls from 32.585 at the shipped default to 11.784. More usefully,
+The run reported here fits against the right channel at the shipped Standard
+tier with Hertzian contact: eight restarts of 150 iterations over a population of
+16, seed 1. It was stopped by hand after 59,056 evaluations, 47% of that restart
+budget, so the machine could be turned to the next experiment; the report it
+wrote is complete, and everything below is read from it.
+
+The distance falls from 32.585 at the shipped default to 11.630. More usefully,
 @terms-figure shows where it fell.
 
 #place(top, scope: "parent", float: true)[
@@ -301,23 +306,30 @@ distance falls from 32.585 at the shipped default to 11.784. More usefully,
 ]
 
 Five of the nine terms are brought below threshold: amplitude envelope to
-$0.27times$, glide $0.44times$, attack balance $0.15times$, and both coverage
-shares --- unmatched $0.05times$, spurious $0.69times$. The coverage pair is the
-useful confirmation: the candidate accounts for essentially all of the reference's
+$0.28times$ (0.84 dB against 3), glide $0.38times$ (15.4 cents against 40),
+attack balance $0.008times$ (0.05 dB against 6), and both coverage shares ---
+unmatched $0.05times$, spurious $0.71times$. The coverage pair is the useful
+confirmation: the candidate accounts for essentially all of the reference's
 audible partial content while inventing little, so the remaining terms are being
-computed over a genuine correspondence rather than over one lucky pair.
+computed over a genuine correspondence rather than over one lucky pair. The
+reference reduces to seven partials and the candidate to eight; five pair up,
+the two reference partials left over sit at $-41$ dB, just above the detection
+floor.
 
-Three gated terms remain above threshold --- partial frequency $2.4times$, partial
-decay $2.8times$, spectral envelope $2.9times$ --- and they are not three
-independent problems. @decay-figure and @bands-figure show one.
+Three gated terms remain above threshold --- partial frequency $2.4times$
+(59.7 cents against 25), partial decay $2.8times$ (0.99 in log ratio against
+0.35, and against the tighter 0.25 its own gate applies), spectral envelope
+$2.9times$ (11.5 dB against 4) --- and they are not three independent problems.
+@decay-figure and @bands-figure show one.
 
 #place(top, scope: "parent", float: true)[
   #figure(
     image("figures/decay.png", width: 100%),
     caption: [
       Ring time against frequency, with the constant-$Q$ law anchored on the
-      reference fundamental. The model's partials sit above the reference across the
-      band, by a factor of 3--5 in the mid range.
+      reference fundamental. The mismatch is a tilt rather than an offset: the
+      model rings two to five times too long between 250 and 500 Hz, and less
+      than half as long as the reference at the fundamental.
     ],
   ) <decay-figure>
 ]
@@ -326,32 +338,43 @@ independent problems. @decay-figure and @bands-figure show one.
   #figure(
     image("figures/bands.png", width: 100%),
     caption: [
-      Spectral envelope, window by window. The attack matches closely; the
-      discrepancy appears in the body and tail and is concentrated above 1 kHz,
-      where the model runs 20--30 dB hot.
+      Spectral envelope, window by window. The attack matches within a few dB
+      over most of the band; the discrepancy appears in the body and tail and is
+      concentrated above 1.5 kHz, where the model runs 10--20 dB hot.
     ],
   ) <bands-figure>
 ]
 
-*The model rings too long.* Its ring times exceed the reference's everywhere, by a
-factor of 3--5 in the mid range, and the same fact appears in the spectral
-envelope as a late-window excess above 1 kHz --- energy that should have decayed
-is still present. The attack window matches within a few dB, so this is a decay
-property and not a spectrum-shaping one.
+*The remaining error is a decay tilt.* Ring times do not sit uniformly above or
+below the reference's: between 250 and 500 Hz the candidate rings two to five
+times too long, while at the fundamental it rings 0.60 s against the reference's
+1.49 s --- too short. The same fact appears in the spectral envelope as a body
+and tail excess above 1.5 kHz, energy that should have decayed and has not, with
+the attack window matching within a few dB. Decay, not spectral shaping, is what
+the three gated terms are measuring.
 
-*And the fit says why it cannot fix it.* Head damping is fitted to 0.276 on a
-range whose lower bound is 0.25 --- normalised position 0.036, effectively pinned.
-The optimiser spent its remaining freedom elsewhere, tuning the batter head down
-to 935 N/m and tilting the damping law, because the parameter that would actually
-shorten the ring has no travel left. This is a concrete and testable claim about
-the model rather than about the recording: *the head-damping range does not reach
-the losses this instrument exhibits.* Extending it, and checking whether the
-partial-decay and spectral-envelope terms fall together, is the next experiment,
-and the distance is arranged so that it will be a clear answer either way.
+The reference's own decay times are strikingly non-monotone in frequency: its
+loudest partial at 213 Hz dies in 0.146 s while its 118 Hz fundamental sustains
+1.49 s. No single constant-$Q$ loss law produces that ordering, which is why a
+fit that gets the mid band right must get the fundamental wrong, and the reverse.
+Locating the residual as a shape of the loss law rather than as a level is
+exactly the discrimination the per-term units were built for.
 
-= Practical notes
+*And the fit points at where the range runs out.* Head damping is fitted to 0.276
+on a range whose lower bound is 0.25 --- normalised position 0.036, against the
+edge. Since that parameter scales all loss rates together, the search is asking
+for *less* overall loss than the bank can express, and it spent its remaining
+freedom elsewhere, tuning the batter head to 933 N/m and shifting the pickup.
+This is a concrete and testable claim about the model rather than about the
+recording: *the head-damping range does not reach the loss structure this
+instrument exhibits.* Extending the range, and checking whether the
+partial-decay and spectral-envelope terms fall together, is the next experiment
+--- already running --- and the distance is arranged so that it will be a clear
+answer either way.
 
-Three points generalise beyond this instrument, each learned by measurement.
+= What to watch for
+
+Four points generalise beyond this instrument, each learned by measurement.
 
 *Measure inter-channel lag before summing.* A stereo pair of one event is one
 signal twice, and averaging imposes a fixed comb on every spectral quantity
@@ -366,6 +389,12 @@ under such a weighting duly converged on two partials. The pressure toward
 completeness and the pressure toward tidiness are one quantity seen from two
 sides; the asymmetry belongs in the blend, where it is already present, and not
 in the weights.
+
+*Read a pinned parameter as a statement about the range, not about the search.*
+A value sitting on a bound is the most informative thing an optimiser produces:
+it says the best available answer lies outside the box. Report the normalised
+position alongside the engineering value, so that the difference between "fitted
+to 0.276" and "fitted to the bound" is visible without opening the bank.
 
 *Gate per term, and confirm by ear.* A distance can be monotone in quality ---
 ranking candidates in the order a listener would --- while being wrong about all
