@@ -59,9 +59,24 @@ type DoubleHead struct {
 	midpointDenom    []float64
 	strainWeight     []float64
 	strikeWeight     []float64
-	radiationHP      biquad.Section
-	radiationLP      biquad.Section
-	attack           attackLayer
+
+	// Struct-of-arrays mirrors of the three Mode fields the vectorised midpoint
+	// update reads. These exist for the kernel, not for cache friendliness — a
+	// 144-byte stride cannot be loaded into a vector register without a gather,
+	// and the gather would cost more than the vectorisation returns. d.modes stays
+	// the source of truth; syncModeArrays re-derives these, and
+	// TestModeArraysMirrorTheBank fails if it is ever not called.
+	modeWavenumberPerM  []float64
+	modeOmegaSquared    []float64
+	modeStrikeAccelPerN []float64
+	// stepDenominator carries D_i — midpointDenom plus this iteration's nonlinear
+	// tension term — from the two update loops to the cavity fill, which used to
+	// run inside them and now runs as its own pass. Written before it is read on
+	// every call, so unlike a mirror of the mode bank it cannot go stale.
+	stepDenominator []float64
+	radiationHP     biquad.Section
+	radiationLP     biquad.Section
+	attack          attackLayer
 
 	contact contact
 
@@ -183,6 +198,11 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 		strainWeight:     make([]float64, modeCount),
 		couplingFirst:    make([]int32, modeCount),
 		couplingCount:    make([]int32, modeCount),
+
+		modeWavenumberPerM:  make([]float64, modeCount),
+		modeOmegaSquared:    make([]float64, modeCount),
+		modeStrikeAccelPerN: make([]float64, modeCount),
+		stepDenominator:     make([]float64, modeCount),
 		radiationHP: biquad.Section{Coefficients: design.Highpass(
 			min(config.Pickup.HighpassHz, config.SampleRateHz*0.45),
 			1/math.Sqrt2,
@@ -231,6 +251,8 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 			surfaceDensity * mode.WavenumberPerM * mode.WavenumberPerM
 	}
 
+	model.syncModeArrays()
+
 	model.batterNonlinear = newNonlinearHead(
 		config.Nonlinearity.Enabled,
 		config.Nonlinearity.BatterTensionCoefficientNPerM3,
@@ -269,6 +291,24 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 	model.contact.setSubsteps(strikePointMassKg(batterModes))
 
 	return model, nil
+}
+
+// syncModeArrays re-derives the mirrors the midpoint kernel reads from d.modes.
+//
+// d.modes is the source of truth and these are a cache, so anything editing a
+// mode after construction must call this — the obligation strikeWeight already
+// carried. NewDoubleHead calls it once and nothing on the audio path calls it at
+// all. TestModeArraysMirrorTheBank is the guard: a mirror that stops matching the
+// bank fails there rather than silently detuning the solve.
+func (d *DoubleHead) syncModeArrays() {
+	for index := range d.modes {
+		mode := &d.modes[index]
+
+		d.modeWavenumberPerM[index] = mode.WavenumberPerM
+		// The same product solveMidpoint used to form per mode per iteration.
+		d.modeOmegaSquared[index] = mode.AngularFrequency * mode.AngularFrequency
+		d.modeStrikeAccelPerN[index] = mode.StrikeAccelerationPerN
+	}
 }
 
 // installCoupling builds the quartic channel table and its audio-path scratch.
@@ -810,33 +850,45 @@ func (d *DoubleHead) beginCouplingStep() {
 // secant *is* the vector discrete gradient. No Gonzalez projection, and no 0/0
 // branch at rest on a 96-vector.
 func (d *DoubleHead) accumulateCouplingForces() {
-	clear(d.couplingAccel)
+	// Hoisted deliberately, and measured rather than assumed: the compiler cannot
+	// prove that storing through d.couplingAccel leaves d's own fields alone, so
+	// with these read as d.field it reloaded every slice header from the struct on
+	// each iteration. perf annotate put ~20% of this function's instructions in
+	// those reloads alone. In locals the base pointers stay in registers.
+	accel := d.couplingAccel
+	bar := d.couplingBar
+	inverseMass := d.couplingInverseMass
+	tensions := d.channelTension
+	columns := d.coupling.entryColumn
+	values := d.coupling.entryValue
+	runs := d.coupling.runs
 
-	for index := range d.coupling.runs {
-		run := &d.coupling.runs[index]
+	clear(accel)
 
-		tension := d.channelTension[run.channel]
+	for index := range runs {
+		run := &runs[index]
+
+		tension := tensions[run.channel]
 		if tension == 0 {
 			continue
 		}
 
 		// Constant across the run, which is the point of iterating over runs.
 		row := run.row
-		barRow := d.couplingBar[row]
+		barRow := bar[row]
 		rowTotal := 0.0
 
 		for slot := run.first; slot < run.last; slot++ {
-			column := d.coupling.entryColumn[slot]
-			scaled := tension * d.coupling.entryValue[slot]
+			column := columns[slot]
+			scaled := tension * values[slot]
 
-			rowTotal += scaled * d.couplingBar[column]
+			rowTotal += scaled * bar[column]
 			if row != column {
-				d.couplingAccel[column] -= scaled * barRow *
-					d.couplingInverseMass[column]
+				accel[column] -= scaled * barRow * inverseMass[column]
 			}
 		}
 
-		d.couplingAccel[row] -= rowTotal * d.couplingInverseMass[row]
+		accel[row] -= rowTotal * inverseMass[row]
 	}
 }
 
@@ -867,13 +919,17 @@ func (d *DoubleHead) channelValuesAt(displacement, dst []float64) {
 	// and cleared first, so a channel with no entries still lands on zero.
 	clear(dst)
 
-	for index := range d.coupling.runs {
-		run := &d.coupling.runs[index]
+	// Hoisted for the same reason as in accumulateCouplingForces.
+	columns := d.coupling.entryColumn
+	values := d.coupling.entryDoubledValue
+	runs := d.coupling.runs
+
+	for index := range runs {
+		run := &runs[index]
 
 		total := 0.0
 		for slot := run.first; slot < run.last; slot++ {
-			total += d.coupling.entryDoubledValue[slot] *
-				displacement[d.coupling.entryColumn[slot]]
+			total += values[slot] * displacement[columns[slot]]
 		}
 
 		dst[run.channel] += displacement[run.row] * total
@@ -886,46 +942,89 @@ func (d *DoubleHead) solveMidpoint(
 	timeStep := 1 / d.config.SampleRateHz
 	inverseTimeStep := d.config.SampleRateHz
 
-	// Hoisted out of the loop below: this is the innermost code the model has,
-	// run once per mode per nonlinear iteration per sample, and each d.config
-	// reach walked a nested struct to reload a constant.
-	batterDensity := d.config.Batter.SurfaceDensityKgPerM2
-	resonantDensity := d.config.Resonant.SurfaceDensityKgPerM2
+	// One division for each head rather than one per mode per nonlinear
+	// iteration. T/sigma is the same quotient for every mode of a head, so at 120
+	// modes and about two iterations a sample this was ~240 divisions a sample
+	// spent recomputing two numbers. Same quotient, so the bank is unchanged bit
+	// for bit.
+	batterRatio := batterTensionNPerM / d.config.Batter.SurfaceDensityKgPerM2
+	resonantRatio := resonantTensionNPerM / d.config.Resonant.SurfaceDensityKgPerM2
 
 	cavityCount := len(d.cavityModes)
+
+	// Hoisted into locals for the reason perf annotate exposed in
+	// accumulateCouplingForces: read as d.field inside these loops, the compiler
+	// reloads each slice header — and couplingActive — from the struct on every
+	// mode, because a store through any of them might have touched d itself.
+	modes := d.modes
+	velocity := d.velocity
+	displacement := d.displacement
+	midpointVelocities := d.midpointVelocity
+	midpointDenom := d.midpointDenom
+	stepDenominator := d.stepDenominator
+	couplingAccel := d.couplingAccel
+	couplingActive := d.couplingActive
+	batterModeCount := d.batterModeCount
+
 	clear(d.cavityDrive)
 	clear(d.cavityMatrix)
 
-	for index := range d.modes {
-		mode := &d.modes[index]
+	// The two heads are separate loops rather than one loop with a predicate on
+	// index, because every predicate in here was loop-invariant: which head, and
+	// therefore which density, which tension, whether the strike force applies and
+	// whether the quartic coupling reaches it. Splitting evaluates each of them
+	// once instead of 120 times a pass, and leaves two straight elementwise loops.
+	// The two heads are separate calls rather than one loop with a predicate on
+	// index, because every predicate here was loop-invariant: which head, and
+	// therefore which density, which tension, whether the strike force applies and
+	// whether the quartic coupling reaches it.
+	//
+	// The bodies live in midpoint.go so they can have a vector implementation; see
+	// the bit-exactness note there for why the operation order is not negotiable.
+	accel := couplingAccel
+	if !couplingActive {
+		accel = nil
+	}
 
-		surfaceDensity := batterDensity
-		tensionIncrease := batterTensionNPerM
+	midpointBatter(
+		batterRatio, timeStep, inverseTimeStep, forceN,
+		d.modeWavenumberPerM[:batterModeCount],
+		d.modeOmegaSquared[:batterModeCount],
+		d.modeStrikeAccelPerN[:batterModeCount],
+		midpointDenom[:batterModeCount],
+		velocity[:batterModeCount],
+		displacement[:batterModeCount],
+		accel,
+		stepDenominator[:batterModeCount],
+		midpointVelocities[:batterModeCount],
+	)
 
-		if index >= d.batterModeCount {
-			surfaceDensity = resonantDensity
-			tensionIncrease = resonantTensionNPerM
-		}
+	// The resonant head is never struck and the quartic table is batter-only, so
+	// this is the same recurrence without either source term. Left scalar: it is
+	// 24 modes against the batter head's 96, and a second kernel would double the
+	// assembly for a fifth of the work.
+	midpointReferenceResonant(
+		0, len(modes)-batterModeCount,
+		resonantRatio, timeStep, inverseTimeStep,
+		d.modeWavenumberPerM[batterModeCount:],
+		d.modeOmegaSquared[batterModeCount:],
+		midpointDenom[batterModeCount:],
+		velocity[batterModeCount:],
+		displacement[batterModeCount:],
+		stepDenominator[batterModeCount:],
+		midpointVelocities[batterModeCount:],
+	)
 
-		nonlinearAngularFrequencySquared := tensionIncrease /
-			surfaceDensity * mode.WavenumberPerM * mode.WavenumberPerM
-		angularFrequencySquared := mode.AngularFrequency*
-			mode.AngularFrequency + nonlinearAngularFrequencySquared
-		denominator := d.midpointDenom[index] +
-			0.5*nonlinearAngularFrequencySquared*timeStep
-
-		numerator := 2*d.velocity[index]*inverseTimeStep -
-			angularFrequencySquared*d.displacement[index]
-		if index < d.batterModeCount {
-			numerator += forceN * mode.StrikeAccelerationPerN
-			if d.couplingActive {
-				numerator += d.couplingAccel[index]
-			}
-		}
-
-		uncoupledMidpointVelocity := numerator / denominator
-		d.midpointVelocity[index] = uncoupledMidpointVelocity
-
+	// Both accumulations are restricted to this mode's own azimuthal family, so
+	// the k x k feedback matrix is filled block by block and the loop is linear in
+	// the retained mode count exactly as the rank-one form was.
+	//
+	// Its own pass now: the modes it visits are the minority that couple to the
+	// air at all, and hosting it inside the update loops meant every mode paid the
+	// two index loads that decide whether it does. The accumulation order over
+	// modes is the one the fused version had, which is what keeps the matrix
+	// identical rather than merely equivalent.
+	for index := range modes {
 		first := int(d.couplingFirst[index])
 
 		last := first + int(d.couplingCount[index])
@@ -933,23 +1032,26 @@ func (d *DoubleHead) solveMidpoint(
 			continue
 		}
 
-		modalDenominator := mode.ModalMassKg * denominator
-		for slot := first; slot < last; slot++ {
-			d.couplingGain[slot] = d.couplingAreaM2[slot] / modalDenominator
+		// Sliced once, so the O(count^2) inner loop below indexes short local
+		// slices instead of re-deriving offsets into the bank-wide arrays.
+		areas := d.couplingAreaM2[first:last]
+		gains := d.couplingGain[first:last]
+		cavities := d.couplingCavity[first:last]
+
+		modalDenominator := modes[index].ModalMassKg * stepDenominator[index]
+		for slot := range gains {
+			gains[slot] = areas[slot] / modalDenominator
 		}
 
-		// Both accumulations are restricted to this mode's own azimuthal family,
-		// so the k x k feedback matrix is filled block by block and the loop is
-		// linear in the retained mode count exactly as the rank-one form was.
-		for slot := first; slot < last; slot++ {
-			area := d.couplingAreaM2[slot]
-			row := int(d.couplingCavity[slot]) * cavityCount
+		uncoupledMidpointVelocity := midpointVelocities[index]
 
-			d.cavityDrive[int(d.couplingCavity[slot])] += area *
-				uncoupledMidpointVelocity
-			for other := first; other < last; other++ {
-				d.cavityMatrix[row+int(d.couplingCavity[other])] += area *
-					d.couplingGain[other]
+		for slot, area := range areas {
+			cavity := int(cavities[slot])
+			row := cavity * cavityCount
+
+			d.cavityDrive[cavity] += area * uncoupledMidpointVelocity
+			for other, gain := range gains {
+				d.cavityMatrix[row+int(cavities[other])] += area * gain
 			}
 		}
 	}
@@ -963,8 +1065,11 @@ func (d *DoubleHead) solveMidpoint(
 	batterStrain := 0.0
 	resonantStrain := 0.0
 
-	for index := range d.modes {
-		midpointVelocity := d.midpointVelocity[index]
+	// Split for the same reason the update loops are: which head a mode belongs to
+	// decides which strain it feeds and whether it has a coupling endpoint to
+	// record, and neither question changes within a run of indices.
+	for index := range batterModeCount {
+		midpointVelocity := midpointVelocities[index]
 
 		first := int(d.couplingFirst[index])
 		for slot, last := first, first+int(d.couplingCount[index]); slot < last; slot++ {
@@ -972,26 +1077,38 @@ func (d *DoubleHead) solveMidpoint(
 				d.cavityMidpointPa[int(d.couplingCavity[slot])]
 		}
 
-		d.midpointVelocity[index] = midpointVelocity
-		newDisplacement := d.displacement[index] +
+		midpointVelocities[index] = midpointVelocity
+		newDisplacement := displacement[index] +
 			timeStep*midpointVelocity
 
-		strain := d.strainWeight[index] *
+		batterStrain += d.strainWeight[index] *
 			newDisplacement * newDisplacement
-		if index < d.batterModeCount {
-			batterStrain += strain
 
-			if d.couplingActive {
-				d.couplingEnd[index] = newDisplacement
-				d.couplingBar[index] = d.displacement[index] +
-					0.5*timeStep*midpointVelocity
-			}
-		} else {
-			resonantStrain += strain
+		if couplingActive {
+			d.couplingEnd[index] = newDisplacement
+			d.couplingBar[index] = displacement[index] +
+				0.5*timeStep*midpointVelocity
 		}
 	}
 
-	if d.couplingActive {
+	for index := batterModeCount; index < len(modes); index++ {
+		midpointVelocity := midpointVelocities[index]
+
+		first := int(d.couplingFirst[index])
+		for slot, last := first, first+int(d.couplingCount[index]); slot < last; slot++ {
+			midpointVelocity -= d.couplingGain[slot] *
+				d.cavityMidpointPa[int(d.couplingCavity[slot])]
+		}
+
+		midpointVelocities[index] = midpointVelocity
+		newDisplacement := displacement[index] +
+			timeStep*midpointVelocity
+
+		resonantStrain += d.strainWeight[index] *
+			newDisplacement * newDisplacement
+	}
+
+	if couplingActive {
 		d.channelValuesAt(d.couplingEnd, d.channelTrial)
 	}
 
@@ -1092,23 +1209,31 @@ func (d *DoubleHead) observe(channelTrialCurrent bool) DoubleHeadOutput {
 
 	coupling := d.config.Cavity.Coupling01
 
-	for index := range d.modes {
-		mode := &d.modes[index]
+	// Hoisted for the reason perf annotate exposed in the solve: read as d.field
+	// inside the mode loop, each slice header is reloaded from the struct per mode.
+	modes := d.modes
+	displacements := d.displacement
+	velocities := d.velocity
+	strainWeight := d.strainWeight
+	batterModeCount := d.batterModeCount
 
-		displacement := d.displacement[index]
-		velocity := d.velocity[index]
+	for index := range modes {
+		mode := &modes[index]
+
+		displacement := displacements[index]
+		velocity := velocities[index]
 		pickupDisplacement := mode.PickupShape * displacement
 		pickupVelocity := mode.PickupShape * velocity
 
-		if index < d.batterModeCount {
+		if index < batterModeCount {
 			output.BatterDisplacementM += pickupDisplacement
 			output.BatterVelocityMPerS += pickupVelocity
-			batterStrain += d.strainWeight[index] *
+			batterStrain += strainWeight[index] *
 				displacement * displacement
 		} else {
 			output.ResonantDisplacementM += pickupDisplacement
 			output.ResonantVelocityMPerS += pickupVelocity
-			resonantStrain += d.strainWeight[index] *
+			resonantStrain += strainWeight[index] *
 				displacement * displacement
 		}
 

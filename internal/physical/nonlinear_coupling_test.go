@@ -555,6 +555,12 @@ func couplingModalPeaks(t *testing.T, coupled bool) ([]float64, []Mode, map[int]
 		model.strikeWeight[index] = 0
 	}
 
+	// d.modes is the source of truth and the midpoint kernel reads mirrors of it.
+	// Skipping this leaves every mode still struck directly, which turns the 30 dB
+	// claim below into 0.6 dB and looks like a physics regression rather than a
+	// stale cache. TestModeArraysMirrorTheBank guards the construction path.
+	model.syncModeArrays()
+
 	if err := model.Trigger(1); err != nil {
 		t.Fatal(err)
 	}
@@ -1071,6 +1077,40 @@ func TestObserveReusesCurrentChannelValues(t *testing.T) {
 					sample, channel, model.channelValue[channel], want,
 				)
 			}
+		}
+	}
+}
+
+// TestModeArraysMirrorTheBank pins the cache contract the midpoint kernel rests
+// on: the struct-of-arrays mirrors must equal the fields they are derived from.
+//
+// The kernel cannot read the 144-byte Mode struct — a vector load needs
+// contiguous float64 — so the mirrors are not an optimisation that can be
+// dropped. Exact equality, because they are copies, not computations.
+func TestModeArraysMirrorTheBank(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultPhysicalDrum()
+
+	model, err := NewDoubleHead(config)
+	if err != nil {
+		t.Fatalf("NewDoubleHead: %v", err)
+	}
+
+	for index := range model.modes {
+		mode := &model.modes[index]
+
+		if got := model.modeWavenumberPerM[index]; got != mode.WavenumberPerM {
+			t.Fatalf("mode %d wavenumber mirror %g, bank %g", index, got, mode.WavenumberPerM)
+		}
+
+		want := mode.AngularFrequency * mode.AngularFrequency
+		if got := model.modeOmegaSquared[index]; got != want {
+			t.Fatalf("mode %d omega-squared mirror %g, bank %g", index, got, want)
+		}
+
+		if got := model.modeStrikeAccelPerN[index]; got != mode.StrikeAccelerationPerN {
+			t.Fatalf("mode %d strike mirror %g, bank %g", index, got, mode.StrikeAccelerationPerN)
 		}
 	}
 }
