@@ -177,25 +177,76 @@ func generateHeadModes(config PhysicalDrum, head Head) ([]Mode, error) {
 	})
 
 	if head.AxisymmetricOnly {
-		modes = retainAxisymmetric(modes)
+		modes = retainCavityReachable(modes, cavityAzimuthalOrders(config))
+		modes = truncateToResonantBudget(modes, config.ResonantModeLimit)
 	}
 
 	return modes, nil
 }
 
-// retainAxisymmetric drops every m > 0 mode, after selection rather than during
-// it.
+// truncateToResonantBudget applies the reduced head's own oscillator budget, and
+// applies it *after* the reachability filter rather than before it.
+//
+// Both halves of that are forced. Before the filter it could not mean anything:
+// the filter's yield is a small and cavity-dependent fraction of what it is given
+// — 6 of 96 with a lumped cavity, 28 of 96 with the shipped one — so a pre-filter
+// count would be a budget on candidates rather than on oscillators, and the same
+// number would size the bank differently for every cavity. The quantity the
+// budget is chosen against, in DefaultResonantModeLimit, is how far up the
+// reachable series the bank reaches, which is the number this sees.
+//
+// And it must be a truncation of the already-selected list, not a second
+// selection pass with a smaller budget. retainCavityReachable's note explains why
+// the filter runs after selection: a budget-filling loop that skipped unreachable
+// candidates would refill their slots from further up the frequency-sorted list
+// and produce a different instrument. Re-running the loop against this smaller
+// budget would reintroduce exactly that. Truncating instead keeps the retained set
+// a frequency-ordered prefix of what the unfiltered selection produced, so no mode
+// is ever *substituted* for another; the bank only gets shorter from the top.
+//
+// Shorter from the top is a real change to the sound, unlike the reachability
+// filter above it, which is exact. It is the cheap end of the change, though: the
+// discarded modes are the highest and shortest-lived of a bank whose only
+// excitation is a cavity basis that stops below them, which is the argument
+// DefaultResonantModeLimit measures rather than asserts.
+func truncateToResonantBudget(modes []Mode, limit int) []Mode {
+	if len(modes) <= limit {
+		return modes
+	}
+
+	return modes[:limit:limit]
+}
+
+// retainCavityReachable drops every mode the enclosed air cannot reach, after
+// selection rather than during it.
+//
+// This is what Head.AxisymmetricOnly does, and the name says what the reduction
+// actually rests on. The reduction is exact because a head that is never struck
+// can only be driven through the cavity, and the cavity's azimuthal selection
+// rule zeroes the coupling coefficient of every head mode whose azimuthal order
+// appears in no cavity mode. Those modes therefore stay at zero displacement,
+// zero strain and zero energy for all time.
+//
+// With a one-state cavity the reachable set is {0} and this is literally
+// "axisymmetric only", the behaviour the field was named for. With transverse
+// cavity modes enabled the set grows to the orders those modes carry, and the
+// filter automatically widens to match — the field is overridden rather than
+// obeyed literally, because obeying it literally would now drop modes that can
+// move. The alternative, rejecting the combination, would force the resonant head
+// onto the full 96-slot bank to gain a couple of dozen modes that can move and
+// seventy that provably cannot; that is not a correctness improvement, it is a
+// doubling of the audio budget spent on exact zeros.
 //
 // The selection loop above fills a slot budget, so skipping these candidates
 // inside it would free their slots and the loop would keep walking up the
-// frequency-sorted list admitting higher-order *axisymmetric* modes instead —
-// modes with non-zero swept area, which drive the cavity. That is a different
-// instrument, not a cheaper one. Filtering afterwards reproduces exactly the
-// subset the unfiltered selection would have produced, at any budget.
-func retainAxisymmetric(modes []Mode) []Mode {
+// frequency-sorted list admitting higher-order reachable modes instead — modes
+// with non-zero coupling, which drive the cavity. That is a different instrument,
+// not a cheaper one. Filtering afterwards reproduces exactly the subset the
+// unfiltered selection would have produced, at any budget.
+func retainCavityReachable(modes []Mode, orders map[int]struct{}) []Mode {
 	retained := modes[:0]
 	for _, mode := range modes {
-		if mode.AzimuthalOrder == 0 {
+		if _, reachable := orders[mode.AzimuthalOrder]; reachable {
 			retained = append(retained, mode)
 		}
 	}

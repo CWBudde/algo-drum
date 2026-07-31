@@ -22,8 +22,9 @@ const (
 	fittedCavityConfigVersion     = 7
 	radiatedAccelerationVersion   = 8
 	multiBandAttackConfigVersion  = 9
+	selectableContactVersion      = 10
 	// ConfigVersion is the physical-drum JSON schema emitted by EncodeConfig.
-	ConfigVersion = 10
+	ConfigVersion = 11
 
 	minSampleRateHz = 8_000.0
 	maxSampleRateHz = 384_000.0
@@ -48,11 +49,16 @@ const (
 // ModeLimit returns the modal-oscillator budget one head selects from.
 // Non-axisymmetric eigenmodes consume two slots (cosine and sine orientation).
 //
-// This is effectively the batter head's budget. A head with AxisymmetricOnly set
-// runs the same selection and then keeps only its m = 0 modes, so the resonant
-// head costs a handful of oscillators rather than a second full bank — 7 of the
-// 96 at Standard. Total cost is therefore about 103 oscillators where the same
-// tier used to be 96, for twice the mode count on the head that is heard.
+// This is the *batter* head's budget, and since P9/M2 only the batter head's.
+// A head with AxisymmetricOnly set runs the same selection and then keeps only
+// the modes the enclosed air can reach, and how many that leaves depends on the
+// cavity rather than on this number: with a lumped cavity it is the 6 m = 0 modes
+// out of Standard's 96, but with the shipped transverse basis the reachable set is
+// {0,1,2} and the same selection leaves 28. So one number was sizing two banks
+// that are excited by different things and want different sizes, and the size of
+// the second was a side effect of a cavity setting. PhysicalDrum.ResonantModeLimit
+// gives the reduced head its own; see DefaultResonantModeLimit for what sets it,
+// and generateHeadModes for where it applies.
 //
 // The tiers doubled when the resonant head stopped being computed and discarded.
 // Bandwidth grows only as the square root of the count, because a membrane's mode
@@ -72,18 +78,73 @@ func (q Quality) ModeLimit() int {
 	}
 }
 
+// DefaultResonantModeLimit is the oscillator budget of a head that is reduced to
+// what the enclosed air can reach — in practice the resonant head.
+//
+// It is a fixed number rather than a per-tier one, because the two budgets answer
+// different questions. Quality.ModeLimit() buys *bandwidth* on the head the strike
+// drives and the microphone hears, so it belongs on a quality tier. The reduced
+// head is never struck; the cavity is its only excitation, so the span worth
+// covering is the cavity's, and the cavity's basis is a property of the shell
+// rather than of a quality setting. Sharing the tier's number was accidental — it
+// was the budget of the *only* head that had one, back when the reduction left
+// half a dozen modes and the choice could not matter — and it stopped being
+// harmless when the modal cavity widened the reachable set from {0} to {0,1,2}.
+//
+// The value is the smallest that straddles every transverse cavity resonance,
+// which is the criterion the coupling mechanism actually rests on: a cavity mode
+// drives the resonant modes of its own azimuthal order, and it is represented
+// faithfully only if that family has partials on both sides of it. On the shipped
+// shell the cavity's (1,1) pair sits at 660 Hz, between the resonant (1,2) at
+// 472 Hz and (1,3) at 685 Hz; its (2,1) pair sits at 1094 Hz, between (2,4) at
+// 1001 Hz and (2,5) at 1213 Hz. The (2,5) pair is the 23rd and 24th oscillator of
+// the frequency-ordered reachable bank.
+//
+// Measured against the uncapped Standard bank, as the difference between the
+// modal cavity and the lumped one that P9/M2 introduced — the 13.1 dB feature at
+// 657.5 Hz — the budget behaves like this:
+//
+//	 8  -10.22 dB   the (1,3) straddle is missing and the mechanism is 3 dB wrong
+//	12  -13.60 dB
+//	16  -13.46 dB
+//	20  -13.24 dB
+//	24  -13.16 dB
+//	28  -13.13 dB   the whole reachable bank
+//
+// The sharp knee is at 12 and the residual past it is small, but the (2,1) region
+// converges more slowly: 4.7 dB of whole-band transfer-function error at 12,
+// 2.1 dB at 20, 1.1 dB at 24, and 0.1 dB at 26. 24 is where the second knee is,
+// and where both transverse pairs are straddled rather than only the first.
+//
+// It is also far above every count a lumped cavity can produce — 4, 6 and 8
+// axisymmetric modes at Draft, Standard and High — so it never binds on a migrated
+// v1–v10 document and those still render bit-identically.
+const DefaultResonantModeLimit = 24
+
+// maxResonantModeLimit bounds the field at the largest budget the batter head can
+// have, since the reduced head selects out of a bank of that size and a cap above
+// it could never bind.
+const maxResonantModeLimit = 160
+
 // PhysicalDrum is the versioned, serializable physical-model configuration.
+//
+// Quality and ResonantModeLimit are two separate oscillator budgets and are meant
+// to be: the tier sizes the batter head, and the second sizes whatever the
+// reachability reduction leaves of the resonant head. They were one number until
+// the cavity became modal, at which point widening the cavity basis silently
+// quadrupled the resonant bank. See DefaultResonantModeLimit.
 type PhysicalDrum struct {
-	Version      int          `json:"version"`
-	SampleRateHz float64      `json:"sampleRateHz"`
-	Quality      Quality      `json:"quality"`
-	Batter       Head         `json:"batter"`
-	Resonant     Head         `json:"resonant"`
-	Strike       Strike       `json:"strike"`
-	Cavity       Cavity       `json:"cavity"`
-	Nonlinearity Nonlinearity `json:"nonlinearity"`
-	Attack       Attack       `json:"attack"`
-	Pickup       Pickup       `json:"pickup"`
+	Version           int     `json:"version"`
+	SampleRateHz      float64 `json:"sampleRateHz"`
+	Quality           Quality `json:"quality"`
+	ResonantModeLimit int     `json:"resonantModeLimit"`
+	Batter            Head    `json:"batter"`
+	Resonant          Head         `json:"resonant"`
+	Strike            Strike       `json:"strike"`
+	Cavity            Cavity       `json:"cavity"`
+	Nonlinearity      Nonlinearity `json:"nonlinearity"`
+	Attack            Attack       `json:"attack"`
+	Pickup            Pickup       `json:"pickup"`
 }
 
 // Head describes one circular membrane/plate.
@@ -96,14 +157,20 @@ type PhysicalDrum struct {
 // frequency-independent floor and Loss2 an excess high-frequency loss; neither
 // can produce constant Q on its own, so both stay small.
 //
-// AxisymmetricOnly retains just the m = 0 modes. On the resonant head this is
-// free rather than approximate: nothing can excite an m > 0 resonant mode. The
-// strike force reaches only batter modes, and the cavity — the sole path between
-// the heads — couples through the swept area, which is exactly zero for every
-// m > 0 mode. Their displacement, their strain contribution to the tension law
-// and their stored energy are therefore all exactly zero for all time, so
-// dropping them is bit-exact and reclaims 44 of the resonant head's 48
-// oscillators. On the batter head it would silence most of the instrument.
+// AxisymmetricOnly retains only the modes the enclosed air can reach. On the
+// resonant head that is free rather than approximate: nothing can excite a
+// resonant mode the cavity does not couple to. The strike force reaches only
+// batter modes, and the cavity — the sole path between the heads — couples
+// through an overlap integral whose azimuthal factor is exactly zero unless the
+// head mode's azimuthal order matches a cavity mode's. Their displacement, their
+// strain contribution to the tension law and their stored energy are therefore
+// all exactly zero for all time, so dropping them is bit-exact. On the batter
+// head it would silence most of the instrument.
+//
+// With a one-state cavity the reachable set is m = 0 alone and the field is
+// literally "axisymmetric only". With transverse cavity modes it widens to the
+// azimuthal orders they carry — see retainCavityReachable for why the field is
+// widened rather than rejected.
 type Head struct {
 	Enabled                  bool                  `json:"enabled"`
 	AxisymmetricOnly         bool                  `json:"axisymmetricOnly"`
@@ -233,12 +300,23 @@ type Contact struct {
 // Cavity describes the lumped enclosed-air spring and its pressure loss.
 //
 // StiffnessScale multiplies the rigid-enclosure bulk stiffness rho*c^2/V. A real
-// shell is not rigid, the vent leaks, and the heads are not pistons, so the
-// rigid formula badly over-predicts how much the air stiffens the axisymmetric
-// modes; the scale is the one place that discrepancy is absorbed. It is a
+// shell is not rigid and its heads are not pistons, so the rigid formula badly
+// over-predicts how much the air stiffens the axisymmetric modes; the scale is
+// the one place that discrepancy is absorbed. The vent is a third candidate and a
+// small one: a port is a Helmholtz high-pass, and a 10 mm vent in this shell
+// tunes at 32 Hz and diverts under 5 % of the flow at the 150 Hz fundamental,
+// where the fitted scale is a factor of twelve. See docs/physical-cavity.md. It is a
 // fraction rather than a free gain because the rigid, sealed, piston-driven
 // enclosure is the stiffest case there is — 1 is the physical ceiling, not a
-// neutral setting.
+// neutral setting. It multiplies every cavity mode's stiffness alike, so the
+// ceiling keeps its meaning once the air carries more than one state.
+//
+// ModeCount is how many enclosed-air pressure states the cavity carries, chosen
+// in frequency order from the rigid-walled cylinder's axially uniform family; an
+// m > 0 mode costs two states for its cosine and sine members. 1 is the single
+// uniform compliance this model had before transverse modes existed, and is the
+// exact reproduction of it. See cavity.go for the basis and docs/physical-cavity.md
+// for what the transverse modes buy.
 type Cavity struct {
 	Enabled           bool    `json:"enabled"`
 	DepthM            float64 `json:"depthM"`
@@ -247,6 +325,7 @@ type Cavity struct {
 	AirDensityKgPerM3 float64 `json:"airDensityKgPerM3"`
 	SoundSpeedMPerS   float64 `json:"soundSpeedMPerS"`
 	LossPerSecond     float64 `json:"lossPerSecond"`
+	ModeCount         int     `json:"modeCount"`
 }
 
 // Nonlinearity controls the Berger-style tension increase shared by every
@@ -389,10 +468,11 @@ func DefaultPhysicalDrum() PhysicalDrum {
 	}
 
 	return PhysicalDrum{
-		Version:      ConfigVersion,
-		SampleRateHz: 48_000,
-		Quality:      QualityStandard,
-		Batter:       head,
+		Version:           ConfigVersion,
+		SampleRateHz:      48_000,
+		Quality:           QualityStandard,
+		ResonantModeLimit: DefaultResonantModeLimit,
+		Batter:            head,
 		Resonant: Head{
 			Enabled: true,
 			// Free: see the note on Head. The 44 oscillators this reclaims are
@@ -448,6 +528,16 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			AirDensityKgPerM3: 1.204,
 			SoundSpeedMPerS:   343,
 			LossPerSecond:     5,
+			// Six states: the uniform compliance, the (1,1) and (2,1)
+			// transverse pairs, and the axisymmetric (0,1). On the shipped
+			// 12-inch shell those sit at 0, 660, 1094 and 1373 Hz — the same
+			// j'_11, j'_21, j'_01 series docs/physical-excitation-gap.md states
+			// its hypothesis at, evaluated here at the shipped radius rather
+			// than the reference recording's unknown one. The count stops there
+			// because the next candidate, (3,1) at 1505 Hz, is above the top
+			// retained head mode and costs two more states to reach nothing.
+			// 1 reproduces the lumped model this replaced, exactly.
+			ModeCount: 6,
 		},
 		Nonlinearity: Nonlinearity{
 			Enabled: true,
@@ -555,6 +645,19 @@ func (d PhysicalDrum) Validate() error {
 		return fmt.Errorf("%w: unknown quality %q", ErrInvalidConfig, d.Quality)
 	}
 
+	// The floor is one oscillator rather than zero: a reduced head with an empty
+	// bank is a disabled head, and Head.Enabled already says that. The ceiling is
+	// the largest bank the reduction can select out of, above which the cap is
+	// inert.
+	if d.ResonantModeLimit < 1 || d.ResonantModeLimit > maxResonantModeLimit {
+		return fmt.Errorf(
+			"%w: resonantModeLimit=%d outside [1,%d]",
+			ErrInvalidConfig,
+			d.ResonantModeLimit,
+			maxResonantModeLimit,
+		)
+	}
+
 	if err := validateHead("batter", d.Batter, true); err != nil {
 		return err
 	}
@@ -612,6 +715,10 @@ func (d PhysicalDrum) Validate() error {
 	}
 
 	if err := finiteRange("cavity.lossPerSecond", d.Cavity.LossPerSecond, 0, 10_000); err != nil {
+		return err
+	}
+
+	if err := validateCavityModes(d); err != nil {
 		return err
 	}
 
@@ -705,6 +812,10 @@ func DecodeConfig(data []byte) (PhysicalDrum, error) {
 
 	if config.Version == multiBandAttackConfigVersion {
 		migrateV9Config(&config)
+	}
+
+	if config.Version == selectableContactVersion {
+		migrateV10Config(&config)
 	}
 
 	if err := config.Validate(); err != nil {
@@ -822,9 +933,37 @@ func migrateV8Config(config *PhysicalDrum) {
 // time and a document with a zero stiffness would fail validation the moment it
 // was switched — but they are inert until it is.
 func migrateV9Config(config *PhysicalDrum) {
-	config.Version = ConfigVersion
+	// Named, not ConfigVersion: see the note on migrateV6Config.
+	config.Version = selectableContactVersion
 	config.Strike.Contact = DefaultContact()
 	config.Strike.Contact.Model = ContactPrescribed
+}
+
+// migrateV10Config carries a version-10 document onto the modal cavity.
+//
+// This one can promise the old sound and does. Version 10's cavity was a single
+// uniform-pressure state, which is exactly the m = 0, j' = 0 member of the modal
+// basis: its coupling coefficient is the swept area, its natural frequency is
+// zero, and the k x k midpoint elimination collapses to the same single division
+// the rank-one form performed. So a count of 1 is a bit-exact reproduction rather
+// than an approximation of one, and a regression test renders both to prove it.
+//
+// Neither new field can be left at its zero value: an absent modeCount decodes to
+// 0, which is no cavity at all rather than the old one, and an absent
+// resonantModeLimit decodes to a bank of no oscillators. Both are written
+// explicitly. Newly created version-11 documents get the transverse modes from
+// DefaultPhysicalDrum instead.
+//
+// The old sound survives the resonant cap too, and for a reason rather than by
+// luck: with one uniform cavity state the reachable set is {0}, and the number of
+// axisymmetric modes in a bank of N slots grows only as about (2/pi)*sqrt(N) — 4,
+// 6 and 8 at the three tiers. DefaultResonantModeLimit is well above all of them,
+// so the cap cannot bind on any document this migration can produce, and the
+// render stays bit-identical rather than merely close.
+func migrateV10Config(config *PhysicalDrum) {
+	config.Version = ConfigVersion
+	config.Cavity.ModeCount = 1
+	config.ResonantModeLimit = DefaultResonantModeLimit
 }
 
 func validateContact(contact Contact) error {
@@ -882,6 +1021,56 @@ func validateContact(contact Contact) error {
 		1e-4,
 		0.5,
 	)
+}
+
+// validateCavityModes bounds the enclosed-air state count and keeps the retained
+// transverse modes inside the same anti-alias band the heads are held to.
+//
+// The count is capped because the midpoint elimination is a k x k dense solve in
+// the audio path. The frequency bound is the cavity's version of the head's
+// FrequencyLimitFraction: a cavity mode is an oscillator like any other, and one
+// placed near Nyquist would be as badly resolved as a head mode there. It cannot
+// trip on any shipped geometry — the eighth mode of a 12-inch shell is near
+// 1.6 kHz — but a small shell or a low sample rate can reach it.
+func validateCavityModes(config PhysicalDrum) error {
+	if config.Cavity.ModeCount < 1 || config.Cavity.ModeCount > maxCavityModes {
+		return fmt.Errorf(
+			"%w: cavity.modeCount=%d outside [1,%d]",
+			ErrInvalidConfig,
+			config.Cavity.ModeCount,
+			maxCavityModes,
+		)
+	}
+
+	modes, err := generateCavityModes(config)
+	if err != nil {
+		return err
+	}
+
+	if len(modes) != config.Cavity.ModeCount {
+		return fmt.Errorf(
+			"%w: cavity.modeCount=%d admits only %d modes",
+			ErrInvalidConfig,
+			config.Cavity.ModeCount,
+			len(modes),
+		)
+	}
+
+	limitHz := config.Batter.FrequencyLimitFraction * config.SampleRateHz
+	for _, mode := range modes {
+		if mode.FrequencyHz > limitHz {
+			return fmt.Errorf(
+				"%w: cavity mode (%d,%d) at %.1f Hz exceeds the anti-alias limit %.1f Hz",
+				ErrInvalidConfig,
+				mode.AzimuthalOrder,
+				mode.RadialOrder,
+				mode.FrequencyHz,
+				limitHz,
+			)
+		}
+	}
+
+	return nil
 }
 
 func validateNonlinearity(config PhysicalDrum) error {

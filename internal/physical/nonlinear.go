@@ -30,6 +30,16 @@ const (
 // U = beta S²/4. The smooth cap keeps every retained mode below Nyquist under
 // the validated MaximumTensionRatio without clipping stored energy.
 //
+// Worth being precise about what is approximated here, because it is not the
+// strain. S = sum_i Gamma_i q_i² with Gamma_i = M_i k_i²/sigma is *exact*: the
+// mode shapes are Dirichlet Laplacian eigenfunctions, so integral(grad phi_i .
+// grad phi_j)dA = k_i² integral(phi_i phi_j)dA vanishes off the diagonal and
+// the cross terms are identically zero. Writing g = |grad w|², the whole of
+// Berger's error lives in the *second* moment: the quartic membrane potential
+// goes as integral(g²)dA, while Berger uses (integral(g)dA)²/A, which is the
+// projection of g onto the constant function. That is a projection and not a
+// series truncation, which is why U_Berger <= U_exact always, by Cauchy-Schwarz.
+//
 // This reduction is mean-field, and that is a stated limitation rather than an
 // implementation detail. Collapsing the geometric nonlinearity onto one scalar
 // DeltaT over total strain detunes every mode by the same *relative* amount and
@@ -38,10 +48,20 @@ const (
 // consequence is that this nonlinearity contributes pitch and nothing else: it
 // generates no spectral content at all. The only things in the whole model that
 // can put energy at a given frequency are the contact force's spectrum and the
-// stochastic attack layer, and a real head struck hard does more than that — von
-// Kármán coupling puts content at 2f_i, at f_i ± f_j and through internal
-// resonances, which is part of why a hard hit is brighter and not merely
-// sharper (Dahl, TMH-QPSR 38(1) 1997). See docs/physical-nonlinearity.md
+// stochastic attack layer, and a real head struck hard does more than that.
+//
+// What it does is set by the parity of the potential. The membrane's geometric
+// nonlinearity is quartic and therefore *even* in the modal amplitudes, so the
+// force it produces is cubic and *odd*, and an odd force generates only odd
+// combinations: 3f_a, 2f_a ± f_b, f_a ± f_b ± f_c, and the internal resonances
+// those admit where the ratios come close to rational. It generates no second
+// harmonic and no simple sum or difference tone; 2f_a and f_a ± f_b would need
+// a quadratic term in the potential, which arises for shells, curved plates or
+// a static preload asymmetry and not for a flat tensioned head. Because the
+// lowest combination needs three frequency slots, one pump mode reaches only
+// f_a and 3f_a — at least two simultaneously excited modes are needed for
+// anything else. That cascade is part of why a hard hit is brighter and not
+// merely sharper (Dahl, TMH-QPSR 38(1) 1997). See docs/physical-nonlinearity.md
 // § "What the mean-field reduction cannot do".
 type nonlinearHead struct {
 	coefficientNPerM3 float64

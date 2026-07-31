@@ -292,7 +292,22 @@ $ <berger-eq>
 
 Near rest this is the ordinary Berger law $Delta T = beta S$ with
 $U = beta S^2 \/ 4$ --- the reduction family in which the short-time tension
-variation is proportional to the system's energy @marogna2010. The $tanh$ is a
+variation is proportional to the system's energy @marogna2010.
+
+The approximation here is worth locating precisely, because it is not in
+@strain-eq. That diagonal form is exact: the mode shapes are Dirichlet Laplacian
+eigenfunctions, so $integral nabla phi_i dot nabla phi_j dif A = k_i^2 integral
+phi_i phi_j dif A$ and the cross terms vanish identically. Writing
+$g = abs(nabla w)^2$, all of Berger's error lives in the *second* moment: the
+quartic membrane potential goes as $integral g^2 dif A$, while @berger-eq uses
+$(integral g dif A)^2 \/ A$, the projection of $g$ onto the constant function.
+Being a projection rather than a truncated series, it satisfies
+$U_"Berger" <= U_"exact"$ by Cauchy--Schwarz. That local quartic is itself only
+one bracket: full von Kármán condenses the in-plane displacement through an Airy
+stress function, giving a quartic with an inverse-biharmonic kernel, of which
+Berger is the *uniform* limit and $integral g^2 dif A$ the *local* one.
+
+The $tanh$ is a
 smooth cap rather than a clip, so it bounds
 the frequency excursion without discarding stored energy. Each mode is detuned by
 $Delta omega_i^2 = Delta T k_i^2 \/ sigma$.
@@ -732,18 +747,26 @@ property of the Berger and Kirchhoff--Carrier family @marogna2010. Stated
 sharply: the nonlinearity here produces zero spectral content, and the only
 mechanisms in the model that can deposit energy at a frequency are the contact
 force's own spectrum and the stochastic attack layer. A real head struck hard
-does not behave that way --- von Kármán coupling generates content at $2 f_i$, at
-$f_i plus.minus f_j$ and through internal resonances, and that cascade is part of
-why a hard hit is *brighter* and not merely sharper, which is measured in
-@dahl1997, a source cited here already for contact time and whose brightening
-this model attributes entirely to excitation and to the attack layer's velocity
-scaling. The exclusion is a choice rather than a necessity: nonlinear modal
+does not behave that way. The membrane's geometric nonlinearity comes from a
+quartic potential, $U prop integral (abs(nabla w)^2)^2 dif A$, which is *even* in
+the modal amplitudes; its force is therefore cubic and *odd*, and an odd force
+generates only odd combinations --- $3 f_a$, $2 f_a plus.minus f_b$,
+$f_a plus.minus f_b plus.minus f_c$ --- together with the internal resonances
+those admit. It generates no second harmonic and no simple sum or difference
+tone: $2 f_i$ and $f_i plus.minus f_j$ would require a *quadratic* term in the
+potential, which a shell or a curved plate has and a flat tensioned head does
+not. That cascade is part of why a hard hit is *brighter* and not merely sharper,
+which is measured in @dahl1997, a source cited here already for contact time and
+whose brightening this model attributes entirely to excitation and to the attack
+layer's velocity scaling. The exclusion is a choice rather than a necessity: nonlinear modal
 synthesis with the coupling terms retained now runs in real time @diaz2026,
 though full von Kármán coupling is $O(N^3)$ in the mode count, so at 96
 oscillators it would arrive needing a truncation of its own. It also bears
 directly on the question @levels leaves open. A nonlinear source term is a
 mechanism that deposits energy in a band the excitation comb has zeroed, because
-it does not read $abs(F(f))$ in that band at all.
+it does not read $abs(F(f))$ in that band at all --- though, the lowest
+combination consuming three slots, only from two or more simultaneously loud
+modes and never from the fundamental alone.
 
 *There is no shell, no bearing edge, no vent and no hardware.* These are real and
 audible on real drums; they are excluded because none of them can be calibrated

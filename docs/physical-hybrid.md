@@ -60,14 +60,19 @@ Two details worth keeping in mind:
 ## Spending the reclaimed budget
 
 `Quality.ModeLimit()` is effectively the batter head's budget: the resonant head
-runs the same selection and then keeps its handful of axisymmetric modes. The
-tiers doubled once the second full bank stopped being computed and discarded.
+runs the same selection and then keeps only the modes the enclosed air can reach.
+The tiers doubled once the second full bank stopped being computed and discarded.
 
-| Tier     | Batter | Resonant | Top mode |
-| -------- | ------ | -------- | -------- |
-| Draft    | 48     | 4        | 926 Hz   |
-| Standard | 96     | 6        | 1310 Hz  |
-| High     | 160    | 8        | 1671 Hz  |
+| Tier     | Batter | Resonant, lumped cavity | Resonant, shipped six-state cavity | Top mode |
+| -------- | ------ | ----------------------- | ---------------------------------- | -------- |
+| Draft    | 48     | 4                       | 20                                 | 929 Hz   |
+| Standard | 96     | 6                       | 28                                 | 1310 Hz  |
+| High     | 160    | 8                       | 38                                 | 1662 Hz  |
+
+The resonant column grew when P9/M2 gave the transverse cavity modes a coupling
+path to the \(m = 1\) and \(m = 2\) families; the reduction is still exact, and
+its cost is measured in
+[`physical-cavity.md`](physical-cavity.md#what-the-transverse-modes-cost).
 
 Those are the frequencies at the retuned 1250 N/m default; before it they were
 646, 915 and 1166 Hz. Raising the tuning raises the whole mode series, so the same

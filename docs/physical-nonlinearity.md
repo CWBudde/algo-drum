@@ -21,6 +21,18 @@ wavenumber, while \(\mu\) is head surface density. The Berger approximation
 adds one spatially uniform tension shared by every mode. The unbounded
 small-strain law is \(\Delta T=\beta S\), where \(\beta\) has units N/m³.
 
+It is worth being exact about which step here is the approximation, because it
+is **not** the strain. The diagonal form \(S=\sum_i\Gamma_i q_i^2\) is exact: the
+mode shapes are Dirichlet Laplacian eigenfunctions, so
+\(\int\nabla\varphi_i\cdot\nabla\varphi_j\,dA
+= k_i^2\int\varphi_i\varphi_j\,dA\) vanishes off the diagonal and the cross
+terms are identically zero. All of Berger's error lives in the _second_ moment.
+Writing \(g=|\nabla w|^2\), the quartic membrane potential goes as
+\(\int g^2\,dA\), while Berger uses \((\int g\,dA)^2/A\) — the projection of
+\(g\) onto the constant function. That it is a projection rather than a series
+truncation is why \(U_\mathrm{B}\le U_\mathrm{exact}\) always, by
+Cauchy–Schwarz.
+
 The real-time model uses the smooth bounded extension
 
 \[
@@ -71,14 +83,32 @@ hit with a glide on it, and the only two mechanisms in the whole model that can
 deposit energy at a given frequency remain the contact force's spectrum and the
 stochastic attack layer of [`physical-hybrid.md`](physical-hybrid.md).
 
-A real head struck hard does more. The full von Kármán membrane coupling is
-quadratic in the modal amplitudes, so a loudly driven mode \(i\) pumps content at
-\(2f_i\), at every \(f_i\pm f_j\), and — where the ratios are close to rational —
-through internal resonances that pour energy up the mode series over the length
-of the tail. That cascade is part of why a hard hit is _brighter_ and not merely
-sharper, which is exactly what Dahl 1997 measures on a 12-inch tom and which
+A real head struck hard does more, and what it does is fixed by the parity of the
+potential. The membrane's geometric nonlinearity comes from a **quartic**
+potential, \(U\propto\int(|\nabla w|^2)^2\,dA\). A quartic potential is _even_ in
+the modal amplitudes, so the force it produces is **cubic and odd**, and an odd
+force generates only **odd** combinations:
+
+\[
+3f_a,\qquad 2f_a\pm f_b,\qquad f_a\pm f_b\pm f_c,
+\]
+
+together with the internal resonances those admit where the ratios come close to
+rational, which pour energy up the mode series over the length of the tail. It
+generates **no second harmonic and no simple sum or difference tone**: \(2f_i\)
+and \(f_i\pm f_j\) require a _quadratic_ term in the potential, which arises for
+shells, curved plates, or a structure carrying a static preload asymmetry — none
+of which a flat tensioned head is. That cascade is part of why a hard hit is
+_brighter_ and not merely sharper, which is exactly what Dahl 1997 measures on a
+12-inch tom and which
 [`physical-sound-audit.md`](physical-sound-audit.md) already cites for the
 contact law. The reduced law reproduces the sharper and none of the brighter.
+
+The parity has a direct consequence for how many modes have to be driven. The
+lowest combination consumes three frequency slots, so a **single** pump mode
+reaches only \(f_a\) and \(3f_a\) and nothing between them; anything else needs
+at least **two** simultaneously excited modes, through \(2f_a\pm f_b\). A cubic
+coupling is not a mechanism that one loud fundamental can exploit on its own.
 
 ### A hypothesis this raises for the excitation gap
 
@@ -87,12 +117,21 @@ microphone geometry, strike footprint, cavity coupling and tension asymmetry by
 measurement, and lands on the contact force. It never considers a nonlinear
 source term, and the reason is structural: **the model has none to consider.**
 
-That leaves an untested mechanism. A quadratic modal coupling pumped by the very
-loud (0,1) deposits energy at frequencies chosen by the mode pairs, not by
-\(|F(f)|\) — so it does not care that the half-sine's zero comb has driven 547
-and 668 Hz to −309 dB, because it is not driven through the excitation at all. On
-the face of it that is the one known mechanism that could put resolvable content
-into a band the excitation has exactly zeroed.
+That leaves an untested mechanism. A cubic modal coupling deposits energy at
+frequencies chosen by the mode triples, not by \(|F(f)|\) — so it does not care
+that the half-sine's zero comb has driven 547 and 668 Hz to −309 dB, because it
+is not driven through the excitation at all. On the face of it that is the one
+known mechanism that could put resolvable content into a band the excitation has
+exactly zeroed.
+
+The parity constrains what would have to be retained for it to reach that band,
+and this is a design requirement rather than a tuning preference. The (0,1) alone
+cannot do it: at \(f_{01}\approx150\) Hz its only self-term is \(3f_{01}\approx
+450\) Hz, which falls _below_ 476–700 Hz. Filling the gap needs at least two
+distinct pump modes, through \(2f_a\pm f_b\) — so any truncation tested against
+this band must retain couplings among a set of at least two simultaneously loud
+low modes, and a truncation down to self-terms would be guaranteed to return
+zero for reasons that have nothing to do with the coupling's strength.
 
 This is offered as a hypothesis and not as a finding, in the same register as
 that document's transverse-cavity observation. It has not been measured here:
@@ -110,6 +149,17 @@ time today (Diaz, Constanzo & Sandler 2026, in
 coupling is \(O(N^3)\) in the mode count, so at 96 oscillators it would have to be
 truncated to the dominant couplings from the loudest low modes rather than
 retained wholesale.
+
+One caution on what such a change would and would not buy. The local quartic
+\(\int(|\nabla w|^2)^2\,dA\) is not exact von Kármán either. Full von Kármán
+condenses the in-plane displacement through an Airy stress function, giving a
+quartic with an inverse-biharmonic kernel; Berger is that family's _uniform_
+limit, with the in-plane stress spatially constant, and the local quartic is its
+_local_ limit, with the in-plane stress following the local slope and no elastic
+redistribution at all. The truth sits between those two brackets. What adopting
+the local quartic would claim is therefore the **structure** of the coupling —
+which frequencies can be generated, and by which mode sets — and not its
+magnitude. The coefficient is fitted either way.
 
 ## Discrete passivity
 

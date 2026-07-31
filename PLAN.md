@@ -1500,12 +1500,23 @@ success criterion 6 is to mean anything.
       that can put energy _at_ a frequency are the contact force's spectrum and
       the stochastic attack layer, and P8's entire spectral investigation is
       constrained by that without ever saying so.
-      Real heads struck hard do not behave this way. Von Kármán coupling
-      generates `2fᵢ`, `fᵢ ± fⱼ` and internal resonances between commensurate
-      modes, and Dahl (TMH-QPSR 38(1), 1997) measures the resulting brightening
-      _with striking force_ — which this model currently attributes entirely to
-      the contact pulse shortening with velocity and to the attack layer's
-      force-driven envelopes.
+      Real heads struck hard do not behave this way. The membrane's geometric
+      nonlinearity comes from a **quartic** potential, `U ∝ ∫(|∇w|²)²dA`, which
+      is _even_ in the modal amplitudes, so its force is **cubic and odd** and
+      generates only **odd** combinations — `3fₐ`, `2fₐ ± f_b`, `fₐ ± f_b ± f_c`
+      — plus the internal resonances those admit between near-commensurate
+      modes. It generates **no `2fᵢ` and no `fᵢ ± fⱼ`**: those need a _quadratic_
+      potential term, which a shell, a curved plate or a static preload
+      asymmetry has and a flat tensioned head does not. Dahl (TMH-QPSR 38(1),
+      1997) measures the resulting brightening _with striking force_ — which
+      this model currently attributes entirely to the contact pulse shortening
+      with velocity and to the attack layer's force-driven envelopes.
+      **Design requirement that falls out of the parity: `|P| ≥ 2`.** The lowest
+      combination consumes three frequency slots, so a single pump mode reaches
+      only `fₐ` and `3fₐ`. Any truncated coupling set `P` tested against a target
+      band must therefore contain at least two simultaneously loud modes; a
+      self-term-only truncation is guaranteed to return zero for reasons that
+      have nothing to do with the coupling's strength, and would falsify nothing.
       **Why this is now actionable rather than aspirational.** Diaz, Constanzo &
       Sandler, "nlm: Real-Time Non-linear Modal Synthesis in Max",
       arXiv:2603.10240 (2026), https://arxiv.org/abs/2603.10240, code at
@@ -1521,10 +1532,20 @@ success criterion 6 is to mean anything.
       affordable against a shipped worst case of **1.66× real time on js/wasm**
       (and ≈0.8× for two simultaneous toms, i.e. already unaffordable). So the
       item is not "add von Kármán"; it is **measure how few couplings carry the
-      audible effect** — pairwise terms from the three to five loudest low modes
-      first — with the cost re-measured on `js/wasm` under the same worst case
-      (retrigger before every chunk, nonlinear solve never idling) and the same
-      zero-allocation contract.
+      audible effect** — the terms among the three to five loudest low modes
+      first, never self-terms alone — with the cost re-measured on `js/wasm`
+      under the same worst case (retrigger before every chunk, nonlinear solve
+      never idling) and the same zero-allocation contract.
+      **And what such a change claims is structure, not magnitude.** The local
+      quartic `∫(|∇w|²)²dA` is not exact von Kármán either: full von Kármán
+      condenses the in-plane displacement through an Airy stress function, giving
+      a quartic with an inverse-biharmonic kernel. Berger is that family's
+      _uniform_ limit (in-plane stress spatially constant) and the local quartic
+      its _local_ limit (stress follows the local slope, no elastic
+      redistribution); the truth is bracketed between them. So the measurable
+      claim is which frequencies can be generated and by which mode sets. The
+      coefficient is fitted either way, which is also why the falsification below
+      is run at the passivity-bounded _maximum_ rather than at a fitted value.
       **Test P8's band first, because it is the cheapest falsification.**
       [`docs/physical-excitation-gap.md`](docs/physical-excitation-gap.md)
       eliminates mode count, microphone geometry, strike footprint, cavity
@@ -1533,8 +1554,12 @@ success criterion 6 is to mean anything.
       matters specifically: the excitation deficit is a **comb of exact zeros**
       at every `(k+½)/τ`, and a mode pumped by coupling from the loud (0,1) does
       not depend on `|F(f)|` at its own frequency, so it can be excited where the
-      comb has deleted the excitation outright. Hypothesis: pairwise coupling
-      from the (0,1) deposits energy at `2f₀₁` and at `f₀₁ ± fⱼ` inside the gap.
+      comb has deleted the excitation outright. Hypothesis: cubic coupling among
+      the loud low modes deposits energy at `2fₐ ± f_b` inside the gap. Note the
+      (0,1) cannot do this alone — at `f₀₁ ≈ 150 Hz` its only self-term is
+      `3f₀₁ ≈ 450 Hz`, _below_ the 476–700 Hz band — so the retained set must
+      pair it with at least one more loud mode for the experiment to mean
+      anything.
       Falsified if, with coupling at its passivity-bounded maximum, the partial
       count in 476–700 Hz measured by `cmd/fit-physical -report-only` against the
       fitted bank stays at 0 — the number every P8 experiment has returned.
@@ -1548,7 +1573,8 @@ success criterion 6 is to mean anything.
       [`docs/physical-nonlinearity.md`](docs/physical-nonlinearity.md) stops
       holding — and it must respect the anti-alias bound `r < 1/(4ν²) − 1`, which
       currently bounds a _uniform_ detune and says nothing about energy moved to a
-      sum frequency above Nyquist.
+      combination frequency above Nyquist — and a cubic term reaches `3f`, so the
+      worst case is three times the highest retained mode, not twice.
 
 - [ ] **M2: the cavity has no transverse modes, and that may be visible in the
       reference.** `Cavity` is one lumped compliance with one scalar pressure

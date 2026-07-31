@@ -56,7 +56,6 @@ type DoubleHead struct {
 	matrix21         []float64
 	matrix22         []float64
 	midpointDenom    []float64
-	pressureGain     []float64
 	strainWeight     []float64
 	strikeWeight     []float64
 	radiationHP      biquad.Section
@@ -73,29 +72,53 @@ type DoubleHead struct {
 	resonantRadiatedM3PerS2 float64
 	attackRadiatedM3PerS2   float64
 
+	// The enclosed air. cavityPressurePa holds one pressure state per retained
+	// cavity mode and cavityFlowPa its conjugate, so that (P_c, H_c) is a
+	// harmonic pair at the mode's own frequency; the uniform mode has zero
+	// frequency, so its H stays at zero and the pair degenerates into the single
+	// compliance the lumped model used to be.
+	//
+	// couplingFirst/couplingCount index a run of (cavity index, coefficient)
+	// pairs per head mode. The azimuthal selection rule makes that run short —
+	// a head mode couples only to cavity modes of its own azimuthal order — so
+	// the k x k system the midpoint solve assembles is mostly empty and is never
+	// walked densely.
+	cavityModes                []CavityMode
+	cavityPressurePa           []float64
+	cavityFlowPa               []float64
+	cavityMidpointPa           []float64
+	cavityDrive                []float64
+	cavityMatrix               []float64
+	couplingFirst              []int32
+	couplingCount              []int32
+	couplingCavity             []int32
+	couplingAreaM2             []float64
+	couplingGain               []float64
 	cavityVolumeM3             float64
 	cavityBulkStiffnessPaPerM3 float64
-	cavityPressurePa           float64
 	batterNonlinear            nonlinearHead
 	resonantNonlinear          nonlinearHead
 	nonlinearSolveIterations   int
 	energy                     float64
 }
 
-// NewDoubleHead precomputes two independently tuned modal banks and their
-// axisymmetric swept-volume coupling to the enclosed air.
+// NewDoubleHead precomputes two independently tuned modal banks, the enclosed
+// air's modal basis, and the overlap integrals that couple them.
 //
-// Every m > 0 mode has identically zero swept area, so its pressureGain below is
-// exactly zero and it neither drives the cavity nor is driven by it. That is
-// what makes Head.AxisymmetricOnly bit-exact rather than approximate. The
-// exactness is real, but it is a property of *this* reduction and not of a drum:
-// the cavity here is one lumped compliance, whose only observable is total swept
-// volume, and an m > 0 shape sweeps none. A real cylindrical cavity has
-// transverse modes — the j'_mn series — which have azimuthal structure of their
-// own and couple to m > 0 head modes with a coefficient that is not zero. Under
-// that model the m > 0 modes would be coupled and dropping them would change the
-// sound. See docs/physical-cavity.md and the transverse-cavity hypothesis in
-// docs/physical-excitation-gap.md.
+// The coupling coefficient is the overlap of a head mode shape against a cavity
+// mode shape over the head's disc. Its azimuthal factor vanishes unless the two
+// azimuthal orders match, which is the only reason this is affordable: a head
+// mode couples to at most one cavity mode per radial order rather than to all of
+// them. Against the uniform cavity mode the overlap collapses to the mode's
+// signed swept area, which is why a one-mode cavity is the lumped compliance this
+// model used to carry, exactly and not approximately.
+//
+// With only the uniform mode retained, every m > 0 head mode has an identically
+// zero coefficient and neither drives the air nor is driven by it — the property
+// Head.AxisymmetricOnly rests on. That was never a fact about drums: a real
+// cylindrical cavity has transverse modes, the j'_mn series, and those couple to
+// m > 0 head modes with a coefficient that is not zero. Enabling them is what
+// Cavity.ModeCount above 1 does. See docs/physical-cavity.md.
 func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -131,8 +154,9 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 		matrix21:         make([]float64, modeCount),
 		matrix22:         make([]float64, modeCount),
 		midpointDenom:    make([]float64, modeCount),
-		pressureGain:     make([]float64, modeCount),
 		strainWeight:     make([]float64, modeCount),
+		couplingFirst:    make([]int32, modeCount),
+		couplingCount:    make([]int32, modeCount),
 		radiationHP: biquad.Section{Coefficients: design.Highpass(
 			min(config.Pickup.HighpassHz, config.SampleRateHz*0.45),
 			1/math.Sqrt2,
@@ -171,9 +195,6 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 			0.5*mode.AngularFrequency*mode.AngularFrequency*timeStep +
 			2*mode.DecayRatePerSecond
 		model.midpointDenom[index] = denominator
-		effectiveSweptArea := config.Cavity.Coupling01 * mode.SweptAreaM2
-		model.pressureGain[index] = effectiveSweptArea /
-			(mode.ModalMassKg * denominator)
 
 		surfaceDensity := config.Batter.SurfaceDensityKgPerM2
 		if index >= len(batterModes) {
@@ -201,14 +222,13 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 
 	model.cavityVolumeM3 = math.Pi * config.Batter.RadiusM *
 		config.Batter.RadiusM * config.Cavity.DepthM
-	if config.Cavity.Enabled {
-		model.cavityBulkStiffnessPaPerM3 =
-			config.Cavity.StiffnessScale *
-				config.Cavity.AirDensityKgPerM3 *
-				config.Cavity.SoundSpeedMPerS *
-				config.Cavity.SoundSpeedMPerS /
-				model.cavityVolumeM3
+
+	cavityModes, err := generateCavityModes(config)
+	if err != nil {
+		return nil, fmt.Errorf("cavity modes: %w", err)
 	}
+
+	model.installCavity(config, cavityModes, len(batterModes))
 
 	// Batter modes only: the stick never touches the resonant head, and the
 	// cavity that couples them carries no transverse force to the strike point.
@@ -221,6 +241,67 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 	model.contact.setSubsteps(strikePointMassKg(batterModes))
 
 	return model, nil
+}
+
+// installCavity stores the enclosed-air basis and precomputes every non-zero
+// head/cavity overlap integral, grouped so that each head mode owns a contiguous
+// run. Cavity modes are ordered by azimuthal family, so a head mode's partners
+// are always adjacent and the run is a slice rather than a scatter.
+func (d *DoubleHead) installCavity(
+	config PhysicalDrum,
+	cavityModes []CavityMode,
+	batterModeCount int,
+) {
+	cavityCount := len(cavityModes)
+	d.cavityModes = cavityModes
+	d.cavityPressurePa = make([]float64, cavityCount)
+	d.cavityFlowPa = make([]float64, cavityCount)
+	d.cavityMidpointPa = make([]float64, cavityCount)
+	d.cavityDrive = make([]float64, cavityCount)
+	d.cavityMatrix = make([]float64, cavityCount*cavityCount)
+	d.cavityBulkStiffnessPaPerM3 = cavityModes[0].StiffnessPaPerM3
+
+	shellRadiusM := config.Batter.RadiusM
+	for index, mode := range d.modes {
+		head := config.Batter
+		if index >= batterModeCount {
+			head = config.Resonant
+		}
+
+		d.couplingFirst[index] = int32(len(d.couplingAreaM2))
+
+		for cavityIndex, cavity := range cavityModes {
+			coefficient := HeadCavityCouplingM2(head, shellRadiusM, mode, cavity)
+			if coefficient == 0 {
+				continue
+			}
+
+			// Scaling drive and feedback by the same product control is what
+			// keeps the coupling passive at any setting; see docs.
+			d.couplingAreaM2 = append(
+				d.couplingAreaM2,
+				config.Cavity.Coupling01*coefficient,
+			)
+			d.couplingCavity = append(d.couplingCavity, int32(cavityIndex))
+		}
+
+		d.couplingCount[index] = int32(len(d.couplingAreaM2)) -
+			d.couplingFirst[index]
+	}
+
+	d.couplingGain = make([]float64, len(d.couplingAreaM2))
+}
+
+// CavityModeCount reports the retained enclosed-air pressure states.
+func (d *DoubleHead) CavityModeCount() int { return len(d.cavityModes) }
+
+// CavityMode returns immutable enclosed-air mode metadata by value.
+func (d *DoubleHead) CavityMode(index int) (CavityMode, bool) {
+	if index < 0 || index >= len(d.cavityModes) {
+		return CavityMode{}, false
+	}
+
+	return d.cavityModes[index], true
 }
 
 // Reconfigure safely applies tuning, shell-depth, air, coupling, loss, strike,
@@ -323,7 +404,9 @@ func (d *DoubleHead) Reset() {
 	clear(d.midpointVelocity)
 	d.contact.reset()
 	d.attackRadiatedM3PerS2 = 0
-	d.cavityPressurePa = 0
+	clear(d.cavityPressurePa)
+	clear(d.cavityFlowPa)
+	clear(d.cavityMidpointPa)
 	d.batterNonlinear.strainMeasureM2 = 0
 	d.resonantNonlinear.strainMeasureM2 = 0
 	d.nonlinearSolveIterations = 0
@@ -422,7 +505,6 @@ func (d *DoubleHead) tickCoupled(forceN float64) DoubleHeadOutput {
 	resonantTension := d.resonantNonlinear.tensionAt(
 		d.resonantNonlinear.strainMeasureM2,
 	)
-	pressureMidpoint := 0.0
 	batterStrain := d.batterNonlinear.strainMeasureM2
 	resonantStrain := d.resonantNonlinear.strainMeasureM2
 
@@ -434,7 +516,7 @@ func (d *DoubleHead) tickCoupled(forceN float64) DoubleHeadOutput {
 	iterationsUsed := 0
 	for range iterationCount {
 		iterationsUsed++
-		batterStrain, resonantStrain, pressureMidpoint = d.solveMidpoint(forceN, batterTension, resonantTension)
+		batterStrain, resonantStrain = d.solveMidpoint(forceN, batterTension, resonantTension)
 		nextBatterTension := d.batterNonlinear.discreteTension(
 			d.batterNonlinear.strainMeasureM2,
 			batterStrain,
@@ -495,7 +577,17 @@ func (d *DoubleHead) tickCoupled(forceN float64) DoubleHeadOutput {
 	d.resonantRadiatedM3PerS2 = resonantRadiated
 
 	if d.config.Cavity.Enabled {
-		d.cavityPressurePa = 2*pressureMidpoint - d.cavityPressurePa
+		timeStep := 1 / d.config.SampleRateHz
+		for index := range d.cavityModes {
+			midpoint := d.cavityMidpointPa[index]
+			d.cavityPressurePa[index] = 2*midpoint - d.cavityPressurePa[index]
+			// Hdot = -omega*P integrated by the same midpoint rule, so
+			// H_new = H_old - omega*dt*P_mid. The uniform mode has omega = 0 and
+			// its H therefore never leaves zero, which is what collapses this
+			// pair back onto the lumped compliance.
+			d.cavityFlowPa[index] -= d.cavityModes[index].AngularFrequency *
+				timeStep * midpoint
+		}
 	}
 
 	d.batterNonlinear.strainMeasureM2 = batterStrain
@@ -506,11 +598,9 @@ func (d *DoubleHead) tickCoupled(forceN float64) DoubleHeadOutput {
 
 func (d *DoubleHead) solveMidpoint(
 	forceN, batterTensionNPerM, resonantTensionNPerM float64,
-) (float64, float64, float64) {
+) (float64, float64) {
 	timeStep := 1 / d.config.SampleRateHz
 	inverseTimeStep := d.config.SampleRateHz
-	sweptMidpointVelocity := 0.0
-	pressureFeedback := 0.0
 
 	// Hoisted out of the loop below: this is the innermost code the model has,
 	// run once per mode per nonlinear iteration per sample, and each d.config
@@ -518,7 +608,9 @@ func (d *DoubleHead) solveMidpoint(
 	batterDensity := d.config.Batter.SurfaceDensityKgPerM2
 	resonantDensity := d.config.Resonant.SurfaceDensityKgPerM2
 
-	coupling := d.config.Cavity.Coupling01
+	cavityCount := len(d.cavityModes)
+	clear(d.cavityDrive)
+	clear(d.cavityMatrix)
 
 	for index := range d.modes {
 		mode := &d.modes[index]
@@ -546,29 +638,53 @@ func (d *DoubleHead) solveMidpoint(
 
 		uncoupledMidpointVelocity := numerator / denominator
 		d.midpointVelocity[index] = uncoupledMidpointVelocity
-		effectiveSweptArea := coupling * mode.SweptAreaM2
-		d.pressureGain[index] = effectiveSweptArea /
-			(mode.ModalMassKg * denominator)
-		sweptMidpointVelocity += effectiveSweptArea * uncoupledMidpointVelocity
-		pressureFeedback += effectiveSweptArea * d.pressureGain[index]
+
+		first := int(d.couplingFirst[index])
+
+		last := first + int(d.couplingCount[index])
+		if first == last {
+			continue
+		}
+
+		modalDenominator := mode.ModalMassKg * denominator
+		for slot := first; slot < last; slot++ {
+			d.couplingGain[slot] = d.couplingAreaM2[slot] / modalDenominator
+		}
+
+		// Both accumulations are restricted to this mode's own azimuthal family,
+		// so the k x k feedback matrix is filled block by block and the loop is
+		// linear in the retained mode count exactly as the rank-one form was.
+		for slot := first; slot < last; slot++ {
+			area := d.couplingAreaM2[slot]
+			row := int(d.couplingCavity[slot]) * cavityCount
+
+			d.cavityDrive[int(d.couplingCavity[slot])] += area *
+				uncoupledMidpointVelocity
+			for other := first; other < last; other++ {
+				d.cavityMatrix[row+int(d.couplingCavity[other])] += area *
+					d.couplingGain[other]
+			}
+		}
 	}
 
-	pressureMidpoint := 0.0
-
 	if d.config.Cavity.Enabled {
-		stiffness := d.cavityBulkStiffnessPaPerM3
-		pressureMidpoint = (2*d.cavityPressurePa*inverseTimeStep +
-			stiffness*sweptMidpointVelocity) /
-			(2*inverseTimeStep + d.config.Cavity.LossPerSecond +
-				stiffness*pressureFeedback)
+		d.solveCavityMidpoint(timeStep, inverseTimeStep)
+	} else {
+		clear(d.cavityMidpointPa)
 	}
 
 	batterStrain := 0.0
 	resonantStrain := 0.0
 
 	for index := range d.modes {
-		midpointVelocity := d.midpointVelocity[index] -
-			d.pressureGain[index]*pressureMidpoint
+		midpointVelocity := d.midpointVelocity[index]
+
+		first := int(d.couplingFirst[index])
+		for slot, last := first, first+int(d.couplingCount[index]); slot < last; slot++ {
+			midpointVelocity -= d.couplingGain[slot] *
+				d.cavityMidpointPa[int(d.couplingCavity[slot])]
+		}
+
 		d.midpointVelocity[index] = midpointVelocity
 		newDisplacement := d.displacement[index] +
 			timeStep*midpointVelocity
@@ -582,7 +698,75 @@ func (d *DoubleHead) solveMidpoint(
 		}
 	}
 
-	return batterStrain, resonantStrain, pressureMidpoint
+	return batterStrain, resonantStrain
+}
+
+// solveCavityMidpoint finishes the implicit-midpoint elimination of the enclosed
+// air. Applying the rule to
+//
+//	Pdot_c = K_c sum_i C_ic qdot_i + omega_c H_c - lambda P_c,
+//	Hdot_c = -omega_c P_c
+//
+// and substituting the head modes' own midpoint velocities gives, for each
+// cavity mode,
+//
+//	P_c (2/dt + lambda + omega_c^2 dt/2) + K_c sum_b sum_i C_ic C_ib/(M_i D_i) P_b
+//	  = 2 P_c^old/dt + omega_c H_c^old + K_c sum_i C_ic u_i,
+//
+// which is the k x k Woodbury form of what used to be one Sherman-Morrison
+// division. The matrix is diag(K_c) times a symmetric positive definite matrix —
+// the diagonal term is strictly positive and the coupling block is a Gram matrix
+// with positive weights 1/(M_i D_i) — so every pivot is positive and elimination
+// without pivoting is safe. At k = 1 it is literally the old single division,
+// which is what keeps a one-mode cavity bit-exact.
+func (d *DoubleHead) solveCavityMidpoint(timeStep, inverseTimeStep float64) {
+	cavityCount := len(d.cavityModes)
+	lossPerSecond := d.config.Cavity.LossPerSecond
+
+	for index := range cavityCount {
+		mode := &d.cavityModes[index]
+		row := index * cavityCount
+
+		stiffness := mode.StiffnessPaPerM3
+		for column := range cavityCount {
+			d.cavityMatrix[row+column] *= stiffness
+		}
+
+		d.cavityMatrix[row+index] += 2*inverseTimeStep + lossPerSecond +
+			0.5*mode.AngularFrequency*mode.AngularFrequency*timeStep
+		d.cavityDrive[index] = 2*d.cavityPressurePa[index]*inverseTimeStep +
+			mode.AngularFrequency*d.cavityFlowPa[index] +
+			stiffness*d.cavityDrive[index]
+	}
+
+	for pivotIndex := range cavityCount {
+		pivot := d.cavityMatrix[pivotIndex*cavityCount+pivotIndex]
+		for rowIndex := pivotIndex + 1; rowIndex < cavityCount; rowIndex++ {
+			leading := d.cavityMatrix[rowIndex*cavityCount+pivotIndex]
+			if leading == 0 {
+				continue
+			}
+
+			factor := leading / pivot
+			for column := pivotIndex + 1; column < cavityCount; column++ {
+				d.cavityMatrix[rowIndex*cavityCount+column] -= factor *
+					d.cavityMatrix[pivotIndex*cavityCount+column]
+			}
+
+			d.cavityDrive[rowIndex] -= factor * d.cavityDrive[pivotIndex]
+		}
+	}
+
+	for rowIndex := cavityCount - 1; rowIndex >= 0; rowIndex-- {
+		sum := d.cavityDrive[rowIndex]
+		for column := rowIndex + 1; column < cavityCount; column++ {
+			sum -= d.cavityMatrix[rowIndex*cavityCount+column] *
+				d.cavityMidpointPa[column]
+		}
+
+		d.cavityMidpointPa[rowIndex] = sum /
+			d.cavityMatrix[rowIndex*cavityCount+rowIndex]
+	}
 }
 
 func tensionConverged(current, next, maximum float64) bool {
@@ -637,15 +821,25 @@ func (d *DoubleHead) observe() DoubleHeadOutput {
 		output.NonlinearPotentialEnergyJ
 	output.NonlinearSolveIterations = d.nonlinearSolveIterations
 
-	if d.cavityBulkStiffnessPaPerM3 > 0 {
-		output.CavityMechanicalEnergyJ = 0.5 *
-			d.cavityPressurePa * d.cavityPressurePa /
-			d.cavityBulkStiffnessPaPerM3
+	// One term per cavity mode, each the same p^2/(2K) the lumped compliance
+	// stored plus the matching term for its conjugate state. Together with the
+	// heads' mechanical energy this is the quantity the coupled system conserves
+	// exactly when every loss is zero.
+	for index := range d.cavityModes {
+		stiffness := d.cavityModes[index].StiffnessPaPerM3
+		if stiffness <= 0 {
+			continue
+		}
+
+		pressure := d.cavityPressurePa[index]
+		flow := d.cavityFlowPa[index]
+		output.CavityMechanicalEnergyJ += 0.5*pressure*pressure/stiffness +
+			0.5*flow*flow/stiffness
 	}
 
 	output.TotalMechanicalEnergyJ = output.HeadMechanicalEnergyJ +
 		output.CavityMechanicalEnergyJ
-	output.CavityPressurePa = d.cavityPressurePa
+	output.CavityPressurePa = d.cavityPressurePa[0]
 	output.BatterRawRadiated = d.batterRadiatedM3PerS2
 	output.ResonantRawRadiated = d.resonantRadiatedM3PerS2
 	output.AttackRawRadiated = d.attackRadiatedM3PerS2

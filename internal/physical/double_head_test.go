@@ -233,7 +233,7 @@ func TestDoubleHeadInPhaseAndOutOfPhaseModesSplit(t *testing.T) {
 	outOfPhase.displacement[resonantFirst] = -displacement
 	inPhase.displacement[0] = displacement
 	inPhase.displacement[resonantFirst] = displacement
-	inPhase.cavityPressurePa = inPhase.cavityBulkStiffnessPaPerM3 *
+	inPhase.cavityPressurePa[0] = inPhase.cavityBulkStiffnessPaPerM3 *
 		(inPhase.modes[0].SweptAreaM2*displacement +
 			inPhase.modes[resonantFirst].SweptAreaM2*displacement)
 
@@ -253,10 +253,10 @@ func TestDoubleHeadInPhaseAndOutOfPhaseModesSplit(t *testing.T) {
 			outCrossing,
 		)
 	}
-	if math.Abs(outOfPhase.cavityPressurePa) > 1e-9 {
+	if math.Abs(outOfPhase.cavityPressurePa[0]) > 1e-9 {
 		t.Fatalf(
 			"ideal out-of-phase pair generated cavity pressure %v",
-			outOfPhase.cavityPressurePa,
+			outOfPhase.cavityPressurePa[0],
 		)
 	}
 }
