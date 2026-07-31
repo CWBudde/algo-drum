@@ -103,6 +103,12 @@ type SearchInfo struct {
 	// LossScale is 1 for every run that stays inside the shipped ranges, and
 	// anything else marks a report whose bank the product cannot express.
 	LossScale float64 `json:"lossScale,omitempty"`
+	// SeedErrorCents records what the analytic pre-solve achieved for each
+	// seeded restart, best first. It is the honest caption for a seeded run: a
+	// low number here says the starting point matched the reference's partial
+	// frequencies, and nothing whatever about the fit that followed.
+	SeedErrorCents []float64 `json:"seedErrorCents,omitempty"`
+	SeedWidth      float64   `json:"seedWidth,omitempty"`
 	// Interrupted marks a report the search did not finish producing. It also
 	// qualifies Evaluations, which counts mayfly's calls rather than rendered
 	// candidates: after an interrupt the objective refuses work without
@@ -127,6 +133,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 		"stick mass in grams, or 0 for the configured default")
 	lossScale := flags.Float64("loss-scale", 1,
 		"extra multiplier on every head loss rate, to search past DAMP's own range")
+	seededRestarts := flags.Int("seeded-restarts", 0,
+		"start this many restarts from an analytic solve for the reference's partial frequencies")
+	seedWidth := flags.Float64("seed-width", 0.25,
+		"half-width of the box a seeded restart searches around its seed")
 	variant := flags.String("variant", "ma", "mayfly variant: ma, desma, olce, eobbma, gsasma, mpma or aoblmoa")
 	iterations := flags.Int("iterations", 150, "mayfly iterations per restart")
 	population := flags.Int("pop", 20, "mayfly males, and as many females")
@@ -194,6 +204,17 @@ func run(args []string, stdout, stderr io.Writer) error {
 	// modes are gone before the first analysis window closes.
 	if *lossScale <= 0.01 || *lossScale > 100 {
 		return fmt.Errorf("%w: loss scale %v", errInvalidFitOption, *lossScale)
+	}
+
+	if *seededRestarts < 0 {
+		return fmt.Errorf("%w: seeded restarts %d", errInvalidFitOption, *seededRestarts)
+	}
+
+	// Half a cube is the whole cube, so anything at or past it is not a box and
+	// is rejected rather than silently ignored.
+	if *seededRestarts > 0 && (*seedWidth <= 0 || *seedWidth >= 0.5) {
+		return fmt.Errorf("%w: seed width %v is not inside (0, 0.5)",
+			errInvalidFitOption, *seedWidth)
 	}
 
 	if *restarts == 0 {
@@ -280,10 +301,39 @@ func run(args []string, stdout, stderr io.Writer) error {
 		len(target.Partials), fundamentalHz(target), target.GlideCents)
 	_, _ = fmt.Fprintf(stderr, "baseline:  %s\n", summarize(report.Baseline.Terms))
 
+	// The pre-solve is analytic and takes a second or two, so it runs before the
+	// checkpoint is opened and its outcome goes into the fingerprint: a resume
+	// that reproduced different seeds would be resuming a different search.
+	var seeds []seedCandidate
+
+	if !*reportOnly && *seededRestarts > 0 {
+		seeds = frequencySeeds(target, bank, free, min(*seededRestarts, *restarts),
+			options.PartialFloorDB, reference.SampleRateHz,
+			rand.New(rand.NewSource(*seed)), defaultSeedBudget)
+
+		for index, candidate := range seeds {
+			_, _ = fmt.Fprintf(stderr, "  seed %d: %.1f cents from the reference's partials\n",
+				index+1, candidate.errorCents)
+
+			report.Search.SeedErrorCents = append(report.Search.SeedErrorCents, candidate.errorCents)
+		}
+
+		report.Search.SeedWidth = *seedWidth
+	}
+
+	// Only meaningful when something is seeded, so an unseeded run does not
+	// carry a width none of its restarts ever used into the fingerprint.
+	fingerprintSeedWidth := 0.0
+	if len(seeds) > 0 {
+		fingerprintSeedWidth = *seedWidth
+	}
+
 	if !*reportOnly {
 		// The baseline goes into the fingerprint, so it has to be measured
 		// before the checkpoint is opened — which it is, just above.
 		checkpoint, err := loadStore(*checkpointPath, Fingerprint{
+			SeededRestarts:  len(seeds),
+			SeedWidth:       fingerprintSeedWidth,
 			Reference:       *referencePath,
 			Channel:         *channel,
 			Contact:         *contact,
@@ -352,7 +402,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 		best, evaluations, err := search(
 			ctx, base, *variant, *iterations, *population, *restarts, *seed,
-			stderr, progress, checkpoint,
+			seeds, *seedWidth, stderr, progress, checkpoint,
 		)
 		if err != nil {
 			return err
@@ -451,6 +501,8 @@ func search(
 	variant string,
 	iterations, population, restarts int,
 	seed int64,
+	seeds []seedCandidate,
+	seedWidth float64,
 	stderr io.Writer,
 	progress *tracker,
 	checkpoint *store,
@@ -514,10 +566,26 @@ func search(
 				return
 			}
 
+			// Seeded restarts come first, so an -seeded-restarts below the
+			// restart count leaves the remainder searching the whole cube. That
+			// mix is the point: a seed is a hypothesis about where to look, and
+			// the unseeded restarts are what would find it wrong.
+			//
+			// The box is applied here and nowhere else, so the position that
+			// reaches the objective, the progress tracker, the checkpoint and
+			// the report is always an ordinary bank position. A stored point
+			// therefore means the same thing whether its restart was seeded.
+			warp := boxAround(nil, 0)
+			if run < len(seeds) {
+				warp = boxAround(seeds[run].position, seedWidth)
+			}
+
 			// Progress is reported from inside the objective because mayfly has
 			// no per-iteration hook: without this the run says nothing until a
 			// whole restart finishes.
-			objective := func(position []float64) float64 {
+			objective := func(raw []float64) float64 {
+				position := warp(raw)
+
 				// Cancellation is cooperative for the same reason: Optimize
 				// cannot be interrupted, so an abandoned evaluation returns the
 				// cost of a configuration that is not a drum. mayfly keeps its
@@ -560,7 +628,7 @@ func search(
 				return
 			}
 
-			candidate, err := local.describe(result.GlobalBest.Position)
+			candidate, err := local.describe(warp(result.GlobalBest.Position))
 			if err != nil {
 				results[run] = outcome{err: err}
 

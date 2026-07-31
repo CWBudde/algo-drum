@@ -74,6 +74,8 @@ type Fingerprint struct {
 	Contact         string             `json:"contact,omitempty"`
 	MalletGrams     float64            `json:"malletGrams,omitempty"`
 	LossScale       float64            `json:"lossScale,omitempty"`
+	SeededRestarts  int                `json:"seededRestarts,omitempty"`
+	SeedWidth       float64            `json:"seedWidth,omitempty"`
 	Quality         string             `json:"quality"`
 	Variant         string             `json:"variant"`
 	DurationSeconds float64            `json:"durationSeconds"`
@@ -98,6 +100,8 @@ func (f Fingerprint) disagreement(other Fingerprint) string {
 		{"contact", f.Contact == other.Contact},
 		{"mallet mass", f.MalletGrams == other.MalletGrams},
 		{"loss scale", f.LossScale == other.LossScale},
+		{"seeded restarts", f.SeededRestarts == other.SeededRestarts},
+		{"seed width", f.SeedWidth == other.SeedWidth},
 		{"quality", f.Quality == other.Quality},
 		{"variant", f.Variant == other.Variant},
 		{"duration", f.DurationSeconds == other.DurationSeconds},
