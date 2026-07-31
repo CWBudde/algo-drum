@@ -57,11 +57,12 @@ loudness carries no information at all.
 
 ### The distance
 
-Eight terms, each in its own perceptual unit so it can be read against a
+Nine terms, each in its own perceptual unit so it can be read against a
 tolerance rather than only against another run. The weight on each is the
 reciprocal of that term's "clearly wrong" threshold — 25 cents of pitch, 3 dB
 of partial balance, a factor of 1.4 in ring time, 4 dB of spectral shape, 3 dB
-of envelope, 40 cents of glide, 6 dB of attack balance — so a just-audible
+of envelope, 40 cents of glide, 6 dB of attack balance, and the two partial-
+coverage shares below — so a just-audible
 error anywhere contributes about the same amount, and the sum means something.
 
 Partials are identified greedily by closeness in cents, each candidate claimed
@@ -103,7 +104,7 @@ partial in the wrong place therefore scored _better_ on three of the nine
 terms than any real drum can — and the search found it immediately, reaching
 11.2 against the shipped default's 39.2 from a render that sounded like
 nothing. Each partial term is now blended against a fixed penalty in proportion
-to the unmatched reference energy, so a partial that is missing costs what a
+to the unmatched share of the reference, so a partial that is missing costs what a
 partial that is present but wrong costs.
 `TestSilenceIsNeverCheaperThanADrum` pins it.
 
@@ -130,7 +131,7 @@ but compressed enough that six missing quiet partials cost 54 % rather than
 
 **And the mirror of it: invented partials were free.** Making missing partials
 expensive without charging for invented ones just moves the degenerate optimum
-from too few modes to too many. `matchPartials` iterates the *reference*, so a
+from too few modes to too many. `matchPartials` iterates the _reference_, so a
 candidate partial with no reference counterpart is invisible to every partial
 term and reaches the total only through the spectral envelope. The first run
 under the corrected weighting demonstrated it within six minutes: the candidate

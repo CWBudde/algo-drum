@@ -20,11 +20,11 @@ check-formatted:
 
 # Run Go linter (WASM target)
 lint:
-    GOOS=js GOARCH=wasm GOCACHE="${GOCACHE:-/tmp/gocache}" GOMODCACHE="${GOMODCACHE:-/tmp/gomodcache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/golangci-lint-cache}" golangci-lint run --timeout=2m ./...
+    GOOS=js GOARCH=wasm GOCACHE="${GOCACHE:-/tmp/gocache}" GOMODCACHE="${GOMODCACHE:-/tmp/gomodcache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/golangci-lint-cache}" golangci-lint run --build-tags purego --timeout=2m ./...
 
 # Run Go linter with auto-fix (WASM target)
 lint-fix:
-    GOOS=js GOARCH=wasm GOCACHE="${GOCACHE:-/tmp/gocache}" GOMODCACHE="${GOMODCACHE:-/tmp/gomodcache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/golangci-lint-cache}" golangci-lint run --fix --timeout=2m ./...
+    GOOS=js GOARCH=wasm GOCACHE="${GOCACHE:-/tmp/gocache}" GOMODCACHE="${GOMODCACHE:-/tmp/gomodcache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/golangci-lint-cache}" golangci-lint run --build-tags purego --fix --timeout=2m ./...
 
 # Run the Go test suite
 test:
@@ -70,6 +70,14 @@ fit-physical reference="reference/tom.wav" *args="":
 # Fail if the physical-model calibration metrics are stale
 check-physical-reference: gen-physical-reference
     git diff --exit-code testdata/physical-reference-v2.json
+
+# Regenerate the paper's figures from a fit report.
+#
+# `purego` selects matplotlib-go's pure-Go rasteriser, so this needs no FreeType
+# headers. comb.png is not produced here: it is measured from the two channels of
+# the recording, which the repository does not contain.
+paper-figures report="fit-v4-hertzian.json":
+    go run -tags purego ./cmd/paper-figures -report {{report}} -o docs/paper/figures
 
 # Build the model-matching paper (docs/paper/paper.typ -> PDF).
 #
