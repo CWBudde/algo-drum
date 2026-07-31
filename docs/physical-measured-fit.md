@@ -517,11 +517,20 @@ loss makes partial decay _worse_ (0.966 → 1.295) while the spectral envelope s
 flat at ~13 dB and never approaches its 4 dB gate. The envelope's excess is not
 made of over-long modes, so it will not be fixed by damping at all.
 
-One caveat, stated because it limits the claim: at this short budget `DAMP` does
-not pin even in the control — it fits 0.475, not the 0.276 the long run found. So
-this establishes that the bound is not _generally_ binding; it does not reproduce
-that particular pin, which may belong to the deeper optimum. A full-budget run at
-`-loss-scale 0.25` is the deciding test.
+At this short budget `DAMP` does not pin even in the control — it fits 0.475, not
+the 0.276 the long run found — so the sweep alone could not speak to that
+particular pin. A full-budget run at `-loss-scale 0.25` settles it:
+
+| Run                 | Restarts        | Best       | `DAMP` (norm)    | Effective damping |
+| ------------------- | --------------- | ---------- | ---------------- | ----------------- |
+| v4, loss scale 1    | stopped at 47 % | **11.630** | 0.276 (0.036) 📌 | 0.2764            |
+| v5, loss scale 0.25 | all 8 complete  | **13.023** | 1.132 (0.545)    | 0.2830            |
+
+Given four times the range the search chose the same physical damping to within
+2 %, and did worse overall than v4 managed in fewer than half the evaluations.
+`DAMP` came off the bound as soon as the bound stopped mattering, which is what a
+non-binding constraint looks like from the inside. **The pin was that basin's
+coincidence, not a limit**, and the head-damping range needs no change.
 
 ### What this points at instead
 
@@ -536,6 +545,82 @@ this is a model-structure question rather than a range or a search question.
 `Head.ModeDecayCorrections` — already scaled by both knobs, already used for the
 measured (0,1) correction — is where a per-mode answer would go. That touches the
 shipped instrument's sound, so it is not a change this document makes.
+
+## Seeding a restart from the reference's partials (2026-07-31)
+
+Mode frequencies are analytic — `physical.GenerateDrumModes` reads them off the
+tension, radius and cavity without rendering a sample — at about a hundredth of a
+full evaluation. That makes it cheap to ask a question the fit cannot: **how
+close can the model's modes get to this recording's partials at all?**
+
+| Measurement                 | Audibility-weighted frequency error |
+| --------------------------- | ----------------------------------- |
+| 20 000 random banks, best   | 11.5 ¢                              |
+| the same, hill-climbed      | 10.5 ¢                              |
+| the fit (`fit-v4-hertzian`) | 59.7 ¢                              |
+| gate                        | 25 ¢                                |
+
+So the model can place its modes on this drum. Read that as a statement about
+mode placement and not about the gate: these figures count the distance to the
+nearest mode, while the gate counts the distance to the nearest partial the
+candidate is actually heard to produce. The two are not the same number, and the
+gap between them is the subject of the cautions below.
+
+`-seeded-restarts N` acts on that: a pre-solve finds N diverse frequency-optimal
+banks, and those N restarts search a box around them while the rest search the
+whole cube. Seeded restarts come first and the unseeded ones keep their RNG
+seeds, so they are bit-for-bit what they were and the comparison is paired.
+
+**The first version made things worse**, and the two defects it exposed are worth
+more than the feature. One in the pre-solve, one in the reasoning:
+
+- **`GenerateModes` returns the batter head alone.** It is written for the
+  single-head reference and says so, but the pre-solve was using it to reason
+  about a double-headed drum, so it never saw half the partials. Nine times the
+  resonant tension moved no mode frequency by a single cent. `GenerateDrumModes`
+  is the accessor that returns both.
+- **The box narrowed every parameter, not the ones the seed knew about.** A
+  frequency-only objective has no opinion about damping, the microphone position
+  or the attack layer, so confining a restart to a neighbourhood of _those_ threw
+  away range for nothing. `frequencyRelevant` now probes which dimensions move
+  the modes and boxes only those — probed rather than listed, so it stays true
+  when the parameter table changes.
+
+With both corrected, the pre-solve boxes 4 of 17 free parameters — `SIZE`,
+`B.TUNE`, `R.TUNE`, `ASYM`, which is the wave speed, the two tensions and the
+mode split, discovered by probing rather than written down — and its seeds land
+at 1.0 and 1.3 ¢. The comparison is paired: same budget, same RNG seeds, so the
+unseeded restarts are bit-for-bit identical between the runs.
+
+| Restart | Control    | Seeded, all dimensions | Seeded, masked |
+| ------- | ---------- | ---------------------- | -------------- |
+| 1       | 19.442     | 31.707 🌱              | **16.388** 🌱  |
+| 2       | 16.754     | 19.109 🌱              | **13.132** 🌱  |
+| 3       | 14.917     | 14.917                 | 14.917         |
+| 4       | 16.638     | 16.638                 | 16.638         |
+| Best    | **14.917** | **14.917**             | **13.056**     |
+
+Both seeded restarts improved and neither regressed, for a 12 % better result at
+the same cost. The frequency term fell from 94.4 ¢ to 46.1 ¢, partial decay from
+0.966 to 0.766, and the unmatched share from 0.461 to 0.011 — the seeded drum
+produces the reference's partials rather than a handful of them. The spurious
+share rose, 0.413 to 0.638, which is the honest cost: a bank chosen to have a
+mode near every reference partial also has modes elsewhere.
+
+**Two cautions on reading any of this.**
+
+The pre-solve scores the distance to the nearest **mode**; the gate scores the
+distance to the nearest detected **partial**. A mode can sit exactly on a
+reference partial and never be heard — wrong radiation weight, in a pickup null,
+or buried under a louder neighbour — so a 1.0 ¢ seed does not promise a 1.0 ¢
+frequency term, and the fitted 46.1 ¢ is the proof. Mode placement is necessary
+for that term and nowhere near sufficient.
+
+And the objective has to be checked for discrimination before its numbers mean
+anything, because reading both heads roughly doubles the mode count and a dense
+enough bank is near _any_ frequency by accident. Measured over 2000 random banks:
+median 164.8 ¢, p10 56.2 ¢, best 4.1 ¢. A 1.0 ¢ seed is a real selection from
+that distribution, not a free lunch.
 
 ## Reproducing
 

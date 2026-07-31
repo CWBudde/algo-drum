@@ -13,7 +13,7 @@ import (
 
 // Seeding a restart from the reference's own partial frequencies.
 //
-// A drum's mode frequencies are analytic: physical.GenerateModes reads them off
+// A drum's mode frequencies are analytic: physical.GenerateDrumModes reads them off
 // the tension, radius and cavity without rendering a sample or taking a
 // transform. That costs about a hundredth of a full evaluation, which makes it
 // worth spending thousands of them deciding where a restart should begin.
@@ -46,7 +46,7 @@ func modeFrequencyError(bank []float64, reference match.Features, floorDB, sampl
 		return math.Inf(1)
 	}
 
-	modes, err := physical.GenerateModes(config)
+	modes, err := physical.GenerateDrumModes(config)
 	if err != nil || len(modes) == 0 {
 		return math.Inf(1)
 	}
@@ -260,25 +260,104 @@ func distance(left, right []float64) float64 {
 	return worst
 }
 
-// boxAround maps mayfly's [0,1] cube onto a box of the given half-width around
-// the seed, leaving the last dimension — the strike velocity — alone.
+// frequencyRelevant reports, per free dimension, whether the pre-solve has any
+// opinion about it at all — measured, by moving each one and watching whether
+// the mode frequencies follow.
 //
-// Velocity is excluded because the seed says nothing about it: the pre-solve
-// scores mode frequencies, which do not depend on how hard the drum was hit.
-// Narrowing a dimension the evidence does not speak to would be pure loss.
+// This is the correction to a first version that boxed every dimension, and the
+// measurement that forced it is worth keeping: seeded restarts came back at
+// 31.7 and 19.1 against unseeded ones at 14.9 and 16.6, and widening the box did
+// not rescue them. The pre-solve scores mode frequencies. Damping, the
+// microphone position, the attack layer and the strike hardness do not move a
+// mode frequency by so much as a cent, so a seed's value for them is not
+// evidence — it is whatever the random draw happened to leave there. Confining a
+// restart to a neighbourhood of *those* is how a seed that was right about
+// frequency ended up worse overall than no seed at all.
+//
+// Probed rather than listed, so it stays true when the parameter table changes.
+func frequencyRelevant(
+	reference match.Features,
+	bank []float64,
+	free []int,
+	floorDB, sampleRateHz float64,
+	rng *rand.Rand,
+) []bool {
+	relevant := make([]bool, len(free))
+	trial := slices.Clone(bank)
+
+	score := func(position []float64) float64 {
+		for i, index := range free {
+			trial[index] = position[i]
+		}
+
+		return modeFrequencyError(trial, reference, floorDB, sampleRateHz)
+	}
+
+	// A few independent bases, because one dimension can be inert at a point
+	// where another has collapsed the mode set.
+	for range 8 {
+		base := make([]float64, len(free))
+		for i := range base {
+			base[i] = 0.25 + 0.5*rng.Float64()
+		}
+
+		reference := score(base)
+		if math.IsInf(reference, 1) {
+			continue
+		}
+
+		for index := range base {
+			if relevant[index] {
+				continue
+			}
+
+			for _, probe := range [2]float64{0.05, 0.95} {
+				previous := base[index]
+				base[index] = probe
+				moved := score(base)
+				base[index] = previous
+
+				// Any real movement counts. The question is whether the seed
+				// knows anything about this dimension, not how much.
+				if math.IsInf(moved, 1) || math.Abs(moved-reference) > 1e-6 {
+					relevant[index] = true
+
+					break
+				}
+			}
+		}
+	}
+
+	return relevant
+}
+
+// boxAround maps mayfly's [0,1] cube onto a box of the given half-width around
+// the seed, in the dimensions the seed is evidence about and no others.
+//
+// Everything else — the strike velocity in the trailing dimension, and every
+// free parameter frequencyRelevant found inert — passes through untouched, so
+// the restart still searches those over their whole range. A seed is a claim
+// about where the modes are. It is not a claim about how hard the drum was hit,
+// how long it rings or where the microphone was, and a box that pretended
+// otherwise is what made the first version of this lose to no seeding at all.
 //
 // The warp is applied at the mayfly boundary and nowhere else, so every position
 // that reaches the objective, the progress reporter, the checkpoint or the
 // report is in ordinary bank coordinates. A stored position therefore means the
 // same thing whether the restart that found it was seeded or not.
-func boxAround(seed []float64, halfWidth float64) func([]float64) []float64 {
+func boxAround(seed []float64, relevant []bool, halfWidth float64) func([]float64) []float64 {
 	if seed == nil || halfWidth <= 0 || halfWidth >= 0.5 {
 		return func(position []float64) []float64 { return position }
 	}
 
 	return func(position []float64) []float64 {
 		warped := slices.Clone(position)
+
 		for index := range seed {
+			if relevant != nil && !relevant[index] {
+				continue
+			}
+
 			warped[index] = clamp01(seed[index] + (position[index]-0.5)*2*halfWidth)
 		}
 

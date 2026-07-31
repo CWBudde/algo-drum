@@ -304,12 +304,29 @@ func run(args []string, stdout, stderr io.Writer) error {
 	// The pre-solve is analytic and takes a second or two, so it runs before the
 	// checkpoint is opened and its outcome goes into the fingerprint: a resume
 	// that reproduced different seeds would be resuming a different search.
-	var seeds []seedCandidate
+	var (
+		seeds    []seedCandidate
+		relevant []bool
+	)
 
 	if !*reportOnly && *seededRestarts > 0 {
+		presolve := rand.New(rand.NewSource(*seed))
+		relevant = frequencyRelevant(target, bank, free,
+			options.PartialFloorDB, reference.SampleRateHz, presolve)
 		seeds = frequencySeeds(target, bank, free, min(*seededRestarts, *restarts),
-			options.PartialFloorDB, reference.SampleRateHz,
-			rand.New(rand.NewSource(*seed)), defaultSeedBudget)
+			options.PartialFloorDB, reference.SampleRateHz, presolve, defaultSeedBudget)
+
+		named := make([]string, 0, len(free))
+		specs := drum.PhysicalTomSpecs()
+
+		for i, index := range free {
+			if relevant[i] {
+				named = append(named, specs[index].Label)
+			}
+		}
+
+		_, _ = fmt.Fprintf(stderr, "  seeding %d of %d free parameters: %s\n",
+			len(named), len(free), strings.Join(named, " "))
 
 		for index, candidate := range seeds {
 			_, _ = fmt.Fprintf(stderr, "  seed %d: %.1f cents from the reference's partials\n",
@@ -402,7 +419,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 		best, evaluations, err := search(
 			ctx, base, *variant, *iterations, *population, *restarts, *seed,
-			seeds, *seedWidth, stderr, progress, checkpoint,
+			seeds, relevant, *seedWidth, stderr, progress, checkpoint,
 		)
 		if err != nil {
 			return err
@@ -502,6 +519,7 @@ func search(
 	iterations, population, restarts int,
 	seed int64,
 	seeds []seedCandidate,
+	relevant []bool,
 	seedWidth float64,
 	stderr io.Writer,
 	progress *tracker,
@@ -575,9 +593,9 @@ func search(
 			// reaches the objective, the progress tracker, the checkpoint and
 			// the report is always an ordinary bank position. A stored point
 			// therefore means the same thing whether its restart was seeded.
-			warp := boxAround(nil, 0)
+			warp := boxAround(nil, nil, 0)
 			if run < len(seeds) {
-				warp = boxAround(seeds[run].position, seedWidth)
+				warp = boxAround(seeds[run].position, relevant, seedWidth)
 			}
 
 			// Progress is reported from inside the objective because mayfly has

@@ -125,7 +125,7 @@ func TestBoxAroundStaysInsideItsBox(t *testing.T) {
 	t.Parallel()
 
 	seed := []float64{0.5, 0.02, 0.98}
-	warp := boxAround(seed, 0.25)
+	warp := boxAround(seed, nil, 0.25)
 
 	for _, raw := range [][]float64{
 		{0, 0, 0, 0},
@@ -165,9 +165,9 @@ func TestBoxAroundWithoutASeedIsIdentity(t *testing.T) {
 	position := []float64{0.1, 0.9, 0.4}
 
 	for _, warp := range []func([]float64) []float64{
-		boxAround(nil, 0.25),
-		boxAround([]float64{0.5}, 0),
-		boxAround([]float64{0.5}, 0.5),
+		boxAround(nil, nil, 0.25),
+		boxAround([]float64{0.5}, nil, 0),
+		boxAround([]float64{0.5}, nil, 0.5),
 	} {
 		got := warp(position)
 		for index := range position {
@@ -175,5 +175,71 @@ func TestBoxAroundWithoutASeedIsIdentity(t *testing.T) {
 				t.Errorf("identity warp changed %v to %v", position, got)
 			}
 		}
+	}
+}
+
+// TestFrequencyRelevantFindsTheTuningParameters is the fix for a seeded run
+// that lost to no seeding at all. The pre-solve scores mode frequencies, so it
+// is evidence about the parameters that set them and about nothing else;
+// boxing a restart around its opinion of the microphone position is how a seed
+// that was right about frequency made the fit worse.
+func TestFrequencyRelevantFindsTheTuningParameters(t *testing.T) {
+	t.Parallel()
+
+	bank, free := freeIndices(t)
+	specs := drum.PhysicalTomSpecs()
+
+	relevant := frequencyRelevant(tomLikePartials(), bank, free, -42, 44100,
+		rand.New(rand.NewSource(11)))
+
+	byLabel := map[string]bool{}
+	for index, position := range free {
+		byLabel[specs[position].ID] = relevant[index]
+	}
+
+	// Tension and radius are the wave speed and the boundary; nothing sets a
+	// membrane's mode frequencies more directly.
+	for _, id := range []string{
+		"physicalTom.diameter",
+		"physicalTom.batterTension",
+		"physicalTom.resonantTension",
+	} {
+		if !byLabel[id] {
+			t.Errorf("%s does not move the mode frequencies, which cannot be right", id)
+		}
+	}
+
+	// These reach the sound but not the spectrum's line positions, so a seed
+	// carries no information about them and must not narrow their range.
+	for _, id := range []string{
+		"physicalTom.pickupRadius",
+		"physicalTom.pickupAngle",
+		"physicalTom.attackLevel",
+		"physicalTom.attackTone",
+		"physicalTom.strikeRadius",
+		"physicalTom.hardness",
+	} {
+		if byLabel[id] {
+			t.Errorf("%s was treated as frequency evidence; a seed knows nothing about it", id)
+		}
+	}
+}
+
+// TestBoxAroundLeavesIrrelevantDimensionsAlone: the mask has to reach the warp,
+// or the correction above exists only in a comment.
+func TestBoxAroundLeavesIrrelevantDimensionsAlone(t *testing.T) {
+	t.Parallel()
+
+	seed := []float64{0.5, 0.5, 0.5}
+	warp := boxAround(seed, []bool{true, false, true}, 0.25)
+
+	got := warp([]float64{0, 0, 0, 0})
+
+	if got[0] != 0.25 || got[2] != 0.25 {
+		t.Errorf("boxed dimensions = %v, want 0.25 at 0 and 2", got)
+	}
+
+	if got[1] != 0 {
+		t.Errorf("unboxed dimension = %v, want the position unchanged at 0", got[1])
 	}
 }

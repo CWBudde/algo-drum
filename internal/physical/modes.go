@@ -59,6 +59,38 @@ func GenerateModes(config PhysicalDrum) ([]Mode, error) {
 	return generateHeadModes(config, config.Batter)
 }
 
+// GenerateDrumModes constructs the modal basis of the whole instrument: the
+// batter head, and the resonant head when it is enabled, in the same order
+// NewDoubleHead assembles them.
+//
+// GenerateModes returns the batter head alone, which is what the single-head
+// reference model wants and what most of the calibration tests measure. Offline
+// tools that reason about the spectrum a listener hears want this instead: on a
+// double-headed tom the resonant head carries half the partials, and reading
+// only the batter's bank silently makes R.TUNE look like a parameter that
+// changes nothing.
+func GenerateDrumModes(config PhysicalDrum) ([]Mode, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+
+	modes, err := generateHeadModes(config, config.Batter)
+	if err != nil {
+		return nil, fmt.Errorf("batter modes: %w", err)
+	}
+
+	if !config.Resonant.Enabled {
+		return modes, nil
+	}
+
+	resonant, err := generateHeadModes(config, config.Resonant)
+	if err != nil {
+		return nil, fmt.Errorf("resonant modes: %w", err)
+	}
+
+	return append(modes, resonant...), nil
+}
+
 func generateHeadModes(config PhysicalDrum, head Head) ([]Mode, error) {
 	frequencyLimit := head.FrequencyLimitFraction * config.SampleRateHz
 	candidates := make([]eigenmode, 0, maxModeOrder*maxModeOrder)
