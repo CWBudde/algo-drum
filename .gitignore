@@ -48,6 +48,10 @@ fit-report.json
 fit-report.checkpoint
 fit-summary.txt
 fit-progress.txt
+# One pair per run when several are compared side by side, e.g. fit-hertzian.*
+fit-*.json
+fit-*.checkpoint
+fit-*.log
 *.wav
 
 # Built by `go build ./cmd/fit-physical`

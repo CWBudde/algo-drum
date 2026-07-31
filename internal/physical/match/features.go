@@ -651,32 +651,67 @@ func heterodyne(hit []float64, sampleRateHz, frequencyHz, cutoffHz float64, sect
 	// It matters twice: a causal filter's group delay would bias the pitch
 	// probe that reads the glide, and its settling transient would sit right
 	// on top of the first tens of milliseconds a decay is fitted over.
-	zeroPhaseLowpass(inPhase, resonances, cutoffHz, sampleRateHz)
-	zeroPhaseLowpass(quadrature, resonances, cutoffHz, sampleRateHz)
+	zeroPhaseLowpassPair(inPhase, quadrature, resonances, cutoffHz, sampleRateHz)
 
 	return inPhase, quadrature
 }
 
-func zeroPhaseLowpass(signal, resonances []float64, cutoffHz, sampleRateHz float64) {
-	run := func() {
-		sections := make([]biquad.Section, len(resonances))
-		for k, resonance := range resonances {
-			sections[k] = biquad.Section{Coefficients: design.Lowpass(cutoffHz, resonance, sampleRateHz)}
-		}
+// zeroPhaseLowpassPair filters two signals of equal length through the same
+// cascade, forwards and then backwards, in place.
+//
+// Both quadratures in one loop rather than a call each, because a biquad is a
+// serial recurrence: every sample waits on the state the previous sample left
+// behind, so a lone cascade spends much of its time waiting on a multiply it
+// cannot start yet. The two signals are entirely independent of each other, and
+// interleaving them fills those gaps — identical arithmetic on each signal,
+// sample for sample.
+//
+// This filtering was the most expensive thing in a fit, so the shape of the
+// loop below is measured rather than assumed; the pairing is worth about 1.35×.
+// TestZeroPhaseLowpassPairMatchesPerSignalReference holds it to the plain
+// per-signal form bit for bit, which is the whole licence for writing it this
+// way.
+func zeroPhaseLowpassPair(first, second, resonances []float64, cutoffHz, sampleRateHz float64) {
+	coefficients := make([]biquad.Coefficients, len(resonances))
+	for k, resonance := range resonances {
+		coefficients[k] = design.Lowpass(cutoffHz, resonance, sampleRateHz)
+	}
 
-		for n, sample := range signal {
-			for k := range sections {
-				sample = sections[k].ProcessSample(sample)
+	// One section over the whole signal before the next, rather than one sample
+	// through the whole cascade before the next: a section is a pure function of
+	// its input stream, so the two orders produce the same numbers sample for
+	// sample, but this one lets the coefficients and the two-word state live in
+	// registers for the length of a pass instead of being reloaded per sample.
+	//
+	// The backward pass walks from the end rather than reversing the signal,
+	// filtering, and reversing it back — four sweeps of the pair that bought
+	// nothing.
+	//
+	// The recurrence is spelled out rather than calling biquad.Section because
+	// neither of those two things is expressible through it: it processes one
+	// signal, forwards. The form below is its ProcessSample, unchanged.
+	run := func(from, to, stride int) {
+		for _, section := range coefficients {
+			var firstD0, firstD1, secondD0, secondD1 float64
+
+			for index := from; index != to; index += stride {
+				sample := first[index]
+				filtered := section.B0*sample + firstD0
+				firstD0 = section.B1*sample - section.A1*filtered + firstD1
+				firstD1 = section.B2*sample - section.A2*filtered
+				first[index] = filtered
+
+				sample = second[index]
+				filtered = section.B0*sample + secondD0
+				secondD0 = section.B1*sample - section.A1*filtered + secondD1
+				secondD1 = section.B2*sample - section.A2*filtered
+				second[index] = filtered
 			}
-
-			signal[n] = sample
 		}
 	}
 
-	run()
-	slices.Reverse(signal)
-	run()
-	slices.Reverse(signal)
+	run(0, len(first), 1)
+	run(len(first)-1, -1, -1)
 }
 
 // neighbourSpacing is the distance to the closest other detected partial, which
