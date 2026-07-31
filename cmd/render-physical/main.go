@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/cwbudde/algo-drum/internal/physical"
@@ -21,7 +22,7 @@ var errInvalidRenderOption = errors.New("invalid physical render option")
 
 func main() {
 	defaults := physical.DefaultPhysicalDrum()
-	outputPath := flag.String("o", "physical-drum.wav", "output mono PCM WAV file")
+	outputPath := flag.String("o", "renders/physical-drum.wav", "output mono PCM WAV file")
 	duration := flag.Duration("duration", 3*time.Second, "render duration")
 	velocity := flag.Float64("velocity", 0.8, "normalized strike velocity [0,1]")
 	strikeRadius := flag.Float64(
@@ -45,6 +46,15 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "render-physical: %v\n", err)
 		os.Exit(1)
+	}
+
+	// renders/ is gitignored, so a fresh clone has no such directory; create it
+	// rather than failing on a path the default flag chose.
+	if directory := filepath.Dir(*outputPath); directory != "" && directory != "." {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "render-physical: create %s: %v\n", directory, err)
+			os.Exit(1)
+		}
 	}
 
 	output, err := os.Create(*outputPath)

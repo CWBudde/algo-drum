@@ -292,6 +292,10 @@ func (s *store) writeLocked() error {
 
 	directory := filepath.Dir(s.path)
 
+	if err := ensureDir(s.path); err != nil {
+		return fmt.Errorf("write checkpoint: %w", err)
+	}
+
 	temporary, err := os.CreateTemp(directory, ".fit-checkpoint-*")
 	if err != nil {
 		return fmt.Errorf("write checkpoint: %w", err)

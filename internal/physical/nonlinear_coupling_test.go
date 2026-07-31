@@ -1027,3 +1027,50 @@ func TestCouplingPumpSelectionIsNotFrequencyOrdered(t *testing.T) {
 
 	t.Logf("%d frequency inversions in the top eight", inversions)
 }
+
+// TestObserveReusesCurrentChannelValues pins the invariant observe(true) rests
+// on: after a coupled tick, channelTrial already holds g_c at the displacement
+// tickCoupled committed, so reusing it is a copy and not an approximation.
+//
+// The optimisation it licenses — dropping a third traversal of the coupling
+// table per sample — is invisible when it goes wrong: a stale channelValue
+// misreports CouplingPotentialEnergyJ and seeds the next fixed point slightly
+// off, and nothing else complains. If solveMidpoint ever stops evaluating the
+// channels at the endpoint the caller commits, this fails loudly instead.
+func TestObserveReusesCurrentChannelValues(t *testing.T) {
+	config := DefaultPhysicalDrum()
+	config.SampleRateHz = 44100
+
+	model, err := NewDoubleHead(config)
+	if err != nil {
+		t.Fatalf("NewDoubleHead: %v", err)
+	}
+
+	if !model.couplingActive {
+		t.Fatal("coupling inactive at the shipped defaults; the test proves nothing")
+	}
+
+	if err := model.Trigger(1); err != nil {
+		t.Fatalf("Trigger: %v", err)
+	}
+
+	recomputed := make([]float64, model.coupling.channelCount)
+
+	// Long enough to cover the strike, the decay, and any diverged step that
+	// re-solves without the coupling along the way.
+	for sample := range 8820 {
+		model.Tick()
+		model.channelValuesAt(model.displacement, recomputed)
+
+		for channel, want := range recomputed {
+			// Exact: same function, same inputs, so anything but equality means
+			// channelTrial was not evaluated at the committed state.
+			if model.channelValue[channel] != want {
+				t.Fatalf(
+					"sample %d channel %d: reused g_c = %g, recomputed %g",
+					sample, channel, model.channelValue[channel], want,
+				)
+			}
+		}
+	}
+}

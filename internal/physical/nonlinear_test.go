@@ -110,7 +110,7 @@ func TestNonlinearUpdateMatchesOversampledReference(t *testing.T) {
 
 	base := makeModel(baseSampleRate)
 	reference := makeModel(baseSampleRate * oversampling)
-	initialEnergy := base.observe().TotalMechanicalEnergyJ
+	initialEnergy := base.observe(false).TotalMechanicalEnergyJ
 	maximumError := 0.0
 	for range int(duration * baseSampleRate) {
 		base.Tick()
@@ -125,7 +125,7 @@ func TestNonlinearUpdateMatchesOversampledReference(t *testing.T) {
 
 	relativeError := maximumError / initialMotion
 	energyError := relativeDifference(
-		base.observe().TotalMechanicalEnergyJ,
+		base.observe(false).TotalMechanicalEnergyJ,
 		initialEnergy,
 	)
 	t.Logf(
@@ -246,7 +246,7 @@ func TestNonlinearMaximumStrengthConservesLosslessEnergy(t *testing.T) {
 	model.displacement[0] = 0.003
 	model.batterNonlinear.strainMeasureM2 =
 		model.strainWeight[0] * model.displacement[0] * model.displacement[0]
-	referenceEnergy := model.observe().TotalMechanicalEnergyJ
+	referenceEnergy := model.observe(false).TotalMechanicalEnergyJ
 
 	for sampleIndex := range 10_000 {
 		energy := model.Tick().TotalMechanicalEnergyJ

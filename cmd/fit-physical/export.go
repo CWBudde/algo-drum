@@ -43,6 +43,10 @@ func exportCandidate(
 		return 0, err
 	}
 
+	if err := ensureDir(path); err != nil {
+		return 0, fmt.Errorf("create %s: %w", path, err)
+	}
+
 	output, err := os.Create(path)
 	if err != nil {
 		return 0, fmt.Errorf("create %s: %w", path, err)

@@ -67,9 +67,16 @@ check-params: gen-params
 # Minutes, not seconds, and it needs a reference recording that is not in the
 # repository — so it is deliberately not part of `just ci`. See
 # docs/physical-measured-fit.md.
+#
+# Reports and checkpoints go to fits/, audio to renders/; both are gitignored
+# and created on demand, so nothing a run produces lands in the project root.
+# The progress log is stderr, which the tool does not open, so redirect it into
+# fits/ alongside the report it belongs to:
+#
+#   just fit-physical reference/tom.wav "-o fits/fit-x.json …" 2> fits/fit-x.log
 fit-physical reference="reference/tom.wav" *args="":
-    go run ./cmd/fit-physical -reference {{reference}} -o fit-report.json \
-        -checkpoint fit-report.checkpoint {{args}}
+    go run ./cmd/fit-physical -reference {{reference}} -o fits/fit-report.json \
+        -checkpoint fits/fit-report.checkpoint {{args}}
 
 # Derive the measurement tables from recordings of a real drum.
 #
@@ -104,10 +111,10 @@ paper-data:
 # report silently redraws bands/decay/partials/terms.png from a fit the prose
 # does not describe, and the figures carry no record of which run made them.
 #
-# Fit reports are gitignored (.gitignore: fit-*.json), so this recipe needs a
-# local fit run first. The committed PNGs, not this recipe, are what lets the
-# paper build from the repository alone.
-paper-figures report="fit-final-prescribed.json":
+# Fit reports are gitignored (.gitignore: fits/), so this recipe needs a local
+# fit run first. The committed PNGs, not this recipe, are what lets the paper
+# build from the repository alone.
+paper-figures report="fits/fit-final-prescribed.json":
     report="$(realpath {{report}})"; \
     cd tools/paper-figures && go run -tags purego . \
         -report "$report" \

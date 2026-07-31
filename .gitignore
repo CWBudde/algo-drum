@@ -38,27 +38,33 @@ Thumbs.db
 *.out
 *.test
 
-# Fitting inputs and outputs (cmd/fit-physical).
+# Fitting inputs and outputs (cmd/fit-physical, cmd/render-physical).
 #
 # reference/ holds recordings used as timbre-match targets. They are not the
 # repository's to redistribute and nothing in the test suite may depend on
 # them — see docs/physical-measured-fit.md.
+#
+# fits/ holds everything a run leaves in writing — its report, its checkpoint
+# and its progress log — and renders/ holds the audio. Both are ignored
+# wholesale, and the tools create them on demand, so a run's artifacts never
+# land in the project root again. One set per run when several are compared
+# side by side: fits/fit-hertzian.{json,checkpoint,log} beside
+# renders/fit-hertzian.wav. The log is a shell redirect of stderr rather than
+# anything the tool opens, so keeping it next to the report is a convention the
+# justfile documents and nothing enforces. A report is derived from a recording
+# the repository does not contain, so it cannot be committed as evidence
+# anyway — quote its numbers in docs/ and commit the figures.
 reference/
-fit-report.json
-fit-report.checkpoint
-fit-summary.txt
-fit-progress.txt
-# One set per run when several are compared side by side, e.g. fit-hertzian.*.
-# Name every run's artifacts with this prefix — fit-loss-0.25.json,
-# fit-seeded-2of4.json — so one rule keeps covering them. A report is derived
-# from a recording the repository does not contain, so it cannot be committed
-# as evidence anyway: quote its numbers in docs/ and commit the figures.
-fit-*.json
-fit-*.checkpoint
-fit-*.log
-# A checkpoint is never a source file, whatever it ends up being called.
+fits/
+renders/
+# Belt and braces for a run pointed somewhere else by hand: a checkpoint is
+# never a source file, whatever it ends up being called, no WAV in this
+# repository is either, and a stray fit log in the root is still a fit log.
 *.checkpoint
 *.wav
+fit-*.log
+fit-summary.txt
+fit-progress.txt
 
 # Built by `go build ./cmd/fit-physical` and `./cmd/render-physical`
 /fit-physical

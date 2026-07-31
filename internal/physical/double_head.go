@@ -599,7 +599,7 @@ func (d *DoubleHead) tickUncoupled(forceN float64) DoubleHeadOutput {
 	d.batterRadiatedM3PerS2 = batterRadiated
 	d.resonantRadiatedM3PerS2 = resonantRadiated
 
-	return d.observe()
+	return d.observe(false)
 }
 
 func (d *DoubleHead) tickCoupled(forceN float64) DoubleHeadOutput {
@@ -666,7 +666,9 @@ func (d *DoubleHead) tickCoupled(forceN float64) DoubleHeadOutput {
 	d.batterNonlinear.strainMeasureM2 = batterStrain
 	d.resonantNonlinear.strainMeasureM2 = resonantStrain
 
-	return d.observe()
+	// The displacement committed above is exactly the couplingEnd the last
+	// solveMidpoint evaluated the channels at, so channelTrial is current.
+	return d.observe(true)
 }
 
 // solveNonlinearStep runs the implicit-midpoint fixed point for one sample and
@@ -810,25 +812,31 @@ func (d *DoubleHead) beginCouplingStep() {
 func (d *DoubleHead) accumulateCouplingForces() {
 	clear(d.couplingAccel)
 
-	for channel := range d.coupling.channelCount {
-		tension := d.channelTension[channel]
+	for index := range d.coupling.runs {
+		run := &d.coupling.runs[index]
+
+		tension := d.channelTension[run.channel]
 		if tension == 0 {
 			continue
 		}
 
-		first := d.coupling.channelFirst[channel]
-		for slot := first; slot < d.coupling.channelFirst[channel+1]; slot++ {
-			row := d.coupling.entryRow[slot]
+		// Constant across the run, which is the point of iterating over runs.
+		row := run.row
+		barRow := d.couplingBar[row]
+		rowTotal := 0.0
+
+		for slot := run.first; slot < run.last; slot++ {
 			column := d.coupling.entryColumn[slot]
 			scaled := tension * d.coupling.entryValue[slot]
 
-			d.couplingAccel[row] -= scaled * d.couplingBar[column] *
-				d.couplingInverseMass[row]
+			rowTotal += scaled * d.couplingBar[column]
 			if row != column {
-				d.couplingAccel[column] -= scaled * d.couplingBar[row] *
+				d.couplingAccel[column] -= scaled * barRow *
 					d.couplingInverseMass[column]
 			}
 		}
+
+		d.couplingAccel[row] -= rowTotal * d.couplingInverseMass[row]
 	}
 }
 
@@ -855,25 +863,20 @@ func (d *DoubleHead) advanceChannelTensions() float64 {
 // channelValuesAt evaluates g_c = q^T D^c q for every retained channel at the
 // given batter displacements.
 func (d *DoubleHead) channelValuesAt(displacement, dst []float64) {
-	for channel := range d.coupling.channelCount {
+	// Accumulated rather than assigned, because a channel spans several runs —
+	// and cleared first, so a channel with no entries still lands on zero.
+	clear(dst)
+
+	for index := range d.coupling.runs {
+		run := &d.coupling.runs[index]
+
 		total := 0.0
-
-		first := d.coupling.channelFirst[channel]
-		for slot := first; slot < d.coupling.channelFirst[channel+1]; slot++ {
-			row := d.coupling.entryRow[slot]
-
-			column := d.coupling.entryColumn[slot]
-
-			term := d.coupling.entryValue[slot] * displacement[row] *
-				displacement[column]
-			if row != column {
-				term *= 2
-			}
-
-			total += term
+		for slot := run.first; slot < run.last; slot++ {
+			total += d.coupling.entryDoubledValue[slot] *
+				displacement[d.coupling.entryColumn[slot]]
 		}
 
-		dst[channel] = total
+		dst[run.channel] += displacement[run.row] * total
 	}
 }
 
@@ -1068,7 +1071,20 @@ func tensionConverged(current, next, maximum float64) bool {
 		nonlinearSolveTolerance*max(1, maximum)
 }
 
-func (d *DoubleHead) observe() DoubleHeadOutput {
+// observe reads the committed state into one output sample.
+//
+// channelTrialCurrent states whether d.channelTrial already holds g_c at that
+// state. Inside the tick it does: solveMidpoint's last iterate evaluated the
+// channels at couplingEnd, and couplingEnd is displacement + dt*midpointVelocity
+// — precisely the update tickCoupled went on to commit. Saying so spares a third
+// traversal of the coupling table per sample, which is otherwise the single
+// largest avoidable cost in the coupled path. Called from outside the tick on a
+// state something else wrote — a test seeding d.displacement by hand, say —
+// channelTrial means nothing and the channels have to be evaluated.
+//
+// Passing true wrongly produces a stale coupling potential energy and no other
+// symptom, so it is worth being sure at each call site rather than defaulting.
+func (d *DoubleHead) observe(channelTrialCurrent bool) DoubleHeadOutput {
 	var output DoubleHeadOutput
 
 	batterStrain := 0.0
@@ -1117,7 +1133,12 @@ func (d *DoubleHead) observe() DoubleHeadOutput {
 	// against exactly this sum, so an energy test that omitted it would report a
 	// drift that is not there.
 	if d.couplingActive {
-		d.channelValuesAt(d.displacement, d.channelValue)
+		if channelTrialCurrent {
+			// Same function, same inputs, same bits — a copy, not an estimate.
+			copy(d.channelValue, d.channelTrial)
+		} else {
+			d.channelValuesAt(d.displacement, d.channelValue)
+		}
 
 		quarter := 0.25 * d.coupling.coefficientNPerM
 		for _, value := range d.channelValue {

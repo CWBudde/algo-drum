@@ -165,6 +165,18 @@ type couplingTable struct {
 	entryRow     []int32
 	entryColumn  []int32
 	entryValue   []float64
+	// entryDoubledValue is entryValue with couplingWeight already applied, so
+	// channelValuesAt needs neither the multiplicity branch nor a second load.
+	entryDoubledValue []float64
+	// runs partitions the entries into maximal stretches sharing a channel and a
+	// row. Both audio-path loops are written over it rather than over the entries
+	// directly: within a run the row is constant, so displacement[row],
+	// couplingBar[row] and couplingInverseMass[row] hoist out of the inner loop,
+	// and the row-side force accumulates in a register instead of a
+	// read-modify-write of couplingAccel[row] that serialises the whole run on
+	// store-to-load forwarding. Built by scanning the sorted entries, so it
+	// carries no assumption about how they were ordered.
+	runs []couplingRun
 
 	// pumpIndices are the batter modes the channel set was built from, in
 	// selection order. Diagnostics and tests read them; the audio path does not.
@@ -180,7 +192,51 @@ type couplingTable struct {
 	candidateCoefficients int
 }
 
+// couplingRun is one maximal stretch of consecutive entries that share a channel
+// and a row, as the (channel, row, column) sort order already groups them.
+type couplingRun struct {
+	first, last int32
+	channel     int32
+	row         int32
+}
+
 func (t *couplingTable) active() bool { return len(t.entryValue) > 0 }
+
+// buildRuns derives the run partition and the pre-weighted coefficients from the
+// entry arrays. Called once the entries are final; nothing here is on the audio
+// path.
+func (t *couplingTable) buildRuns() {
+	t.entryDoubledValue = make([]float64, len(t.entryValue))
+	for slot := range t.entryValue {
+		t.entryDoubledValue[slot] = couplingWeight(t.entryRow[slot], t.entryColumn[slot]) *
+			t.entryValue[slot]
+	}
+
+	t.runs = t.runs[:0]
+
+	for channel := range t.channelCount {
+		first := t.channelFirst[channel]
+		last := t.channelFirst[channel+1]
+
+		for start := first; start < last; {
+			row := t.entryRow[start]
+
+			end := start + 1
+			for end < last && t.entryRow[end] == row {
+				end++
+			}
+
+			t.runs = append(t.runs, couplingRun{
+				first:   start,
+				last:    end,
+				channel: int32(channel),
+				row:     row,
+			})
+
+			start = end
+		}
+	}
+}
 
 // couplingWeight is the multiplicity of a stored entry: a diagonal term appears
 // once in q^T D q and an off-diagonal term twice.
@@ -846,6 +902,7 @@ func buildCouplingTable(config PhysicalDrum, modes []Mode) couplingTable {
 	}
 
 	table.worstForceFrequencyHz = couplingWorstForceHz(&table, modes)
+	table.buildRuns()
 
 	return table
 }

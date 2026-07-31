@@ -18,6 +18,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -813,9 +814,27 @@ func writeSummary(stdout io.Writer, report Report) {
 	}
 }
 
+// ensureDir creates the directory a run's artifacts are about to be written to.
+// The defaults put reports and checkpoints under fits/ and WAVs under renders/,
+// neither of which is committed (both are gitignored), so on a fresh clone the
+// first run would otherwise fail on a missing directory rather than on anything
+// the user did wrong.
+func ensureDir(path string) error {
+	directory := filepath.Dir(path)
+	if directory == "" || directory == "." {
+		return nil
+	}
+
+	return os.MkdirAll(directory, 0o755)
+}
+
 func writeReport(path string, report Report) error {
 	if path == "-" {
 		return nil
+	}
+
+	if err := ensureDir(path); err != nil {
+		return err
 	}
 
 	file, err := os.Create(path)

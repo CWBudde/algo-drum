@@ -67,7 +67,7 @@ patterns and share links continue to select it.
 Render the default model to a normalized mono PCM WAV file for auditioning:
 
 ```bash
-go run ./cmd/render-physical -o physical-drum.wav
+go run ./cmd/render-physical -o renders/physical-drum.wav
 ```
 
 Use `-duration`, `-velocity`, `-strike-radius`, and `-hardness` to compare the

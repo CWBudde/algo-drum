@@ -207,7 +207,7 @@ mapping has a detent at its default, so a single swarm can settle into one.
 just fit-physical                       # the default reference and settings
 go run ./cmd/fit-physical -reference reference/tom.wav -report-only
 go run ./cmd/fit-physical -reference reference/tom.wav \
-    -restarts 11 -iterations 150 -pop 20 -o fit-report.json
+    -restarts 11 -iterations 150 -pop 20 -o fits/fit-report.json
 ```
 
 Driving mayfly from outside its own examples surfaced two defects. Both are
@@ -843,8 +843,8 @@ head-to-head](#the-contact-model-head-to-head-2026-07-31) outright.
 Two runs, identical but for `-contact`: `reference/tom.wav`, `-channel right`,
 Standard quality, 8 restarts × 150 iterations at population 16, seed 1,
 `-seeded-restarts 4`, **59 056 evaluations** each, all restarts complete and
-neither interrupted. Reports are `fit-final-prescribed.json` and
-`fit-final-hertzian.json`; both are gitignored, so the numbers below are quoted
+neither interrupted. Reports are `fits/fit-final-prescribed.json` and
+`fits/fit-final-hertzian.json`; both are gitignored, so the numbers below are quoted
 rather than linked.
 
 **Prescribed wins, 11.252 against 11.535**, from baselines of **33.094** and
