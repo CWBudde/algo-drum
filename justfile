@@ -18,13 +18,17 @@ check-formatted:
 
 # ── Go / WASM ────────────────────────────────────────────────────────────────
 
-# Run Go linter (WASM target)
+# Run Go linter (WASM target), then the nested figure-tool module.
+#
+# tools/paper-figures is its own module and needs the `purego` tag to resolve the
+# raster backend, so it cannot ride along on the main invocation.
 lint:
-    GOOS=js GOARCH=wasm GOCACHE="${GOCACHE:-/tmp/gocache}" GOMODCACHE="${GOMODCACHE:-/tmp/gomodcache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/golangci-lint-cache}" golangci-lint run --build-tags purego --timeout=2m ./...
+    GOOS=js GOARCH=wasm GOCACHE="${GOCACHE:-/tmp/gocache}" GOMODCACHE="${GOMODCACHE:-/tmp/gomodcache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/golangci-lint-cache}" golangci-lint run --timeout=2m ./...
+    cd tools/paper-figures && GOCACHE="${GOCACHE:-/tmp/gocache}" GOMODCACHE="${GOMODCACHE:-/tmp/gomodcache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/golangci-lint-cache}" golangci-lint run --build-tags purego --timeout=2m ./...
 
 # Run Go linter with auto-fix (WASM target)
 lint-fix:
-    GOOS=js GOARCH=wasm GOCACHE="${GOCACHE:-/tmp/gocache}" GOMODCACHE="${GOMODCACHE:-/tmp/gomodcache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/golangci-lint-cache}" golangci-lint run --build-tags purego --fix --timeout=2m ./...
+    GOOS=js GOARCH=wasm GOCACHE="${GOCACHE:-/tmp/gocache}" GOMODCACHE="${GOMODCACHE:-/tmp/gomodcache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/golangci-lint-cache}" golangci-lint run --fix --timeout=2m ./...
 
 # Run the Go test suite
 test:
@@ -73,11 +77,15 @@ check-physical-reference: gen-physical-reference
 
 # Regenerate the paper's figures from a fit report.
 #
-# `purego` selects matplotlib-go's pure-Go rasteriser, so this needs no FreeType
-# headers. comb.png is not produced here: it is measured from the two channels of
-# the recording, which the repository does not contain.
+# tools/paper-figures is its own module so that matplotlib-go's graphics tree
+# stays out of the engine's go.mod; `purego` selects its pure-Go rasteriser, so
+# this needs no FreeType headers. comb.png is not produced here: it is measured
+# from the two channels of the recording, which the repository does not contain.
 paper-figures report="fit-v4-hertzian.json":
-    go run -tags purego ./cmd/paper-figures -report {{report}} -o docs/paper/figures
+    report="$(realpath {{report}})"; \
+    cd tools/paper-figures && go run -tags purego . \
+        -report "$report" \
+        -o "{{justfile_directory()}}/docs/paper/figures"
 
 # Build the model-matching paper (docs/paper/paper.typ -> PDF).
 #

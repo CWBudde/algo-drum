@@ -151,16 +151,18 @@ cover the reference completely while its second-loudest component is a mode the
 reference does not have. Both shares therefore appear, under the same weighting
 and at the same weight. @partials-figure is the picture they score.
 
-#figure(
-  image("figures/partials.png", width: 100%),
-  caption: [
-    What the two coverage terms see. Grey links join matched pairs; shading marks
-    the span between the lowest and highest reference partial, within which the
-    spurious share is counted. The two reference partials without counterparts
-    sit at $-41$ dB, close to the detection floor, and are correspondingly cheap
-    to miss.
-  ],
-) <partials-figure>
+#place(top, scope: "parent", float: true)[
+  #figure(
+    image("figures/partials.png", width: 100%),
+    caption: [
+      What the two coverage terms see. Grey links join matched pairs; shading marks
+      the span between the lowest and highest reference partial, within which the
+      spurious share is counted. The two reference partials without counterparts
+      sit at $-41$ dB, close to the detection floor, and are correspondingly cheap
+      to miss.
+    ],
+  ) <partials-figure>
+]
 
 The spurious share is counted *only* between the lowest and highest reference
 partial. Outside that span the reference's own detection is unproven --- a
@@ -286,15 +288,17 @@ Against the right channel at the shipped Standard tier with Hertzian contact, th
 distance falls from 32.585 at the shipped default to 11.784. More usefully,
 @terms-figure shows where it fell.
 
-#figure(
-  image("figures/terms.png", width: 100%),
-  caption: [
-    Every term as a multiple of its own threshold; the three gated terms are
-    highlighted. Five terms are brought below threshold, three remain between
-    2.4$times$ and 2.9$times$, and the two coverage shares confirm the candidate
-    is a drum rather than either degenerate extreme.
-  ],
-) <terms-figure>
+#place(top, scope: "parent", float: true)[
+  #figure(
+    image("figures/terms.png", width: 100%),
+    caption: [
+      Every term as a multiple of its own threshold; the three gated terms are
+      highlighted. Five terms are brought below threshold, three remain between
+      2.4$times$ and 2.9$times$, and the two coverage shares confirm the candidate
+      is a drum rather than either degenerate extreme.
+    ],
+  ) <terms-figure>
+]
 
 Five of the nine terms are brought below threshold: amplitude envelope to
 $0.27times$, glide $0.44times$, attack balance $0.15times$, and both coverage
@@ -307,23 +311,27 @@ Three gated terms remain above threshold --- partial frequency $2.4times$, parti
 decay $2.8times$, spectral envelope $2.9times$ --- and they are not three
 independent problems. @decay-figure and @bands-figure show one.
 
-#figure(
-  image("figures/decay.png", width: 100%),
-  caption: [
-    Ring time against frequency, with the constant-$Q$ law anchored on the
-    reference fundamental. The model's partials sit above the reference across the
-    band, by a factor of 3--5 in the mid range.
-  ],
-) <decay-figure>
+#place(top, scope: "parent", float: true)[
+  #figure(
+    image("figures/decay.png", width: 100%),
+    caption: [
+      Ring time against frequency, with the constant-$Q$ law anchored on the
+      reference fundamental. The model's partials sit above the reference across the
+      band, by a factor of 3--5 in the mid range.
+    ],
+  ) <decay-figure>
+]
 
-#figure(
-  image("figures/bands.png", width: 100%),
-  caption: [
-    Spectral envelope, window by window. The attack matches closely; the
-    discrepancy appears in the body and tail and is concentrated above 1 kHz,
-    where the model runs 20--30 dB hot.
-  ],
-) <bands-figure>
+#place(top, scope: "parent", float: true)[
+  #figure(
+    image("figures/bands.png", width: 100%),
+    caption: [
+      Spectral envelope, window by window. The attack matches closely; the
+      discrepancy appears in the body and tail and is concentrated above 1 kHz,
+      where the model runs 20--30 dB hot.
+    ],
+  ) <bands-figure>
+]
 
 *The model rings too long.* Its ring times exceed the reference's everywhere, by a
 factor of 3--5 in the mid range, and the same fact appears in the spectral
@@ -375,7 +383,7 @@ audibility weighting and the relationship between the two coverage weights are
 pinned by tests that need no recording.
 
 @partials-figure, @terms-figure, @decay-figure and @bands-figure are drawn by
-#code-path("cmd/paper-figures") --- `just paper-figures` --- from a single fit
+#code-path("tools/paper-figures") --- `just paper-figures` --- from a single fit
 report, which carries both feature sets in full, so they are reproducible from a
 committed artefact rather than from the recording, which is not redistributable.
 That command reproduces the distance's own greedy partial matching rather than

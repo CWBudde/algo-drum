@@ -101,6 +101,8 @@ cmd/analyze-physical/     — Emits the analysis report and regenerates the refe
 cmd/render-physical/      — Renders the physical Tom to a WAV for offline auditioning
 internal/wavio/           — Mono 16-bit PCM WAV export, shared by cmd/render-physical and cmd/fit-physical's `-wav` (reading WAVs lives in internal/physical/match, which drags in the whole FFT stack)
 docs/physical-*.md        — The physical model's design record: calibration and the microphone model, the cavity, nonlinear tension, the hybrid architecture, product integration, and the measured review the P8 work came from
+docs/paper/               — Typst working paper on the matching method (`just paper` → physical-tom-matching.pdf); figures/ holds the committed PNGs
+tools/paper-figures/      — Draws the paper's figures from a `cmd/fit-physical -o` report (`just paper-figures`). Its own Go module, and deliberately: matplotlib-go's graphics tree and its FreeType-linking raster backend have no business in the engine's go.mod, and `go mod tidy` ignores the `purego` build tag the pure-Go rasteriser needs
 web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands, exposes onPattern (engine-owned pattern snapshots) and dispose() (tears the worker + audio graph down)
 web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; renders audio chunks on demand, echoes the authoritative pattern after each edit
 web/src/engine/patternMirror.ts — Reconciles the engine's pattern echoes with in-flight optimistic UI edits (engine = single source of truth)
