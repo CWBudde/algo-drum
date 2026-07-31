@@ -12,6 +12,19 @@
   #strong[Abstract.] #body
 ]
 
+// correction marks a chapter whose numbers were obtained under something since
+// found to be faulty. It is deliberately as loud as draft-note: a reader who
+// takes a number out of such a chapter must not be able to have missed it.
+#let correction(body) = block(
+  width: 100%,
+  inset: 8pt,
+  radius: 2pt,
+  fill: draft-fill,
+  stroke: 0.5pt + accent,
+)[
+  #body
+]
+
 #let draft-note(body) = block(
   width: 100%,
   inset: 8pt,

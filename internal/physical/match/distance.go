@@ -173,7 +173,7 @@ func Distance(reference, candidate Features, weights Weights) Terms {
 	terms.Spurious = spurious
 	terms.SpectralEnvelope = spectralEnvelopeError(reference.Windows, candidate.Windows)
 	terms.Envelope = envelopeError(reference.EnvelopeDB, candidate.EnvelopeDB)
-	terms.Glide = math.Abs(reference.GlideCents - candidate.GlideCents)
+	terms.Glide = glideError(reference, candidate)
 	terms.AttackBalance = math.Abs(reference.AttackBalance - candidate.AttackBalance)
 
 	terms.Total = weights.PartialFrequency*terms.PartialFrequency +
@@ -187,6 +187,35 @@ func Distance(reference, candidate Features, weights Weights) Terms {
 		weights.Spurious*terms.Spurious
 
 	return terms
+}
+
+// unreadableGlideCents is what a candidate pays when the reference's pitch bend
+// could be measured and the candidate's could not — its fundamental did not
+// survive far enough past the strike to place two probes on. See
+// match.measureGlide.
+//
+// One "clearly wrong" glide, and no more. It has to be nonzero: a candidate
+// that cannot be measured must not score better on this term than one that can
+// and is merely wrong, or the cheapest way to satisfy the objective is to
+// produce a drum with no sustain. It must not be large, because a fundamental
+// that dies early is already charged by the decay and envelope terms, and
+// charging it again here would be double-counting the same fault.
+const unreadableGlideCents = 40
+
+// glideError scores the pitch bend, allowing for either side not having one.
+//
+// A reference with no reading zeroes the term rather than scoring against a
+// number that was never measured: there is nothing to compare to, and a
+// fabricated zero would silently assert that the reference does not bend.
+func glideError(reference, candidate Features) float64 {
+	switch {
+	case !reference.GlideMeasured:
+		return 0
+	case !candidate.GlideMeasured:
+		return unreadableGlideCents
+	default:
+		return math.Abs(reference.GlideCents - candidate.GlideCents)
+	}
 }
 
 // What a reference partial costs when the candidate has nothing to put where

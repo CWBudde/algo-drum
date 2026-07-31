@@ -1,4 +1,4 @@
-#import "style.typ": code-path, paper
+#import "style.typ": code-path, correction, paper
 
 #let revision = sys.inputs.at("revision", default: "working tree")
 
@@ -23,11 +23,12 @@
 
     The instrument the method is applied to is described here in full, because
     every conclusion the fit reaches is a claim about it: two membranes coupled
-    through a lumped air spring, a Berger tension nonlinearity closed by a
-    discrete gradient, a three-term loss law shaped to hold constant $Q$, a
-    microphone model that is a Lommel integral plus an evanescent term, and a
-    stochastic layer whose releases are read off that same loss law past the
-    modes the budget can afford. Which of its numbers are derived, which are
+    through a short modal expansion of the enclosed air, a Berger tension
+    nonlinearity closed by a discrete gradient and extended by the mode-to-mode
+    channels Berger projects away, a three-term loss law shaped to hold constant
+    $Q$, a microphone model that is a Lommel integral plus an evanescent term,
+    and a stochastic layer whose releases are read off that same loss law past
+    the modes the budget can afford. Which of its numbers are derived, which are
     measured and which are fitted is reported alongside them.
 
     Applied to that tom, the apparatus takes the distance from 33.1 at
@@ -45,7 +46,8 @@
     within 2%, so the residual is a question about the shape of the loss law
     rather than about its range. The same per-term reading separates two contact
     models fitted at identical budget --- 11.252 against 11.535, winning on
-    different terms --- and a second experiment exploits the fact that mode
+    different terms, by a margin @glidefault then puts back in question --- and a
+    second experiment exploits the fact that mode
     frequencies are analytic: a pre-solve seeds restarts with banks whose modes
     already lie on the reference's partials, worth 12% at identical cost against
     a target it reaches to a cent, and worth nothing against one it reaches only
@@ -67,6 +69,14 @@
     correction and what it re-scopes. Under the corrected reduction the shipped
     bank measures 33.094 with prescribed contact and 33.544 with Hertzian, at the
     Standard tier against the right channel.
+
+    *Every fit in this paper, including those two, predates a second correction:
+    the glide estimator was faulty in both of its probes* (@glidefault,
+    2026-07-31). That term sat inside the objective the search minimised, so the
+    fitted banks are conditioned on it and not merely mis-scored by it. @results
+    and @contact-table are reported as obtained rather than re-run, and
+    @glidefault gives the fault, its size, the corrected reference figure and
+    what specifically it puts back in question.
   ],
 )
 
@@ -90,10 +100,11 @@ what it has not, and the latter turns into statements about the model.
 = The instrument <instrument>
 
 The instrument is a double-headed tom rendered by modal synthesis: two membranes
-coupled through a lumped air cavity, with a Berger tension nonlinearity, a
-microphone model, and a three-band stochastic attack layer covering the transient
-region modal synthesis reaches poorly. Its configuration is SI-valued and
-versioned; the product exposes eighteen normalised parameters over it.
+coupled through a modal expansion of the enclosed air, with a Berger tension
+nonlinearity and its mode-coupling extension, a microphone model, and a
+three-band stochastic attack layer covering the transient region modal synthesis
+reaches poorly. Its configuration is SI-valued and versioned; the product exposes
+eighteen normalised parameters over it.
 
 This chapter describes it in enough detail to argue with. That is not
 scene-setting. Every conclusion the rest of the paper reaches is a statement
@@ -103,25 +114,31 @@ parameter, that its mode frequencies are analytic and therefore cheap enough to
 seed a search from --- and none of those can be checked, or disputed, from a
 description that stops at the word "modal".
 
-== Two membranes, an air spring, and a microphone
+== Two membranes, an air cavity, and a microphone
 
 The signal path is short and its asymmetries are deliberate. A strike deposits
 force at one point on the *batter* head, spread over a finite contact footprint.
 The batter head's modes are the only ones the stick reaches. The *resonant* head
-is driven solely by the enclosed air, which behaves as one lumped spring
-compressed by the net volume the two heads sweep --- so the two membranes are
-coupled through a single scalar and not through a field. Each head's total strain
-raises its own tension, which detunes every one of its modes together. A
-stochastic layer, driven by the same contact force, supplies the band above the
-highest mode the budget can afford. What the listener hears is a weighted sum of
-the batter head's modal accelerations and that layer, band-limited and scaled.
+is driven solely by the enclosed air, which is expanded in the rigid-walled
+cylinder's own modes --- six pressure states at the shipped default, of which the
+uniform one is the lumped spring compressed by the net volume the two heads
+sweep. Each head's total strain raises its own tension, which detunes every one
+of its modes together, and the part of that quartic potential the tension law
+projects away is restored as a small set of mode-to-mode channels, so a loud hit
+also deposits energy at frequencies nothing struck. A stochastic layer, driven by
+the same contact force, supplies the band above the highest mode the budget can
+afford. What the listener hears is a weighted sum of the batter head's modal
+accelerations and that layer, band-limited and scaled.
 
 Two properties of that path are worth naming immediately, because they are
 easy to assume otherwise. Only the batter head radiates into the output: the
 resonant head is fully coupled into the dynamics but its own radiation leaves the
 far side of the shell, and adding it at the same point, phase and distance would
-be a fiction. And only *axisymmetric* modes drive the cavity, because the air
-responds to swept volume and every other mode sweeps exactly none.
+be a fiction. And the cavity reaches only the azimuthal orders its own basis
+carries --- $m = 0$ alone when the air is one lumped state, because the uniform
+pressure responds to swept volume and every other mode sweeps exactly none, and
+$m <= 2$ at the shipped basis, where the transverse air modes have shapes to
+overlap against.
 
 == The modal basis
 
@@ -192,71 +209,168 @@ below the band the fit cares about.
 
 #figure(
   table(
-    columns: 4,
-    align: (left, right, right, right),
-    table.header([Tier], [Oscillators], [Top mode], [Real time]),
-    [Draft], [48 + 4], [929 Hz], [---],
-    [Standard --- _shipped_], [96 + 6], [1310 Hz], [1.66$times$],
-    [High], [160 + 8], [1662 Hz], [1.43$times$],
+    columns: 5,
+    align: (left, right, right, right, right),
+    table.header([Tier], [Batter], [Resonant], [Top mode], [Real time]),
+    [Draft], [48], [20], [929 Hz], [---],
+    [Standard --- _shipped_], [96], [24], [1310 Hz], [0.70$times$],
+    [High], [160], [24], [1662 Hz], [---],
   ),
   caption: [
-    What each budget buys at the shipped tuning: batter plus resonant
-    oscillators, the highest retained mode, and the worst-case real-time factor.
-    Doubling the count buys 0.5 of an octave, which is @density-eq seen from the
-    other side.
+    What each budget buys at the shipped tuning: the two heads' oscillator
+    counts, the highest mode the head that radiates retains, and the worst-case
+    real-time factor on `js/wasm`. Doubling the batter count buys 0.5 of an
+    octave, which is @density-eq seen from the other side. The resonant head no
+    longer scales with the tier --- it has its own budget, sized against the
+    cavity rather than against a quality setting --- so at Draft its own ceiling,
+    1001 Hz, is the higher of the two. The one measured real-time figure is the
+    Standard worst case with the coupling table at its shipped size; the same
+    configuration measures 1.40$times$ with the coupling off and High
+    1.15$times$, and @cost is where that is discussed rather than tabulated.
   ],
 ) <tier-table>
 
-The resonant head costs four to eight oscillators rather than a second full bank,
-and that reduction is *exact rather than approximate*. Nothing can excite an
-$m > 0$ resonant mode: the strike reaches only batter modes, and the cavity --- the
-sole path between the heads --- couples through the swept area, which is
-identically zero for every $m > 0$. Their displacement, their contribution to the
-tension law and their stored energy are therefore zero for all time, so dropping
-them changes the output not approximately but not at all, and a regression test
-asserts bit-identical renders rather than a tolerance. The 44 oscillators it
-reclaims are what pay for the batter head's wider band. The filter is applied
-*after* selection, not during it: skipping those candidates inside the loop would
-free their slots and admit higher axisymmetric modes instead, which is a different
-instrument rather than a cheaper one.
+The resonant head costs a couple of dozen oscillators rather than a second full
+bank, and the *selection* part of that reduction is exact rather than
+approximate. Nothing can excite a resonant mode the air cannot reach: the strike
+reaches only batter modes, and the cavity --- the sole path between the heads ---
+couples through an overlap integral whose azimuthal factor is identically zero
+unless the head mode's order matches a cavity mode's. Their displacement, their
+contribution to the tension law and their stored energy are therefore zero for
+all time, so dropping them changes the output not approximately but not at all,
+and a regression test asserts bit-identical renders rather than a tolerance, at
+both ends of the cavity basis. The filter is applied *after* selection, not
+during it: skipping those candidates inside the loop would free their slots and
+admit higher reachable modes instead, which is a different instrument rather than
+a cheaper one.
 
-*That exactness is inherited rather than absolute.* It is a property of the
-*lumped* compliance, not of a drum: one scalar pressure driven by swept volume has
-no way to reach a mode that sweeps none. A real cylindrical cavity has transverse
-modes, and those couple to $m > 0$ head modes with a coefficient that is not zero.
-The reduction is bit-exact given the model, and the model's exactness here is
-exactly as sound as the assumption in it most likely to be wrong ---
-@exclusions states that assumption as the limitation it is.
+*What the reduction retains changed when the cavity did, and the exactness did
+not.* With one lumped pressure state the reachable set is $m = 0$ and the filter
+is literally "axisymmetric only", leaving 6 of Standard's 96 slots. With the
+shipped six-state cavity it is ${0, 1, 2}$ and the same selection leaves 28. The
+statement is therefore "the orders the air can reach" rather than "axisymmetric",
+and it is bit-exact at both ends for the same reason --- the selection rule
+zeroes the coupling of every unreachable order, and those modes provably never
+leave zero.
+
+*The second budget is not exact, and is stated separately for that reason.* A
+head that is only ever driven through the air has no business being sized by a
+quality tier chosen for the head the stick hits, and sharing one number was
+accidental --- harmless while the reduction left half a dozen modes, and not
+harmless once a cavity setting started quadrupling the resonant bank. The
+resonant head therefore has its own limit, 24, and that truncation from 28 *is* a
+change to the instrument. It is a small one: broadband level moves by less than
+0.001 dB and the small-signal transfer function by 0.019 dB RMS to 4 kHz. The
+value is chosen against the mechanism rather than against a clock --- 24 is the
+smallest bank whose modes straddle both transverse cavity resonances, with the
+$(1,1)$ air mode at 660 Hz between resonant partials at 472 and 685 Hz and the
+$(2,1)$ at 1094 Hz between 1001 and 1213 Hz, the 23rd and 24th oscillators.
+Below a budget of 12 the first straddle is missing and the coupling feature of
+@cavity-figure reads 3 dB wrong.
 
 == Coupling through the cavity
 
-The air enclosed by the shell is treated as one lumped adiabatic spring. Its
-coupling coefficient is the signed net area a mode sweeps,
+The air enclosed by the shell is expanded in the rigid-walled cylinder's own
+modes. A rigid wall carries no normal velocity, so the radial condition is
+*Neumann* --- and not the Dirichlet condition the clamped heads obey, which is a
+distinction worth stating because the two families look alike and are not:
+
+$ Psi_(m n) (r, theta) = J_m (j'_(m n) r \/ a) dot cases(cos m theta, sin m theta), quad omega_(m n) = c j'_(m n) \/ a $ <cavitymode-eq>
+
+where $j'_(m n)$ is the $n$-th zero of $J_m'$. The uniform mode is the $m = 0$
+member at $j' = 0$: a mode of zero frequency, and the whole of the lumped spring
+this replaced. Note that $j'_(0 1) = 3.8317$, the first *positive* zero of
+$J_0' = -J_1$, is a different and non-degenerate mode.
+
+*Axial order is excluded deliberately, not overlooked.* A pressure varying along
+the shell would make the two heads see different pressures --- the coupling
+coefficient picks up a factor that is $+1$ at the batter head and $(-1)^l$ at the
+resonant one instead of the same at both, which is a larger change than this one
+--- and the first axial mode sits at $c \/ 2L = 858$ Hz on the shipped 0.2 m
+depth, above the transverse modes this exists to add. Axially uniform is a first
+cut and is described as one.
+
+#figure(
+  table(
+    columns: 4,
+    align: (left, right, right, right),
+    table.header([Cavity mode], [$j'$], [at 0.1524 m], [at 0.1584 m]),
+    [$(0,0)$ uniform], [0], [0 Hz], [0 Hz],
+    [$(1,1)$ cos/sin], [1.8412], [659.5 Hz], [634.5 Hz],
+    [$(2,1)$ cos/sin], [3.0542], [1094.0 Hz], [1052.6 Hz],
+    [$(0,1)$], [3.8317], [1372.5 Hz], [1320.5 Hz],
+  ),
+  caption: [
+    The six shipped air states, at the shipped 12-inch radius and at the 0.1584 m
+    the excitation-gap analysis states its hypothesis for. The second column is
+    where that analysis compares the reference's 624.4, 1018.4 and 1331.3 Hz
+    partials; a test pins the generated table to it. The series is
+    $c j' \/ 2 pi a$ and nothing else, so it is set by the shell and the air and
+    not by the tuning.
+  ],
+) <cavitymode-table>
+
+Each head mode couples to each air mode through the overlap of their shapes over
+the head's disc, and the same coefficient appears in both directions --- the air
+is driven by $C_(i c) dot(q)_i$ and the head is loaded by $C_(i c) P_c$:
+
+$ C_(i c) = integral_A phi_i Psi_c dif A $ <overlap-eq>
+
+The angular integral separates and gives a *selection rule*: the coefficient
+vanishes unless the azimuthal orders match, and at an unrotated principal tension
+axis unless the orientations match too, a rotated axis entering as a plane
+rotation through $m psi$ and therefore as an isometry that leaves the total
+coupling strength alone. A head mode reaches at most one air mode per radial
+order, which is what makes the extension affordable: 44 of the 768 head/air pairs
+at the shipped basis are non-zero. Against the uniform mode $Psi = 1$ and
+@overlap-eq collapses to the signed swept area,
 
 $ A_(0 n) = 2 pi R^2 J_1 (alpha_(0 n)) \/ alpha_(0 n), quad A_(m n) = 0 " for " m > 0 $ <swept-eq>
 
-and the coupled system is a diagonal modal bank plus one scalar state:
+which is the closed form the lumped model always used and which the code returns
+verbatim in that case. For every other air mode the radial integral has no clean
+closed form --- the two Bessel functions carry different arguments and different
+boundary conditions, so the Lommel collapse does not happen --- and is evaluated
+by 96-point Gauss--Legendre quadrature once per coupled pair at construction.
+Nothing in the render touches it, and a test checks the quadrature against the
+analytic swept area where the two must agree, to $2 times 10^(-16)$.
 
-$ dot.double(q)_i + 2 gamma_i dot(q)_i + omega_i^2 q_i = f_i \/ M_i - A_i p \/ M_i $ <modal-eq>
-$ dot(p) + lambda p = K sum_i A_i dot(q)_i, quad K = s dot rho c^2 \/ V $ <cavity-eq>
+The coupled system is a diagonal modal bank plus a $(P_c, H_c)$ pair per air
+mode:
 
-with $V = pi R^2 L$ the shell volume and $lambda$ a pressure loss. The system is
+$ dot.double(q)_i + 2 gamma_i dot(q)_i + omega_i^2 q_i = f_i \/ M_i - sum_c C_(i c) P_c \/ M_i $ <modal-eq>
+$
+  dot(P)_c = K_c sum_i C_(i c) dot(q)_i + omega_c H_c - lambda P_c, quad dot(H)_c = -omega_c P_c
+$ <cavity-eq>
+$ K_c = s rho c^2 \/ Lambda_c, quad Lambda_c = integral_V Psi_c^2 dif V $ <stiffness-eq>
+
+with $Lambda_(0 0) = V = pi R^2 L$ the shell volume and $lambda$ a pressure loss.
+Writing each mode in that first-order pair rather than as a
+displacement/velocity one is what makes the uniform member degenerate cleanly:
+$omega_(0 0) = 0$, so $H$ never leaves zero and @cavity-eq collapses to the single
+$dot(p) + lambda p = K sum_i A_i dot(q)_i$ the lumped model had. The system is
 passive by construction: with
 
-$ E = sum_i M_i / 2 (dot(q)_i^2 + omega_i^2 q_i^2) + p^2 / (2 K) $ <energy-eq>
+$ E = sum_i M_i / 2 (dot(q)_i^2 + omega_i^2 q_i^2) + sum_c (P_c^2 + H_c^2) / (2 K_c) $ <energy-eq>
 
-one has $dot(E) = -sum_i 2 gamma_i M_i dot(q)_i^2 - lambda p^2 \/ K <= 0$, so the
-air can exchange energy between the heads but never manufacture it.
+one has $dot(E) = -sum_i 2 gamma_i M_i dot(q)_i^2 - lambda sum_c P_c^2 \/ K_c <= 0$.
+That is *proved rather than assumed*, and the proof is the reason @overlap-eq is
+written with one symbol: the head equation loses $sum_c P_c sum_i C_(i c)
+dot(q)_i$ and the cavity equation gains exactly that quantity, because the same
+coefficient stands in the drive and in the load, so the coupling terms cancel
+identically for any number of air modes and any $s$. The $omega_c$ rotation
+cancels against itself for the same reason. The air can exchange energy between
+the heads but never manufacture it.
 
 *The stiffness scale $s$ is fitted, and the fact that it has to be is the
 interesting part.* The rigid formula $rho c^2 \/ V$ assumes a sealed, rigid shell
-driven by two pistons. A real shell flexes, the vent leaks and the heads are not
-pistons, and the formula correspondingly over-predicts the stiffening badly: at
-$s = 1$ the axisymmetric fundamental splits into branches 1.91 apart, where
-measured two-headed drums separate their two $(0,1)$ branches by 10--20%
-@richardson2012 --- Fischer measured 186 Hz with one head and 215 Hz once the
-resonant head was added at unchanged tuning, a ratio of 1.16 @fischer2014. The
-shipped $s = 0.083$ gives 1.18. @cavity-figure is the whole effect.
+driven by two pistons. A real shell flexes and the heads are not pistons, and the
+formula correspondingly over-predicts the stiffening badly: at $s = 1$ the
+axisymmetric fundamental splits into branches 1.87 apart, where measured
+two-headed drums separate their two $(0,1)$ branches by 10--20% @richardson2012
+--- Fischer measured 186 Hz with one head and 215 Hz once the resonant head was
+added at unchanged tuning, a ratio of 1.16 @fischer2014. The shipped $s = 0.083$
+gives 1.18. @cavity-figure is the whole effect.
 
 #place(top, scope: "parent", float: true)[
   #figure(
@@ -265,16 +379,49 @@ shipped $s = 0.083$ gives 1.18. @cavity-figure is the whole effect.
       The continuous-time radiated response at three cavity stiffnesses. The
       doublet opens with $s$ while its lower member stays penned between the two
       heads' own fundamentals, which is eigenvalue interlacing and is asserted by
-      test. Above the axisymmetric family the three curves coincide exactly ---
-      @swept-eq, seen rather than argued.
+      test. Above the axisymmetric family the curves no longer coincide, and that
+      is the transverse air modes: at the $(1,1)$ of @cavitymode-table the
+      shipped cavity moves the response 12.3 dB against no air spring at all,
+      where the lumped cavity moved it 0.04 dB. @swept-eq is now the statement
+      about *one* member of the expansion rather than about the cavity.
     ],
   ) <cavity-figure>
 ]
 
+*A vent was on the list of excuses for $s$, and it does not belong there.* A vent
+is a Helmholtz port and therefore a *high-pass* leak: below $f_H$ the air flows
+out and no pressure builds, above it the plug's inertia blocks the flow and the
+cavity behaves as sealed. On this shell $f_H$ runs 21.8 Hz for a 6 mm vent to
+59.6 Hz for a 25 mm one, all far below the 150 Hz fundamental, so the diverted
+fraction there --- falling as $1 \/ f^2$ above $f_H$ --- is 2.1% to 15.8%, and
+less at every higher mode. Explaining a twelvefold reduction needs about 92%. The
+honest list is therefore shell flex and the non-piston mode shape, with the vent
+worth a few per cent at most; neither of the two has been measured separately
+here, and that is the open question the fitted $s$ now stands for.
+
 $s$ is a fraction rather than a free gain because the rigid, sealed,
 piston-driven enclosure is the stiffest case that exists: 1 is a physical
 ceiling, not a neutral setting, and a fitted value above it would be a statement
-that the model is wrong rather than that the drum is stiff.
+that the model is wrong rather than that the drum is stiff. It multiplies every
+$K_c$ alike, so the ceiling keeps its meaning once the air carries more than one
+state.
+
+*The most useful result of widening the cavity is a negative one.* The
+hypothesis the work was done on was that the lumped reduction mis-set the
+compliance, and that this was why the fitted $s$ sits a factor of twelve below
+the rigid ceiling: one uniform pressure state stands in for a whole field, and
+there is no obvious reason its best-fit stiffness should be the true bulk value.
+It is. Every non-uniform air mode has exactly zero net volume ---
+$integral_A Psi_c dif A = 0$ for $j' != 0$ --- so its impedance
+$K_c (j Omega)^2 \/ ((j Omega)^2 + lambda j Omega + omega_c^2)$ vanishes as
+$Omega -> 0$ and it contributes nothing to the quasi-static air spring the
+doublet measures. The static compliance of the full expansion is *exactly*
+$rho c^2 \/ V$, and it always was. Measured rather than argued: the doublet is
+155.3 / 178.7 Hz, a ratio of 1.1509, and it is 1.1509 with one air state and with
+the shipped six, unmoved to the transform's 2.93 Hz resolution. $s$ would still
+have to be 0.083. The transverse modes are resonators, not springs; they reshape
+the response near their own frequencies and leave the quantity the fit is made
+against alone.
 
 == The tension nonlinearity
 
@@ -302,10 +449,8 @@ $g = abs(nabla w)^2$, all of Berger's error lives in the *second* moment: the
 quartic membrane potential goes as $integral g^2 dif A$, while @berger-eq uses
 $(integral g dif A)^2 \/ A$, the projection of $g$ onto the constant function.
 Being a projection rather than a truncated series, it satisfies
-$U_"Berger" <= U_"exact"$ by Cauchy--Schwarz. That local quartic is itself only
-one bracket: full von Kármán condenses the in-plane displacement through an Airy
-stress function, giving a quartic with an inverse-biharmonic kernel, of which
-Berger is the *uniform* limit and $integral g^2 dif A$ the *local* one.
+$U_"Berger" <= U_"exact"$ by Cauchy--Schwarz. @coupling is that second moment
+put back.
 
 The $tanh$ is a
 smooth cap rather than a clip, so it bounds
@@ -319,11 +464,13 @@ $nu$ of the sample rate requires
 $ r < 1 \/ (4 nu^2) - 1 $ <nyquist-eq>
 
 which at the shipped $nu = 0.45$ is 0.2346 against a shipped $r$ of 0.2 --- a 17%
-margin, validated at configuration decode rather than assumed. At the shipped
-coefficients the glide is 102.8 cents on the loudest hit and 3.0 on the quietest,
-an audible semitone that still leaves the plateau clear: past roughly twice these
-coefficients a loud hit sits on the flat of the $tanh$, which turns the glide into
-a hold-then-drop and erodes the velocity dependence that makes it expressive.
+margin, validated at configuration decode rather than assumed. @nyquist-eq bounds
+a *uniform* detune and nothing else, which is why the coupling of @coupling needs
+its own bound. At the shipped coefficients the glide is 104.9 cents on the
+loudest hit and 3.0 on the quietest, an audible semitone that still leaves the
+plateau clear: past roughly twice these coefficients a loud hit sits on the flat
+of the $tanh$, which turns the glide into a hold-then-drop and erodes the
+velocity dependence that makes it expressive.
 
 Because the tension depends on the state at the end of the step and the state
 depends on the tension, the update is implicit. It is closed with a *discrete
@@ -335,6 +482,122 @@ Paired with the midpoint displacement this makes the nonlinear work over a step
 exactly equal the change in stored potential, so the lossless model conserves
 @energy-eq to solver tolerance rather than drifting --- which is what lets an
 energy assertion be a test rather than a hope.
+
+== The coupling channels <coupling>
+
+@berger-eq is *exactly* the rank-one projection of the quartic potential onto the
+constant channel. That is a stronger statement than "an approximation", and it is
+what makes the missing part addable rather than replaceable. Choose an
+orthonormal set $psi_c$ on the head and write
+
+$
+  hat(g)_c = chevron.l g, psi_c chevron.r = q^top D^c q, quad D^c_(i j) = integral psi_c (nabla phi_i dot nabla phi_j) dif A
+$ <channel-eq>
+$ U = tilde(beta) / 4 sum_c hat(g)_c^2 $ <quartic-eq>
+
+The uniform channel $psi_0 = 1 \/ sqrt(A)$ gives $D^0 = "diag"(Gamma_i) \/ sqrt(A)$
+and $hat(g)_0 = S \/ sqrt(A)$, so its term *is* the Berger potential with
+$beta = tilde(beta) \/ A$ --- not an approximation to it, because the mode
+gradients are orthogonal analytically by Green's identity. The table therefore
+stores only $c >= 1$ and adds to the shipped capped law rather than replacing it,
+which is also why the $tanh$ stays exactly where it was needed, on the channel
+that detunes every mode uniformly, and is not applied to channels that detune
+nothing uniformly.
+
+*The force is cubic and odd, and that fixes what it can reach.* An even potential
+gives an odd force, so the combinations generated are $3 f_a$,
+$2 f_a plus.minus f_b$ and $f_a plus.minus f_b plus.minus f_c$ --- no second
+harmonic and no simple sum or difference tone, which would need a *quadratic*
+term in the potential that a shell or a curved plate has and a flat tensioned
+head does not. The consequence is a design requirement rather than a preference:
+the lowest combination consumes three slots, so a single pump reaches only $f_a$
+and $3 f_a$, and $3 f_(0 1) approx 450$ Hz falls *below* the 476--700 Hz band the
+excitation gap of @levels sits in. At least two pumps are therefore mandatory,
+and a configuration asking for fewer is rejected outright with that reason.
+
+The channels are built from ${1} union {nabla phi_a dot nabla phi_b : a, b in P}$,
+Gram--Schmidt orthonormalised offline, with each $D^c$ truncated to entries
+carrying at least one index in the pump set $P$ --- so the $abs(P) >= 2$
+requirement is structural rather than documented. The selection rule falls out of
+the angular algebra: the gradient product of two Fourier--Bessel modes is exactly
+two harmonics, at $abs(m_a - m_b)$ and $m_a + m_b$, so a quartic coefficient
+vanishes unless two gradient products share an angular order *and* an orientation
+family. That second condition is the one that removes most of the tensor, it is
+*not* the naive $plus.minus m_i plus.minus m_j plus.minus m_k plus.minus m_l = 0$
+the four-index form suggests, and there is no radial rule at all. On the shipped
+bank with $abs(P) = 4$ it leaves 408 structurally non-zero coefficients across 10
+channels, removing about 89% of the candidates, and 34 modes provably carry none.
+The shipped budget retains 256 of the 408.
+
+*The pump set is chosen by displacement, not by frequency and not by energy.*
+Since the force goes as $q^3$, the right weight is peak modal displacement under
+a reference velocity-1 strike, available in closed form from the strike weight
+and the contact pulse's transform. The measured ranking is not frequency-ordered
+and that matters: the $(2,2)$ at 525 Hz outranks the $(1,1)$ sine at 240 Hz,
+which outranks the $(1,2)$ at 437 Hz, so a frequency-ordered set of four would
+retain different modes. The shipped four are the $(0,1)$ at 150.1 Hz, the $(1,1)$
+cosine at 238.7, the $(2,1)$ cosine at 320.0 and the $(0,2)$ at 344.7.
+
+*The energy exactness survives the extension, and for free.* Because $U$ is a sum
+of functions of *scalar* quadratic forms, the scalar secant of @gradient-eq
+already is the vector discrete gradient, applied per channel: no Gonzalez
+projection, and no $0\/0$ branch to take on a 96-vector at rest. Measured, the
+identity holds to a relative residual of $2.5 times 10^(-15)$ and the lossless
+coupled system drifts by $1.1 times 10^(-11)$ over a second.
+
+The anti-alias bound has to be restated, because a force that multiplies three
+sampled signals reaches the sum of three modal frequencies and @nyquist-eq says
+nothing about that. Since every retained entry carries a pump index the worst
+case is not $3 f_"top"$; a receiver that is itself a pump admits two free indices
+and is bounded by
+
+$ f_(max P) + 2 f_"top" $ <alias-eq>
+
+while a free receiver reaches only $2 f_(max P) + f_"top"$. At the shipped bank
+the conservative bound is 3631 Hz and the table actually built reaches 2709 Hz,
+both against 21.6 kHz --- an eightfold margin, not binding at any shipped tier.
+It is implemented anyway, because it bites if the tier rises, if the sample rate
+falls toward 8 kHz, or if the pump band widens.
+
+*What it does is measured on modal amplitudes rather than on the spectrum, and
+the distinction is the finding.* With every non-pump mode's strike projection
+zeroed, so that the cubic force is the *only* path into any other mode, modes
+that receive no excitation at all rise by roughly 50 dB: the $(2,2)$ cosine at
+524.9 Hz from $-76.3$ to $-28.4$ dB, and the $(2,3)$ cosine at 725.4 Hz from
+$-86.4$ to $-34.6$. Reading that off the radiated spectrum would have flattered
+it, because four damped sinusoids put a Lorentzian leakage floor at $-37$ dB
+across the band --- leakage from the pumps rather than content in it. With the
+cavity disabled the uncoupled figures are not small but *exactly zero*: those
+modes never move.
+
+That is the mechanism @levels leaves open. A mode pumped by the coupling does not
+read $abs(F(f))$ at its own frequency at all, so it can be excited precisely
+where the half-sine's zero comb has deleted the excitation outright --- which is
+the one thing the excitation-gap analysis never considered, because the model had
+none to consider.
+
+*One independent corroboration, and one calibration that is now pending.* At the
+shipped configuration $tilde(beta) = beta A = 7.0 times 10^5$ N/m, against a
+material $E h \/ (2(1 - nu^2))$ of $6.5 times 10^5$ N/m for a mylar head of the
+implied thickness --- agreement to about 8%, which is the strongest independent
+corroboration any coefficient in this model has. It is worth two caveats: it
+reuses the same unmeasured surface density and a datasheet modulus, so it is not
+fully independent, and the coefficient is fitted either way. Against that, the
+glide moved only 102.8 to 104.9 cents, far less than the ratio between the two
+moments predicts, and the reason is the fixture rather than the model: the
+calibration hit is at the head's *centre*, where only axisymmetric modes are
+excited and the orthogonal channels see almost nothing. The shipped strike is
+off-centre, so the calibration is recorded as pending a refit rather than as
+confirmed.
+
+*And the local quartic is a bracket, not the exact operator.* Full von Kármán
+condenses the in-plane displacement through an Airy stress function, giving a
+quartic with an inverse-biharmonic kernel. Berger is that family's *uniform*
+limit, with the in-plane stress spatially constant, and $integral g^2 dif A$ its
+*local* limit, with the stress following the local slope and no elastic
+redistribution at all; the truth sits between. What is claimed here is therefore
+the coupling's *structure* --- which frequencies can be generated, and by which
+mode sets --- and not its magnitude.
 
 == The loss law
 
@@ -374,7 +637,9 @@ a shape the $k^1$ term already has right.
 
 *One mode is deliberately exempt.* A two-headed drum loses its axisymmetric
 fundamental fastest of all, into the cavity and the opposite head, and the
-lumped-cavity reduction does not reproduce the full magnitude of that path. The
+reduced cavity does not reproduce the full magnitude of that path --- and
+widening it to six states does not either, since every state but the uniform one
+has zero net volume and so carries nothing at this frequency. The
 residual is carried explicitly, as a per-mode correction $Delta_i$ on the $(0,1)$
 of each head, fitted to hold its $T_60$ at 0.213 s. It shows in @zeta-eq as a
 $zeta$ of 3.44% against the band's 0.74%, and in @modes-figure as the one marker
@@ -385,7 +650,7 @@ what keeps the other two coefficients readable.
   #figure(
     image("figures/modes.png", width: 100%),
     caption: [
-      The whole instrument's mode map at the shipped tuning: 96 batter and 6
+      The whole instrument's mode map at the shipped tuning: 96 batter and 24
       resonant oscillators, against the constant-$Q$ law implied by $d_1 \/ c$
       alone --- a line derived from two coefficients, not fitted to the markers
       it passes through. This is the model-side counterpart of @decay-figure and
@@ -447,7 +712,16 @@ every $(k + 1\/2) \/ tau$ rather than a tilt: at the fitted $tau$ of 8.23 ms, 54
 and 668 Hz sit at $-309$ and $-315$ dB, which is why nothing downstream can lift
 them. Hertzian contact shallows that comb and moves it but does not remove it,
 because it is still one smooth touch --- measured, it is worth 0--4 dB below 700
-Hz and 12--23 dB above 800 Hz. Neither model reproduces what the measured
+Hz and 12--23 dB above 800 Hz.
+
+*Part of that advantage has since been taken from the other end.* With the
+coupling of @coupling active the Hertzian model's lead at 800 Hz falls from 11.9
+to 7.9 dB, with 1500 and 2500 Hz unmoved, and it falls because the *prescribed*
+side rose about 4 dB rather than because the Hertzian side lost anything. The
+cubic force fills part of the band the half-sine's zero comb deleted, which is
+the excitation gap being addressed by a source instead of by a touch.
+
+Neither model reproduces what the measured
 interval actually contains: Wagner's 5.5--8 ms is a *dwell* time spanning three
 separate impacts --- the strike, the wave it launched returning off the rim about
 1.7 ms later, and the re-loaded contact @wagner2006 --- and both models spend that
@@ -507,7 +781,10 @@ non-propagating near field, and a close-miked tom is mostly made of it.
       its modal ceiling is very nearly a monopole: the $(1,1)$ pair sits 18 and
       21 dB down and the higher orders cascade into the numerical floor. At 30
       mm the evanescent term restores them --- $(1,1)$ at $-6.8$ and $-10.1$ dB,
-      $(0,2)$ at $-8.7$ --- which is what a tom microphone actually hears.
+      $(0,2)$ at $-8.7$ --- which is what a tom microphone actually hears. Both
+      heads' modes are plotted, so the second $m = 0$ marker near 162 Hz and the
+      $m <= 2$ resonant series are weights the resonant head *would* radiate with
+      and which this model deliberately does not sum in.
     ],
   ) <radiation-figure>
 ]
@@ -537,11 +814,13 @@ half an octave --- which is @tier-table measured rather than derived.
   #figure(
     image("figures/bandwidth.png", width: 100%),
     caption: [
-      Why the instrument is a hybrid. The staircase is what the budget resolves,
-      the dashed curve is @density-eq --- what would have to be resolved to keep
-      going --- and the shaded spans are what the stochastic layer covers
-      instead. The two agree closely up to the ceiling, which is the check that
-      the count is being spent on the modes a membrane actually has.
+      Why the instrument is a hybrid. The staircase is what the budget resolves
+      across both heads, the dashed curve is @density-eq for one membrane ---
+      what would have to be resolved to keep going --- and the shaded spans are
+      what the stochastic layer covers instead. The two track each other in slope
+      up to the ceiling, which is the check that the count is being spent on the
+      modes a membrane actually has; the staircase's excess above the curve is
+      the second head's 24 oscillators.
     ],
   ) <bandwidth-figure>
 ]
@@ -577,7 +856,7 @@ instructions, has one word of state, and is exactly reproducible across
 platforms --- which the language's global source is not, and which the bit-exact
 render tests require.
 
-== Integration and cost
+== Integration and cost <cost>
 
 There are two update paths, and which one runs is decided by the configuration
 rather than by a quality setting. With the cavity and the nonlinearity both off,
@@ -594,21 +873,45 @@ $
   = 2 v_i^n \/ h - omega_"eff"^2 q_i^n + f_i \/ M_i
 $ <midpoint-eq>
 
-where $omega_"eff"$ carries mode $i$'s current tension increase. The cavity would couple
-every mode to every other, but it does so through a rank-one term, so it is
-eliminated in closed form rather than solved: each mode's midpoint velocity
-depends on the pressure affinely, and substituting that into the discretised
-@cavity-eq leaves one scalar equation. Two passes over the modes and one division
-replace what would otherwise be a dense solve.
+where $omega_"eff"$ carries mode $i$'s current tension increase. The cavity would
+couple every mode to every other, but it does so through $k$ rank-one terms, so
+it is eliminated rather than solved: each mode's midpoint velocity depends on the
+pressures affinely, and substituting that into the discretised @cavity-eq leaves
+a $k times k$ system where the lumped model left one scalar equation. That system
+is $"diag"(K_c)$ times a symmetric positive definite matrix --- the diagonal term
+is strictly positive and the coupling block is a Gram matrix with positive
+weights --- so every pivot is positive and elimination without pivoting is safe.
+$k$ is capped at eight and validated at decode. At $k = 1$ the elimination is
+literally the old single division, which is what keeps a one-mode cavity
+bit-exact rather than merely equivalent; a test writes the rank-one form out by
+hand and compares to the last bit over four thousand samples.
 
 The nonlinearity closes the loop with a fixed-point iteration on @gradient-eq,
-capped at eight passes. The cap is not the cost: measured on the shipped
-configuration at full velocity the mean is 2.88 iterations, and sweeping the
-tension coefficient over a 32$times$ range moves it only to 3.09, because a
-stiffer law both perturbs the tension more and contracts faster once the $tanh$
-begins to saturate. That measurement retired a planned change --- an explicit
-energy-proportional detune, proposed on the assumption that all eight passes ran
---- and it is the reason the exact energy bookkeeping was kept.
+capped at eight passes, with the coupling of @coupling inside that loop since its
+per-channel secants depend on the endpoint too. The cap is not the cost: measured
+on the shipped configuration at full velocity the mean is 2.88 iterations, and
+sweeping the tension coefficient over a 32$times$ range moves it only to 3.09,
+because a stiffer law both perturbs the tension more and contracts faster once
+the $tanh$ begins to saturate. That measurement retired a planned change --- an
+explicit energy-proportional detune, proposed on the assumption that all eight
+passes ran --- and it is the reason the exact energy bookkeeping was kept.
+
+*The shipped configuration is below real time in the browser, and that is stated
+plainly rather than buried.* The `js/wasm` worst case --- a full-velocity
+retrigger before every 512-sample chunk, so the solve never idles --- measures
+0.70$times$ real time at the shipped 256 coefficients, against 1.40$times$ with
+the coupling off and 1.66$times$ before this chapter's two mechanisms existed.
+Three things soften it and none of them settle it. It is the worst case and not
+the steady one, since a real hit lets the solve idle at 3.9$times$. The cost is
+not a harder solve: the mean iteration count moves only 2.40 to 2.49 at velocity
+1, so what is being paid for is the table walk itself. And nothing here is
+optimised --- the table is walked as three separate index arrays with no blocking
+by channel or by receiver, and is rebuilt per iteration rather than updated
+incrementally. The budget is also not currently buying much: across a sixfold
+range of retained coefficients the level in the band the coupling exists to reach
+moves 0.9 dB, and the full table is not even the loudest of them, so 256 is
+chosen for margin and 128 is the first thing to try. Making this affordable is
+open work, deliberately deferred, and not a closed question.
 
 == Derived, measured, and fitted
 
@@ -625,8 +928,12 @@ model. @provenance-table is it.
       [Mode frequencies], [derived], [@dispersion-eq from $T$, $sigma$, $R$],
       [Modal masses, strike weights], [derived], [orthogonality of @shape-eq],
       [Swept areas], [derived], [@swept-eq; exactly zero for $m > 0$],
+      [Cavity mode frequencies], [derived], [@cavitymode-eq, zeros of $J_m'$ over the shell radius],
+      [Head/air coefficients $C_(i c)$], [derived], [@overlap-eq; closed form at $j' = 0$, quadrature elsewhere],
+      [Quartic coefficients $D^c$], [derived], [@channel-eq over the retained shapes],
       [Far-field weights], [derived], [@lommel-eq, a Lommel integral in closed form],
       [Attack-band releases], [derived], [@band-eq, the head's own @loss-eq],
+      [Coupling coefficient $tilde(beta)$], [derived, then corroborated], [$beta A$ from the fitted Berger $beta$; within 8% of $E h \/ (2(1-nu^2))$],
       [Contact exponent $alpha = 3\/2$], [measured], [velocity dependence of contact time @wagner2006],
       [Contact duration], [measured], [5.5--8 ms on a 12-inch tom @dahl1997],
       [Damping ratio $zeta$], [measured], [constant $Q$ on membranes @fletcher1998],
@@ -636,18 +943,23 @@ model. @provenance-table is it.
       [Near-field scale $s_"nf"$], [*fitted*], [to partial balance at the shipped mic],
       [Attack level], [*fitted*], [to spectral balance against the modal layer],
       [Output gain], [*fitted*], [so a full-velocity hit peaks below clipping],
+      [Berger $beta$], [*fitted*], [to a 100-cent glide, and *pending a refit* --- see @coupling],
     ),
     caption: [
-      Where each number comes from. The five fitted rows are the model's
+      Where each number comes from. The six fitted rows are the model's
       admissions: each is a quantity a reduced model cannot compute, and each is
       fitted against a *different* measurement rather than against the same one.
+      The coupling coefficient is the one row of its own kind --- it is not a new
+      free parameter but the fitted Berger one spent on the channels Berger
+      projects away, and it then lands within 8% of a material value it was not
+      fitted to.
     ],
   ) <provenance-table>
 ]
 
 The shipped values themselves are collected in @heads-table, @scalars-table and
 @observation-table. All of them are SI-valued and versioned: the persisted schema is
-at version 10, and every earlier version has an explicit migration. Those
+at version 11, and every earlier version has an explicit migration. Those
 migrations are not uniformly faithful, and the difference is recorded rather than
 smoothed --- a zero-valued asymmetry or an absent nonlinearity reproduces the old
 sound exactly, whereas the correction to the microphone model cannot, because what
@@ -672,59 +984,74 @@ it replaced was not a physical quantity and has no image under the new one.
       [$Delta_(0 1)$], [$(0,1)$ correction], [24.6], [26.4], [1/s],
       [$s$], [asymmetry split], [0.004], [0.003], [---],
       [$beta$], [tension coefficient], [9.6e6], [6.4e6], [N/m#super[3]],
-      [], [oscillators, Standard], [96], [6], [---],
+      [], [oscillators, Standard], [96], [24], [---],
     ),
     caption: [
       The two membranes at the shipped default. The resonant head is thinner and
-      slacker, and carries only its axisymmetric modes --- exactly, not
-      approximately.
+      slacker, and carries only the modes the enclosed air can reach --- a
+      selection that is exact rather than approximate, followed by a truncation
+      to its own budget that is not.
     ],
   ) <heads-table>
 ]
 
-#figure(
-  table(
-    columns: 3,
-    align: (left, right, left),
-    table.header([Quantity], [Value], [Unit]),
-    table.cell(colspan: 3)[_Cavity_],
-    [depth $L$], [0.20], [m],
-    [volume $V$], [1.459e-2], [m#super[3]],
-    [rigid $rho c^2 \/ V$], [9.707e6], [Pa/m#super[3]],
-    [stiffness scale $s$], [0.083], [---],
-    [pressure loss $lambda$], [5], [1/s],
-    [$A_(0 1)$], [3.150e-2], [m#super[2]],
-    table.cell(colspan: 3)[_Nonlinearity_],
-    [tension ratio $r$], [0.2], [---],
-    [anti-alias bound], [0.2346], [---],
-  ),
-  caption: [The air spring and the tension cap at the shipped default.],
-) <scalars-table>
+#place(top, scope: "parent", float: true)[
+  #figure(
+    table(
+      columns: 3,
+      align: (left, right, left),
+      table.header([Quantity], [Value], [Unit]),
+      table.cell(colspan: 3)[_Cavity_],
+      [depth $L$], [0.20], [m],
+      [volume $V$], [1.459e-2], [m#super[3]],
+      [rigid $rho c^2 \/ V$], [9.707e6], [Pa/m#super[3]],
+      [stiffness scale $s$], [0.083], [---],
+      [pressure loss $lambda$], [5], [1/s],
+      [$A_(0 1)$], [3.150e-2], [m#super[2]],
+      [air states], [6], [---],
+      [resonant mode limit], [24], [---],
+      table.cell(colspan: 3)[_Nonlinearity_],
+      [tension ratio $r$], [0.2], [---],
+      [anti-alias bound], [0.2346], [---],
+      table.cell(colspan: 3)[_Coupling_],
+      [$tilde(beta)$], [7.0e5], [N/m],
+      [pumps $abs(P)$], [4], [---],
+      [pump band], [700], [Hz],
+      [coefficients, of 408], [256], [---],
+      [worst force frequency], [2709], [Hz],
+    ),
+    caption: [
+      The air, the tension cap and the coupling channels at the shipped default.
+    ],
+  ) <scalars-table>
+]
 
-#figure(
-  table(
-    columns: 3,
-    align: (left, right, left),
-    table.header([Quantity], [Value], [Unit]),
-    table.cell(colspan: 3)[_Strike and contact_],
-    [radius, angle], [0.30, 0.2], [---, rad],
-    [footprint $a_c$], [0.01], [m],
-    [mallet mass], [0.015], [kg],
-    [contact stiffness $K$], [1e6], [N/m#super[1.5]],
-    [exponent $alpha$], [1.5], [---],
-    [hysteresis $h$], [0.3], [s/m],
-    table.cell(colspan: 3)[_Microphone_],
-    [radius, angle], [0.65, 0.6], [---, rad],
-    [distance $d$], [0.03], [m],
-    [near-field scale $s_"nf"$], [1], [---],
-    [high-pass, low-pass], [35, 12000], [Hz],
-    table.cell(colspan: 3)[_Attack layer_],
-    [level], [0.05], [---],
-    [placement], [4000], [Hz],
-    [band $Q$], [0.7], [---],
-  ),
-  caption: [Excitation, observation and the stochastic layer.],
-) <observation-table>
+#place(top, scope: "parent", float: true)[
+  #figure(
+    table(
+      columns: 3,
+      align: (left, right, left),
+      table.header([Quantity], [Value], [Unit]),
+      table.cell(colspan: 3)[_Strike and contact_],
+      [radius, angle], [0.30, 0.2], [---, rad],
+      [footprint $a_c$], [0.01], [m],
+      [mallet mass], [0.015], [kg],
+      [contact stiffness $K$], [1e6], [N/m#super[1.5]],
+      [exponent $alpha$], [1.5], [---],
+      [hysteresis $h$], [0.3], [s/m],
+      table.cell(colspan: 3)[_Microphone_],
+      [radius, angle], [0.65, 0.6], [---, rad],
+      [distance $d$], [0.03], [m],
+      [near-field scale $s_"nf"$], [1], [---],
+      [high-pass, low-pass], [35, 12000], [Hz],
+      table.cell(colspan: 3)[_Attack layer_],
+      [level], [0.05], [---],
+      [placement], [4000], [Hz],
+      [band $Q$], [0.7], [---],
+    ),
+    caption: [Excitation, observation and the stochastic layer.],
+  ) <observation-table>
+]
 
 == What the model is not <exclusions>
 
@@ -739,45 +1066,41 @@ batter microphone's point, phase, distance and polarity would require a
 propagation and diffraction model this reduction does not have, and adding it
 without one would be arithmetic rather than acoustics.
 
-*The nonlinearity is mean-field, so it contributes pitch and nothing else.*
-@berger-eq collapses the geometric nonlinearity to a single scalar $Delta T(S)$
-driven by the total strain, so every mode of a head is detuned by the same
-relative amount and *no mode can transfer energy to any other* --- the defining
-property of the Berger and Kirchhoff--Carrier family @marogna2010. Stated
-sharply: the nonlinearity here produces zero spectral content, and the only
-mechanisms in the model that can deposit energy at a frequency are the contact
-force's own spectrum and the stochastic attack layer. A real head struck hard
-does not behave that way. The membrane's geometric nonlinearity comes from a
-quartic potential, $U prop integral (abs(nabla w)^2)^2 dif A$, which is *even* in
-the modal amplitudes; its force is therefore cubic and *odd*, and an odd force
-generates only odd combinations --- $3 f_a$, $2 f_a plus.minus f_b$,
-$f_a plus.minus f_b plus.minus f_c$ --- together with the internal resonances
-those admit. It generates no second harmonic and no simple sum or difference
-tone: $2 f_i$ and $f_i plus.minus f_j$ would require a *quadratic* term in the
+*The mode coupling is truncated to one generation from a few pumps.* @berger-eq
+alone is mean-field --- every mode detuned by the same relative amount, *no mode
+able to transfer energy to any other*, which is the defining property of the
+Berger and Kirchhoff--Carrier family @marogna2010 and which would mean the
+nonlinearity contributed pitch and no spectral content whatever. @coupling is
+that exclusion lifted, and what remains excluded is the size of the retained
+tensor rather than the mechanism. Full von Kármán coupling is $O(N^4)$ in
+coefficients and $O(N^3)$ to evaluate, so at 96 oscillators it arrives needing a
+truncation of its own, and the shipped one is severe: every retained term carries
+a pump index, the pump set is four modes below 700 Hz on the *batter* head only,
+and 256 of 408 structurally non-zero coefficients survive the budget. So there is
+one generation of transfer and no cascade --- energy reaching a receiver cannot
+be re-radiated by it into a third mode --- no parametric sidebands from the
+time-varying tension, and no coupling on the resonant head at all. The parity is
+not a truncation but a property: the force is cubic and odd, so $2 f_i$ and
+$f_i plus.minus f_j$ are absent because they need a *quadratic* term in the
 potential, which a shell or a curved plate has and a flat tensioned head does
-not. That cascade is part of why a hard hit is *brighter* and not merely sharper,
-which is measured in @dahl1997, a source cited here already for contact time and
-whose brightening this model attributes entirely to excitation and to the attack
-layer's velocity scaling. The exclusion is a choice rather than a necessity: nonlinear modal
-synthesis with the coupling terms retained now runs in real time @diaz2026,
-though full von Kármán coupling is $O(N^3)$ in the mode count, so at 96
-oscillators it would arrive needing a truncation of its own. It also bears
-directly on the question @levels leaves open. A nonlinear source term is a
-mechanism that deposits energy in a band the excitation comb has zeroed, because
-it does not read $abs(F(f))$ in that band at all --- though, the lowest
-combination consuming three slots, only from two or more simultaneously loud
-modes and never from the fundamental alone.
+not. That a hard hit is *brighter* and not merely sharper is measured in
+@dahl1997, a source cited here already for contact time; this model now produces
+part of that brightening as a source term and attributes the rest to excitation
+and to the attack layer's velocity scaling. Nonlinear modal synthesis with the
+coupling terms retained wholesale runs in real time @diaz2026; this one, at the
+shipped truncation, does not yet --- see @cost.
 
 *There is no shell, no bearing edge, no vent and no hardware.* These are real and
 audible on real drums; they are excluded because none of them can be calibrated
 against anything currently available, and a free parameter with no measurement
-behind it is indistinguishable from a fudge factor. There is no room and no snare.
-The cavity is lumped, so it has no transverse modes of its own --- which is a
-substantive limitation, and one the reference of @reference may be evidence
-about. It is also the assumption that makes the resonant head's reduction to its
-axisymmetric modes exact: with transverse modes present, the $m > 0$ resonant
-oscillators would be driven, and dropping them would be an approximation with an
-error to bound rather than a bit-exact identity.
+behind it is indistinguishable from a fudge factor. There is no room and no
+snare. The cavity now has transverse modes but no *axial* ones, so a pressure
+that varies along the shell --- and with it the sign difference between what the
+two heads see --- is still absent, and so is any shell mode the air could couple
+to. The vent's absence is now quantified rather than asserted: it is a Helmholtz
+high-pass worth a few per cent of the head's volume velocity at the fundamental
+and less above, which is why it is excluded and also why excluding it does not
+explain the fitted stiffness scale.
 
 *And the reference set is synthetic.* The committed fixture that pins this model's
 behaviour is generated from the model itself, deterministically. It is a
@@ -1011,6 +1334,14 @@ ceiling independent of tuning.
 
 = What the fit establishes <results>
 
+#correction[
+  *Read with @glidefault.* The glide term of the distance minimised below was
+  later found to be faulty, and both the glide rows in this chapter and the
+  search that produced the banks are conditioned on it. The numbers here are
+  reported as they were obtained; @glidefault gives the fault, its size, and
+  what of this chapter it puts back in question.
+]
+
 The run reported here fits against the right channel at the shipped Standard
 tier with the prescribed contact model, under the corrected reduction of
 @levels: eight restarts of 150 iterations over a population of 16, seed 1, four
@@ -1113,7 +1444,7 @@ and a default that happens to suit it.
     [Spectral envelope], [4 dB], [12.28], [12.30],
     [Partial level], [3 dB], [*7.58*], [9.18],
     [Amplitude envelope], [3 dB], [1.27], [*1.18*],
-    [Glide], [40 cents], [17.6], [*0.12*],
+    [Glide (see @glidefault)], [40 cents], [17.6], [*0.12*],
     [Attack balance], [6 dB], [*0.03*], [1.31],
     [Unmatched share], [0.5], [0.151], [*0.047*],
     [Spurious share], [0.5], [*0.275*], [0.359],
@@ -1466,9 +1797,123 @@ placed inside a 224 Hz span. Re-deriving it against the corrected reduction is
 the natural next step, and it is a question the apparatus can now be pointed at
 directly.
 
-= What to watch for
+= A glide read off a dead partial <glidefault>
 
-Ten points generalise beyond this instrument, each learned by measurement.
+@levels is a measurement defect found by probing, corrected, and then folded into
+the fits it changed. This chapter is the same genre of finding with the opposite
+disposition: the defect was found *after* the fits of @results were run, and it is
+reported here as a correction *to* them rather than absorbed into them. Nothing
+above this chapter has been restated. The paper is a record of what was done, and
+a run described in one chapter and silently re-scored in another is not one.
+
+The glide term reduces the whole pitch bend to a single number: the frequency of
+one tracked partial at an early probe against its frequency at a late one, in
+cents. Two faults, independent of each other, were in that estimator throughout
+the work reported above.
+
+*The late probe fired after the tracked partial was dead.* The probe sat at a
+fixed 0.400 s. The model's $(0,1)$ has a ring time near 0.21 s, so by then it is
+roughly 105 dB below where the early probe found it, and what the second reading
+returns is not that partial at all but whatever leaks through the probe's
+passband from a neighbour --- reported, in cents, as the offset to that
+neighbour. On ordinary renders this produced readings such as $-717$ cents. At a
+weight of one part in forty cents that is a contribution of 18 to totals of order
+32: a term nominally worth 0.44 in @contact-table could, on a different
+candidate, be worth more than half the distance.
+
+*The glide was read off the loudest partial rather than the fundamental.* The
+loudest partial was chosen deliberately, and for a reason that still holds --- the
+lowest peak in the band may be a shell resonance or a room mode forty decibels
+down, and the bend belongs to the mode carrying the note. But on this reference
+the loudest partial is at 212.74 Hz with a 0.162 s ring time, while the
+fundamental at 118.05 Hz is 7.7 dB quieter and rings for 1.53 s. The measurement
+was being taken on whichever mode peaked highest rather than on the one that
+still existed to be measured.
+
+Fault two is the one with reach, because it moved *the target*. The reference's
+glide is not what the fits of @results were asked to match:
+
+#figure(
+  table(
+    columns: 3,
+    align: (left, right, right),
+    table.header([Reference reduction], [as measured then], [corrected]),
+    [Mono], [89.3 cents], [*54.1 cents*],
+    [Right channel, as used in @results], [120.4 cents], [58.9 cents],
+  ),
+  caption: [
+    The reference's downward glide before and after the correction. The earlier
+    figures were read from a mode that had decayed into the noise floor by
+    0.15 s; the corrected ones track the fundamental, whose trajectory over the
+    same span is monotone.
+  ],
+) <glide-table>
+
+The estimator now walks the late probe back from its nominal position to the
+last point at which the tracked partial is still within 20 dB of its early level,
+refuses any early-to-late span shorter than 50 ms outright, and tracks the lowest
+partial standing within 20 dB of the loudest --- which keeps the guard against the
+forty-decibel room mode while preferring the fundamental, on a drum the
+longest-lived thing in the recording. It also returns a *measured* flag beside the
+value, so that a take whose fundamental cannot support two probes is reported as
+unreadable rather than as zero cents. That last part is the piece worth
+generalising, and it is the eleventh point of @watch.
+
+== What this corrects, and what it does not
+
+The correction reaches further into @results than a rescored row. The glide term
+was inside the objective the search minimised, so both fits in @contact-table are
+*conditioned* on it: it is not that nine terms were measured correctly and one
+was not, but that the optimiser was steered, at every evaluation, by a term that
+could be worth 18 on a candidate whose fundamental died early. The fitted banks
+of @results are outputs of the faulty objective and are described as such.
+
+Two specific consequences are worth naming rather than leaving to the reader.
+
+*The contact-model ordering is not established by @contact-table.* The margin is
+0.283 and the prescribed fit's glide row contributes 0.44 against the Hertzian's
+0.00, both measured against a target of 120.4 cents that should have read 58.9.
+The ordering may well survive --- it is a consistent one across restarts --- but it
+is no longer supported by the numbers printed, and re-deriving it under the
+corrected objective is outstanding.
+
+*The shipped Berger $beta$ is untouched.* It was fitted to the model's own glide
+on an isolated batter fixture --- 96.9 cents between velocity 0.2 and velocity
+1.0, 104.9 at the shipped coefficients --- measured directly from mode
+frequencies and never through this estimator or against this recording. The
+*pending refit* recorded against it in @provenance-table is the coupling question of
+@coupling and is unrelated to anything here.
+
+What is worth reading against it instead is the corrected target itself. Three
+independent measurements put a loud hit on a real tom between 130 and 165 cents
+--- Fletcher and Rossing's §18.4 relays Bork and Meyer at 160 cents
+@fletcher1998, and Rose and Gärder each report about 8% --- against this
+reference's corrected 54.1. Those do not conflict; the natural reading is that
+the reference is simply not a loud hit. But the reference is what the objective is
+written against, so a nonlinearity fitted through it is fitted to match *this
+recording* and should be read as that rather than as a physical coefficient.
+
+== A parameter the recording cannot see
+
+One further result falls out of the correction, and it is the kind that is easier
+to state than to obtain. Swept over the cavity stiffness scale $s$ from the
+shipped value to a rigid shell, the objective total used to range 32.83 to 53.15
+--- a spread of 20.3, which reads as strong discrimination. Under the corrected
+estimator the same sweep ranges 32.98 to 34.10, a spread of *1.1*.
+
+Almost all of the apparent discrimination was the glide artefact: at the strongly
+coupled end the tracked partial died early and the probe read a neighbour, and
+the size of that misreading varied with the coupling. What remains says that *this
+recording has essentially nothing to say about $s$*, which is a substantive
+finding given that $s$ is the one cavity parameter the model fits rather than
+derives (@provenance-table) and that its value is under independent question from the
+literature. A parameter that cannot be identified from the target is a parameter
+whose value has to be settled by a measurement made for the purpose --- Fischer's
+doublet protocol on a tom --- and not by a better fit.
+
+= What to watch for <watch>
+
+Eleven points generalise beyond this instrument, each learned by measurement.
 
 *An exact formula can be an unusable estimator; probe it before trusting it.*
 Correctness and conditioning are different properties, and a derivation
@@ -1551,6 +1996,17 @@ cents, so a 1.0-cent seed is a real selection from that distribution rather than
 an artefact of density. An objective that cannot separate a good bank from a
 random one will seed noise just as confidently.
 
+*An estimator must be able to say that it did not measure.* A probe placed at a
+fixed time on a partial that decays is a probe that eventually reads something
+else, and it reports that reading in the same units, on the same scale, with the
+same air of authority as a good one --- so the failure is invisible exactly where
+it is worst. Two guards close it, and both are cheap: place the second probe
+relative to the tracked quantity's own decay rather than at a fixed offset, and
+return a *measured* flag beside the value so that "did not bend" and "could not be
+read" are different answers. Without the flag the two collapse onto zero, and a
+zero flows into every sum downstream as though it were evidence. @glidefault is
+what that cost here.
+
 *Gate per term, and confirm by ear.* A distance can be monotone in quality ---
 ranking candidates in the order a listener would --- while being wrong about all
 of them in absolute terms. Ordering is much easier to get right than calibration,
@@ -1586,8 +2042,10 @@ The five figures of @instrument come from a second committed artefact, written b
 #code-path("cmd/analyze-physical") --- `just paper-data`, then the same
 `just paper-figures`. Nothing in it is rendered: the modal bank is @dispersion-eq
 and @loss-eq evaluated in closed form, and the cavity curves are the
-continuous-time solve of @cavity-eq, so it depends on no audio, no recording and
-no seed. It is regenerated deliberately, like the images, rather than diffed in
+continuous-time solve of @cavity-eq linearized at rest, so it depends on no
+audio, no recording and no seed --- and, being linearized, it shows the cavity of
+@cavity-figure and not the coupling of @coupling, whose effect exists only at
+amplitude and is reported here from time-domain measurement instead. It is regenerated deliberately, like the images, rather than diffed in
 continuous integration --- which is the reverse of the reference fixture the
 model's regression tests use, and the two should not be confused. That fixture is
 *generated from the model*, so nothing in @instrument is evidence of agreement

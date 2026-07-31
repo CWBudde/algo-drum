@@ -375,51 +375,151 @@ func TestHertzianContactCannotAddEnergy(t *testing.T) {
 }
 
 // TestHertzianContactReachesPastTheModalCeiling is the payoff, measured on the
-// instrument rather than on the force.
+// instrument rather than on the force, and it is the whole of
+// docs/physical-contact.md's "What it does buy" table rather than three rows of
+// it, so that the table cannot go stale without this failing.
 //
 // The attack layer is disabled so this sees only what the excitation actually
 // puts into the modes. Above 800 Hz the prescribed contact is in the tail of its
 // comb and the modes there are effectively unexcited, which is the seam the
 // fitted preset had to paper over by dragging ATK.T down to 1644 Hz.
+//
+// # Method
+//
+// Spelled out because the table's first version was made by a program that was
+// never committed, and re-deriving it from the numbers alone failed: every
+// plausible-looking alternative estimator gives a different answer, one of them
+// with the opposite sign.
+//
+//   - One strike at velocity 1 into DefaultPhysicalDrum() at 44.1 kHz.
+//     Strike.Contact.Model is the only difference between the two columns and
+//     Nonlinearity.Coupling.Enabled the only difference between the two halves.
+//   - "Modal only" means Attack.Enabled = false and nothing else. The cavity,
+//     the Berger tension term and the mode coupling are all left as shipped.
+//   - The level at f is a single-bin DFT of the entire one-second render at
+//     exactly f, rectangular window. The window is the load-bearing choice: the
+//     Hertzian advantage lives in the first few milliseconds, and any taper that
+//     vanishes at sample 0 destroys it — a Hann window over one second is 60 dB
+//     down at 7 ms, and measuring through one reverses the sign of this table.
+//   - Levels are referred to contactReferenceHz; see the note there.
+//
+// The numbers are deterministic: with the attack layer off nothing in this path
+// is stochastic, so the tolerance is for model changes, not for run-to-run
+// spread.
 func TestHertzianContactReachesPastTheModalCeiling(t *testing.T) {
 	t.Parallel()
 
-	config := hertzianDrum()
-	config.Attack.Enabled = false
-
-	prescribed := config
-	prescribed.Strike.Contact.Model = ContactPrescribed
-
+	// The recorded table. Prescribed and Hertzian are levels relative to
+	// contactReferenceHz; the delta is what docs/physical-contact.md quotes.
+	//
+	// The coupled half is the shipped configuration. The uncoupled half is the
+	// control, and it is what the pre-P9 table was measured under: the nonlinear
+	// mode coupling deposits energy at 2f_a +/- f_b regardless of what |F(f)|
+	// does there, so it fills part of the very band the half-sine's zero comb
+	// had deleted, and it does that on the *prescribed* side. That is why the
+	// 800 Hz advantage falls from 11.9 dB to 7.9 dB while 1500 and 2500 Hz
+	// barely move — the coupling doing what P9/M1 predicted, not the contact
+	// model losing ground.
 	cases := []struct {
-		frequencyHz float64
-		atLeastDB   float64
+		frequencyHz           float64
+		prescribedDB          float64
+		hertzianDB            float64
+		uncoupledPrescribedDB float64
+		uncoupledHertzianDB   float64
 	}{
-		{800, 8},
-		{1500, 10},
-		{2500, 15},
+		{400, -15.1, -6.4, -22.1, -19.4},
+		{504, -14.1, -13.9, -26.0, -26.2},
+		{635, -18.1, -18.2, -25.0, -18.1},
+		{800, -27.2, -19.3, -36.5, -24.7},
+		{1500, -48.1, -32.7, -48.3, -33.1},
+		{2500, -57.2, -34.2, -57.5, -34.6},
+		{4000, -63.1, -43.0, -63.5, -42.9},
 	}
 
-	for _, testCase := range cases {
-		gain := renderedBandDB(t, config, testCase.frequencyHz) -
-			renderedBandDB(t, prescribed, testCase.frequencyHz)
+	frequencies := make([]float64, len(cases))
+	for index, testCase := range cases {
+		frequencies[index] = testCase.frequencyHz
+	}
 
-		t.Logf("%.0f Hz: Hertzian is %.1f dB above prescribed",
-			testCase.frequencyHz, gain)
+	for _, coupled := range []bool{true, false} {
+		config := hertzianDrum()
+		config.Attack.Enabled = false
+		config.Nonlinearity.Coupling.Enabled = coupled
 
-		if gain < testCase.atLeastDB {
-			t.Errorf(
-				"at %.0f Hz the Hertzian contact is only %.1f dB above the "+
-					"prescribed one, below the %.0f dB recorded in "+
-					"docs/physical-contact.md",
-				testCase.frequencyHz, gain, testCase.atLeastDB,
+		prescribed := config
+		prescribed.Strike.Contact.Model = ContactPrescribed
+
+		hertzianLevels := renderedBandDB(t, config, frequencies)
+		prescribedLevels := renderedBandDB(t, prescribed, frequencies)
+
+		for index, testCase := range cases {
+			wantPrescribed := testCase.prescribedDB
+			wantHertzian := testCase.hertzianDB
+
+			if !coupled {
+				wantPrescribed = testCase.uncoupledPrescribedDB
+				wantHertzian = testCase.uncoupledHertzianDB
+			}
+
+			t.Logf(
+				"coupling=%v %.0f Hz: prescribed %.1f dB, Hertzian %.1f dB, delta %.1f",
+				coupled, testCase.frequencyHz,
+				prescribedLevels[index], hertzianLevels[index],
+				hertzianLevels[index]-prescribedLevels[index],
 			)
+
+			for _, measurement := range []struct {
+				name string
+				got  float64
+				want float64
+			}{
+				{"prescribed", prescribedLevels[index], wantPrescribed},
+				{"Hertzian", hertzianLevels[index], wantHertzian},
+			} {
+				if math.Abs(measurement.got-measurement.want) > contactTableToleranceDB {
+					t.Errorf(
+						"coupling=%v, %s contact at %.0f Hz is %.1f dB relative to "+
+							"%.0f Hz, against the %.1f dB recorded in "+
+							"docs/physical-contact.md — re-derive that table's "+
+							"\"What it does buy\" section rather than widening this",
+						coupled, measurement.name, testCase.frequencyHz,
+						measurement.got, contactReferenceHz, measurement.want,
+					)
+				}
+			}
 		}
 	}
 }
 
-// renderedBandDB is one strike's level at one frequency, referred to its own
-// fundamental so the comparison survives a change of output gain.
-func renderedBandDB(t *testing.T, config PhysicalDrum, frequencyHz float64) float64 {
+// contactTableToleranceDB is how far the measured table may drift from the one
+// in docs/physical-contact.md before the document is considered stale. It is
+// wide enough to absorb a compiler's floating-point liberties and narrow enough
+// that any real change to the excitation trips it.
+const contactTableToleranceDB = 1.5
+
+// contactReferenceHz is what the rendered levels are divided by.
+//
+// It is the *reference recording's* fundamental, which is where it came from and
+// why it is not 150.1 Hz, the fundamental of DefaultPhysicalDrum()'s own bank.
+// At 118 Hz the rectangular-window DFT is therefore reading the leakage skirt of
+// the 150 Hz partial rather than a partial, which makes it an overall-level
+// normalizer rather than a literal "referred to the fundamental".
+//
+// It is kept because every figure quoted in docs/physical-contact.md and
+// docs/physical-nonlinearity.md is relative to it, and because it is the
+// conservative choice: referring to the bank's own 150.08 Hz instead raises
+// every delta in the table (800 Hz goes 7.9 -> 13.2 dB coupled, 11.9 -> 17.5
+// uncoupled). Nothing in the argument depends on which is used.
+const contactReferenceHz = 118.0
+
+// renderedBandDB is one strike's level at each of several frequencies, referred
+// to contactReferenceHz so the comparison survives a change of output gain.
+//
+// One render serves every frequency: the strike is deterministic, and the modal
+// bank is expensive enough that re-rendering per frequency dominated the test.
+func renderedBandDB(
+	t *testing.T, config PhysicalDrum, frequenciesHz []float64,
+) []float64 {
 	t.Helper()
 
 	model, err := NewDoubleHead(config)
@@ -446,7 +546,14 @@ func renderedBandDB(t *testing.T, config PhysicalDrum, frequencyHz float64) floa
 		return 20 * math.Log10(math.Hypot(real, imaginary)+1e-30)
 	}
 
-	return level(frequencyHz) - level(118)
+	reference := level(contactReferenceHz)
+
+	levels := make([]float64, len(frequenciesHz))
+	for index, frequencyHz := range frequenciesHz {
+		levels[index] = level(frequencyHz) - reference
+	}
+
+	return levels
 }
 
 // TestContactModelsShareNoState checks that a Reconfigure between the two models

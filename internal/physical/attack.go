@@ -98,13 +98,62 @@ func newAttackLayer(attack Attack, head Head, sampleRateHz float64) attackLayer 
 				sampleRateHz,
 			)},
 			decayFactor: decayFactorPerSample(
-				attack.DecayScale/decayRate,
+				attackReleaseSeconds(attack.DecayScale, decayRate),
 				sampleRateHz,
 			),
 		}
 	}
 
 	return layer
+}
+
+// maxAttackReleaseSeconds bounds the release the loss law is allowed to hand
+// back, so that every validated head yields a layer that decays.
+//
+// It has to exist because the release is *derived*. All three structural loss
+// coefficients validate down to zero, so a head with no structural loss at all
+// is a configuration Validate accepts; on it ModalDecayRatePerSecond returns
+// exactly zero, DecayScale/0 is +Inf, and decayFactorPerSample computes
+// Inf/(Inf+1) = NaN. Every sample of the render is then NaN, and because the
+// voice's NaN reaches the FDN reverb and the limiter's lookahead in internal/drum
+// before the hard clamp, it poisons the delay lines permanently.
+//
+// The bound lives here rather than in Validate on purpose, and the choice is not
+// the one the coupling coefficient's ceiling made. A validator bound would have to
+// be a bound on the *combination* γ(k) = Loss0 + Loss1·k + Loss2·k², since no
+// single knob is individually required to be positive, and "the combination is
+// non-zero" is not enough: Loss2 = 1e-12 validates, gives a per-sample factor of
+// 0.9999999999994, and leaves the layer at 0.68 of its peak four seconds after
+// the strike with isRinging still true — audio that is finite and useless, and a
+// voice that never goes inactive. A bound large enough to prevent that is a
+// threshold read off this file's arithmetic imposed on the head's physics, and it
+// would reject loss laws that are perfectly well behaved for everything else: the
+// modal bank adds radiation loss on top of γ and decays fine without it, and the
+// offline fitter searches these coefficients down to their validated floor.
+// Clamping the derived quantity keeps the constraint where the constraint is.
+//
+// One second is the backstop, not a taste control. The shipped loss law puts the
+// slowest band at a 13.6 ms release, and a head would have to be some seventy
+// times less lossy than that before this binds — by which point the layer has
+// stopped being an attack. It also bounds the time to inactivity, which +Inf and
+// exactly-1.0 do not.
+const maxAttackReleaseSeconds = 1
+
+// attackReleaseSeconds is one band's release: the head's loss law at that band's
+// wavenumber, scaled, and held finite. Both arguments are validated finite and
+// non-negative, so no NaN can reach the comparison.
+func attackReleaseSeconds(decayScale, decayRatePerSecond float64) float64 {
+	// A zero scale is "no release" and decayFactorPerSample already means that
+	// by a zero factor; it must not be read as a lossless head.
+	if decayScale <= 0 {
+		return 0
+	}
+
+	if decayRatePerSecond <= 0 {
+		return maxAttackReleaseSeconds
+	}
+
+	return min(decayScale/decayRatePerSecond, maxAttackReleaseSeconds)
 }
 
 func decayFactorPerSample(decaySeconds, sampleRateHz float64) float64 {

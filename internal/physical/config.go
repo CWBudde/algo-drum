@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 )
 
 const (
@@ -134,11 +133,11 @@ const maxResonantModeLimit = 160
 // the cavity became modal, at which point widening the cavity basis silently
 // quadrupled the resonant bank. See DefaultResonantModeLimit.
 type PhysicalDrum struct {
-	Version           int     `json:"version"`
-	SampleRateHz      float64 `json:"sampleRateHz"`
-	Quality           Quality `json:"quality"`
-	ResonantModeLimit int     `json:"resonantModeLimit"`
-	Batter            Head    `json:"batter"`
+	Version           int          `json:"version"`
+	SampleRateHz      float64      `json:"sampleRateHz"`
+	Quality           Quality      `json:"quality"`
+	ResonantModeLimit int          `json:"resonantModeLimit"`
+	Batter            Head         `json:"batter"`
 	Resonant          Head         `json:"resonant"`
 	Strike            Strike       `json:"strike"`
 	Cavity            Cavity       `json:"cavity"`
@@ -334,10 +333,75 @@ type Cavity struct {
 // MaximumTensionRatio caps the tension increase relative to each head's static
 // tension so retained modes remain below Nyquist.
 type Nonlinearity struct {
-	Enabled                          bool    `json:"enabled"`
-	BatterTensionCoefficientNPerM3   float64 `json:"batterTensionCoefficientNPerM3"`
-	ResonantTensionCoefficientNPerM3 float64 `json:"resonantTensionCoefficientNPerM3"`
-	MaximumTensionRatio              float64 `json:"maximumTensionRatio"`
+	Enabled                          bool              `json:"enabled"`
+	BatterTensionCoefficientNPerM3   float64           `json:"batterTensionCoefficientNPerM3"`
+	ResonantTensionCoefficientNPerM3 float64           `json:"resonantTensionCoefficientNPerM3"`
+	MaximumTensionRatio              float64           `json:"maximumTensionRatio"`
+	Coupling                         NonlinearCoupling `json:"coupling"`
+}
+
+// NonlinearCoupling adds the part of the geometric nonlinearity the Berger law
+// throws away: the mode-to-mode transfer.
+//
+// Berger keeps the first moment of g = |grad w|^2 and nothing else, so the
+// modal equations stay diagonal and no mode can transfer energy to any other at
+// any amplitude. What it discards is the *second* moment, and adding channels
+// back is what lets a loud hit deposit energy at frequencies nothing struck.
+// The force is cubic and odd, so it reaches 3f_a, 2f_a +/- f_b and
+// f_a +/- f_b +/- f_c and nothing even; a single pump therefore reaches only f
+// and 3f, which is why PumpCount below 2 is rejected outright.
+//
+// CoefficientNPerM is beta_tilde, the local quartic's coefficient. At the
+// shipped bank beta*A = 7.0e5 N/m, against a material E*h/(2(1-nu^2)) of
+// 6.5e5 N/m — agreement to 8 %, which is a coincidence worth recording and not
+// a derivation: the local quartic is one bracket of the von Karman family and
+// Berger the other, and the coefficient is fitted either way.
+//
+// PumpCount and PumpMaxFrequencyHz choose the mode set P the channels are built
+// from; MaxCoefficients bounds the retained table; AliasFraction bounds where
+// the cubic force may place energy. See docs/physical-nonlinearity.md.
+type NonlinearCoupling struct {
+	Enabled            bool    `json:"enabled"`
+	CoefficientNPerM   float64 `json:"coefficientNPerM"`
+	PumpCount          int     `json:"pumpCount"`
+	PumpMaxFrequencyHz float64 `json:"pumpMaxFrequencyHz"`
+	MaxCoefficients    int     `json:"maxCoefficients"`
+	AliasFraction      float64 `json:"aliasFraction"`
+}
+
+// DefaultNonlinearCoupling returns the shipped coupling settings.
+func DefaultNonlinearCoupling() NonlinearCoupling {
+	return NonlinearCoupling{
+		Enabled: true,
+		// beta * A at the shipped batter coefficient and radius. This is the
+		// value the Berger channel already carries, applied to the channels
+		// Berger drops, so it is not a new free parameter — it is the same one
+		// spent on the part of the potential that was being projected away.
+		CoefficientNPerM: 7.0e5,
+		// Four, because the measured ranking is not monotone in frequency and
+		// three would drop the (2,1); eight is the validated ceiling and costs
+		// 37 channels instead of 11.
+		PumpCount: 4,
+		// The band the P8 excitation gap sits above. Pumps above it are already
+		// inside the band the coupling exists to reach.
+		PumpMaxFrequencyHz: 700,
+		// Measured on the radiated spectrum of a velocity-1 hit: 128
+		// coefficients cost 4.2 dB against the full table in 476-700 Hz, 256
+		// cost 0.9 dB, and 512 is indistinguishable from the full table.
+		MaxCoefficients: 256,
+		AliasFraction:   0.45,
+	}
+}
+
+// inertNonlinearCoupling returns the coupling every migrated document gets: the
+// shipped shape, switched off and with a zero coefficient, so a persisted
+// configuration renders exactly as it did before this field existed.
+func inertNonlinearCoupling() NonlinearCoupling {
+	coupling := DefaultNonlinearCoupling()
+	coupling.Enabled = false
+	coupling.CoefficientNPerM = 0
+
+	return coupling
 }
 
 // Attack is the stochastic high-band layer that stands in for the modes this
@@ -562,6 +626,7 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			BatterTensionCoefficientNPerM3:   9.6e6,
 			ResonantTensionCoefficientNPerM3: 6.4e6,
 			MaximumTensionRatio:              0.2,
+			Coupling:                         DefaultNonlinearCoupling(),
 		},
 		Attack: Attack{
 			Enabled: true,
@@ -629,136 +694,6 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			OutputGain: 0.0048,
 		},
 	}
-}
-
-// Validate checks every persisted field.
-func (d PhysicalDrum) Validate() error {
-	if d.Version != ConfigVersion {
-		return fmt.Errorf("%w: got %d, want %d", ErrConfigVersion, d.Version, ConfigVersion)
-	}
-
-	if err := finiteRange("sampleRateHz", d.SampleRateHz, minSampleRateHz, maxSampleRateHz); err != nil {
-		return err
-	}
-
-	if d.Quality.ModeLimit() == 0 {
-		return fmt.Errorf("%w: unknown quality %q", ErrInvalidConfig, d.Quality)
-	}
-
-	// The floor is one oscillator rather than zero: a reduced head with an empty
-	// bank is a disabled head, and Head.Enabled already says that. The ceiling is
-	// the largest bank the reduction can select out of, above which the cap is
-	// inert.
-	if d.ResonantModeLimit < 1 || d.ResonantModeLimit > maxResonantModeLimit {
-		return fmt.Errorf(
-			"%w: resonantModeLimit=%d outside [1,%d]",
-			ErrInvalidConfig,
-			d.ResonantModeLimit,
-			maxResonantModeLimit,
-		)
-	}
-
-	if err := validateHead("batter", d.Batter, true); err != nil {
-		return err
-	}
-
-	if err := validateHead("resonant", d.Resonant, false); err != nil {
-		return err
-	}
-
-	if err := finiteRange("strike.radius01", d.Strike.Radius01, 0, 1); err != nil {
-		return err
-	}
-
-	if err := finiteRange("strike.angleRad", d.Strike.AngleRad, -2*math.Pi, 2*math.Pi); err != nil {
-		return err
-	}
-
-	if err := finiteRange("strike.contactRadiusM", d.Strike.ContactRadiusM, 1e-4, d.Batter.RadiusM/2); err != nil {
-		return err
-	}
-
-	if err := finiteRange("strike.malletMassKg", d.Strike.MalletMassKg, 1e-4, 1); err != nil {
-		return err
-	}
-
-	if err := finiteRange("strike.velocityMPerS", d.Strike.VelocityMPerS, 0, 20); err != nil {
-		return err
-	}
-
-	if err := finiteRange("strike.hardness01", d.Strike.Hardness01, 0, 1); err != nil {
-		return err
-	}
-
-	if err := validateContact(d.Strike.Contact); err != nil {
-		return err
-	}
-
-	if err := finiteRange("cavity.depthM", d.Cavity.DepthM, 0.01, 2); err != nil {
-		return err
-	}
-
-	if err := finiteRange("cavity.coupling01", d.Cavity.Coupling01, 0, 1); err != nil {
-		return err
-	}
-
-	if err := finiteRange("cavity.stiffnessScale", d.Cavity.StiffnessScale, 0, 1); err != nil {
-		return err
-	}
-
-	if err := finiteRange("cavity.airDensityKgPerM3", d.Cavity.AirDensityKgPerM3, 0.5, 2); err != nil {
-		return err
-	}
-
-	if err := finiteRange("cavity.soundSpeedMPerS", d.Cavity.SoundSpeedMPerS, 250, 400); err != nil {
-		return err
-	}
-
-	if err := finiteRange("cavity.lossPerSecond", d.Cavity.LossPerSecond, 0, 10_000); err != nil {
-		return err
-	}
-
-	if err := validateCavityModes(d); err != nil {
-		return err
-	}
-
-	if err := validateNonlinearity(d); err != nil {
-		return err
-	}
-
-	if err := finiteRange("pickup.radius01", d.Pickup.Radius01, 0, 1); err != nil {
-		return err
-	}
-
-	if err := finiteRange("pickup.angleRad", d.Pickup.AngleRad, -2*math.Pi, 2*math.Pi); err != nil {
-		return err
-	}
-
-	if err := validateAttack(d); err != nil {
-		return err
-	}
-
-	if err := finiteRange("pickup.nearFieldScale", d.Pickup.NearFieldScale, 0, 10); err != nil {
-		return err
-	}
-
-	if err := finiteRange("pickup.distanceM", d.Pickup.DistanceM, 0.01, 10); err != nil {
-		return err
-	}
-
-	if err := finiteRange("pickup.highpassHz", d.Pickup.HighpassHz, 1, maxSampleRateHz/2); err != nil {
-		return err
-	}
-
-	if err := finiteRange("pickup.lowpassHz", d.Pickup.LowpassHz, d.Pickup.HighpassHz, maxSampleRateHz/2); err != nil {
-		return err
-	}
-
-	if err := finiteRange("pickup.outputGain", d.Pickup.OutputGain, 0, 100); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // EncodeConfig validates and serializes a physical-drum configuration.
@@ -960,319 +895,16 @@ func migrateV9Config(config *PhysicalDrum) {
 // 6 and 8 at the three tiers. DefaultResonantModeLimit is well above all of them,
 // so the cap cannot bind on any document this migration can produce, and the
 // render stays bit-identical rather than merely close.
+// The nonlinear mode coupling arrives in the same version and is migrated
+// *inert*, not at its default. The asymmetry is deliberate: a newly created
+// configuration from DefaultPhysicalDrum ships the coupling enabled, because it
+// is a mechanism the model was missing, while a persisted document is a sound
+// somebody kept and enabling a new source term would change it. With
+// coupling.enabled false and a zero coefficient, NewDoubleHead builds a
+// zero-length table and the audio path is the one that shipped, bit for bit.
 func migrateV10Config(config *PhysicalDrum) {
 	config.Version = ConfigVersion
 	config.Cavity.ModeCount = 1
 	config.ResonantModeLimit = DefaultResonantModeLimit
-}
-
-func validateContact(contact Contact) error {
-	switch contact.Model {
-	case ContactPrescribed, ContactHertzian:
-	default:
-		return fmt.Errorf(
-			"%w: unknown strike.contact.model %q",
-			ErrInvalidConfig,
-			contact.Model,
-		)
-	}
-
-	if err := finiteRange(
-		"strike.contact.stiffnessNPerMAlpha",
-		contact.StiffnessNPerMAlpha,
-		1,
-		1e12,
-	); err != nil {
-		return err
-	}
-
-	// The lower bound is not cosmetic. Contact duration scales as
-	// v^(-(alpha-1)/(alpha+1)), so alpha = 1 is a linear spring whose contact
-	// time does not depend on how hard the drum is hit at all, and below it the
-	// dependence inverts and a loud stroke would dwell longer than a quiet one.
-	if err := finiteRange(
-		"strike.contact.exponent",
-		contact.Exponent,
-		1,
-		4,
-	); err != nil {
-		return err
-	}
-
-	// The ceiling is the model's validity limit, not a taste bound. The
-	// Hunt-Crossley force is K*d^alpha*(1 + h*ddot), so once h exceeds the
-	// reciprocal of the separation speed the bracket goes negative and the force
-	// is clipped to zero part-way through the release. That is a step
-	// discontinuity, and it costs the pulse the smooth spectrum it exists to
-	// have. One second per metre is above any strike this model admits and well
-	// below where the clipping starts to matter.
-	if err := finiteRange(
-		"strike.contact.hysteresisSPerM",
-		contact.HysteresisSPerM,
-		0,
-		1,
-	); err != nil {
-		return err
-	}
-
-	return finiteRange(
-		"strike.contact.maxDurationSeconds",
-		contact.MaxDurationSeconds,
-		1e-4,
-		0.5,
-	)
-}
-
-// validateCavityModes bounds the enclosed-air state count and keeps the retained
-// transverse modes inside the same anti-alias band the heads are held to.
-//
-// The count is capped because the midpoint elimination is a k x k dense solve in
-// the audio path. The frequency bound is the cavity's version of the head's
-// FrequencyLimitFraction: a cavity mode is an oscillator like any other, and one
-// placed near Nyquist would be as badly resolved as a head mode there. It cannot
-// trip on any shipped geometry — the eighth mode of a 12-inch shell is near
-// 1.6 kHz — but a small shell or a low sample rate can reach it.
-func validateCavityModes(config PhysicalDrum) error {
-	if config.Cavity.ModeCount < 1 || config.Cavity.ModeCount > maxCavityModes {
-		return fmt.Errorf(
-			"%w: cavity.modeCount=%d outside [1,%d]",
-			ErrInvalidConfig,
-			config.Cavity.ModeCount,
-			maxCavityModes,
-		)
-	}
-
-	modes, err := generateCavityModes(config)
-	if err != nil {
-		return err
-	}
-
-	if len(modes) != config.Cavity.ModeCount {
-		return fmt.Errorf(
-			"%w: cavity.modeCount=%d admits only %d modes",
-			ErrInvalidConfig,
-			config.Cavity.ModeCount,
-			len(modes),
-		)
-	}
-
-	limitHz := config.Batter.FrequencyLimitFraction * config.SampleRateHz
-	for _, mode := range modes {
-		if mode.FrequencyHz > limitHz {
-			return fmt.Errorf(
-				"%w: cavity mode (%d,%d) at %.1f Hz exceeds the anti-alias limit %.1f Hz",
-				ErrInvalidConfig,
-				mode.AzimuthalOrder,
-				mode.RadialOrder,
-				mode.FrequencyHz,
-				limitHz,
-			)
-		}
-	}
-
-	return nil
-}
-
-func validateNonlinearity(config PhysicalDrum) error {
-	nonlinearity := config.Nonlinearity
-	if err := finiteRange(
-		"nonlinearity.batterTensionCoefficientNPerM3",
-		nonlinearity.BatterTensionCoefficientNPerM3,
-		0,
-		1e9,
-	); err != nil {
-		return err
-	}
-
-	if err := finiteRange(
-		"nonlinearity.resonantTensionCoefficientNPerM3",
-		nonlinearity.ResonantTensionCoefficientNPerM3,
-		0,
-		1e9,
-	); err != nil {
-		return err
-	}
-
-	if err := finiteRange(
-		"nonlinearity.maximumTensionRatio",
-		nonlinearity.MaximumTensionRatio,
-		0,
-		1,
-	); err != nil {
-		return err
-	}
-
-	if !nonlinearity.Enabled {
-		return nil
-	}
-
-	if nonlinearity.BatterTensionCoefficientNPerM3 == 0 &&
-		(!config.Resonant.Enabled ||
-			nonlinearity.ResonantTensionCoefficientNPerM3 == 0) {
-		return fmt.Errorf(
-			"%w: enabled nonlinearity has no positive tension coefficient",
-			ErrInvalidConfig,
-		)
-	}
-
-	if nonlinearity.MaximumTensionRatio == 0 {
-		return fmt.Errorf(
-			"%w: enabled nonlinearity has zero maximum tension ratio",
-			ErrInvalidConfig,
-		)
-	}
-
-	safeRatio := maximumSafeTensionRatio(config.Batter)
-	if config.Resonant.Enabled {
-		safeRatio = min(safeRatio, maximumSafeTensionRatio(config.Resonant))
-	}
-
-	if nonlinearity.MaximumTensionRatio >= safeRatio {
-		return fmt.Errorf(
-			"%w: nonlinearity.maximumTensionRatio %v reaches anti-alias bound %v",
-			ErrInvalidConfig,
-			nonlinearity.MaximumTensionRatio,
-			safeRatio,
-		)
-	}
-
-	return nil
-}
-
-func maximumSafeTensionRatio(head Head) float64 {
-	frequencyLimit := head.FrequencyLimitFraction
-
-	return 1/(4*frequencyLimit*frequencyLimit) - 1
-}
-
-func validateHead(name string, head Head, required bool) error {
-	if required && !head.Enabled {
-		return fmt.Errorf("%w: %s must be enabled", ErrInvalidConfig, name)
-	}
-
-	checks := []struct {
-		field    string
-		value    float64
-		minValue float64
-		maxValue float64
-	}{
-		{"radiusM", head.RadiusM, 0.02, 1},
-		{"surfaceDensityKgPerM2", head.SurfaceDensityKgPerM2, 0.01, 10},
-		{"tensionNPerM", head.TensionNPerM, 1, 100_000},
-		{"bendingStiffnessNM", head.BendingStiffnessNM, 0, 100},
-		{"loss0PerSecond", head.Loss0PerSecond, 0, 10_000},
-		{"loss1MPerSecond", head.Loss1MPerSecond, 0, 1_000},
-		{"loss2M2PerSecond", head.Loss2M2PerSecond, 0, 10},
-		{"radiationLossPerSecond", head.RadiationLossPerSecond, 0, 10_000},
-		{"frequencyLimitFraction", head.FrequencyLimitFraction, 0.05, 0.49},
-		{"inactiveEnergyThresholdJ", head.InactiveEnergyThresholdJ, 0, 1},
-	}
-	for _, check := range checks {
-		if err := finiteRange(name+"."+check.field, check.value, check.minValue, check.maxValue); err != nil {
-			return err
-		}
-	}
-
-	if err := finiteRange(
-		name+".tensionAsymmetry.splitRatio",
-		head.TensionAsymmetry.SplitRatio,
-		0,
-		0.02,
-	); err != nil {
-		return err
-	}
-
-	if err := finiteRange(
-		name+".tensionAsymmetry.principalAxisAngleRad",
-		head.TensionAsymmetry.PrincipalAxisAngleRad,
-		-math.Pi,
-		math.Pi,
-	); err != nil {
-		return err
-	}
-
-	seenCorrections := make(map[[2]int]struct{}, len(head.ModeDecayCorrections))
-	for _, correction := range head.ModeDecayCorrections {
-		if correction.AzimuthalOrder < 0 || correction.AzimuthalOrder > maxModeOrder ||
-			correction.RadialOrder < 1 || correction.RadialOrder > maxModeOrder {
-			return fmt.Errorf(
-				"%w: %s mode correction index=(%d,%d)",
-				ErrInvalidConfig,
-				name,
-				correction.AzimuthalOrder,
-				correction.RadialOrder,
-			)
-		}
-
-		if err := finiteRange(
-			name+".modeDecayCorrection",
-			correction.DecayRatePerSecond,
-			-10_000,
-			10_000,
-		); err != nil {
-			return err
-		}
-
-		key := [2]int{correction.AzimuthalOrder, correction.RadialOrder}
-		if _, exists := seenCorrections[key]; exists {
-			return fmt.Errorf(
-				"%w: duplicate %s mode correction index=(%d,%d)",
-				ErrInvalidConfig,
-				name,
-				correction.AzimuthalOrder,
-				correction.RadialOrder,
-			)
-		}
-
-		seenCorrections[key] = struct{}{}
-	}
-
-	return nil
-}
-
-func finiteRange(name string, value, minValue, maxValue float64) error {
-	if math.IsNaN(value) || math.IsInf(value, 0) || value < minValue || value > maxValue {
-		return fmt.Errorf(
-			"%w: %s=%v outside [%v,%v]",
-			ErrInvalidConfig,
-			name,
-			value,
-			minValue,
-			maxValue,
-		)
-	}
-
-	return nil
-}
-
-func validateAttack(config PhysicalDrum) error {
-	attack := config.Attack
-	if err := finiteRange(
-		"attack.levelRelative",
-		attack.LevelRelative,
-		0,
-		1_000,
-	); err != nil {
-		return err
-	}
-
-	if err := finiteRange(
-		"attack.centreHz",
-		attack.CentreHz,
-		20,
-		config.SampleRateHz/2,
-	); err != nil {
-		return err
-	}
-
-	if err := finiteRange(
-		"attack.qualityFactor",
-		attack.QualityFactor,
-		0.1,
-		20,
-	); err != nil {
-		return err
-	}
-
-	return finiteRange("attack.decayScale", attack.DecayScale, 0, 100)
+	config.Nonlinearity.Coupling = inertNonlinearCoupling()
 }

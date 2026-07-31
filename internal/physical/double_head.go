@@ -28,6 +28,7 @@ type DoubleHeadOutput struct {
 	ResonantTensionIncreaseNPerM float64
 	LinearHeadMechanicalEnergyJ  float64
 	NonlinearPotentialEnergyJ    float64
+	CouplingPotentialEnergyJ     float64
 	NonlinearSolveIterations     int
 	HeadMechanicalEnergyJ        float64
 	CavityMechanicalEnergyJ      float64
@@ -100,6 +101,31 @@ type DoubleHead struct {
 	resonantNonlinear          nonlinearHead
 	nonlinearSolveIterations   int
 	energy                     float64
+
+	// The nonlinear mode coupling: the channels of the local quartic potential
+	// the Berger law projects away. coupling is empty unless the coupling is
+	// configured, and every loop below is guarded on that rather than multiplied
+	// by zero, so a disabled coupling leaves the shipped arithmetic untouched
+	// sample for sample.
+	//
+	// channelValue holds g_c at the current state, channelTrial the fixed-point
+	// solve's endpoint guess, and channelTension the discrete gradient
+	// T_c = beta_tilde (g_c^{n+1} + g_c^n)/2 the modal force is formed from.
+	// couplingBar is the midpoint displacement the force is evaluated at and
+	// couplingAccel the resulting modal acceleration.
+	coupling            couplingTable
+	couplingActive      bool
+	couplingBar         []float64
+	couplingEnd         []float64
+	couplingAccel       []float64
+	couplingInverseMass []float64
+	channelValue        []float64
+	channelTrial        []float64
+	channelTension      []float64
+	channelTensionScale float64
+	// couplingDivergedSteps counts samples whose coupled fixed point was
+	// abandoned and re-solved without the coupling. See tickCoupled.
+	couplingDivergedSteps uint64
 }
 
 // NewDoubleHead precomputes two independently tuned modal banks, the enclosed
@@ -237,10 +263,82 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 		model.strikeWeight[index] = mode.StrikeAccelerationPerN * mode.ModalMassKg
 	}
 
+	model.installCoupling(config, batterModes)
+
 	model.contact = newContact(config)
 	model.contact.setSubsteps(strikePointMassKg(batterModes))
 
 	return model, nil
+}
+
+// installCoupling builds the quartic channel table and its audio-path scratch.
+//
+// Batter modes only, and deliberately: the resonant head is never struck, its
+// bank is reachability-reduced to what the cavity can drive, and a cubic source
+// term there would be spending the whole coupling budget on modes that are two
+// coupling stages away from any excitation.
+//
+// With the coupling disabled this installs a zero-length table and leaves
+// couplingActive false, which is the checkable limit the bit-exactness test
+// rests on: Tick then takes the path that shipped, not a coupled path multiplied
+// by zero.
+func (d *DoubleHead) installCoupling(config PhysicalDrum, batterModes []Mode) {
+	d.coupling = buildCouplingTable(config, batterModes)
+	if !d.coupling.active() {
+		d.coupling = couplingTable{}
+
+		return
+	}
+
+	d.couplingActive = true
+	d.couplingBar = make([]float64, len(batterModes))
+	d.couplingEnd = make([]float64, len(batterModes))
+	d.couplingAccel = make([]float64, len(batterModes))
+	d.couplingInverseMass = make([]float64, len(batterModes))
+
+	for index := range batterModes {
+		d.couplingInverseMass[index] = 1 / batterModes[index].ModalMassKg
+	}
+
+	d.channelValue = make([]float64, d.coupling.channelCount)
+	d.channelTrial = make([]float64, d.coupling.channelCount)
+	d.channelTension = make([]float64, d.coupling.channelCount)
+	// The convergence test compares channel tensions, which carry the same N/m
+	// units as the Berger tension, against the same absolute floor the head
+	// tensions use.
+	d.channelTensionScale = max(1, d.batterNonlinear.maxTensionNPerM)
+}
+
+// CouplingCoefficientCount reports the retained quartic coefficients. Zero means
+// the coupling is off and the model is the one that shipped.
+func (d *DoubleHead) CouplingCoefficientCount() int {
+	return len(d.coupling.entryValue)
+}
+
+// CouplingChannelCount reports the retained potential channels beyond the
+// uniform one the Berger law already carries.
+func (d *DoubleHead) CouplingChannelCount() int { return d.coupling.channelCount }
+
+// CouplingPumpModes reports the batter-mode indices the channel set was built
+// from, in selection order.
+func (d *DoubleHead) CouplingPumpModes() []int {
+	return append([]int(nil), d.coupling.pumpIndices...)
+}
+
+// CouplingWorstForceHz reports the highest frequency the retained cubic force
+// can reach, measured on the table that was actually built rather than on the
+// conservative bound Validate applies.
+func (d *DoubleHead) CouplingWorstForceHz() float64 {
+	return d.coupling.worstForceFrequencyHz
+}
+
+// CouplingDivergedSteps reports how many samples since the last Reset had their
+// coupled fixed point abandoned and re-solved without the coupling. On any
+// configuration the validator admits this stays zero; a non-zero count means the
+// coefficient is too large for the step at the amplitude being played, and what
+// was heard was the Berger-only law for those samples.
+func (d *DoubleHead) CouplingDivergedSteps() uint64 {
+	return d.couplingDivergedSteps
 }
 
 // installCavity stores the enclosed-air basis and precomputes every non-zero
@@ -410,6 +508,13 @@ func (d *DoubleHead) Reset() {
 	d.batterNonlinear.strainMeasureM2 = 0
 	d.resonantNonlinear.strainMeasureM2 = 0
 	d.nonlinearSolveIterations = 0
+	clear(d.channelValue)
+	clear(d.channelTrial)
+	clear(d.channelTension)
+	clear(d.couplingBar)
+	clear(d.couplingEnd)
+	clear(d.couplingAccel)
+	d.couplingDivergedSteps = 0
 	d.batterRadiatedM3PerS2 = 0
 	d.resonantRadiatedM3PerS2 = 0
 	d.attack.reset()
@@ -499,53 +604,21 @@ func (d *DoubleHead) tickUncoupled(forceN float64) DoubleHeadOutput {
 
 func (d *DoubleHead) tickCoupled(forceN float64) DoubleHeadOutput {
 	timeStep := 1 / d.config.SampleRateHz
-	batterTension := d.batterNonlinear.tensionAt(
-		d.batterNonlinear.strainMeasureM2,
+
+	batterStrain, resonantStrain, diverged := d.solveNonlinearStep(
+		forceN,
+		d.couplingActive,
 	)
-	resonantTension := d.resonantNonlinear.tensionAt(
-		d.resonantNonlinear.strainMeasureM2,
-	)
-	batterStrain := d.batterNonlinear.strainMeasureM2
-	resonantStrain := d.resonantNonlinear.strainMeasureM2
+	// The coupled fixed point stopped contracting, so its iterate means nothing
+	// and the head state it would write is arbitrary. Nothing has been committed
+	// yet — solveNonlinearStep reads d.displacement and d.velocity and writes
+	// only scratch — so the step is simply re-solved from the same pre-step
+	// state with the coupling switched off, which lands on the Berger-only
+	// update whose stability is unconditional. See couplingResidualGrowth.
+	if diverged {
+		d.couplingDivergedSteps++
 
-	iterationCount := 1
-	if d.config.Nonlinearity.Enabled {
-		iterationCount = nonlinearSolveIterations
-	}
-
-	iterationsUsed := 0
-	for range iterationCount {
-		iterationsUsed++
-		batterStrain, resonantStrain = d.solveMidpoint(forceN, batterTension, resonantTension)
-		nextBatterTension := d.batterNonlinear.discreteTension(
-			d.batterNonlinear.strainMeasureM2,
-			batterStrain,
-		)
-
-		nextResonantTension := d.resonantNonlinear.discreteTension(
-			d.resonantNonlinear.strainMeasureM2,
-			resonantStrain,
-		)
-		if tensionConverged(
-			batterTension,
-			nextBatterTension,
-			d.batterNonlinear.maxTensionNPerM,
-		) && tensionConverged(
-			resonantTension,
-			nextResonantTension,
-			d.resonantNonlinear.maxTensionNPerM,
-		) {
-			break
-		}
-
-		batterTension = nextBatterTension
-		resonantTension = nextResonantTension
-	}
-
-	if d.config.Nonlinearity.Enabled {
-		d.nonlinearSolveIterations = iterationsUsed
-	} else {
-		d.nonlinearSolveIterations = 0
+		batterStrain, resonantStrain, _ = d.solveNonlinearStep(forceN, false)
 	}
 
 	batterRadiated := 0.0
@@ -596,6 +669,214 @@ func (d *DoubleHead) tickCoupled(forceN float64) DoubleHeadOutput {
 	return d.observe()
 }
 
+// solveNonlinearStep runs the implicit-midpoint fixed point for one sample and
+// returns the two head strain measures it converged on, plus whether the coupled
+// iteration had to be abandoned.
+//
+// useCoupling is not the same question as d.couplingActive: tickCoupled calls
+// this a second time with it false when the coupled pass diverged. Everything
+// written here is scratch — d.displacement, d.velocity and the cavity state are
+// committed by the caller — so a second call from the same pre-step state is a
+// clean redo rather than a rollback.
+func (d *DoubleHead) solveNonlinearStep(
+	forceN float64,
+	useCoupling bool,
+) (float64, float64, bool) {
+	batterTension := d.batterNonlinear.tensionAt(
+		d.batterNonlinear.strainMeasureM2,
+	)
+	resonantTension := d.resonantNonlinear.tensionAt(
+		d.resonantNonlinear.strainMeasureM2,
+	)
+	batterStrain := d.batterNonlinear.strainMeasureM2
+	resonantStrain := d.resonantNonlinear.strainMeasureM2
+
+	iterationCount := 1
+	if d.config.Nonlinearity.Enabled {
+		iterationCount = nonlinearSolveIterations
+	}
+
+	if useCoupling {
+		d.beginCouplingStep()
+	} else {
+		// The coupled path's force term is still summed into the midpoint
+		// numerator — the branch there is on couplingActive, which has not
+		// changed — so it is zeroed rather than skipped.
+		clear(d.couplingAccel)
+		clear(d.channelTension)
+	}
+
+	iterationsUsed := 0
+	previousResidual := math.Inf(1)
+	diverged := false
+
+	for range iterationCount {
+		iterationsUsed++
+
+		if useCoupling {
+			d.accumulateCouplingForces()
+		}
+
+		batterStrain, resonantStrain = d.solveMidpoint(forceN, batterTension, resonantTension)
+		nextBatterTension := d.batterNonlinear.discreteTension(
+			d.batterNonlinear.strainMeasureM2,
+			batterStrain,
+		)
+
+		nextResonantTension := d.resonantNonlinear.discreteTension(
+			d.resonantNonlinear.strainMeasureM2,
+			resonantStrain,
+		)
+		converged := tensionConverged(
+			batterTension,
+			nextBatterTension,
+			d.batterNonlinear.maxTensionNPerM,
+		) && tensionConverged(
+			resonantTension,
+			nextResonantTension,
+			d.resonantNonlinear.maxTensionNPerM,
+		)
+
+		// The channel tensions depend on the endpoint exactly as the head
+		// tensions do, so the coupling has to sit inside the fixed point rather
+		// than beside it, and the convergence test grows from two scalars to
+		// 2 + C.
+		if useCoupling {
+			residual := d.advanceChannelTensions()
+			tolerance := nonlinearSolveTolerance * d.channelTensionScale
+
+			// The growth test is deliberately not applied once the residual has
+			// reached the tolerance band: down there it is a difference of two
+			// nearly equal tensions, its ratio to the previous one is float noise,
+			// and a converged channel set would trip a divergence check built on
+			// it. A NaN residual is caught on its own, since every comparison
+			// against it is false and it is the last thing that happens before the
+			// state itself goes non-finite.
+			switch {
+			case math.IsNaN(residual),
+				previousResidual > tolerance &&
+					residual > couplingResidualGrowth*previousResidual:
+				diverged = true
+			case residual > tolerance:
+				converged = false
+			}
+
+			previousResidual = residual
+
+			if diverged {
+				break
+			}
+		}
+
+		if converged {
+			break
+		}
+
+		batterTension = nextBatterTension
+		resonantTension = nextResonantTension
+	}
+
+	if d.config.Nonlinearity.Enabled {
+		d.nonlinearSolveIterations = iterationsUsed
+	} else {
+		d.nonlinearSolveIterations = 0
+	}
+
+	return batterStrain, resonantStrain, diverged
+}
+
+// beginCouplingStep seeds the fixed point: the endpoint guess is the current
+// state, the midpoint displacement is the current displacement, and the channel
+// tensions follow from those two exactly as the head tensions do.
+func (d *DoubleHead) beginCouplingStep() {
+	copy(d.channelTrial, d.channelValue)
+	copy(d.couplingBar, d.displacement[:len(d.couplingBar)])
+
+	for index, value := range d.channelValue {
+		d.channelTension[index] = d.coupling.coefficientNPerM * value
+	}
+}
+
+// accumulateCouplingForces forms the modal acceleration
+//
+//	a_i = -(1/M_i) sum_c T_c (D^c q_bar)_i
+//
+// from the current iterate. Paired with the secant T_c, its work over the step
+// is exactly minus the change in the channel potentials — the same discrete
+// gradient identity the scalar Berger law already satisfies, and for the same
+// reason: U is a sum of functions of scalar quadratic forms, so the scalar
+// secant *is* the vector discrete gradient. No Gonzalez projection, and no 0/0
+// branch at rest on a 96-vector.
+func (d *DoubleHead) accumulateCouplingForces() {
+	clear(d.couplingAccel)
+
+	for channel := range d.coupling.channelCount {
+		tension := d.channelTension[channel]
+		if tension == 0 {
+			continue
+		}
+
+		first := d.coupling.channelFirst[channel]
+		for slot := first; slot < d.coupling.channelFirst[channel+1]; slot++ {
+			row := d.coupling.entryRow[slot]
+			column := d.coupling.entryColumn[slot]
+			scaled := tension * d.coupling.entryValue[slot]
+
+			d.couplingAccel[row] -= scaled * d.couplingBar[column] *
+				d.couplingInverseMass[row]
+			if row != column {
+				d.couplingAccel[column] -= scaled * d.couplingBar[row] *
+					d.couplingInverseMass[column]
+			}
+		}
+	}
+}
+
+// advanceChannelTensions recomputes T_c from the endpoint the last solve
+// produced and returns the largest channel tension correction it made — the
+// fixed point's residual in N/m. Below nonlinearSolveTolerance*channelTensionScale
+// the iteration has converged; growing from one iteration to the next it is
+// diverging. Returning the residual rather than a converged flag is what lets
+// the caller tell those two apart.
+func (d *DoubleHead) advanceChannelTensions() float64 {
+	residual := 0.0
+
+	for channel, trial := range d.channelTrial {
+		tension := d.coupling.coefficientNPerM *
+			0.5 * (d.channelValue[channel] + trial)
+		residual = max(residual, math.Abs(tension-d.channelTension[channel]))
+
+		d.channelTension[channel] = tension
+	}
+
+	return residual
+}
+
+// channelValuesAt evaluates g_c = q^T D^c q for every retained channel at the
+// given batter displacements.
+func (d *DoubleHead) channelValuesAt(displacement, dst []float64) {
+	for channel := range d.coupling.channelCount {
+		total := 0.0
+
+		first := d.coupling.channelFirst[channel]
+		for slot := first; slot < d.coupling.channelFirst[channel+1]; slot++ {
+			row := d.coupling.entryRow[slot]
+
+			column := d.coupling.entryColumn[slot]
+
+			term := d.coupling.entryValue[slot] * displacement[row] *
+				displacement[column]
+			if row != column {
+				term *= 2
+			}
+
+			total += term
+		}
+
+		dst[channel] = total
+	}
+}
+
 func (d *DoubleHead) solveMidpoint(
 	forceN, batterTensionNPerM, resonantTensionNPerM float64,
 ) (float64, float64) {
@@ -634,6 +915,9 @@ func (d *DoubleHead) solveMidpoint(
 			angularFrequencySquared*d.displacement[index]
 		if index < d.batterModeCount {
 			numerator += forceN * mode.StrikeAccelerationPerN
+			if d.couplingActive {
+				numerator += d.couplingAccel[index]
+			}
 		}
 
 		uncoupledMidpointVelocity := numerator / denominator
@@ -693,9 +977,19 @@ func (d *DoubleHead) solveMidpoint(
 			newDisplacement * newDisplacement
 		if index < d.batterModeCount {
 			batterStrain += strain
+
+			if d.couplingActive {
+				d.couplingEnd[index] = newDisplacement
+				d.couplingBar[index] = d.displacement[index] +
+					0.5*timeStep*midpointVelocity
+			}
 		} else {
 			resonantStrain += strain
 		}
+	}
+
+	if d.couplingActive {
+		d.channelValuesAt(d.couplingEnd, d.channelTrial)
 	}
 
 	return batterStrain, resonantStrain
@@ -817,6 +1111,22 @@ func (d *DoubleHead) observe() DoubleHeadOutput {
 	output.NonlinearPotentialEnergyJ =
 		d.batterNonlinear.potentialEnergy(batterStrain) +
 			d.resonantNonlinear.potentialEnergy(resonantStrain)
+
+	// The channel potentials are part of the conserved quantity, not a
+	// diagnostic: the discrete-gradient force below trades linear modal energy
+	// against exactly this sum, so an energy test that omitted it would report a
+	// drift that is not there.
+	if d.couplingActive {
+		d.channelValuesAt(d.displacement, d.channelValue)
+
+		quarter := 0.25 * d.coupling.coefficientNPerM
+		for _, value := range d.channelValue {
+			output.CouplingPotentialEnergyJ += quarter * value * value
+		}
+
+		output.NonlinearPotentialEnergyJ += output.CouplingPotentialEnergyJ
+	}
+
 	output.HeadMechanicalEnergyJ = output.LinearHeadMechanicalEnergyJ +
 		output.NonlinearPotentialEnergyJ
 	output.NonlinearSolveIterations = d.nonlinearSolveIterations

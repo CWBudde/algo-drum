@@ -20,9 +20,11 @@ The short version:
 - It does not reproduce Wagner's separation-and-re-contact structure at all. The
   version that appeared to was **numerically wrong**, and that is the most
   important thing in this document.
-- What it does do, decisively, is reach past the modal ceiling: **+11.8 dB at
-  800 Hz, +15.1 dB at 1.5 kHz, +22.9 dB at 2.5 kHz** in the modal-only render.
-  That is the seam, not the gap.
+- What it does do, decisively, is reach past the modal ceiling: **+7.9 dB at
+  800 Hz, +15.5 dB at 1.5 kHz, +22.9 dB at 2.5 kHz** in the modal-only render.
+  That is the seam, not the gap. The 800 Hz figure was +11.9 dB before the
+  nonlinear mode coupling existed; the coupling raised the _prescribed_ side, for
+  a reason worth reading.
 - It is implemented, tested and selectable, and it is **off by default**.
 
 ## What was built
@@ -184,19 +186,22 @@ response to a strike, not a better tip.
 
 ## What it does buy
 
-Modal-only (attack layer disabled), one strike, referred to the fundamental:
+One strike at velocity 1, modal only, as shipped:
 
 | f       | prescribed | Hertzian | Δ         |
 | ------- | ---------- | -------- | --------- |
-| 400 Hz  | −22 dB     | −19 dB   | +3        |
-| 504 Hz  | −25        | −25      | 0         |
-| 635 Hz  | −29        | −25      | +4        |
-| 800 Hz  | −36        | −25      | **+11.8** |
-| 1500 Hz | −48        | −34      | **+15.1** |
-| 2500 Hz | −58        | −35      | **+22.9** |
-| 4000 Hz | −64        | −43      | +21       |
+| 400 Hz  | −15.1 dB   | −6.4 dB  | +8.7      |
+| 504 Hz  | −14.1      | −13.9    | +0.2      |
+| 635 Hz  | −18.1      | −18.2    | −0.1      |
+| 800 Hz  | −27.2      | −19.3    | **+7.9**  |
+| 1500 Hz | −48.1      | −32.7    | **+15.5** |
+| 2500 Hz | −57.2      | −34.2    | **+22.9** |
+| 4000 Hz | −63.1      | −43.0    | +20.2     |
 
-Below 700 Hz it is worth 0–4 dB. Above 800 Hz it is worth 12–23 dB.
+Below 700 Hz it is worth between nothing and 9 dB, and which depends on where the
+two models' combs happen to fall relative to the modes there. From 800 Hz up it
+is worth 8–23 dB, and that is not an accident of alignment — it is the prescribed
+pulse's 1/f² envelope running out.
 
 So it addresses **the seam**, not the gap. The seam is the other finding in
 `physical-excitation-gap.md`: the fit dragged `ATK.T` from 4000 Hz down to
@@ -214,6 +219,83 @@ unresolvable.
 > the fit still finds **0 partials** in 476–700 Hz against the reference's 9, so
 > the seam and the gap really are two different things. See
 > [`physical-measured-fit.md`](physical-measured-fit.md).
+
+### How this was measured
+
+Stated because the first version of this table was made by a program that was
+never committed, and re-deriving it from the numbers alone turned out to be
+impossible — the obvious alternative estimators disagree by tens of dB and one of
+them reverses the sign of the whole table.
+
+- One strike at velocity 1 into `DefaultPhysicalDrum()` at 44.1 kHz.
+  `Strike.Contact.Model` is the only field that differs between the two columns.
+- **Modal only** means `Attack.Enabled = false`, and nothing else. The cavity,
+  the Berger tension term and the mode coupling are all left as shipped.
+- The level at _f_ is a single-bin DFT of the **entire one-second render** at
+  exactly _f_, **rectangular window**. The window is the load-bearing choice. The
+  Hertzian advantage lives in the first few milliseconds of the render, so any
+  taper that vanishes at sample 0 destroys the thing being measured — a Hann
+  window over one second is 60 dB down at 7 ms, and the table measured through
+  one comes out with the Hertzian contact _duller_ than the prescribed one
+  everywhere.
+- Levels are relative to 118 Hz. That is the reference _recording's_ fundamental,
+  not this bank's, which is 150.1 Hz — so the 118 Hz bin is reading the leakage
+  skirt of the 150 Hz partial and acts as an overall-level normalizer rather than
+  as a literal fundamental. It is kept because every figure in this document and
+  in [`physical-nonlinearity.md`](physical-nonlinearity.md) is relative to it, and
+  because it is the conservative choice: referring to the bank's own 150.08 Hz
+  raises every Δ (800 Hz goes +7.9 → +13.2 dB). Nothing in the argument depends
+  on which is used.
+
+### What the mode coupling changed
+
+The Δ column above is smaller below 1 kHz than the one this document carried
+before P9. The contact model did not lose ground; the prescribed side gained. The
+same measurement with `Nonlinearity.Coupling.Enabled = false` — the control, and
+the state the original table was measured in — is:
+
+| f       | prescribed | Hertzian | Δ         |
+| ------- | ---------- | -------- | --------- |
+| 400 Hz  | −22.1 dB   | −19.4 dB | +2.7      |
+| 504 Hz  | −26.0      | −26.2    | −0.2      |
+| 635 Hz  | −25.0      | −18.1    | +6.9      |
+| 800 Hz  | −36.5      | −24.7    | **+11.9** |
+| 1500 Hz | −48.3      | −33.1    | **+15.2** |
+| 2500 Hz | −57.5      | −34.6    | **+22.9** |
+| 4000 Hz | −63.5      | −42.9    | +20.6     |
+
+This reproduces the pre-coupling table to about a dB at every frequency except
+635 Hz, where the original recorded −29/−25 against −25.0/−18.1 here; that row
+drifted with model changes between P8 and now, and the original method was not
+recorded well enough to say which. Everywhere else the old numbers stand.
+
+The interesting part is _where_ the coupling helps. A mode driven by the cubic
+coupling receives energy at 2f_a ± f_b and 3f_a **regardless of what |F(f)| does
+at its own frequency**. The half-sine's zero comb is a statement about |F(f)| and
+nothing else, so the coupling is the one mechanism in this model that can
+populate a mode the comb has deleted. Reading the two tables against each other,
+row by row, says exactly that:
+
+| f       | prescribed rise | Hertzian rise | Δ moves      |
+| ------- | --------------- | ------------- | ------------ |
+| 400 Hz  | +7.0 dB         | +13.0 dB      | +2.7 → +8.7  |
+| 504 Hz  | +11.9           | +12.3         | −0.2 → +0.2  |
+| 635 Hz  | +6.9            | −0.1          | +6.9 → −0.1  |
+| 800 Hz  | +9.3            | +5.4          | +11.9 → 7.9  |
+| 1500 Hz | +0.2            | +0.4          | +15.2 → 15.5 |
+| 2500 Hz | +0.3            | +0.4          | +22.9 → 22.9 |
+| 4000 Hz | +0.4            | −0.1          | +20.6 → 20.2 |
+
+Below 1 kHz both columns move by 5–13 dB; above it neither moves by half a dB.
+The coupling reaches the band the comb deleted and stops dead where the comb
+stops, because the pumps are chosen from modes below `PumpMaxFrequencyHz` =
+700 Hz and a cubic force from those reaches roughly 3× that and no further.
+
+So the two mechanisms are not substitutes. The coupling repairs the comb's
+_zeros_; the contact model repairs the envelope's _tail_. The gap needs the
+first, the seam needs the second, and the fact that this table moved below 1 kHz
+and did not move at all above it is the cleanest evidence of that split in the
+model.
 
 ## Why it is off by default
 
@@ -264,6 +346,13 @@ Everything above is in `internal/physical/contact_test.go`, which is in
 `just test`. Nothing here depends on `reference/tom.wav`; the frequencies quoted
 come from the measured fit and the tests run against `DefaultPhysicalDrum` at
 44.1 kHz so they line up with it.
+
+Both tables in "What it does buy" are asserted row by row, in both coupling
+states, by `TestHertzianContactReachesPastTheModalCeiling`, to ±1.5 dB. Its
+doc comment carries the method as well, so the two cannot drift apart silently
+the way the first version of that table did — that one was measured by an
+uncommitted program, and when it was re-derived the method had to be recovered
+from the surviving test helper rather than from the document.
 
 The sweeps that are not committed — stiffness, mass, hysteresis, hit radius,
 quality, and the substep/sample-rate convergence grid — were throwaway probes

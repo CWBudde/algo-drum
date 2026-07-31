@@ -68,6 +68,12 @@ Young modulus.
 
 ## What the mean-field reduction cannot do
 
+> This section is kept as written, because it is the argument P9/M1 acted on and
+> because it remains an exact description of the Berger law itself. It is no
+> longer a description of the shipped instrument: the section
+> [P9/M1: the coupling channels](#p9m1-the-coupling-channels) below adds the
+> second moment back, and the hypothesis raised here has since been measured.
+
 The Berger law collapses the geometric nonlinearity onto a single scalar
 \(\Delta T(S)\) over the total strain measure. Every mode is therefore detuned by
 the same _relative_ amount, the modal equations stay diagonal, and **no mode can
@@ -161,6 +167,321 @@ the local quartic would claim is therefore the **structure** of the coupling —
 which frequencies can be generated, and by which mode sets — and not its
 magnitude. The coefficient is fitted either way.
 
+## P9/M1: the coupling channels
+
+The section above is the statement of the defect. This one is what was done about
+it, and the first thing to say is that the fix does not replace the Berger law —
+it **adds to** it.
+
+### The channel form
+
+Write \(g=|\nabla w|^2\) and choose an orthonormal set of channels \(\psi_c\) on
+the head. Then
+
+\[
+\hat g_c=\langle g,\psi_c\rangle=q^{\mathsf T}D^c q,\qquad
+D^c\_{ij}=\int\psi_c\,(\nabla\varphi_i\cdot\nabla\varphi_j)\,dA,\qquad
+U=\frac{\tilde\beta}{4}\sum_c \hat g_c^2 .
+\]
+
+The uniform channel \(\psi_0=1/\sqrt A\) gives
+\(D^0=\mathrm{diag}(\Gamma_i)/\sqrt A\) and \(\hat g_0=S/\sqrt A\), so
+\(U_0=(\tilde\beta/4A)S^2\) is **exactly** the Berger potential with
+\(\beta=\tilde\beta/A\). That is not an approximation to it: the mode gradients
+are orthogonal analytically, by Green's identity, so the c = 0 coefficient is the
+existing \(\Gamma_i\) and nothing else. The implementation therefore stores only
+\(c\ge1\) and leaves the shipped `tanh`-capped law untouched, which is why the
+cap stays exactly where it was needed — on the channel that detunes every mode
+uniformly — and is not applied to channels that detune nothing uniformly.
+
+This form was chosen over a bare quartic tensor for four reasons: \(U\) is a sum
+of squares, so \(U\ge0\) **structurally** and passivity is not conditional on the
+coefficients; it degenerates to today's law exactly; the vector discrete gradient
+is the existing scalar one applied per channel (below); and \(D^c\) inherits the
+selection rule as its sparsity pattern instead of needing one imposed on it.
+
+`internal/physical/coupling.go` builds the channels from
+\(\{1\}\cup\{\nabla\varphi_a\cdot\nabla\varphi_b:a,b\in P\}\), Gram–Schmidt
+orthonormalised offline, and truncates each \(D^c\) to entries with at least one
+index in \(P\) — so every retained quartic term has **at least two** pump
+indices. That is the \(|P|\ge2\) requirement made structural rather than
+documented.
+
+### The selection rule, derived
+
+With \(\varphi=J_m(kr)C(\theta)\) and
+
+\[
+R_1=k_ak_bJ'\_{m_a}J'\_{m_b},\qquad
+R_2=m_am_bJ\_{m_a}J\_{m_b}/r^2,\qquad
+D=m_a-m_b,\ \ \Sigma=m_a+m_b,
+\]
+
+the gradient products are, exactly,
+
+\[
+\begin{aligned}
+\cos,\cos&:\ \tfrac12(R_1+R_2)\cos D\theta+\tfrac12(R_1-R_2)\cos\Sigma\theta\\
+\sin,\sin&:\ \tfrac12(R_1+R_2)\cos D\theta-\tfrac12(R_1-R_2)\cos\Sigma\theta\\
+\cos,\sin&:\ -\tfrac12(R_1+R_2)\sin D\theta+\tfrac12(R_1-R_2)\sin\Sigma\theta
+\end{aligned}
+\]
+
+so a quartic coefficient vanishes unless the two gradient products share an
+angular order **and an orientation family**. The second condition is the one that
+removes most of the tensor, and it is **not** the naive
+\(\pm m_i\pm m_j\pm m_k\pm m_l=0\) rule the four-index form suggests. There is no
+radial selection rule at all. Measured on the shipped Standard bank with
+\(|P|=4\): of the \(|P|\cdot N\) index pairs across 10 channels, **408**
+coefficients are structurally non-zero — about 89 % of the candidate table is
+removed by the rule alone.
+
+An all-cosine pump set therefore admits **no** sine-orientation receiver, and no
+receiver whose azimuthal order cannot be written as \(|m-p|\) or \(m+p\) against
+a channel order. `TestCouplingSelectionRuleHoldsStructurallyAndNumerically`
+asserts both without a tolerance for the first and against the retained table for
+the second (34 unreachable modes carry no coefficient).
+
+### Pump selection
+
+\(P\) is the loudest few modes under a reference velocity-1 strike, ranked in
+closed form by \(|a_i\hat H(\omega_i\tau)/\omega_i|\), where \(a_i\) is
+`Mode.StrikeAccelerationPerN`, \(\tau\) is the velocity-1 contact window and
+\(\hat H\) is the normalised half-sine transform `addContactPulse` lays down. It
+is **displacement**, not energy, because the force goes as \(q^3\); and it is not
+the frequency ordering. Measured on the shipped bank:
+
+| rank | mode      | Hz    | amplitude |
+| ---- | --------- | ----- | --------- |
+| 0    | (0,1) cos | 150.1 | 6.64e-2   |
+| 1    | (1,1) cos | 238.7 | 1.43e-2   |
+| 2    | (2,1) cos | 320.0 | 4.75e-3   |
+| 3    | (0,2) cos | 344.7 | 4.60e-3   |
+| 4    | (2,2) cos | 524.9 | 3.73e-3   |
+| 5    | (1,1) sin | 239.7 | 2.78e-3   |
+| 6    | (1,2) cos | 437.3 | 2.27e-3   |
+
+The (2,2) at 525 Hz outranks the (1,1) sin at 240 Hz, and the (1,1) sin outranks
+the (1,2) cos at 437 Hz, so a frequency-ordered set would retain different modes.
+The shipped `PumpCount: 4` takes the first four.
+
+### Passivity, and why no Gonzalez projection
+
+\(D^c\) is symmetric, so with \(\bar q=(q^{n+1}+q^n)/2\) and \(dq=q^{n+1}-q^n\),
+
+\[
+\hat g_c^{n+1}-\hat g_c^n=2\bar q^{\mathsf T}D^c\,dq \quad\text{(exact)},\qquad
+\bar T_c=2\frac{U_c(\hat g_c^{n+1})-U_c(\hat g_c^n)}{\hat g_c^{n+1}-\hat g_c^n},
+\qquad
+\bar F_i=-\sum_c \bar T_c (D^c\bar q)_i
+\]
+
+gives \(\bar F\cdot dq=-\,\Delta U\) exactly. Because \(U\) is a sum of functions
+of scalar quadratic forms, the **scalar** secant already _is_ the vector discrete
+gradient — no Gonzalez projection is needed, and there is no \(0/0\) branch to
+take on a 96-vector at rest. For \(c\ge1\) the potential is the uncapped quartic
+\(U_c=(\tilde\beta/4)\hat g_c^2\), whose secant is closed form and
+transcendental-free, \(\bar T_c=\tilde\beta(\hat g_c^{n+1}+\hat g_c^n)/2\).
+Measured, the identity holds to a relative residual of **2.5e-15**
+(`TestCouplingDiscreteGradientIsExact`); the lossless coupled system drifts by
+**1.1e-11** over a second, and the lossy system never gains energy at any
+velocity.
+
+The coupling sits **inside** the fixed-point loop, since \(\bar T_c\) depends on
+the endpoint, and the convergence test grew from 2 scalars to \(2+C\).
+
+### Alias control
+
+The bound \(r<1/(4\alpha^2)-1\) bounds a _uniform_ detune and says nothing here:
+the coupling force is a product of three sampled modal signals. Because every
+retained entry carries a pump index, the worst case is **not** \(3f_{\rm top}\);
+it is bounded by \(f_{\max P}+2f_{\rm top}\), which is what `Validate` enforces
+against `AliasFraction * SampleRateHz`. Note this is the bound for a receiver
+that is _itself_ a pump, which admits two free indices; a free receiver only
+reaches \(2f_{\max P}+f_{\rm top}\). At the shipped bank the conservative bound is
+3 631 Hz and the table actually built reaches **2 709 Hz**, both against
+21 600 Hz — an 8x margin, not binding at any shipped tier. It is implemented
+anyway, because it bites if `Quality` rises, if `SampleRateHz` falls toward
+8 kHz, or if `PumpMaxFrequencyHz` widens.
+
+### Passive is not the same as stable at this timestep
+
+The section above says \(U\ge0\) structurally and that passivity is therefore not
+conditional on \(\tilde\beta\). That is true and it is not a stability claim about
+the **discrete** scheme, and the two were run together for longer than they should
+have been. `CoefficientNPerM` was validated in \([0,10^9]\) N/m on the strength of
+the passivity argument alone, and values inside that range render NaN.
+
+The discrete failure is a loss of contraction in the fixed point, not a loss of
+passivity. Linearising one sweep about the current iterate,
+
+\[
+\delta \bar T_c=-\frac{\tilde\beta h^2}{2}\,G_{cb}\,\delta \bar T_b+O(h^3),
+\qquad
+G_{cb}=\sum_i \frac{(D^cq)_i\,(D^bq)_i}{M_i},
+\]
+
+since a change in the channel tensions moves the modal acceleration by
+\(-(1/M_i)(D^bq)_i\), the midpoint solve turns that into a displacement change of
+\(h^2/2\) times it, and the secant \(\bar T_c=\tilde\beta(\hat g^{n+1}_c+\hat
+g^n_c)/2\) turns that back into a tension change. The iteration therefore
+contracts while
+
+\[
+\tilde\beta\,h^2\,\rho(G)<2 ,
+\]
+
+and \(G\) is **quadratic in the modal state**. This is exactly the property the
+Berger law does not have: its `tanh` cap is what makes its stability independent
+of displacement magnitude, and the channels have no cap, because there is no
+per-channel \(T_{\max}\) to cap them at and imposing one would break the discrete
+gradient identity that buys the exact energy bookkeeping.
+
+So no \(\tilde\beta\) ceiling derivable from the configuration alone can be
+sufficient. Measured — bisecting the largest coefficient whose one-second
+velocity-1 render stays finite, before the guard below existed:
+
+| configuration           | last finite \(\tilde\beta\) |
+| ----------------------- | --------------------------- |
+| quality high, 48 kHz    | 6.98e8                      |
+| pumps 8, 4096 coeffs    | 9.90e8                      |
+| pumps 8, 96 kHz         | 3.16e9                      |
+| shipped default, 48 kHz | 5.59e9                      |
+| 44.1 kHz                | 5.71e9                      |
+| quality draft           | 2.30e10                     |
+| 96 kHz                  | 8.91e10                     |
+| 192 kHz                 | 3.49e11                     |
+| default at velocity 0.1 | 7.29e11                     |
+
+The scaling is the derivation's. Halving the step raises the threshold about as
+\(h^{-2}\); dropping the strike velocity tenfold raises it by a factor of 130
+against the \(|q|^{-2}\) prediction of 100. Two rows sit **below** the \(10^9\)
+that used to validate, which is how a validated document came to render 52754
+non-finite samples with a peak of 3.0e9. There is also a band below the NaN, from
+about 1.4e8, where the render is quietly wrong before it is loudly wrong.
+
+Two things changed. `maxCouplingCoefficientNPerM` is now \(10^8\) — a seventh of
+the worst measured row, below the quiet band as well as the loud one, and a factor
+of 143 above the shipped 7.0e5. That margin is wider than `MaximumTensionRatio`'s
+0.2 against 0.2346 on purpose: that bound is derived and exact, this one is a
+bisection over a finite sweep of a quantity that is not a function of the
+configuration.
+
+And the solve defends itself, because a ceiling in `Validate` does nothing for a
+`PhysicalDrum` that reaches `Render` some other way. `DoubleHead.solveNonlinearStep`
+watches the fixed point's own residual: a contraction's residual falls
+geometrically, so growth by more than `couplingResidualGrowth` (4) means the map is
+not a contraction at this state and its iterate carries no information. The step is
+then re-solved from the same pre-step state with the coupling off — nothing has
+been committed at that point, so it is a clean redo rather than a rollback — which
+lands on the Berger-only update whose stability is unconditional. It is
+self-healing: the coupling re-engages as soon as the state decays back inside the
+contraction region.
+
+The guard sits here rather than in `internal/drum` because that hard clamp is
+per-sample and the model's own state is what goes non-finite: a NaN there poisons
+the FDN reverb's delay lines and the limiter's lookahead on the way to the clamp,
+and the voice never recovers. It is also the only place the _reason_ is visible.
+Measured across every quality tier, sample rate and velocity at coefficients from
+7.0e5 to a hundred times it, the largest residual growth a converging solve
+produces is **0.126** — a contraction with room to spare, not a marginal one — so
+the threshold of 4 has a factor of 30 in hand. `CouplingDivergedSteps()` reports
+how often it fired; on everything the validator admits it is zero, which is what
+keeps the shipped voice bit-identical.
+
+### What it does, measured
+
+The behavioural test zeroes the strike projection of every mode outside \(P\), so
+the **only** path into any other mode is the cubic force. It reads modal
+amplitudes rather than the radiated spectrum, deliberately: four damped sinusoids
+have Lorentzian skirts that put a −37 dB floor across 476–700 Hz, and that floor
+is leakage from the pumps rather than content in the band.
+
+| band       | best non-pump mode | uncoupled | coupled | rise    |
+| ---------- | ------------------ | --------- | ------- | ------- |
+| 476–700 Hz | (2,2) cos, 524.9   | −76.3 dB  | −28.4   | 47.8 dB |
+| 700–1000   | (2,3) cos, 725.4   | −86.4 dB  | −34.6   | 51.8 dB |
+
+With the cavity disabled the uncoupled figure is not small but **exactly zero** —
+those modes never move at all. This is the mechanism
+[`physical-excitation-gap.md`](physical-excitation-gap.md) never considered
+because the model had none: a mode pumped by coupling does not depend on
+\(|F(f)|\) at its own frequency, so it can be excited precisely where the
+half-sine's zero comb has deleted the excitation outright.
+
+The same effect shows up as a change to a P8 measurement. In
+`TestHertzianContactReachesPastTheModalCeiling` the Hertzian contact's advantage
+over the prescribed one at 800 Hz fell from **11.9 dB to 7.9 dB**, with 1500 Hz
+(15.2 → 15.5) and 2500 Hz (22.9 → 22.9) unmoved. The prescribed side rose; the
+Hertzian model did not lose ground. `docs/physical-contact.md` now carries both
+states of that table, and its "What the mode coupling changed" section is where
+this effect is laid out frequency by frequency.
+
+### The Dahl slope
+
+With the attack layer off and the contact duration frozen at its velocity-1 value
+— so the pulse spectrum is the same shape at every dynamic — the attack centroid
+above the fundamental, over the same 43 ms window P4 uses:
+
+| velocity | uncoupled | coupled |
+| -------- | --------- | ------- |
+| 0.2      | 272.5 Hz  | 274.9   |
+| 0.6      | 301.5     | 317.4   |
+| 1.0      | 322.3     | 343.9   |
+
+a slope of **64.7 Hz** per unit velocity uncoupled against **89.5 Hz** coupled.
+Two honest caveats. This is not an isolation of the coupling: the Berger detune
+raises every partial with amplitude and moves a centroid on its own, which is
+where the 64.7 comes from, so the number that means something is the difference.
+And Dahl's published slope is not in this repository, so the test asserts sign,
+monotonicity and that the coupling steepens the slope — not a fitted match.
+
+### Calibration status
+
+**The P4 glide calibration is pending a refit.** On the isolated P4 fixture the
+loud glide moved from **102.8 to 104.9 cents** and the test still passes inside
+its \[60,140\] window. That is a much smaller move than the ratio
+\(\int g^2\,dA/(S^2/A)\) would suggest, and for a specific reason: the P4 fixture
+strikes the head at its centre, where only axisymmetric modes are excited, so the
+orthogonal channels see very little. On the off-centre shipped strike the
+coupling is a real addition to the stiffening and the coefficient has not been
+refitted against a reference recording. `CoefficientNPerM` ships at
+\(\beta A=7.0\times10^5\) N/m, which is the same coefficient the uniform channel
+already carries — it is not a new free parameter, but it is also not a fitted
+one. Refitting it, and the Berger \(\beta\) with it, is follow-up work recorded
+against P9/M1 in `PLAN.md`.
+
+### Cost
+
+The `BenchmarkNonlinearDoubleHeadActive48k` worst case — full-velocity retrigger
+before every 512-sample chunk, so the nonlinear solve never idles — at 120
+oscillators, medians of five runs, zero allocations throughout:
+
+| coefficients  | host (amd64) | `js/wasm` (node) |
+| ------------- | ------------ | ---------------- |
+| off           | 4.39x        | 1.40x            |
+| 128           | 2.65x        | 0.79x            |
+| 256 (shipped) | 2.06x        | 0.70x            |
+| 408 (full)    | 1.37x        | 0.58x            |
+
+This is the honest number and it is not good: at the shipped 256 the `js/wasm`
+worst case is **below real time**. Three things soften it and none of them make it
+acceptable indefinitely. It is the worst case, not the steady one — a real hit
+lets the solve idle. The mean fixed-point iteration count barely moved (2.404 →
+2.491 at velocity 1), so the cost is the table walk itself and not a
+harder solve. And nothing here is optimised: the table is walked as three
+separate index arrays with no blocking by channel or by receiver, and the whole
+thing is rebuilt per iteration rather than being updated incrementally. Making
+this affordable is open work, not a closed question.
+
+The budget is also not currently buying much. Measured on the (2,2) at 524.9 Hz
+under the pumps-only excitation, the 476–700 Hz level runs −29.30 dB at 64
+coefficients, −28.79 at 128, −28.43 at 256 and −28.53 at the full 408 — a
+0.9 dB spread across a sixfold budget, and the full table is not even the loudest
+of them. So `MaxCoefficients: 256` is chosen for margin rather than because the
+spectrum needs it, and 128 is the first thing to try if the cost has to come
+down.
+
 ## Discrete passivity
 
 The update retains the P3 implicit-midpoint cavity solve and evaluates the
@@ -205,8 +526,10 @@ original exact state transition.
 
 ## Bounds and alias control
 
-Both tension coefficients are validated in \([0,10^9]\) N/m³. The smooth cap
-makes stability independent of displacement magnitude. It is also restricted
+Both tension coefficients are validated in \([0,10^9]\) N/m³, and both render
+finite at that limit — the smooth cap makes stability independent of displacement
+magnitude, which is exactly the property the coupling channels lack (see
+"Passive is not the same as stable at this timestep"). It is also restricted
 by each enabled head's modal frequency limit \(\alpha f_s\):
 
 \[

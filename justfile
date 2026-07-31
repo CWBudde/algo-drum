@@ -71,6 +71,14 @@ fit-physical reference="reference/tom.wav" *args="":
     go run ./cmd/fit-physical -reference {{reference}} -o fit-report.json \
         -checkpoint fit-report.checkpoint {{args}}
 
+# Derive the measurement tables from recordings of a real drum.
+#
+# The capture protocol is docs/physical-measurement-protocol.md. Like
+# fit-physical this needs files that are not in the repository, so it is not
+# part of `just ci`; unlike fit-physical its output is meant to be committed.
+measure-tom +files:
+    go run ./cmd/measure-tom -o tom-measurements.json {{files}}
+
 # Fail if the physical-model calibration metrics are stale
 check-physical-reference: gen-physical-reference
     git diff --exit-code testdata/physical-reference-v2.json
@@ -90,7 +98,16 @@ paper-data:
 # stays out of the engine's go.mod; `purego` selects its pure-Go rasteriser, so
 # this needs no FreeType headers. comb.png is not produced here: it is measured
 # from the two channels of the recording, which the repository does not contain.
-paper-figures report="fit-v4-hertzian.json":
+#
+# The default report is the one the committed fit figures were drawn from — the
+# run the paper's @results reads, total 11.252. It matters: passing a different
+# report silently redraws bands/decay/partials/terms.png from a fit the prose
+# does not describe, and the figures carry no record of which run made them.
+#
+# Fit reports are gitignored (.gitignore: fit-*.json), so this recipe needs a
+# local fit run first. The committed PNGs, not this recipe, are what lets the
+# paper build from the repository alone.
+paper-figures report="fit-final-prescribed.json":
     report="$(realpath {{report}})"; \
     cd tools/paper-figures && go run -tags purego . \
         -report "$report" \

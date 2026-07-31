@@ -54,9 +54,22 @@ type Options struct {
 	DecayFitEndSeconds   float64 `json:"decayFitEndSeconds"`
 	DecayFitFloorDB      float64 `json:"decayFitFloorDB"` // stop fitting below this
 
-	// Glide: instantaneous frequency of the lowest partial, early versus late.
+	// Glide: instantaneous frequency of the fundamental, early versus late.
 	GlideEarlySeconds float64 `json:"glideEarlySeconds"`
-	GlideLateSeconds  float64 `json:"glideLateSeconds"`
+	// GlideLateSeconds is the *latest* the second probe may sit, not where it
+	// necessarily lands: the probe is walked back from here to the last point
+	// the tracked partial still supports a reading. See measureGlide.
+	GlideLateSeconds float64 `json:"glideLateSeconds"`
+	// GlideMinSpanSeconds is the shortest early-to-late span still worth
+	// calling a glide. Below it the measurement is refused outright.
+	GlideMinSpanSeconds float64 `json:"glideMinSpanSeconds"`
+	// GlideFloorDB is how far the tracked partial's baseband envelope may fall
+	// below its level at the early probe before the late probe is treated as
+	// unsupported. See measureGlide for why this bound is the whole fix.
+	GlideFloorDB float64 `json:"glideFloorDB"`
+	// GlidePartialWindowDB is how far below the loudest partial the glide may
+	// still be read: the lowest partial within this window is the fundamental.
+	GlidePartialWindowDB float64 `json:"glidePartialWindowDB"`
 
 	// Windowed spectra.
 	Windows        []TimeWindow `json:"windows"`
@@ -116,6 +129,24 @@ func DefaultOptions() Options {
 
 		GlideEarlySeconds: 0.030,
 		GlideLateSeconds:  0.400,
+		// 80 ms from the early probe is past the knee of a tom's bend — the
+		// tension transient has a time constant of tens of milliseconds — so a
+		// reading this short is still a reading, and anything shorter is not.
+		GlideMinSpanSeconds: 0.050,
+		// 20 dB, which is a stricter bound than it first looks. What has to
+		// hold at the late probe is not that the partial is audible but that
+		// it still *dominates* its own passband, and its neighbours decay too.
+		// Swept over the model's cavity coupling from the shipped stiffness to
+		// a rigid shell, 20 dB gives a reading that moves smoothly with the
+		// coupling; at 30 dB the strongly coupled end starts reading the
+		// neighbour again and the trend breaks. The reference is unaffected —
+		// its fundamental is only 15 dB down at 0.400 s — so this costs
+		// nothing where the partial does survive.
+		GlideFloorDB: 20,
+		// 20 dB: wide enough to reach past a strongly radiating upper mode to
+		// the fundamental below it, narrow enough that a shell resonance or a
+		// room mode 40 dB down cannot claim the note.
+		GlidePartialWindowDB: 20,
 
 		Windows: []TimeWindow{
 			{Name: "attack", StartSeconds: 0, EndSeconds: 0.020},
@@ -170,8 +201,13 @@ type Features struct {
 	// OnsetSample is where the analysis was anchored in the source signal.
 	OnsetSample int `json:"onsetSample"`
 
-	Partials      []Partial       `json:"partials"`
-	GlideCents    float64         `json:"glideCents"`
+	Partials   []Partial `json:"partials"`
+	GlideCents float64   `json:"glideCents"`
+	// GlideMeasured reports whether GlideCents is a reading at all. False means
+	// the fundamental did not survive far enough past the strike for two
+	// probes to be placed on it, and GlideCents is zero because there is no
+	// number, not because the pitch held. Distance treats the two differently.
+	GlideMeasured bool            `json:"glideMeasured"`
 	Windows       []WindowFeature `json:"windows"`
 	EnvelopeDB    []float64       `json:"envelopeDB"`
 	AttackBalance float64         `json:"attackBalanceDB"`
@@ -227,12 +263,10 @@ func Extract(samples []float64, sampleRateHz float64, options Options) (Features
 
 	features.Partials = measureDecays(hit, sampleRateHz, options, partials)
 
-	// The glide is read off the loudest partial, not the lowest: on a
-	// two-headed drum the lowest peak in the band may be a shell resonance or
-	// a room mode 40 dB down, and the bend belongs to the mode that carries
-	// the note.
-	if index := loudestPartial(features.Partials); index >= 0 {
-		features.GlideCents = measureGlide(hit, sampleRateHz, options,
+	// The glide belongs to the fundamental — see glidePartial for why it is
+	// neither simply the lowest partial nor simply the loudest.
+	if index := glidePartial(features.Partials, options.GlidePartialWindowDB); index >= 0 {
+		features.GlideCents, features.GlideMeasured = measureGlide(hit, sampleRateHz, options,
 			features.Partials[index].FrequencyHz,
 			glideCutoffHz(features.Partials, index))
 	}
@@ -277,6 +311,17 @@ func (o Options) validate(sampleRateHz float64) error {
 	case o.BandsPerOctave <= 0 || !(o.BandMaxHz > o.BandMinHz) || !(o.BandMinHz > 0):
 		return fmt.Errorf("%w: band layout %v..%v Hz at 1/%d octave",
 			ErrInvalidOptions, o.BandMinHz, o.BandMaxHz, o.BandsPerOctave)
+	case o.GlideEarlySeconds < 0 || o.GlideLateSeconds <= o.GlideEarlySeconds:
+		return fmt.Errorf("%w: glide probes at %v..%v s",
+			ErrInvalidOptions, o.GlideEarlySeconds, o.GlideLateSeconds)
+	case o.GlideMinSpanSeconds <= 0 ||
+		o.GlideEarlySeconds+o.GlideMinSpanSeconds > o.GlideLateSeconds:
+		return fmt.Errorf("%w: glide minimum span %v s does not fit in %v..%v s",
+			ErrInvalidOptions, o.GlideMinSpanSeconds, o.GlideEarlySeconds, o.GlideLateSeconds)
+	case o.GlideFloorDB <= 0:
+		return fmt.Errorf("%w: glide floor %v dB", ErrInvalidOptions, o.GlideFloorDB)
+	case o.GlidePartialWindowDB <= 0:
+		return fmt.Errorf("%w: glide partial window %v dB", ErrInvalidOptions, o.GlidePartialWindowDB)
 	case o.EnvelopeFrameSeconds <= 0 || o.EnvelopeHopSeconds <= 0:
 		return fmt.Errorf("%w: envelope frame %v hop %v",
 			ErrInvalidOptions, o.EnvelopeFrameSeconds, o.EnvelopeHopSeconds)
@@ -749,6 +794,41 @@ func loudestPartial(partials []Partial) int {
 	return loudest
 }
 
+// glidePartial picks the partial the pitch bend is read off: the lowest one
+// standing within windowDB of the loudest.
+//
+// Neither of the two obvious choices works. The *lowest* partial outright is
+// wrong because the lowest peak in the band may be a shell resonance or a room
+// mode 40 dB down, and the bend belongs to the mode that carries the note.
+//
+// The *loudest* partial outright is what this used to be, and it is wrong for a
+// reason that took a sweep to see. On this repository's tom reference the
+// loudest partial is the 212.7 Hz mode, which is 0.16 s of T60 and gone by the
+// time the late probe fires; the 118.05 Hz fundamental beneath it is 7.7 dB
+// quieter and rings for 1.5 s. The measurement was being taken on whichever
+// mode happened to peak highest rather than on the one that still exists to be
+// measured, and it read the noise floor the loud mode decayed into.
+//
+// Lowest-within-a-window keeps the guard against a 40 dB-down room mode while
+// preferring the fundamental, which is both what "the pitch of the note" means
+// and, on a drum, the longest-lived thing in the recording.
+func glidePartial(partials []Partial, windowDB float64) int {
+	loudest := loudestPartial(partials)
+	if loudest < 0 {
+		return -1
+	}
+
+	// Partials are ordered by frequency, so the first one inside the window is
+	// the lowest one inside it.
+	for index := range partials {
+		if partials[index].LevelDB >= partials[loudest].LevelDB-windowDB {
+			return index
+		}
+	}
+
+	return loudest
+}
+
 // glideCutoffHz picks the baseband width the pitch probe sees.
 //
 // Wide enough to follow a bend of a semitone or more, but narrow enough to
@@ -957,60 +1037,146 @@ func linearFit(times, levels []float64) (slope, intercept, rSquared float64) {
 	return slope, intercept, rSquared
 }
 
-// measureGlide reports how far the lowest partial falls, in cents, between the
-// early and late probes.
+// The half-widths of the two pitch probes. They differ, and the asymmetry is
+// the point.
+//
+// A residual neighbour leaking past the probe filter does not bias the phase
+// slope so much as make it swing, at the beat rate between the two. Averaging
+// over the window suppresses that swing in proportion to the window's length,
+// so a wide probe is a far more accurate one — but only where there is nothing
+// to smear.
+//
+// At the early probe there is: the bend is steepest there, and a wide window
+// would average the pitch across the very thing being measured. It stays at
+// ±5 ms, a couple of periods of a tom's fundamental.
+//
+// At the late probe there is not. The bend has settled by construction —
+// GlideMinSpanSeconds exists to guarantee it — so widening costs nothing and
+// buys a factor of four against exactly the interference that produced the
+// readings this measure was rebuilt to stop producing.
+const (
+	glideEarlyHalfSeconds = 0.005
+	glideLateHalfSeconds  = 0.020
+)
+
+// glideProbe is one reading of the heterodyned partial: how far its
+// instantaneous frequency sits from the carrier, and how much of it is left.
+type glideProbe struct {
+	deviationHz float64
+	amplitude   float64
+}
+
+// probeGlide averages the baseband phase increment and magnitude over one
+// window. The heterodyne put the steady partial at DC, so the residual phase
+// slope *is* the deviation from the carrier.
+func probeGlide(inPhase, quadrature []float64, sampleRateHz, atSeconds, halfSeconds float64) (glideProbe, bool) {
+	centre := int(atSeconds * sampleRateHz)
+	half := int(halfSeconds * sampleRateHz)
+
+	start, end := centre-half, centre+half
+	if start < 1 || end >= len(inPhase) {
+		return glideProbe{}, false
+	}
+
+	var (
+		phase, magnitude float64
+		count            int
+	)
+
+	for n := start; n < end; n++ {
+		previous := math.Atan2(quadrature[n-1], inPhase[n-1])
+		current := math.Atan2(quadrature[n], inPhase[n])
+		phase += math.Mod(current-previous+3*math.Pi, 2*math.Pi) - math.Pi
+		magnitude += math.Hypot(inPhase[n], quadrature[n])
+		count++
+	}
+
+	if count == 0 {
+		return glideProbe{}, false
+	}
+
+	return glideProbe{
+		deviationHz: phase / float64(count) * sampleRateHz / (2 * math.Pi),
+		amplitude:   magnitude / float64(count),
+	}, true
+}
+
+// measureGlide reports how far the fundamental falls, in cents, between the
+// early probe and the latest late probe the partial still supports. The second
+// return is false when it supports none, and then there is no reading at all.
 //
 // Every published tom analysis treats the downward glide as the characteristic
 // feature, and in this model it is the one observable that NLIN moves and
 // nothing else does.
-func measureGlide(hit []float64, sampleRateHz float64, options Options, frequencyHz, cutoffHz float64) float64 {
+//
+// # Why the late probe moves
+//
+// An instantaneous-frequency reading is only a reading while the partial being
+// tracked still dominates its own passband. Once it has decayed away, what is
+// left inside the probe filter is whatever leaked in from the neighbouring
+// partials and the noise floor, and the phase slope then reports *their* offset
+// from the carrier — confidently, and with no outward sign that anything is
+// wrong.
+//
+// This is not a corner case; it was the normal case. With the late probe nailed
+// to 0.400 s:
+//
+//   - On the model's own renders the (0,1) fundamental has a T60 of 0.21 s, so
+//     by 0.400 s it is 105 dB below its early level. The probe read the nearest
+//     long-lived neighbour instead. As cavity coupling separates the doublet
+//     that neighbour moves further from the carrier, and the reported "glide"
+//     grew with it — −13 cents at the shipped stiffness, −717 cents at 0.30,
+//     −625 cents at a rigid cavity. Those are not downglides; they are the
+//     offset to a different mode.
+//   - On the tom reference the same thing happened to the 212.7 Hz mode the
+//     measurement used to track (see glidePartial), whose 0.16 s T60 puts it in
+//     the room's noise floor well before 0.400 s.
+//
+// So the probe is walked back from GlideLateSeconds to the last point at which
+// the partial is still within GlideFloorDB of its early level, and the reading
+// is refused if that point is not at least GlideMinSpanSeconds after the early
+// probe. Both probes must also land inside the filter's own passband: a
+// deviation larger than the cutoff cannot be this partial, because the filter
+// that produced the signal would have removed it.
+//
+// A short honest span beats a long dishonest one. The bend is an exponential
+// settling with a time constant of tens of milliseconds, so a reading taken at
+// 0.10 s has already seen nearly all of it, while a reading taken at 0.400 s on
+// a dead partial has seen none of it.
+func measureGlide(hit []float64, sampleRateHz float64, options Options, frequencyHz, cutoffHz float64) (float64, bool) {
 	inPhase, quadrature := heterodyne(hit, sampleRateHz, frequencyHz, cutoffHz, 1)
 
-	// The heterodyne put the steady partial at DC, so the residual phase slope
-	// *is* the deviation from frequencyHz.
-	deviation := func(atSeconds float64) (float64, bool) {
-		centre := int(atSeconds * sampleRateHz)
-		half := int(0.005 * sampleRateHz)
+	early, ok := probeGlide(inPhase, quadrature, sampleRateHz,
+		options.GlideEarlySeconds, glideEarlyHalfSeconds)
+	if !ok || math.Abs(early.deviationHz) > cutoffHz {
+		return 0, false
+	}
 
-		start, end := centre-half, centre+half
-		if start < 1 || end >= len(hit) {
+	floor := early.amplitude * math.Pow(10, -options.GlideFloorDB/20)
+	earliestLate := options.GlideEarlySeconds + options.GlideMinSpanSeconds
+
+	// A millisecond, in whole samples. Fine enough that the late probe moves
+	// smoothly rather than in audible steps as a candidate's decay changes
+	// under the fit, and coarse enough that the walk costs nothing beside the
+	// heterodyne above.
+	step := math.Round(0.001*sampleRateHz) / sampleRateHz
+
+	for at := options.GlideLateSeconds; at >= earliestLate; at -= step {
+		late, ok := probeGlide(inPhase, quadrature, sampleRateHz, at, glideLateHalfSeconds)
+		if !ok || late.amplitude < floor || math.Abs(late.deviationHz) > cutoffHz {
+			continue
+		}
+
+		earlyHz, lateHz := frequencyHz+early.deviationHz, frequencyHz+late.deviationHz
+		if earlyHz <= 0 || lateHz <= 0 {
 			return 0, false
 		}
 
-		var (
-			sum   float64
-			count int
-		)
-
-		for n := start; n < end; n++ {
-			previous := math.Atan2(quadrature[n-1], inPhase[n-1])
-			current := math.Atan2(quadrature[n], inPhase[n])
-			delta := math.Mod(current-previous+3*math.Pi, 2*math.Pi) - math.Pi
-			sum += delta
-			count++
-		}
-
-		if count == 0 {
-			return 0, false
-		}
-
-		return sum / float64(count) * sampleRateHz / (2 * math.Pi), true
+		// Positive means the pitch fell, which is the direction a drum bends.
+		return 1200 * math.Log2(earlyHz/lateHz), true
 	}
 
-	early, okEarly := deviation(options.GlideEarlySeconds)
-
-	late, okLate := deviation(options.GlideLateSeconds)
-	if !okEarly || !okLate {
-		return 0
-	}
-
-	earlyHz, lateHz := frequencyHz+early, frequencyHz+late
-	if earlyHz <= 0 || lateHz <= 0 {
-		return 0
-	}
-
-	// Positive means the pitch fell, which is the direction a drum bends.
-	return 1200 * math.Log2(earlyHz/lateHz)
+	return 0, false
 }
 
 // fractionalOctaveBands returns band centres and their edges, clipped to

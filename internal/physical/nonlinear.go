@@ -40,6 +40,13 @@ const (
 // projection of g onto the constant function. That is a projection and not a
 // series truncation, which is why U_Berger <= U_exact always, by Cauchy-Schwarz.
 //
+// Everything from here to the end of this comment describes what *this type*
+// does, and it is still exactly true of it — but it is no longer the whole
+// model. P9/M1 added the second moment back as a set of orthogonal channels in
+// coupling.go, keeping this law untouched as the uniform channel it reproduces
+// exactly. The limitation below is therefore the limitation of the Berger
+// reduction, not of the shipped instrument.
+//
 // This reduction is mean-field, and that is a stated limitation rather than an
 // implementation detail. Collapsing the geometric nonlinearity onto one scalar
 // DeltaT over total strain detunes every mode by the same *relative* amount and

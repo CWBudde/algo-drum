@@ -164,6 +164,11 @@ func TestExtractRejectsInvalidOptions(t *testing.T) {
 		"window fft size":  func(o *Options) { o.WindowFFTSize = 0 },
 		"decay fit span":   func(o *Options) { o.DecayFitEndSeconds = o.DecayFitStartSeconds },
 		"band layout":      func(o *Options) { o.BandsPerOctave = 0 },
+		"glide probes":     func(o *Options) { o.GlideLateSeconds = o.GlideEarlySeconds },
+		"glide span":       func(o *Options) { o.GlideMinSpanSeconds = 0 },
+		"glide span fit":   func(o *Options) { o.GlideMinSpanSeconds = o.GlideLateSeconds },
+		"glide floor":      func(o *Options) { o.GlideFloorDB = 0 },
+		"glide window":     func(o *Options) { o.GlidePartialWindowDB = -1 },
 		"envelope frame":   func(o *Options) { o.EnvelopeFrameSeconds = 0 },
 		"windows":          func(o *Options) { o.Windows = nil },
 	}

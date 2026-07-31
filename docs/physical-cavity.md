@@ -24,20 +24,20 @@ reduction is bit-exact rather than approximate.
 ## The enclosed air
 
 The air is expanded in the rigid-walled cylinder's own modes. A rigid wall
-carries no normal velocity, so the radial condition is Neumann — \(J_m'(j'_{mn})
-= 0\) — and *not* the \(J_m(z_{mn}) = 0\) the clamped heads obey. Restricted to
+carries no normal velocity, so the radial condition is Neumann — \(J*m'(j'*{mn})
+= 0\) — and _not_ the \(J*m(z*{mn}) = 0\) the clamped heads obey. Restricted to
 the axially uniform family,
 
 \[
-\Psi_{mn}(r,\theta) = J_m\!\left(j'_{mn}\frac{r}{a}\right)
+\Psi*{mn}(r,\theta) = J_m\!\left(j'_{mn}\frac{r}{a}\right)
 \{\cos m\theta,\ \sin m\theta\},
 \qquad
-\omega_{mn} = \frac{c\,j'_{mn}}{a}.
+\omega_{mn} = \frac{c\,j'*{mn}}{a}.
 \]
 
 The uniform mode is the \(m = 0\) root at \(j' = 0\), carried as \((0,0)\); it
 is a mode of zero frequency and is the whole of the old lumped model. Note that
-\(j'_{01} = 3.8317\) is the first _positive_ zero of \(J_0' = -J_1\) and is a
+\(j'_{01} = 3.8317\) is the first \_positive_ zero of \(J_0' = -J_1\) and is a
 different, non-degenerate mode.
 
 **Axially uniform only, deliberately.** An axial order \(l\) would make the
@@ -68,11 +68,11 @@ The coefficient between head mode \(i\) and cavity mode \(c\) is the overlap of
 their shapes over the head's disc,
 
 \[
-C_{ic} = \int_A \phi_i \Psi_c \, \mathrm{d}A,
+C\_{ic} = \int_A \phi_i \Psi_c \, \mathrm{d}A,
 \]
 
 and the same coefficient appears in both directions — the air is driven by
-\(C_{ic}\dot q_i\) and the head is loaded by \(C_{ic}P_c\). That symmetry is
+\(C*{ic}\dot q_i\) and the head is loaded by \(C*{ic}P_c\). That symmetry is
 what makes the coupling passive.
 
 The angular integral separates and gives a **selection rule**: it vanishes unless
@@ -88,17 +88,17 @@ Against the uniform mode, \(\Psi = 1\) and the overlap is the mode's signed swep
 area,
 
 \[
-A_{0n} = 2\pi R^2\frac{J_1(z_{0n})}{z_{0n}},
+A*{0n} = 2\pi R^2\frac{J_1(z*{0n})}{z*{0n}},
 \qquad
-A_{mn} = 0 \text{ for } m > 0,
+A*{mn} = 0 \text{ for } m > 0,
 \]
 
 which is the closed form the lumped model always used and which the code returns
 verbatim in that case. For every other cavity mode the radial integral
 
 \[
-\int_0^R J_m\!\left(z_{mn}\frac{r}{R}\right)
-J_m\!\left(j'_{m\nu}\frac{r}{R}\right) r\,\mathrm{d}r
+\int*0^R J_m\!\left(z*{mn}\frac{r}{R}\right)
+J*m\!\left(j'*{m\nu}\frac{r}{R}\right) r\,\mathrm{d}r
 \]
 
 has no clean closed form — the two Bessel functions have different arguments and
@@ -123,28 +123,28 @@ the resonant head onto the full 96-slot bank to gain the same 22 modes that can
 move plus 68 that provably cannot, which is not a correctness improvement but a
 doubling of the audio budget spent on exact zeros.
 
-With modal displacement \(q_i\), modal mass \(m_i\), loss rate \(d_i\), and
+With modal displacement \(q*i\), modal mass \(m_i\), loss rate \(d_i\), and
 the product control \(g\in[0,1]\), define the effective coupling
-\(\widetilde C_{ic}=gC_{ic}\). Each cavity mode carries a pressure \(P_c\) and a
+\(\widetilde C*{ic}=gC\_{ic}\). Each cavity mode carries a pressure \(P_c\) and a
 conjugate state \(H_c\), and the coupled equations are
 
 \[
-\ddot q_i + 2d_i\dot q_i + \omega_i^2 q_i
-= f_i/m_i - \sum_c \widetilde C_{ic} P_c/m_i,
+\ddot q*i + 2d_i\dot q_i + \omega_i^2 q_i
+= f_i/m_i - \sum_c \widetilde C*{ic} P_c/m_i,
 \]
 
 \[
-\dot P_c = K_c\sum_i \widetilde C_{ic}\dot q_i + \omega_c H_c - \lambda P_c,
+\dot P*c = K_c\sum_i \widetilde C*{ic}\dot q_i + \omega_c H_c - \lambda P_c,
 \qquad
 \dot H_c = -\omega_c P_c,
 \]
 
 \[
-K_c = s\,\frac{\rho c^2}{\Lambda_c},
+K*c = s\,\frac{\rho c^2}{\Lambda_c},
 \qquad
 \Lambda_c = \int_V \Psi_c^2\,\mathrm{d}V,
 \qquad
-\Lambda_{(0,0)} = V = \pi R^2L.
+\Lambda*{(0,0)} = V = \pi R^2L.
 \]
 
 Here \(L\) is shell depth, \(\rho\) is air density, \(c\) is sound speed, and
@@ -153,22 +153,22 @@ Here \(L\) is shell depth, \(\rho\) is air density, \(c\) is sound speed, and
 preserves passivity. Setting it to zero or setting `Cavity.Enabled` to false is
 the exact zero-coupling limit.
 
-The \((P_c, H_c)\) pair is the second-order cavity mode written in first-order
+The \((P*c, H_c)\) pair is the second-order cavity mode written in first-order
 form: eliminating \(H_c\) gives \(\ddot P_c + \omega_c^2 P_c\) driven by the
 head accelerations, which is the standard modal acoustic formulation. Writing it
 this way rather than as a displacement/velocity pair is what makes the uniform
-mode degenerate cleanly: \(\omega_{(0,0)} = 0\), so \(H\) never leaves zero and
+mode degenerate cleanly: \(\omega*{(0,0)} = 0\), so \(H\) never leaves zero and
 the first equation collapses to the single \(\dot p = K\sum\widetilde A_i\dot
 q_i - \lambda p\) the lumped model had.
 
 The Neumann normalization gives \(\Lambda_c\) in closed form,
 
 \[
-\Lambda_{mn} = L \cdot \{\pi, 2\pi\} \cdot
-\frac{a^2}{2}\left(1 - \frac{m^2}{j'^2_{mn}}\right)J_m(j'_{mn})^2,
+\Lambda*{mn} = L \cdot \{\pi, 2\pi\} \cdot
+\frac{a^2}{2}\left(1 - \frac{m^2}{j'^2*{mn}}\right)J*m(j'*{mn})^2,
 \]
 
-positive for every admissible mode because \(j'_{mn} > m\), and equal to the
+positive for every admissible mode because \(j'\_{mn} > m\), and equal to the
 cavity volume for the uniform mode.
 
 `Cavity.StiffnessScale` is \(s\) and multiplies every \(K_c\) alike, so the
@@ -267,7 +267,7 @@ After contact ends,
 \]
 
 The coupling terms cancel identically: the head equation loses
-\(\sum_c P_c\sum_i\widetilde C_{ic}\dot q_i\) and the cavity equation gains
+\(\sum*c P_c\sum_i\widetilde C*{ic}\dot q_i\) and the cavity equation gains
 exactly the same quantity, because the same coefficient appears in the drive and
 in the load. The \(\omega_c\) rotation between \(P_c\) and \(H_c\) cancels
 against itself for the same reason. So the argument is the lumped one with a sum
@@ -282,9 +282,9 @@ equations leaves, for each cavity mode,
 \[
 P_c\left(\frac{2}{\Delta t} + \lambda + \frac{\omega_c^2\Delta t}{2}\right)
 
-- K_c\sum_b\sum_i \frac{\widetilde C_{ic}\widetilde C_{ib}}{m_iD_i}P_b
+- K*c\sum_b\sum_i \frac{\widetilde C*{ic}\widetilde C\_{ib}}{m_iD_i}P_b
   = \frac{2P_c^{\text{old}}}{\Delta t} + \omega_c H_c^{\text{old}}
-- K_c\sum_i \widetilde C_{ic}u_i,
+- K*c\sum_i \widetilde C*{ic}u_i,
   \]
 
 a \(k\times k\) Woodbury solve where the lumped model had one Sherman-Morrison
@@ -355,11 +355,212 @@ Measured at the shipped default against the same configuration with
   1.4× head tension — a 40 % tension change, five semitones on every head mode,
   moves it by 0.26 %. That is
   [PLAN's](../PLAN.md) M2 confirm criterion, and a test asserts it.
-- **The microphone barely notices.** Broadband RMS over a second moves from
-  0.057609 to 0.057755 and the peak from 0.8954 to 0.8932. The configured pickup
-  is on the batter side and the resonant head's own radiation is deliberately not
-  summed into it, so the new energy reaches the listener only as the reshaping of
-  the batter response above.
+- **The microphone barely notices, in broadband terms.** RMS over a second moves
+  from 0.057609 to 0.057755 and the peak from 0.8954 to 0.8932. The configured
+  pickup is on the batter side and the resonant head's own radiation is
+  deliberately not summed into it, so the new energy reaches the listener only as
+  the reshaping of the batter response above. That framing understates it: the
+  next section measures the same change as a **partial** rather than as broadband
+  energy, and as a partial it is not subtle.
+
+## The same criterion, measured in the rendered output
+
+Everything above is read off the model's internal state or off the continuous
+reference solve. That is the honest place to measure a mechanism, but it is not
+where M2's criterion is written: the criterion says a **partial** appears, and a
+partial is a property of the signal that leaves the pickup. This section runs the
+criterion there, and it is worth separating because the two can disagree — a
+cavity mode can be plainly excited and still be inaudible if nothing carries it
+into the microphone.
+
+It came up because a P9/M1 run noticed something it was not looking for. Rendering
+the shipped default at Quality High and velocity 1.0, 1.2 s at 44.1 kHz, and
+extracting partials with `internal/physical/match` — the same path
+`cmd/fit-physical -report-only` takes — the table contains a partial at
+**664.38 Hz** whose **T60 is 0.745 s** against roughly 0.23 s for every head mode
+in that band, with no head mode within 27 Hz of it. It rings three times as long
+as anything around it and sits 13 cents from the \((1,1)\) cavity mode at
+659.52 Hz.
+
+Measurements below are that render unless stated otherwise, with the spectrum
+taken over the 0.05–0.85 s sustain. Positions are read as local maxima of that
+spectrum rather than from the sixteen-entry partial table, because the table is
+capped at sixteen and floored at −42 dB and a partial can leave it by being
+crowded out rather than by being absent — which is exactly what happens in three
+of the sweeps below.
+
+**Sound speed is the discriminator that matters**, because nothing about either
+head depends on \(c\), and because radius does not discriminate at all: a head
+mode goes as \(\sqrt{T}/a\) and a cavity mode as \(c/a\), so **both families move
+as \(1/a\)** and the radius sweep can only ever be a consistency check.
+
+| \(c\) (m/s) | \((1,1)\) predicted | observed | \((2,1)\) predicted | observed | observed\(\_{(2,1)}/c\) |
+| ----------- | ------------------- | -------- | ------------------- | -------- | ----------------------- |
+| 280         | 538.38              | 545.13   | 893.09              | 895.09   | 3.1967                  |
+| 300         | 576.84              | 582.59   | 956.88              | 959.38   | 3.1979                  |
+| 320         | 615.29              | 618.04   | 1020.68             | 1024.93  | 3.2029                  |
+| 343         | 659.52              | 664.27   | 1094.04             | 1096.29  | 3.1962                  |
+| 360         | 692.21              | 704.46   | 1148.26             | 1151.51  | 3.1986                  |
+| 380         | 730.66              | 739.91   | 1212.05             | 1214.55  | 3.1962                  |
+| 400         | 769.12              | 777.12   | 1275.84             | 1277.59  | 3.1940                  |
+
+The last column is the test: if the partial is an air mode, observed\(/c\) is a
+constant. It is, to **±0.09 %** over a 43 % change in sound speed. The \((1,1)\)
+column is noisier (±0.6 %) for a reason worth keeping: it sits inside the head's
+\(m = 1\) thicket and its peak is pulled a hertz or two toward whichever head mode
+is nearest, while the \((2,1)\) at 1094 Hz has no head mode near it at all.
+
+| radius | \(a\) (m) | \((2,1)\) predicted | observed | observed \(\times a\) |
+| ------ | --------- | ------------------- | -------- | --------------------- |
+| ×0.80  | 0.12192   | 1367.55             | 1366.80  | 166.64                |
+| ×0.90  | 0.13716   | 1215.60             | 1216.35  | 166.85                |
+| ×1.00  | 0.15240   | 1094.04             | 1096.29  | 167.08                |
+| ×1.10  | 0.16764   | 994.58              | 997.58   | 167.24                |
+| ×1.20  | 0.18288   | 911.70              | 915.45   | 167.42                |
+
+observed \(\times a\) is constant to ±0.23 %, against a predicted
+\(cj'\_{21}/2\pi = 166.72\).
+
+Head tension is the kill condition, and it does not fire. The prediction does not
+move at all here — nothing about the enclosed air knows the head tension — so the
+whole table is one number repeated:
+
+| batter tension | uncoupled batter (0,1) | \((1,1)\) observed | \((2,1)\) observed |
+| -------------- | ---------------------- | ------------------ | ------------------ |
+| ×0.64          | 120.1 Hz               | 659.52             | 1097.54            |
+| ×0.81          | 135.1 Hz               | 662.77             | 1097.04            |
+| ×1.00          | 150.1 Hz               | 664.27             | 1096.29            |
+| ×1.21          | 165.1 Hz               | 671.27             | 1097.29            |
+| ×1.44          | 180.1 Hz               | 664.02             | 1095.04            |
+
+The \((2,1)\) moves by **2.5 Hz, 0.23 %**, while every head mode is retuned across
+a range of ten semitones. The \((1,1)\) wanders by up to 12 Hz for the reason
+above — the level of that partial collapses from −6.3 to −53.1 dB across this
+sweep, because the drive depends on an \(m = 1\) head mode sitting near it, and a
+weak peak in a dense band is read with correspondingly less confidence. Its
+position is not tracking \(\sqrt{T}\) in either direction; the ×1.44 row would
+have to read 792 Hz if it were.
+
+A fourth sweep is worth having because it is free and it separates a transverse
+mode from anything else in the enclosure: the family is axially uniform, so its
+frequency does not depend on the shell **depth** at all. At 0.14, 0.20 and 0.28 m
+the partial sits at 666.02, 664.27 and 663.02 Hz — moving 0.45 % for a depth
+change of two to one, in the wrong direction for a \(c/2L\) axial mode, which
+would have run 1225, 858 and 613 Hz.
+
+### What actually creates it, and what merely reveals it
+
+The original observation compared nonlinear mode coupling on against off, and the
+partial was present only with it on. That reading was wrong, and the 2×2 says so:
+
+|                     | lumped cavity                       | modal cavity                         |
+| ------------------- | ----------------------------------- | ------------------------------------ |
+| NL coupling **off** | no local maximum; −77.4 dB at 659.5 | **664.52 Hz, T60 0.738 s**, −14.6 dB |
+| NL coupling **on**  | no local maximum; −70.1 dB at 659.5 | **664.27 Hz, T60 0.752 s**, −6.3 dB  |
+
+The **modal cavity creates the partial**; the nonlinear coupling adds about 8 dB
+of drive to it. What the original comparison actually saw was the detector's
+floor: in the sixteen-entry table at −42 dB the partial appears in the
+modal/coupling-on cell alone, so switching the coupling off looked like removing
+the partial when it only pushed it under the threshold. The lesson is about the
+measurement path rather than the model — a −42 dB relative floor on a
+sixteen-partial table is not a test of existence.
+
+### The second half: output through the cavity path
+
+M2 also asks whether \(m = 1\) head modes acquire measurable **output** through
+the cavity once `Pickup.NearFieldScale` is zero. The measurement needs care,
+because `observe()` never sums the resonant head's radiation into the pickup at
+all — it is a batter-side microphone and the resonant head radiates out of the
+other end of the shell. That turns out to be an advantage: **nothing at a
+resonant-only frequency can reach the output by radiating**, so if output appears
+there, the batter head is being driven at that frequency, and the enclosed air is
+the only thing joining the two.
+
+With `Resonant.AxisymmetricOnly` forced off in both arms so the modal banks match
+and only the cavity differs:
+
+| frequency  | what it is                   | lumped | modal | change    |
+| ---------- | ---------------------------- | ------ | ----- | --------- |
+| 659.52 Hz  | cavity \((1,1)\)             | −73.0  | −36.5 | **+36.5** |
+| 1094.04 Hz | cavity \((2,1)\)             | −83.7  | −59.5 | **+24.2** |
+| 685.25 Hz  | resonant \(m{=}1,n{=}3\) cos | −92.0  | −68.6 | **+23.4** |
+| 687.31 Hz  | resonant \(m{=}1,n{=}3\) sin | −77.7  | −64.7 | **+13.0** |
+| 566.69 Hz  | resonant \(m{=}2,n{=}2\) cos | −83.3  | −83.3 | 0.0       |
+| 568.39 Hz  | resonant \(m{=}2,n{=}2\) sin | −81.5  | −81.5 | 0.0       |
+
+dB relative to the strongest sustain peak of each render, nonlinear coupling off.
+The \(m = 1\) family that **straddles** the transverse mode gains 13 to 23 dB; the
+\(m = 2\) family gains nothing measurable, which is consistent rather than
+disappointing — the \((2,1)\) cavity mode at 1094 Hz is 24 dB weaker and its
+nearest resonant \(m = 2\) modes are 90 Hz away. Read as a band rather than
+bin by bin, on the shipped 48 kHz default, the 679–693 Hz band containing the
+resonant \((1,3)\) pair gains **+5.6 dB**; the smaller figure is the honest one
+for the shipped pickup, because the batter head's own \(m = 1\) modes keep
+radiating with the near field removed and set a floor under the comparison.
+
+That last point contradicts, mildly, what `Pickup`'s documentation claims for a
+zero `NearFieldScale` — "the output is very nearly the axisymmetric modes alone".
+Measured, the batter's \((1,1)\) still sits 4.8 dB below the strongest peak with
+the near field removed. The far-field weight really does suppress \(m > 0\), but
+not to the point where a zero scale isolates the axisymmetric family.
+
+**Negative control.** Under the lumped cavity the only coupling coefficient is the
+swept area, identically zero for every \(m > 0\) mode, so nothing can drive an
+\(m = 1\) air mode and there is none to drive. The lumped column above is what
+that looks like, and the level at the transverse frequency is 48 dB below the
+modal case on the shipped default. `TestLumpedCavityHasNoTransversePartial` holds
+that.
+
+Tests for all of this are in
+[`cavity_transverse_test.go`](../internal/physical/cavity_transverse_test.go),
+alongside the internal-state versions in `cavity_modes_test.go`.
+
+### The confirmation is a weak-coupling result
+
+One thing sharpens the reading and one thing limits it, and the limit is the same
+parameter both times: `Cavity.StiffnessScale`.
+
+A cavity mode's frequency \(cj'\_{mn}/2\pi a\) does not contain \(s\) at all — \(s\)
+scales the modal stiffness \(K_c\), which sets how hard the air pushes back, not
+where it resonates. But the **coupled** mode is loaded by the heads, and that load
+does scale with \(s\). Measured on the same render:
+
+| \(s\)             | coupled \((1,1)\) partial | shift from 659.52 Hz | level                           | \(m{=}1\) band gain |
+| ----------------- | ------------------------- | -------------------- | ------------------------------- | ------------------- |
+| 0.083 (shipped)   | 664 Hz                    | +0.7 %               | 0.0 dB (loudest in 400–1200 Hz) | +10.3 dB            |
+| 0.3               | 704 Hz                    | +6.8 %               | −20.6 dB                        | —                   |
+| 1 (rigid ceiling) | 753 Hz                    | +14.2 %              | −4.1 dB                         | +5.4 dB             |
+
+Two consequences. First, the clean confirmation above is a **weak-coupling**
+result: at \(s = 0.083\) the partial sits within 1 % of the bare air-mode formula,
+which is what makes "it is where \(cj'/2\pi a\) says" a sharp statement. At \(s =
+1\) it is a genuinely hybridised head-and-air mode 14 % above the air formula, and
+its position acquires a mild tension dependence of its own (the ratio drifts from
+1.142 to 1.090 across a ×0.7–×1.4 retune). The mechanism is the same either way;
+the _discrimination_ is sharp only while the coupling is weak. Second, the
+tolerances in `cavity_transverse_test.go` are tied to the shipped \(s\), and the
+file says so.
+
+**And \(s\) is currently in question.** A literature lead reported alongside this
+work points at Fletcher & Rossing ch. 18 relaying Bork & Meyer's measurement of a
+32 cm two-headed tom-tom with the \((0,1)\) doublet at 101 and 191 Hz — a ratio of
+**1.89**, which is what the _rigid_ \(s = 1\) produces here (1.87), not the 1.15
+the shipped fit produces. If that holds, the "factor of twelve below the rigid
+ceiling" that the sections above treat as needing a physical explanation is not a
+physical puzzle at all but a fit to the wrong instrument — Fischer's snare rather
+than a tom. **This is not established.** The figures were read from a scan of the
+1991 first edition and relayed second-hand, this repository's bibliography carries
+the second edition, and the primary source behind them, Bork's 1983 PTB report, is
+explicitly unpublished. Nothing above or below should be read as asserting either
+that \(s = 0.083\) is right or that it is wrong; what has changed is that the
+question is open, where §"Why the air spring is fitted" and §"Closed: what the
+one-mode cavity was not hiding" both presume the fitted value and go looking for a
+mechanism to justify its size.
+
+The M2 result does not depend on how that lands. The partial tracks \(c\) and
+\(1/a\) and ignores \(T\) at \(s = 1\) as well as at \(s = 0.083\); only the size
+of the coupled offset changes.
 
 ## Output and parameter updates
 
@@ -419,9 +620,9 @@ and the pressures follow from the \(k\times k\) complex system
 \[
 (I + ZM)P = ZS,
 \qquad
-M_{cb}=\sum_i \frac{\widetilde C_{ic}\widetilde C_{ib}}{D_i},
+M*{cb}=\sum_i \frac{\widetilde C*{ic}\widetilde C*{ib}}{D_i},
 \qquad
-S_c=\sum_i \widetilde C_{ic}u_i,
+S_c=\sum_i \widetilde C*{ic}u_i,
 \]
 
 whose \(k = 1\) case is the Sherman-Morrison form this replaced and whose
@@ -444,7 +645,7 @@ The P3 suite covers:
 - analytic swept areas, and the uniform cavity mode's overlap integral
   reproducing them exactly while the 96-point quadrature agrees with them to
   2e-16;
-- the cavity mode table against the analytic \(c\,j'_{mn}/2\pi a\) series at the
+- the cavity mode table against the analytic \(c\,j'\_{mn}/2\pi a\) series at the
   radius the transverse hypothesis is stated for;
 - the azimuthal selection rule, as exact zeros rather than small numbers, and the
   isometry of a rotated principal tension axis;
@@ -500,10 +701,19 @@ than absorbing.
 
 Most of it is not the \(k\times k\) solve — profiling puts `solveCavityMidpoint`
 at 8.6 % of render time. It is the resonant head, which grows from 6 oscillators
-to 28 because \(m \le 2\) modes are no longer unreachable. The obvious mitigation
-is a resonant-head mode budget separate from `Quality.ModeLimit`, which would let
-the reachable orders be retained without spending a full 96-slot selection on
-them; that is not implemented here.
+to 28 because \(m \le 2\) modes are no longer unreachable.
+
+`PhysicalDrum.ResonantModeLimit` now gives that head its own budget, so the
+quality tier no longer sizes it. It was split for the structural reason rather
+than this one — a 96-slot allowance chosen for the struck head has no business
+sizing a head that is only ever driven through the air — and the default of 24 is
+chosen against the coupling mechanism rather than against a clock; see
+`DefaultResonantModeLimit` and
+[`physical-hybrid.md`](physical-hybrid.md#spending-the-reclaimed-budget). It takes
+the shipped Standard voice from 124 oscillators to 120 and High from 198 to 184,
+which is 3.7 % and 10.7 % of `js/wasm` render time. The transverse cavity's cost
+is therefore still mostly unpaid, and paying it means optimizing the mode bank,
+not shrinking it further.
 
 Still excluded: axial cavity order, shell modes, vents, non-axisymmetric leakage,
 and empirical head-to-head cross-coupling, until measurements or a

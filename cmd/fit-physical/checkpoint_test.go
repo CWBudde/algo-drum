@@ -38,7 +38,14 @@ func TestCheckpointResumesFinishedRestarts(t *testing.T) {
 		t.Fatalf("first run: %v", err)
 	}
 
-	if strings.Contains(firstErrors.String(), "from the checkpoint") {
+	// "resuming:", not "from the checkpoint". Two different messages carry that
+	// phrase and only one of them means a resume: the other is the running
+	// snapshot being adopted as the best point, which a first run may legitimately
+	// do whenever the incumbent beats every finished restart. Which of those
+	// happens depends on the cost landscape, so the loose match turned any change
+	// to the shipped sound into a failure of this test — P9/M1's coupling did
+	// exactly that. "resuming:" is printed only when a checkpoint was read.
+	if strings.Contains(firstErrors.String(), "resuming:") {
 		t.Error("the first run resumed from a checkpoint that did not exist yet")
 	}
 

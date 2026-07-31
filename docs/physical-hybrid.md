@@ -59,25 +59,55 @@ Two details worth keeping in mind:
 
 ## Spending the reclaimed budget
 
-`Quality.ModeLimit()` is effectively the batter head's budget: the resonant head
-runs the same selection and then keeps only the modes the enclosed air can reach.
-The tiers doubled once the second full bank stopped being computed and discarded.
+`Quality.ModeLimit()` is the batter head's budget, and only the batter head's: the
+resonant head runs the same selection, keeps only the modes the enclosed air can
+reach, and is then truncated to its own budget, `ResonantModeLimit`. The tiers
+doubled once the second full bank stopped being computed and discarded.
 
-| Tier     | Batter | Resonant, lumped cavity | Resonant, shipped six-state cavity | Top mode |
-| -------- | ------ | ----------------------- | ---------------------------------- | -------- |
-| Draft    | 48     | 4                       | 20                                 | 929 Hz   |
-| Standard | 96     | 6                       | 28                                 | 1310 Hz  |
-| High     | 160    | 8                       | 38                                 | 1662 Hz  |
+| Tier     | Batter | Resonant, lumped cavity | Resonant, shipped six-state cavity | Top batter mode |
+| -------- | ------ | ----------------------- | ---------------------------------- | --------------- |
+| Draft    | 48     | 4                       | 20                                 | 929 Hz          |
+| Standard | 96     | 6                       | 24                                 | 1310 Hz         |
+| High     | 160    | 8                       | 24                                 | 1662 Hz         |
 
-The resonant column grew when P9/M2 gave the transverse cavity modes a coupling
-path to the \(m = 1\) and \(m = 2\) families; the reduction is still exact, and
-its cost is measured in
-[`physical-cavity.md`](physical-cavity.md#what-the-transverse-modes-cost).
-
-Those are the frequencies at the retuned 1250 N/m default; before it they were
-646, 915 and 1166 Hz. Raising the tuning raises the whole mode series, so the same
+The top-mode column is at the retuned 1250 N/m default; before it those were 646,
+915 and 1166 Hz. Raising the tuning raises the whole mode series, so the same
 budget reaches 1.44 times higher — which is where the room to move the attack
 layer above the modal band came from.
+
+The resonant column grew when P9/M2 gave the transverse cavity modes a coupling
+path to the \(m = 1\) and \(m = 2\) families — the reachable set went from
+\(\{0\}\) to \(\{0,1,2\}\) and the same 96-slot selection went from leaving 6
+modes to leaving 28. The reachability reduction is still exact; what is new is
+that the second budget then truncates it, which is not.
+
+`ResonantModeLimit` exists because one number was sizing two banks that are
+excited by different things. The batter head is struck and heard, so its budget
+buys bandwidth and belongs on a quality tier. The resonant head is only ever
+driven through the air, so the span worth covering is the cavity's, which is a
+property of the shell. Sharing the tier's number was accidental rather than
+designed, and it showed once the cavity setting started deciding the resonant
+head's size.
+
+The default of 24 is the smallest budget that straddles both transverse cavity
+resonances: the cavity's \((1,1)\) pair at 660 Hz sits between the resonant
+\((1,2)\) at 472 Hz and \((1,3)\) at 685 Hz, and its \((2,1)\) pair at 1094 Hz
+between \((2,4)\) at 1001 Hz and \((2,5)\) at 1213 Hz, the 23rd and 24th
+oscillator of the reachable bank. Below 12 the \((1,3)\) straddle is missing and
+the P9/M2 mechanism itself is 3 dB wrong; the value is measured against the
+mechanism in `DefaultResonantModeLimit`'s note.
+
+Truncating from 28 to 24 is a real change to the instrument, unlike the
+reachability filter, and a small one: broadband RMS and peak at the shipped pickup
+both move by less than 0.001 dB, the small-signal transfer function moves by
+0.019 dB RMS over 20 Hz–4 kHz with a worst point of 1.08 dB at 1376 Hz, and the
+13.1 dB modal-versus-lumped feature at 657.5 Hz that P9/M2 exists for reads
+13.16 dB instead of 13.13 dB.
+
+A lumped cavity leaves 4, 6 and 8 axisymmetric modes at the three tiers, all far
+below 24, so the budget never binds on a migrated v1–v10 document and those still
+render bit-identically — verified sample for sample against a `git worktree` at
+the pre-P9/M2 commit, at all three tiers.
 
 Measured on `js/wasm` under Node with 512-sample chunks, retriggering at full
 velocity before every chunk so the nonlinear solve never idles:
@@ -99,6 +129,43 @@ oscillators, still with zero allocations. The 1.66 above is inside that spread a
 is kept as the conservative figure. Two extra biquads and two extra one-pole
 envelopes are a rounding error beside a hundred oscillators and a nonlinear solve,
 which is what the measurement says as well as what the arithmetic predicts.
+
+Those four rows predate the modal cavity and are all `ModeCount = 1`. On a second,
+busier machine, so absolute figures are not comparable with the table above but
+before/after pairs measured back to back on it are, with medians of five
+interleaved runs of `BenchmarkNonlinearDoubleHeadActive48k`:
+
+| Configuration              | Oscillators | host  | `js/wasm` |
+| -------------------------- | ----------- | ----- | --------- |
+| Standard, lumped cavity    | 102         | —     | 2.56      |
+| Standard, before the split | 124         | 4.638 | 1.443     |
+| Standard, with the split   | 120         | 4.750 | 1.496     |
+| High, before the split     | 198         | —     | 1.035     |
+| High, with the split       | 184         | —     | 1.146     |
+
+So the split is worth 3.7 % at Standard and 10.7 % at High on `js/wasm`, which is
+a real improvement and nowhere near a fix: the shipped six-state cavity still
+costs 42 % of the lumped model's headroom, and scaling the 1.66 figure above by
+the measured ratio puts the Standard worst case near 0.97× real time against 0.94×
+before. The budget split was made for the structural reason, not this one, and the
+remaining cost is the transverse cavity's own — it wants attacking as an
+optimization rather than by shrinking the instrument further. Render still
+allocates nothing.
+
+> **Superseded by measurement, 2026-07-31.** The 0.97× above is a projection, and
+> the nonlinear mode coupling landed before anyone collected on it. Measured
+> directly at 120 oscillators with the coupling enabled at its shipped 256
+> coefficients, the Standard retrigger worst case is **0.70× real time** on
+> `js/wasm` (2.06× on host), against 1.40× with the coupling off. The
+> fixed-point iteration count barely moved — 2.404 to 2.491 — so the cost is the
+> coupling's table walk, not the physics, and it is the subject of PLAN P9/M1b.
+> The two-voice figure below is stale by the same factor. Standard is currently
+> below real time on `js/wasm`; Draft is the shipped answer until M1b lands.
+
+Do not use the decaying-tail row for this comparison. That benchmark is bimodal:
+once the modes decay into subnormal range the arithmetic falls off the fast path
+and the figure swings by more than the effect being measured. The retrigger worst
+case is the number to trust.
 
 The honest caveat: both Tom tracks can select the physical model, and two
 simultaneous physical voices at Standard sit at about 0.8 times real time in the
