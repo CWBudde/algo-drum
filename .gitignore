@@ -54,5 +54,6 @@ fit-*.checkpoint
 fit-*.log
 *.wav
 
-# Built by `go build ./cmd/fit-physical`
+# Built by `go build ./cmd/fit-physical` and `./cmd/render-physical`
 /fit-physical
+/render-physical

@@ -132,6 +132,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 		"print a progress line every N objective evaluations; 0 silences it")
 	checkpointPath := flags.String("checkpoint", "",
 		"file to save finished restarts and the best point to, and to resume from")
+	wavPath := flags.String("wav", "",
+		"also render the fitted bank to this mono WAV file, for listening to")
+	wavDuration := flags.Duration("wav-duration", 3*time.Second,
+		"render duration for -wav; the search's own -duration is far too short to judge a tail by")
 
 	fixed := assignmentFlag{}
 	flags.Var(fixed, "fix", "freeze one parameter at a normalized position, as ID=value (repeatable)")
@@ -325,6 +329,24 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 
 	writeSummary(stdout, report)
+
+	// The baseline is the fallback for the same reason writeSummary uses it: with
+	// -report-only there is no fitted bank, and the shipped one is what the run
+	// measured.
+	if *wavPath != "" {
+		exported := report.Baseline
+		if report.Best != nil {
+			exported = *report.Best
+		}
+
+		peak, err := exportCandidate(*wavPath, exported, *wavDuration)
+		if err != nil {
+			return err
+		}
+
+		_, _ = fmt.Fprintf(stderr, "wrote %s: %.2fs at velocity %.3f, source peak %.6g\n",
+			*wavPath, wavDuration.Seconds(), exported.Velocity01, peak)
+	}
 
 	return writeReport(*outputPath, report)
 }

@@ -7,20 +7,15 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"math"
 	"os"
 	"time"
 
 	"github.com/cwbudde/algo-drum/internal/physical"
-	"github.com/cwbudde/wav"
-	"github.com/go-audio/audio"
+	"github.com/cwbudde/algo-drum/internal/wavio"
 )
 
-const (
-	maxRenderDuration = 30 * time.Second
-	normalizedPeak    = 0.9
-)
+const maxRenderDuration = 30 * time.Second
 
 var errInvalidRenderOption = errors.New("invalid physical render option")
 
@@ -58,7 +53,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	peak, encodeErr := writePCM16WAV(output, samples, int(config.SampleRateHz))
+	peak, encodeErr := wavio.WriteMonoPCM16(output, samples, int(config.SampleRateHz))
 	closeErr := output.Close()
 
 	if encodeErr != nil {
@@ -105,58 +100,4 @@ func render(config physical.PhysicalDrum, duration time.Duration, velocity float
 	model.Render(samples)
 
 	return samples, nil
-}
-
-func writePCM16WAV(
-	writer io.WriteSeeker,
-	samples []float64,
-	sampleRate int,
-) (float64, error) {
-	if writer == nil {
-		return 0, fmt.Errorf("%w: nil WAV writer", errInvalidRenderOption)
-	}
-
-	if sampleRate <= 0 {
-		return 0, fmt.Errorf("%w: sample rate %d", errInvalidRenderOption, sampleRate)
-	}
-
-	peak := 0.0
-
-	for index, sample := range samples {
-		if math.IsNaN(sample) || math.IsInf(sample, 0) {
-			return 0, fmt.Errorf("%w: non-finite sample %d", errInvalidRenderOption, index)
-		}
-
-		peak = math.Max(peak, math.Abs(sample))
-	}
-
-	scale := 1.0
-	if peak > 0 {
-		scale = normalizedPeak / peak
-	}
-
-	data := make([]float32, len(samples))
-
-	for index, sample := range samples {
-		data[index] = float32(math.Max(-1, math.Min(1, sample*scale)))
-	}
-
-	buffer := &audio.Float32Buffer{
-		Format: &audio.Format{
-			NumChannels: 1,
-			SampleRate:  sampleRate,
-		},
-		Data: data,
-	}
-	encoder := wav.NewEncoder(writer, sampleRate, 16, 1, 1)
-
-	if err := encoder.Write(buffer); err != nil {
-		return 0, fmt.Errorf("write WAV samples: %w", err)
-	}
-
-	if err := encoder.Close(); err != nil {
-		return 0, fmt.Errorf("finalize WAV: %w", err)
-	}
-
-	return peak, nil
 }

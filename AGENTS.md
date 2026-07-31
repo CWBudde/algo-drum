@@ -99,6 +99,7 @@ internal/physical/        — The experimental double-headed physical Tom, selec
 internal/physical/analysis/ — Offline report/suite generation for `cmd/analyze-physical`; backs testdata/physical-reference-v2.json
 cmd/analyze-physical/     — Emits the analysis report and regenerates the reference fixture (`just gen-physical-reference`; CI diffs it)
 cmd/render-physical/      — Renders the physical Tom to a WAV for offline auditioning
+internal/wavio/           — Mono 16-bit PCM WAV export, shared by cmd/render-physical and cmd/fit-physical's `-wav` (reading WAVs lives in internal/physical/match, which drags in the whole FFT stack)
 docs/physical-*.md        — The physical model's design record: calibration and the microphone model, the cavity, nonlinear tension, the hybrid architecture, product integration, and the measured review the P8 work came from
 web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands, exposes onPattern (engine-owned pattern snapshots) and dispose() (tears the worker + audio graph down)
 web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; renders audio chunks on demand, echoes the authoritative pattern after each edit

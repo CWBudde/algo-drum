@@ -207,6 +207,14 @@ that band for real, which is the precondition for pushing `ATK.T` back up to
 where it belongs and letting the attack layer stand in only for what is genuinely
 unresolvable.
 
+> **Confirmed by fitting, 2026-07-31.** Refitting the whole bank under each
+> contact model at 150 iterations leaves `ATK.T` at **3426 Hz** under Hertzian
+> against **1261 Hz** under prescribed, with `ATK.L` at its lowest of any run.
+> The search stops leaning on the noise layer, exactly as predicted here — and
+> the fit still finds **0 partials** in 476–700 Hz against the reference's 9, so
+> the seam and the gap really are two different things. See
+> [`physical-measured-fit.md`](physical-measured-fit.md).
+
 ## Why it is off by default
 
 Switching `Strike.Contact.Model` changes the shipped sound, and not only in the
@@ -222,6 +230,33 @@ the measurements recorded beside it. `DefaultContact()` is nonetheless calibrate
 for the drum as shipped — K = 1e6 N/m^1.5 predicts 7.3 ms against the 15 g mallet
 — so flipping the model without touching anything else gives the best available
 single-change result rather than a broken one.
+
+### Whether the pass is worth starting — measured 2026-07-31
+
+It is not, on fit quality. Both models were given the same bank and the same
+budget against `reference/tom.wav`, 8 restarts × 150 iterations:
+
+| Contact        | Best total | Partial decay | Spectral envelope | 476–700 Hz |
+| -------------- | ---------- | ------------- | ----------------- | ---------- |
+| Prescribed     | **5.901**  | 0.179 ✅      | 12.3 dB ❌        | 0 of 9     |
+| Hertzian, 15 g | 7.450      | 0.493 ❌      | 14.5 dB ❌        | 0 of 9     |
+| Hertzian, 5 g  | 6.548      | 0.188 ✅      | 11.9 dB ❌        | 0 of 9     |
+
+The prescribed excitation wins on total and on the decay gate, and neither model
+comes within 3× of the spectral-envelope gate. The restart distributions overlap
+heavily, so read this as "the Hertzian contact does not pay for its calibration
+pass", not as "the prescribed contact is better physics" — the measurements
+higher up this page say plainly that it is not. What the fit shows is that the
+band this model fails to populate is one the contact model cannot reach either.
+
+The 15 g mallet is confirmed as too heavy for this model: at the measured 5 g the
+Hertzian total improves 7.450 → 6.548. That is a finding about
+`DefaultPhysicalDrum()`, not about the contact switch, and it is recorded rather
+than applied for the same reason the switch is — mallet mass moves the impulse,
+so it belongs to the same calibration pass.
+
+`DefaultContact().Model` therefore stays `ContactPrescribed`, now on fitted
+evidence rather than on an open question.
 
 ## Reproducing
 

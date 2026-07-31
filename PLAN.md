@@ -1023,6 +1023,26 @@ calibration pass in its own right: it delivers 1.9× the impulse, and
 `Pickup.OutputGain`, the nonlinear tension coefficients, `Attack.LevelRelative`,
 `Strike.MalletMassKg` and the fitted preset would all have to move with it.
 
+**Measured 2026-07-31, and the pass is not worth starting yet.** Refitting the
+whole bank under each contact model at 150 iterations — 8 restarts, 59 056
+evaluations each — puts prescribed at **5.901** against Hertzian's 7.450, or
+6.548 once the mallet is dropped to the measured 5 g. The seam does close exactly
+as predicted: `ATK.T` sits at 3426 Hz under Hertzian against 1261 Hz under
+prescribed, so the search stops using the noise layer to fake a band the
+excitation never reached. The gap does not: **all three fits find 0 partials in
+476–700 Hz** where the reference has 9, and none comes within 3× of the 4 dB
+spectral-envelope gate. So the excitation model was never the binding constraint
+on this fit, and P8's remaining question is mode density in that band. The 5 g
+mallet is separately confirmed as the better value, and is recorded rather than
+applied because it belongs to the same calibration pass. Two by-products worth
+keeping: the 150-iteration prescribed fit is the best total ever measured here
+(5.901, against the documented 6.364) and still fails the gate, confirming that
+search effort does not move the band; and the 5 g run scores the *best* spectral
+envelope of any fit while finding the *fewest* partials, by parking `ATK.T` at
+626 Hz inside the gap with `ATK.L` at 3.7× — the spectral-envelope term is
+gameable by the noise layer, which is why the gate is per-term. See
+[`docs/physical-measured-fit.md`](docs/physical-measured-fit.md).
+
 ### P7 — Snare research extension
 
 Gated behind **P8**. A snare adds mechanisms on top of the two-head/air system,

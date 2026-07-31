@@ -1,7 +1,7 @@
 # Fitting the physical Tom to a recording
 
-This document records the measurement, the search, and what the first fit
-found.
+This document records the measurement, the search, what the first fit found, and
+the later refit that gave each contact model the same budget over the same bank.
 
 It does **not** close P6's _"fit documented presets from measurement"_ item, and
 it does not meet P8's exit criterion. It builds the machinery both of those need
@@ -287,11 +287,134 @@ iteration**, so this is a good point rather than a converged one. A longer run
 would find a better total; on the evidence above it would not close the 476–700
 Hz gap, because that gap does not move with search effort.
 
+## The contact-model head-to-head (2026-07-31)
+
+`ContactHertzian` closes the excitation gap measured in
+[`physical-excitation-gap.md`](physical-excitation-gap.md), so the question was
+whether it also closes the fit. It had to be asked _after_ fitting: at the
+shipped bank the Hertzian model already scores better (31.087 against 33.455),
+and a fixed-default comparison cannot separate a better excitation from
+parameters that happen to suit it.
+
+Three runs, each 8 restarts × 150 iterations at population 16, seed 1, Draft,
+**59 056 evaluations** apiece, all restarts complete. The iteration budget is
+nearly double the run above, which the previous section's closing prediction
+makes a test in its own right. Both baselines reproduced to the digit, so these
+are comparable to the 6.364 fit and to each other.
+
+| Term                  | Fitted (80 it) | Prescribed | Hertzian   | Hertzian, 5 g | Gate   |
+| --------------------- | -------------- | ---------- | ---------- | ------------- | ------ |
+| Partial frequency     | 21.5 ¢         | 20.6 ¢ ✅  | 19.6 ¢ ✅  | 27.2 ¢ ❌     | ≤ 25 ¢ |
+| Partial decay         | 0.179          | 0.179 ✅   | 0.493 ❌   | 0.188 ✅      | ≤ 0.25 |
+| **Spectral envelope** | 13.6 dB        | 12.3 dB ❌ | 14.5 dB ❌ | 11.9 dB ❌    | ≤ 4 dB |
+| Partial level         | 2.0 dB         | 2.0 dB     | 2.0 dB     | 2.0 dB        | —      |
+| Amplitude envelope    | 1.1 dB         | 1.0 dB     | 2.8 dB     | 3.1 dB        | —      |
+| Glide                 | 18.2 ¢         | 18.0 ¢     | 0.1 ¢      | 0.0 ¢         | —      |
+| Attack balance        | 0.3 dB         | 0.0 dB     | 0.0 dB     | 1.1 dB        | —      |
+| Unmatched energy      | 0.027          | 0.027      | 0.027      | 0.027         | —      |
+| **Total**             | **6.364**      | **5.901**  | **7.450**  | **6.548**     | —      |
+| Baseline              | 33.455         | 33.455     | 31.087     | 37.868        | —      |
+
+**The prediction above held.** Nearly doubling the search budget moved the
+prescribed fit 6.364 → 5.901 and left the band untouched, which is what that
+paragraph said would happen and the reason it is worth having written down.
+
+### The seam closes, and it was not the gap
+
+`ATK.T` is the diagnostic, because the previous fit dragged it from 4000 Hz to
+1644 Hz — the stochastic attack layer standing in for a band the excitation never
+reached:
+
+|         | Prescribed | Hertzian    | Hertzian, 5 g |
+| ------- | ---------- | ----------- | ------------- |
+| `ATK.T` | 1261 Hz    | **3426 Hz** | 626 Hz        |
+| `ATK.L` | 0.021      | 0.012       | **0.078**     |
+
+At the shipped 15 g mallet the Hertzian fit leaves `ATK.T` near its 4000 Hz
+default and drops `ATK.L` to the lowest value of the three. The excitation
+reaches the high band for real, so the search stops abusing the noise layer to
+cover it. That is the seam closing, visible as a parameter difference exactly
+where [`physical-contact.md`](physical-contact.md) predicted it.
+
+It does not close the gap:
+
+|                | Reference | Prescribed | Hertzian | Hertzian, 5 g |
+| -------------- | --------- | ---------- | -------- | ------------- |
+| Partials found | 16        | 5          | 7        | 3             |
+| **476–700 Hz** | **9**     | **0**      | **0**    | **0**         |
+
+Hertzian finds two more partials overall and still none in the band carrying
+more than half the reference's character. The contact model buys 12–23 dB above
+800 Hz and 0–4 dB below 700, and the deficit is below 700. **The excitation model
+was never the binding constraint on this fit**; the mode density in that band is,
+which is the P8 question and stays open.
+
+### The 5 g mallet, and what it exposes about the metric
+
+`Strike.MalletMassKg` is the Hertzian model's strongest lever — contact time here
+is set by the head's 0.31 g driving-point mass, not the tip — and it is not in
+the product bank, so the search cannot reach it. The measured velocity law says
+4–6 g against the shipped 15 g, and at 5 g the Hertzian total improves markedly,
+7.450 → 6.548. Taken alone that is a finding about `DefaultPhysicalDrum()`'s
+mallet rather than about the fit.
+
+Taken with the parameters it is something more useful. The 5 g run has the **best
+spectral envelope of any fit ever measured here** (11.9 dB) and the **fewest
+partials** (3). It gets there by parking the attack layer in the gap: `ATK.T` at
+626 Hz, inside the 476–700 Hz band, with `ATK.L` at 0.078 — 3.7× the other two
+runs. Broadband noise satisfies a band-energy metric; it cannot make resolvable
+partials, and the partial-frequency term duly fails the gate at 27.2 ¢.
+
+So the spectral-envelope term is **gameable by the noise layer**, and the partial
+terms are what expose it. This is why the gate is per-term. A single-number
+comparison would have ranked the 5 g Hertzian run as the closest match to the
+recording, when it is the one that resembles it least in structure.
+
+### Verdict
+
+`DefaultContact().Model` **stays `ContactPrescribed`**, and no fitted bank is
+adopted. The prescribed 150-iteration fit is the best total ever measured against
+this reference (5.901, beating 6.364) and passes two of three gate terms, but it
+misses the spectral envelope by 3× and is empty across the band carrying the
+target's character — the same argument that left the shipped default alone the
+first time, applied to the same evidence. `testdata/physical-fit-tom.json` and
+the **Measured tom** preset are therefore unchanged.
+
+The restart spreads say how much weight the ranking carries:
+
+| Run           | Best  | Median | Worst  |
+| ------------- | ----- | ------ | ------ |
+| Prescribed    | 5.901 | 7.838  | 10.166 |
+| Hertzian      | 7.450 | 8.279  | 11.153 |
+| Hertzian, 5 g | 6.548 | 7.703  | 9.588  |
+
+They overlap heavily — the Hertzian best would rank 6th of 8 among the prescribed
+restarts — so this is a consistent ordering rather than a decisive one. It is
+enough to say the Hertzian contact does not earn a calibration pass on fit
+quality. It is not enough to say the prescribed excitation is better physics, and
+the excitation-gap measurements say it is not.
+
 ## Reproducing
 
 The run is deterministic given the seed; `TestSearchIsDeterministic` keeps it
 that way. It is not part of `just ci`: it takes minutes, and it needs a
 reference recording the repository does not contain.
+
+### Listening to what it found
+
+`-wav <path>` renders the fitted bank alongside the JSON report, at
+`-wav-duration` (3 s by default) rather than the 1.2 s the search itself renders
+— long enough to hear a tail, where the fitting duration is chosen to be just
+long enough to measure one. It renders from the candidate's own recorded config,
+so what lands on disk is the drum the report describes even when the report was
+resumed from a checkpoint. The export is peak-normalized, like the reference, so
+it is for listening and not for judging level; the true peak is printed.
+
+This matters because **the distance is a proxy and the recording is the target**.
+Every number in this document is a summary of eight terms that were chosen by
+hand, and a fit that wins on them can still be wrong in a way the terms do not
+represent — the 5 g run above is exactly that, and it is audible long before it
+is arguable. A/B against `reference/tom.wav` before believing any total.
 
 ### Stopping one, and picking it up again
 
