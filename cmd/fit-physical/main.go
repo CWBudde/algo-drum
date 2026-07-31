@@ -642,10 +642,10 @@ func fundamentalHz(features match.Features) float64 {
 func summarize(terms match.Terms) string {
 	return fmt.Sprintf(
 		"total %.3f (freq %.1f¢, level %.1f dB, decay %.3f, spectrum %.1f dB, "+
-			"envelope %.1f dB, glide %.1f¢, attack %.1f dB, unmatched %.3f)",
+			"envelope %.1f dB, glide %.1f¢, attack %.1f dB, unmatched %.3f, spurious %.3f)",
 		terms.Total, terms.PartialFrequency, terms.PartialLevel, terms.PartialDecay,
 		terms.SpectralEnvelope, terms.Envelope, terms.Glide, terms.AttackBalance,
-		terms.Unmatched,
+		terms.Unmatched, terms.Spurious,
 	)
 }
 

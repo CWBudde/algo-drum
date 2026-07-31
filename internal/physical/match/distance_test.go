@@ -183,6 +183,84 @@ func TestOneLoudPartialIsNotADrum(t *testing.T) {
 	}
 }
 
+// The mirror of TestOneLoudPartialIsNotADrum, and the defect that survived it.
+//
+// Charging for missing partials without charging for invented ones just moves
+// the degenerate optimum: the first fit run under the audibility weighting
+// covered all seven reference partials, reported an unmatched share of 0.000,
+// and made its second-loudest component a 182 Hz mode the reference does not
+// have. Only the spectral envelope noticed, and only faintly.
+func TestInventedPartialsAreCharged(t *testing.T) {
+	t.Parallel()
+
+	reference := extractTones(t, wellSeparatedTones())
+
+	// A loud mode between the second and third partials, far enough from both
+	// that no matching tolerance reaches it.
+	invented := append(wellSeparatedTones(), tone{frequencyHz: 253, amplitude: 0.5, t60Seconds: 0.7})
+
+	faithful := Distance(reference, extractTones(t, wellSeparatedTones()), DefaultWeights())
+	extra := Distance(reference, extractTones(t, invented), DefaultWeights())
+
+	if extra.Unmatched != 0 {
+		t.Fatalf("the candidate still covers every reference partial, but unmatched = %.4f", extra.Unmatched)
+	}
+
+	if extra.Spurious <= 0.1 {
+		t.Errorf("an invented partial 6 dB down scored %.4f spurious, want it to cost something", extra.Spurious)
+	}
+
+	if extra.Total <= faithful.Total {
+		t.Errorf("inventing a partial scored %.3f against the faithful candidate's %.3f",
+			extra.Total, faithful.Total)
+	}
+}
+
+// TestSpuriousDoesNotOutweighCompleteness is a structural guard, and it is worth
+// being explicit that it is one.
+//
+// Spurious was first weighted at 1/0.2 against Unmatched's 2.0, reasoning that
+// nothing else in the sum absorbs an invented partial while a missing one is
+// charged twice. A fit run refuted it in fourteen minutes: the search abandoned
+// the drum for two partials and a spurious share of 0.000, having found that
+// inventing nothing is easiest when there is nothing.
+//
+// That failure cannot be reproduced as a unit test on the distance. Here,
+// dropping a reference partial from a synthetic candidate leaves its invented
+// partials untouched, so the total rises monotonically at either weight — which
+// was verified before writing this. In the search, coverage and invention move
+// together, because both are consequences of the same tuning; the degeneracy
+// lives in the composition of the model with the metric, not in the metric. So
+// what is pinned here is the inequality the run established, and the reason it
+// holds is in DefaultWeights' comment rather than in an assertion.
+func TestSpuriousDoesNotOutweighCompleteness(t *testing.T) {
+	t.Parallel()
+
+	weights := DefaultWeights()
+
+	if weights.Spurious > weights.Unmatched {
+		t.Errorf("spurious weight %.3f exceeds unmatched %.3f; a fit run has already shown "+
+			"that this makes discarding the drum the cheapest way to invent nothing",
+			weights.Spurious, weights.Unmatched)
+	}
+}
+
+// Above and below the reference's own partials there is no evidence: a room
+// recording's noise floor hides modes a model legitimately has. Charging for
+// them would fit the recording's limits rather than the drum.
+func TestPartialsOutsideTheReferenceSpanAreNotCharged(t *testing.T) {
+	t.Parallel()
+
+	reference := extractTones(t, wellSeparatedTones())
+	beyond := append(wellSeparatedTones(), tone{frequencyHz: 780, amplitude: 0.5, t60Seconds: 0.7})
+
+	terms := Distance(reference, extractTones(t, beyond), DefaultWeights())
+
+	if terms.Spurious != 0 {
+		t.Errorf("a partial above the reference's highest scored %.4f spurious, want 0", terms.Spurious)
+	}
+}
+
 // The audibility weighting is meaningless if it disagrees with the level at
 // which partials actually stop being detected.
 func TestAudibilityFloorTracksTheDetectionFloor(t *testing.T) {
@@ -206,7 +284,7 @@ func TestMatchPartialsClaimsEachCandidateOnce(t *testing.T) {
 	// counted twice.
 	candidate := []Partial{{FrequencyHz: 101, LevelDB: 0}}
 
-	pairs, unmatched := matchPartials(reference, candidate, 200)
+	pairs, unmatched, _ := matchPartials(reference, candidate, 200)
 
 	if len(pairs) != 1 {
 		t.Fatalf("pairs = %d, want 1", len(pairs))

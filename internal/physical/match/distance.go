@@ -55,6 +55,25 @@ type Terms struct {
 	// dominate, but it is compressed enough that six missing quiet ones cannot
 	// be rounded away.
 	Unmatched float64 `json:"unmatchedShare"`
+	// Spurious is the mirror of Unmatched: the share of the candidate's partial
+	// audibility that sits in modes the reference has nothing to put against.
+	//
+	// Unmatched alone is a one-sided measure. It charges for reference partials
+	// the candidate fails to produce, but a candidate partial with no reference
+	// counterpart is invisible to every partial term — matchPartials iterates
+	// the reference — and reaches the total only through the spectral envelope.
+	// Measured on the first fit run under the audibility weighting: the
+	// candidate covered all seven reference partials, reported an unmatched
+	// share of 0.000, and its second-loudest component was an invented 182 Hz
+	// mode 15 dB down that cost it nothing. Making missing partials expensive
+	// without making invented ones expensive just moves the degenerate optimum
+	// from too few modes to too many.
+	//
+	// Counted only between the lowest and highest reference partial. Above and
+	// below that the reference's own detection is unproven — a room recording's
+	// noise floor hides modes a model legitimately has — so a partial out there
+	// is charged by the spectral envelope, on evidence, and not by this.
+	Spurious float64 `json:"spuriousShare"`
 	// Total is the weighted sum.
 	Total float64 `json:"total"`
 }
@@ -71,6 +90,7 @@ type Weights struct {
 	Glide            float64 `json:"glide"`
 	AttackBalance    float64 `json:"attackBalance"`
 	Unmatched        float64 `json:"unmatched"`
+	Spurious         float64 `json:"spurious"`
 
 	// MatchToleranceCents bounds how far a candidate partial may sit from a
 	// reference partial and still be called the same mode. Scaled by the
@@ -88,6 +108,22 @@ type Weights struct {
 // spectral shape, 3 dB of envelope, 40 cents of glide, 6 dB of attack balance.
 // Unmatched is small because the partial terms already absorb what is missing;
 // what is left is a mild preference for completeness.
+//
+// Spurious carries the same weight as Unmatched, and the symmetry is load-
+// bearing rather than tidy. It was first set larger, at 1/0.2, on the reasoning
+// that nothing else in the sum absorbs an invented partial while a missing one
+// is charged twice — once directly and once through the blend. A fit run
+// refuted that inside fourteen minutes: it abandoned the drum and converged on
+// two partials with a spurious share of 0.000, because the blend's pressure
+// toward completeness is exactly what the spurious weight works against, and
+// outweighing it makes emptiness the cheapest bank on offer. Measured on that
+// run's own candidates the two degenerate extremes came out within 0.12 of each
+// other, so the search simply drifted between them.
+//
+// At equal weights the extra asymmetry the argument wanted is still there — it
+// just comes from the blend, where it belongs, rather than from the weight.
+// TestSpuriousDoesNotOutweighCompleteness pins the inequality; it cannot pin the
+// behaviour, for the reason given there.
 func DefaultWeights() Weights {
 	return Weights{
 		PartialFrequency:    1.0 / 25,
@@ -98,6 +134,7 @@ func DefaultWeights() Weights {
 		Glide:               1.0 / 40,
 		AttackBalance:       1.0 / 6,
 		Unmatched:           2.0,
+		Spurious:            2.0,
 		MatchToleranceCents: 120,
 	}
 }
@@ -113,7 +150,7 @@ func DefaultWeights() Weights {
 func Distance(reference, candidate Features, weights Weights) Terms {
 	var terms Terms
 
-	pairs, unmatched := matchPartials(reference.Partials, candidate.Partials, weights.MatchToleranceCents)
+	pairs, unmatched, spurious := matchPartials(reference.Partials, candidate.Partials, weights.MatchToleranceCents)
 
 	// Each partial term is blended against a fixed penalty in proportion to
 	// the reference energy no candidate partial accounts for.
@@ -130,6 +167,10 @@ func Distance(reference, candidate Features, weights Weights) Terms {
 	terms.PartialLevel = blend(partialLevelError(pairs), unmatchedLevelDB, unmatched)
 	terms.PartialDecay = blend(partialDecayError(pairs), unmatchedDecayLogRatio, unmatched)
 	terms.Unmatched = unmatched
+	// Not blended into the partial terms above: those pairs really did match,
+	// and an invented mode elsewhere does not make a matched one less matched.
+	// It is its own failure and it is reported as one.
+	terms.Spurious = spurious
 	terms.SpectralEnvelope = spectralEnvelopeError(reference.Windows, candidate.Windows)
 	terms.Envelope = envelopeError(reference.EnvelopeDB, candidate.EnvelopeDB)
 	terms.Glide = math.Abs(reference.GlideCents - candidate.GlideCents)
@@ -142,7 +183,8 @@ func Distance(reference, candidate Features, weights Weights) Terms {
 		weights.Envelope*terms.Envelope +
 		weights.Glide*terms.Glide +
 		weights.AttackBalance*terms.AttackBalance +
-		weights.Unmatched*terms.Unmatched
+		weights.Unmatched*terms.Unmatched +
+		weights.Spurious*terms.Spurious
 
 	return terms
 }
@@ -185,9 +227,9 @@ type pair struct {
 // Greedy by closeness rather than in order, so one badly placed candidate
 // cannot cascade a mis-identification through the whole series. Each candidate
 // is claimed at most once, so a candidate cannot explain two reference modes.
-func matchPartials(reference, candidate []Partial, toleranceCents float64) (pairs []pair, unmatchedShare float64) {
+func matchPartials(reference, candidate []Partial, toleranceCents float64) (pairs []pair, unmatchedShare, spuriousShare float64) {
 	if len(reference) == 0 {
-		return nil, 0
+		return nil, 0, 0
 	}
 
 	type link struct {
@@ -257,11 +299,54 @@ func matchPartials(reference, candidate []Partial, toleranceCents float64) (pair
 		}
 	}
 
-	if total <= 0 {
-		return pairs, 0
+	if total > 0 {
+		unmatchedShare = missing / total
 	}
 
-	return pairs, missing / total
+	return pairs, unmatchedShare, spuriousAudibilityShare(reference, candidate, usedCand)
+}
+
+// spuriousAudibilityShare is Terms.Spurious: of the candidate's audibility in
+// the band the reference demonstrably resolves, how much sits in modes no
+// reference partial claimed.
+func spuriousAudibilityShare(reference, candidate []Partial, usedCand []bool) float64 {
+	low, high := math.Inf(1), math.Inf(-1)
+
+	for _, refPartial := range reference {
+		if refPartial.FrequencyHz <= 0 {
+			continue
+		}
+
+		low, high = min(low, refPartial.FrequencyHz), max(high, refPartial.FrequencyHz)
+	}
+
+	if low > high {
+		return 0
+	}
+
+	var invented, total float64
+
+	for index, used := range usedCand {
+		// Outside the reference's own span there is no evidence either way, so
+		// the partial is left to the spectral envelope rather than charged here.
+		if candidate[index].FrequencyHz < low || candidate[index].FrequencyHz > high {
+			continue
+		}
+
+		weight := partialAudibility(candidate[index].LevelDB)
+
+		total += weight
+
+		if !used {
+			invented += weight
+		}
+	}
+
+	if total <= 0 {
+		return 0
+	}
+
+	return invented / total
 }
 
 // partialAudibility is what one reference partial is worth: how far it stands,

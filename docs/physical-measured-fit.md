@@ -78,9 +78,12 @@ different physical drum they measure the phase relationship between two signals
 that were never meant to share one — large for candidates that sound identical,
 small for candidates that do not.
 
-### Two measurement problems worth recording
+### Four measurement problems worth recording
 
-Both were found by measurement, not by inspection, and both changed the design.
+All were found by measurement, not by inspection, and all changed the design.
+The last two were found only after listening to a fitted bank that the distance
+called good and that plainly was not — the metric ranked candidates correctly
+while being wrong about all of them in absolute terms.
 
 **A phantom partial, and why the floor is not the fix.** The reference has a
 genuine, isolated component at 87 Hz — 22 dB of topographic prominence, so not
@@ -89,18 +92,81 @@ also accepted ripples on the fundamental's skirt, which prominence now rejects.
 But the 87 Hz peak is real, and no model of a two-headed drum will produce it.
 A level floor tight enough to exclude it also discards the 500–700 Hz cluster
 that carries the drum's character. The fix is instead in the distance: the
-`Unmatched` term is weighted by **energy**, not by count, so failing to
-reproduce a partial costs exactly what that partial was worth.
+`Unmatched` term is weighted by how loud each partial is, not by count, so
+failing to reproduce a partial costs roughly what that partial was worth. It was
+first weighted by **energy**; see below for why that was too strong a form of
+the same idea.
 
 **A degenerate optimum, and the blend that closes it.** An error averaged over
 matched pairs is zero when there are no pairs. A candidate that produces one
-partial in the wrong place therefore scored _better_ on three of the eight
+partial in the wrong place therefore scored _better_ on three of the nine
 terms than any real drum can — and the search found it immediately, reaching
 11.2 against the shipped default's 39.2 from a render that sounded like
 nothing. Each partial term is now blended against a fixed penalty in proportion
 to the unmatched reference energy, so a partial that is missing costs what a
 partial that is present but wrong costs.
 `TestSilenceIsNeverCheaperThanADrum` pins it.
+
+**Energy weighting reopened the same degenerate optimum.** The blend above only
+works if the unmatched share is an honest measure of what is missing, and
+weighted by energy it is not. Energy is dominated by whichever partial is
+loudest, and on this reference the 212.78 Hz partial carries **99.4 %** of it.
+A candidate reproducing that one partial and nothing else therefore reported an
+unmatched share of 0.006 — so the blend did nothing, and the three partial
+terms averaged over the single pair that matched and returned excellent numbers
+for a drum with one mode in it. Six of the nine terms were scoring one partial.
+Repricing the two stopped fit runs under the corrected weighting moved them from
+4.517 and 7.827 to **13.143** and **15.102**, and their partial frequency error
+from 9.7 ¢ to 88.1 ¢.
+
+Plain counting would overcorrect, because of the 87 Hz phantom above: missing a
+component 39 dB down must not cost what missing the fundamental costs. Each
+partial is now worth **how far it stands, in dB, above the detection floor** —
+zero at the floor, growing with prominence. Monotone in loudness like energy,
+but compressed enough that six missing quiet partials cost 54 % rather than
+0.6 %. `TestOneLoudPartialIsNotADrum` states the defect directly, and
+`TestAudibilityFloorTracksTheDetectionFloor` fails if the scoring floor and
+`Options.PartialFloorDB` ever drift apart.
+
+**And the mirror of it: invented partials were free.** Making missing partials
+expensive without charging for invented ones just moves the degenerate optimum
+from too few modes to too many. `matchPartials` iterates the *reference*, so a
+candidate partial with no reference counterpart is invisible to every partial
+term and reaches the total only through the spectral envelope. The first run
+under the corrected weighting demonstrated it within six minutes: the candidate
+covered all seven reference partials, reported an unmatched share of **0.000**,
+and made its second-loudest component an invented 182 Hz mode 15 dB down.
+
+The `Spurious` term is the mirror image — the share of the candidate's partial
+audibility, under the same dB-above-floor weighting, that no reference partial
+claimed.
+
+**It carries the same weight as `Unmatched`, and getting that wrong cost a run.**
+It was first set larger, at 1/0.2, on the reasoning that nothing else in the sum
+absorbs an invented partial while a missing one is charged twice — once directly
+and once through the blend. A fit refuted that within fourteen minutes: it
+abandoned the drum for **two partials** and a spurious share of 0.000, having
+found that inventing nothing is easiest when there is nothing. Measured on that
+run's own candidates, the dense and sparse extremes came out within 0.12 of each
+other, so the search simply drifted between them.
+
+The two pressures are the same quantity seen from opposite sides. The blend
+already supplies the asymmetry toward completeness that the argument above wanted;
+supplying it a second time through the weight inverts the degeneracy instead of
+closing it. `TestSpuriousDoesNotOutweighCompleteness` pins the inequality — and
+says explicitly that it cannot pin the behaviour, because the failure lives in the
+composition of the model with the metric. Dropping a partial from a synthetic
+candidate leaves its invented partials in place, so the total rises monotonically
+at either weight; in the search, coverage and invention move together, since both
+are consequences of the same tuning.
+
+It is counted **only between the lowest and highest reference partial**. Above
+and below that span the reference's own detection is unproven — a room
+recording's noise floor hides modes a model legitimately has — so a partial out
+there is charged by the spectral envelope, on evidence, and not by this. Without
+that bound the term would fit the recording's limitations rather than the drum.
+It is also not blended into the partial terms: those pairs really did match, and
+an invented mode elsewhere does not make a matched one less matched.
 
 ## The search
 
@@ -203,6 +269,13 @@ Eight restarts of 80 iterations at population 16, seed 1, Draft quality,
 31 616 evaluations, 41 minutes on twelve cores. The fitted bank is in
 `testdata/physical-fit-tom.json` and is selectable in the app as **Measured
 tom**.
+
+> **Superseded.** Every number in this table and the next was measured through
+> the combed mono downmix and under the energy-weighted `Unmatched` term, both
+> since corrected. They are kept because the reasoning around them is still
+> instructive and because the corrections were found by asking why these numbers
+> disagreed with listening — but they are not comparable to anything measured
+> after, and none of them should be quoted as a result.
 
 | Term                  | Shipped default | Fitted    | Adoption gate |
 | --------------------- | --------------- | --------- | ------------- |
@@ -315,6 +388,15 @@ are comparable to the 6.364 fit and to each other.
 | **Total**             | **6.364**      | **5.901**  | **7.450**  | **6.548**     | —      |
 | Baseline              | 33.455         | 33.455     | 31.087     | 37.868        | —      |
 
+That unmatched row — 0.027 in all four columns, to the digit, across three
+different contact models and two mallet masses — is the defect above, sitting in
+plain sight and read at the time as a shared floor rather than as a signal. It
+is what an energy-weighted share reports when a candidate reproduces the one
+partial carrying 99.4 % of the reference's energy and nothing else, which is
+what all four of these did. The lesson is worth more than the table: a term that
+does not move between candidates is not a constant of the problem, it is a term
+that has stopped measuring.
+
 **The prediction above held.** Nearly doubling the search budget moved the
 prescribed fit 6.364 → 5.901 and left the band untouched, which is what that
 paragraph said would happen and the reason it is worth having written down.
@@ -411,7 +493,7 @@ resumed from a checkpoint. The export is peak-normalized, like the reference, so
 it is for listening and not for judging level; the true peak is printed.
 
 This matters because **the distance is a proxy and the recording is the target**.
-Every number in this document is a summary of eight terms that were chosen by
+Every number in this document is a summary of nine terms that were chosen by
 hand, and a fit that wins on them can still be wrong in a way the terms do not
 represent — the 5 g run above is exactly that, and it is audible long before it
 is arguable. A/B against `reference/tom.wav` before believing any total.
