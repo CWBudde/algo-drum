@@ -885,32 +885,49 @@ func measureDecays(hit []float64, sampleRateHz float64, options Options, partial
 			continue
 		}
 
-		peak := 0.0
+		// Both loops below work in squared magnitude, so neither takes a square
+		// root at all — this is not Hypot traded for a cheaper Sqrt.
+		//
+		// The peak survives because x -> sqrt(x) is increasing, so the largest
+		// squared magnitude belongs to the largest magnitude; one root at the end
+		// recovers it. The trace survives because 20*log10(sqrt(x)) is 10*log10(x)
+		// identically, so the root the decibel conversion was undoing never needs
+		// taking. The floor comparison is squared to match, which is exact for
+		// non-negative operands.
+		//
+		// Hypot rather than Sqrt was the right call in probeGlide, where the sum
+		// of magnitudes has no such algebraic escape. Here there is nothing left
+		// for its careful scaling to protect: the squares are formed either way.
+		peakSquared := 0.0
 
 		for sample := start; sample < end; sample++ {
-			if magnitude := math.Hypot(inPhase[sample], quadrature[sample]); magnitude > peak {
-				peak = magnitude
+			squared := inPhase[sample]*inPhase[sample] +
+				quadrature[sample]*quadrature[sample]
+			if squared > peakSquared {
+				peakSquared = squared
 			}
 		}
 
-		if peak <= 0 {
+		if peakSquared <= 0 {
 			continue
 		}
 
 		times := make([]float64, 0, end-start)
 		trace := make([]float64, 0, end-start)
-		floor := peak * math.Pow(10, options.DecayFitFloorDB/20)
+		floor := math.Sqrt(peakSquared) * math.Pow(10, options.DecayFitFloorDB/20)
+		floorSquared := floor * floor
 
 		for sample := start; sample < end; sample++ {
-			magnitude := math.Hypot(inPhase[sample], quadrature[sample])
-			if magnitude < floor {
+			squared := inPhase[sample]*inPhase[sample] +
+				quadrature[sample]*quadrature[sample]
+			if squared < floorSquared {
 				// Below the fit floor the trace is noise or a neighbour, and
 				// including it would flatten every slope towards zero.
 				break
 			}
 
 			times = append(times, float64(sample)/sampleRateHz)
-			trace = append(trace, 20*math.Log10(magnitude))
+			trace = append(trace, 10*math.Log10(squared))
 		}
 
 		if len(times) < 16 {
@@ -1083,10 +1100,26 @@ func probeGlide(inPhase, quadrature []float64, sampleRateHz, atSeconds, halfSeco
 		count            int
 	)
 
+	// The per-sample phase step is read off z[n] * conj(z[n-1]) rather than by
+	// differencing two absolute phases.
+	//
+	//	z[n] conj(z[n-1]) = (i[n]i[n-1] + q[n]q[n-1]) + j(q[n]i[n-1] - i[n]q[n-1])
+	//
+	// so its argument *is* phi[n] - phi[n-1], already in (-pi, pi] — which is what
+	// the explicit +3pi / Mod / -pi dance was reconstructing by hand.
+	//
+	// Three things follow. One atan2 a sample instead of two, and the two were
+	// the same call: previous at n is current at n-1, recomputed. No math.Mod,
+	// which was costing more than the arctangent it was correcting. And better
+	// conditioning for the small steps this actually measures — a glide is a
+	// fraction of a radian a sample, and taking it as the difference of two
+	// angles near +/-pi cancels most of the significand, whereas the cross and
+	// dot products carry it directly.
 	for n := start; n < end; n++ {
-		previous := math.Atan2(quadrature[n-1], inPhase[n-1])
-		current := math.Atan2(quadrature[n], inPhase[n])
-		phase += math.Mod(current-previous+3*math.Pi, 2*math.Pi) - math.Pi
+		cross := quadrature[n]*inPhase[n-1] - inPhase[n]*quadrature[n-1]
+		dot := inPhase[n]*inPhase[n-1] + quadrature[n]*quadrature[n-1]
+
+		phase += math.Atan2(cross, dot)
 		magnitude += math.Hypot(inPhase[n], quadrature[n])
 		count++
 	}
