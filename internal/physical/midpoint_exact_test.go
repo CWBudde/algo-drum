@@ -7,7 +7,7 @@ import (
 )
 
 // TestMidpointKernelMatchesReferenceExactly is the whole justification for the
-// assembly being allowed to exist.
+// assembly being allowed to exist. Both kernels, batter and resonant.
 //
 // The calibration fixture and the rendered-WAV digest both compare exactly, so a
 // kernel that is merely accurate is a kernel that breaks CI. Every operation in
@@ -57,7 +57,36 @@ func TestMidpointKernelMatchesReferenceExactly(t *testing.T) {
 			gotDenominator, gotVelocity,
 		)
 
+		wantResonantDenominator := make([]float64, count)
+		wantResonantVelocity := make([]float64, count)
+		midpointReferenceResonant(0, count,
+			ratio, timeStep, inverseTimeStep,
+			wavenumber, omegaSquared, midpointDenom,
+			velocity, displacement,
+			wantResonantDenominator, wantResonantVelocity)
+
+		gotResonantDenominator := make([]float64, count)
+		gotResonantVelocity := make([]float64, count)
+		midpointResonant(
+			ratio, timeStep, inverseTimeStep,
+			wavenumber, omegaSquared, midpointDenom,
+			velocity, displacement,
+			gotResonantDenominator, gotResonantVelocity,
+		)
+
 		for i := range count {
+			if math.Float64bits(gotResonantDenominator[i]) != math.Float64bits(wantResonantDenominator[i]) {
+				t.Fatalf("n=%d i=%d resonant denominator: got %x want %x",
+					count, i, math.Float64bits(gotResonantDenominator[i]),
+					math.Float64bits(wantResonantDenominator[i]))
+			}
+
+			if math.Float64bits(gotResonantVelocity[i]) != math.Float64bits(wantResonantVelocity[i]) {
+				t.Fatalf("n=%d i=%d resonant velocity: got %x want %x",
+					count, i, math.Float64bits(gotResonantVelocity[i]),
+					math.Float64bits(wantResonantVelocity[i]))
+			}
+
 			if math.Float64bits(gotDenominator[i]) != math.Float64bits(wantDenominator[i]) {
 				t.Fatalf("n=%d i=%d denominator: got %x want %x",
 					count, i, math.Float64bits(gotDenominator[i]),

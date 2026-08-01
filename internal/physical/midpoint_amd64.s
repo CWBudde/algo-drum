@@ -103,3 +103,76 @@ loop:
 
 done:
 	RET
+
+// The resonant head's update: the same recurrence without either source term,
+// since that head is never struck and the quartic table is batter-only.
+//
+//	nonlinear      = ratio * wave * wave
+//	angularSquared = omegaSquared + nonlinear
+//	denominator    = midpointDenom + 0.5*nonlinear*timeStep
+//	numerator      = 2*velocity*inverseTimeStep - angularSquared*displacement
+//	stepDenominator  = denominator
+//	midpointVelocity = numerator / denominator
+//
+// Same two rules as above: no FMA, no reassociation.
+
+// func midpointResonantAVX2(n int, ratio, timeStep, inverseTimeStep float64,
+//	wavenumber, omegaSquared, midpointDenom []float64,
+//	velocity, displacement []float64,
+//	stepDenominator, midpointVelocity []float64)
+TEXT ·midpointResonantAVX2(SB), NOSPLIT|NOFRAME, $0-200
+	MOVQ  n+0(FP), R12
+	TESTQ R12, R12
+	JLE   resonantDone
+
+	MOVQ wavenumber_base+32(FP), BX
+	MOVQ omegaSquared_base+56(FP), CX
+	MOVQ midpointDenom_base+80(FP), SI
+	MOVQ velocity_base+104(FP), DI
+	MOVQ displacement_base+128(FP), R8
+	MOVQ stepDenominator_base+152(FP), R10
+	MOVQ midpointVelocity_base+176(FP), R11
+
+	VBROADCASTSD ratio+8(FP), Y0
+	VBROADCASTSD timeStep+16(FP), Y1
+	VBROADCASTSD inverseTimeStep+24(FP), Y2
+	VBROADCASTSD midpointHalf<>(SB), Y4
+
+	XORQ AX, AX
+
+resonantLoop:
+	// nonlinear = ratio * wave * wave
+	VMOVUPD (BX)(AX*8), Y6
+	VMULPD  Y0, Y6, Y7
+	VMULPD  Y6, Y7, Y7
+
+	// angularSquared = omegaSquared + nonlinear
+	VADDPD (CX)(AX*8), Y7, Y8
+
+	// denominator = midpointDenom + (0.5*nonlinear)*timeStep
+	VMULPD Y4, Y7, Y9
+	VMULPD Y1, Y9, Y9
+	VADDPD (SI)(AX*8), Y9, Y9
+
+	// numerator = (velocity+velocity)*inverseTimeStep
+	VMOVUPD (DI)(AX*8), Y10
+	VADDPD  Y10, Y10, Y10
+	VMULPD  Y2, Y10, Y10
+
+	// numerator -= angularSquared*displacement
+	VMOVUPD (R8)(AX*8), Y11
+	VMULPD  Y8, Y11, Y11
+	VSUBPD  Y11, Y10, Y10
+
+	VMOVUPD Y9, (R10)(AX*8)
+	VDIVPD  Y9, Y10, Y10
+	VMOVUPD Y10, (R11)(AX*8)
+
+	ADDQ $4, AX
+	CMPQ AX, R12
+	JLT  resonantLoop
+
+	VZEROUPPER
+
+resonantDone:
+	RET

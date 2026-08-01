@@ -1000,11 +1000,8 @@ func (d *DoubleHead) solveMidpoint(
 	)
 
 	// The resonant head is never struck and the quartic table is batter-only, so
-	// this is the same recurrence without either source term. Left scalar: it is
-	// 24 modes against the batter head's 96, and a second kernel would double the
-	// assembly for a fifth of the work.
-	midpointReferenceResonant(
-		0, len(modes)-batterModeCount,
+	// this is the same recurrence without either source term.
+	midpointResonant(
 		resonantRatio, timeStep, inverseTimeStep,
 		d.modeWavenumberPerM[batterModeCount:],
 		d.modeOmegaSquared[batterModeCount:],

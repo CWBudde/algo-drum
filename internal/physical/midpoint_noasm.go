@@ -18,3 +18,19 @@ func midpointBatter(
 		stepDenominator, midpointVelocity,
 	)
 }
+
+// midpointResonant is the portable form.
+func midpointResonant(
+	ratio, timeStep, inverseTimeStep float64,
+	wavenumber, omegaSquared, midpointDenom []float64,
+	velocity, displacement []float64,
+	stepDenominator, midpointVelocity []float64,
+) {
+	midpointReferenceResonant(
+		0, len(wavenumber),
+		ratio, timeStep, inverseTimeStep,
+		wavenumber, omegaSquared, midpointDenom,
+		velocity, displacement,
+		stepDenominator, midpointVelocity,
+	)
+}

@@ -64,3 +64,52 @@ func midpointBatter(
 		stepDenominator, midpointVelocity,
 	)
 }
+
+// midpointResonantAVX2 processes n elements, n a multiple of 4. The caller
+// handles the remainder; see midpointResonant.
+//
+//go:noescape
+func midpointResonantAVX2(
+	n int,
+	ratio, timeStep, inverseTimeStep float64,
+	wavenumber, omegaSquared, midpointDenom []float64,
+	velocity, displacement []float64,
+	stepDenominator, midpointVelocity []float64,
+)
+
+// midpointResonant runs the vector kernel over the 4-aligned prefix and the
+// reference over what is left.
+//
+// The resonant bank is the smaller of the two — 24 modes against the batter
+// head's 96 at the shipped quality — so the tail is a larger fraction of it than
+// it is of the batter loop, and the alignment check earns its keep.
+func midpointResonant(
+	ratio, timeStep, inverseTimeStep float64,
+	wavenumber, omegaSquared, midpointDenom []float64,
+	velocity, displacement []float64,
+	stepDenominator, midpointVelocity []float64,
+) {
+	vectored := 0
+
+	if midpointUseAVX2 {
+		if aligned := len(wavenumber) &^ 3; aligned > 0 {
+			midpointResonantAVX2(
+				aligned,
+				ratio, timeStep, inverseTimeStep,
+				wavenumber, omegaSquared, midpointDenom,
+				velocity, displacement,
+				stepDenominator, midpointVelocity,
+			)
+
+			vectored = aligned
+		}
+	}
+
+	midpointReferenceResonant(
+		vectored, len(wavenumber),
+		ratio, timeStep, inverseTimeStep,
+		wavenumber, omegaSquared, midpointDenom,
+		velocity, displacement,
+		stepDenominator, midpointVelocity,
+	)
+}
