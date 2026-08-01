@@ -432,8 +432,15 @@ type Attack struct {
 // NearFieldScale sets how much of that near field the microphone picks up. It is
 // fitted, not derived — the effective area of an evanescent patch is outside
 // what this reduced model can compute — and it matters more than any other
-// number here: in the far field a drum this size is nearly a monopole, so with
-// the scale at zero the output is very nearly the axisymmetric modes alone.
+// number here: in the far field a drum this size is nearly a monopole, so the
+// scale sets how much of the m > 0 families reach the output at all.
+//
+// It does *not* silence them at zero, which this comment used to claim. Measured
+// on the shipped default with NearFieldScale = 0, the batter's own (1,1) still
+// sits only 4.8 dB below the strongest peak — partly because the modal cavity
+// (P9/M2) gives the m > 0 head modes a second path to the microphone that does
+// not run through the near field at all. "Very nearly the axisymmetric modes
+// alone" was true of the model before the cavity carried transverse modes.
 type Pickup struct {
 	Radius01       float64 `json:"radius01"`
 	AngleRad       float64 `json:"angleRad"`
@@ -584,10 +591,20 @@ func DefaultPhysicalDrum() PhysicalDrum {
 			Enabled:    true,
 			DepthM:     0.20,
 			Coupling01: 1,
-			// Fitted, not derived. The rigid formula puts the stiffened (0,1)
-			// branch at 219.5 Hz against an unstiffened 107.5 — a doublet ratio
-			// of 2.04, where a measured drum separates its two (0,1) branches by
-			// 10–20 %. This scale gives 106.6/124.2 Hz, a ratio of 1.16.
+			// Fitted, not derived, and fitted to the wrong instrument. The rigid
+			// formula puts the stiffened (0,1) branch at 219.5 Hz against an
+			// unstiffened 107.5 — a doublet ratio of 2.04. This scale was chosen
+			// to bring that to ~1.16, but 1.16 is a *snare* measurement, and a
+			// snare is a leakier enclosure than a tom: vent, snare beds and
+			// throw-off slots. Published toms separate their (0,1) branches far
+			// more — Bork & Meyer's 32 cm tom gives 101/191 Hz, a ratio of 1.891.
+			// Every explanation offered for the resulting factor of twelve below
+			// the rigid ceiling has now been eliminated, so the ceiling was right
+			// and the target was wrong. See docs/physical-cavity.md and PLAN.md
+			// P10/N4, which recomputes this against a drum of known geometry.
+			// The absolute frequencies this comment used to quote were from a
+			// pre-retune default and are not reinstated here; the doc carries the
+			// current ones.
 			StiffnessScale:    0.083,
 			AirDensityKgPerM3: 1.204,
 			SoundSpeedMPerS:   343,

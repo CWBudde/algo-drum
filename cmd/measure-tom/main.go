@@ -82,6 +82,15 @@ func run(args []string, stdout, stderr io.Writer) error {
 	baseTolerance := flags.Float64("base-tolerance", 0.1,
 		"how far from -base-hz a partial may sit and still be the base, as a fraction")
 
+	espritDefaults := match.DefaultEspritOptions()
+
+	highResolution := flags.Bool("high-resolution", false,
+		"measure each take a second time with subband ESPRIT and compare the two tables")
+	espritBands := flags.Float64("esprit-bands", espritDefaults.BandsPerOctave,
+		"subbands per octave for -high-resolution; narrower bands resolve closer pairs")
+	espritOrder := flags.Int("esprit-max-order", espritDefaults.MaxOrder,
+		"most components ESTER may put in one subband")
+
 	doublet := flags.Bool("doublet", false,
 		"treat the two files as Fischer's pair: resonant head off first, on second")
 	doubletMinRatio := flags.Float64("doublet-min-ratio", 1.02,
@@ -119,6 +128,23 @@ func run(args []string, stdout, stderr io.Writer) error {
 		Autoselect: *baseHz <= 0,
 	}
 
+	// The subspace estimator is asked the same question the fast one is, so
+	// where the two have a setting in common it comes from the same flag.
+	var esprit *match.EspritOptions
+
+	if *highResolution {
+		espritOptions := espritDefaults
+		espritOptions.MinFrequencyHz = options.MinFrequencyHz
+		espritOptions.MaxFrequencyHz = options.MaxFrequencyHz
+		espritOptions.StartSeconds = options.DecayFitStartSeconds
+		espritOptions.EndSeconds = options.DecayFitEndSeconds
+		espritOptions.FloorDB = options.PartialFloorDB
+		espritOptions.BandsPerOctave = *espritBands
+		espritOptions.MaxOrder = *espritOrder
+
+		esprit = &espritOptions
+	}
+
 	report := Report{Options: options, Base: base}
 
 	// FlagSet.Visit walks only the flags that were actually set, which is how a
@@ -127,7 +153,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	chosenChannel := flagWasSet(flags, "channel")
 
 	for _, path := range paths {
-		take, err := measureTake(path, match.Channel(*channel), chosenChannel, options, base)
+		take, err := measureTake(path, match.Channel(*channel), chosenChannel, options, base, esprit)
 		if err != nil {
 			return err
 		}
@@ -215,6 +241,10 @@ func printTake(writer io.Writer, take Take) {
 	}
 
 	_ = table.Flush()
+
+	if take.HighResolution != nil {
+		printHighResolution(writer, *take.HighResolution)
+	}
 }
 
 func printRepeatability(writer io.Writer, repeat Repeatability) {

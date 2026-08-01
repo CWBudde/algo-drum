@@ -8,10 +8,17 @@ import (
 	"testing"
 )
 
-// transverseAnchorRadiusM is the shell radius docs/physical-excitation-gap.md
-// states its transverse hypothesis at. The reference recording's diameter is not
-// known; this radius is the one the three quoted frequencies were computed for,
-// so it is what the mode table has to be checked against.
+// transverseAnchorRadiusM is a second shell radius, distinct from the default,
+// so the analytic series is checked at more than one geometry.
+//
+// It was originally the radius at which docs/physical-excitation-gap.md stated a
+// transverse-cavity hypothesis about three partials in reference/tom.wav. That
+// recording had unknown provenance and unknown diameter, the hypothesis has been
+// withdrawn, and the recording is being retired (PLAN.md P10/N8) — so this value
+// no longer has that provenance and should not be read as one. It survives only
+// because a second radius is worth testing and this one is as good as any: the
+// transverse series goes as 1/a, so the test's content is the ratio structure,
+// not the number.
 const transverseAnchorRadiusM = 0.1584
 
 // TestCavityModeFrequenciesMatchTheAnalyticSeries pins the mode table to numbers

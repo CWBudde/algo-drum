@@ -2,6 +2,7 @@ package match
 
 import (
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -15,6 +16,52 @@ func TestDistanceToItselfIsZero(t *testing.T) {
 
 	if got != want {
 		t.Errorf("Distance(f, f) = %+v, want every term zero", got)
+	}
+}
+
+// TestWeightsAreReciprocalGates pins the rule that makes the total readable:
+// every weight is 1/gate, so a term scoring at its gate contributes exactly 1.0.
+//
+// It exists because the rule was silently broken once. PartialDecay carried
+// 1.0/0.35 against a gate documented as 0.25 everywhere else, so its
+// "contribution" column was scaled by a threshold nobody had adopted. The gates
+// themselves are the measured reproducibility floor described on DefaultWeights;
+// changing one is a decision, and this test makes it one.
+func TestWeightsAreReciprocalGates(t *testing.T) {
+	t.Parallel()
+
+	gates := []struct {
+		name   string
+		weight float64
+		gate   float64
+	}{
+		{"partial frequency", DefaultWeights().PartialFrequency, 80},
+		{"partial level", DefaultWeights().PartialLevel, 7},
+		{"partial decay", DefaultWeights().PartialDecay, 0.6},
+		{"spectral envelope", DefaultWeights().SpectralEnvelope, 4},
+		{"envelope", DefaultWeights().Envelope, 4},
+		{"glide", DefaultWeights().Glide, 290},
+		{"attack balance", DefaultWeights().AttackBalance, 1.2},
+		{"unmatched", DefaultWeights().Unmatched, 0.3},
+		{"spurious", DefaultWeights().Spurious, 0.3},
+	}
+
+	reported := AdoptionGates()
+	fields := []float64{
+		reported.PartialFrequency, reported.PartialLevel, reported.PartialDecay,
+		reported.SpectralEnvelope, reported.Envelope, reported.Glide,
+		reported.AttackBalance, reported.Unmatched, reported.Spurious,
+	}
+
+	for index, term := range gates {
+		if math.Abs(term.weight*term.gate-1) > 1e-12 {
+			t.Errorf("%s: weight %g against gate %g contributes %.4f at the gate, want 1.0",
+				term.name, term.weight, term.gate, term.weight*term.gate)
+		}
+
+		if math.Abs(fields[index]-term.gate) > 1e-9 {
+			t.Errorf("%s: AdoptionGates reports %g, want %g", term.name, fields[index], term.gate)
+		}
 	}
 }
 
@@ -342,5 +389,85 @@ func TestSilenceIsNeverCheaperThanADrum(t *testing.T) {
 	}
 	if empty.PartialDecay < unmatchedDecayLogRatio*0.9 {
 		t.Errorf("decay term with nothing matched = %.3f, want the full penalty", empty.PartialDecay)
+	}
+}
+
+// TestTheEstimatorsTailIsTrimmedAndTheModelsIsNot is the one property that makes
+// trimming defensible rather than a way of scoring better. A handful of
+// catastrophic mis-assignments in a large table is the estimator's known failure
+// mode and is trimmed; a candidate that simply fails to produce the reference's
+// partials is charged in full, because that failure is not in the trimmed terms
+// at all.
+func TestTheEstimatorsTailIsTrimmedAndTheModelsIsNot(t *testing.T) {
+	t.Parallel()
+
+	// Sixteen partials, spaced far enough apart to match unambiguously.
+	reference := make([]Partial, 0, 16)
+	for index := range 16 {
+		reference = append(reference, Partial{
+			FrequencyHz: 120 * float64(index+1),
+			LevelDB:     -2 * float64(index),
+			T60Seconds:  0.5,
+			FitQuality:  1,
+		})
+	}
+
+	weights := DefaultWeights()
+
+	exact := Distance(
+		Features{Partials: reference}, Features{Partials: slices.Clone(reference)}, weights)
+	if exact.PartialFrequency != 0 || exact.Unmatched != 0 {
+		t.Fatalf("a table against itself scored %+v, want zero", exact)
+	}
+
+	// Three of sixteen displaced by a semitone: the size and the count of the
+	// estimator tail this trimming exists for.
+	mangled := slices.Clone(reference)
+	for _, index := range []int{3, 8, 13} {
+		mangled[index].FrequencyHz *= 1.05
+	}
+
+	tail := Distance(Features{Partials: reference}, Features{Partials: mangled}, weights)
+	if tail.PartialFrequency != 0 {
+		t.Errorf("three outliers in sixteen measured as %.3f cents, want them trimmed",
+			tail.PartialFrequency)
+	}
+
+	// The same three partials missing entirely. Nothing about that is trimmed:
+	// Unmatched is not a trimmed term, and it is where a missing mode is
+	// charged.
+	missing := slices.Concat(reference[:3], reference[4:8], reference[9:13], reference[14:])
+
+	absent := Distance(Features{Partials: reference}, Features{Partials: missing}, weights)
+	if absent.Unmatched <= 0 {
+		t.Errorf("three missing partials scored an unmatched share of %.4f, want them charged",
+			absent.Unmatched)
+	}
+}
+
+// TestTrimmingNeedsATableToTrim pins the small-table behaviour. Below five
+// values nothing is discarded, because with four partials there is no basis for
+// calling any one of them the estimator's tail.
+func TestTrimmingNeedsATableToTrim(t *testing.T) {
+	t.Parallel()
+
+	// Four values: a plain RMS, so the single large one shows in full.
+	if got, want := trimmedRootMeanSquare([]float64{0, 0, 0, 16}), 2.0; math.Abs(got-want) > 1e-12 {
+		t.Errorf("four values trimmed to %.4f, want the plain RMS %.4f", got, want)
+	}
+
+	// Five: one discarded.
+	if got := trimmedRootMeanSquare([]float64{0, 0, 0, 0, 16}); got != 0 {
+		t.Errorf("five values measured %.4f, want the outlier trimmed", got)
+	}
+
+	if got := trimmedRootMeanSquare(nil); got != 0 {
+		t.Errorf("no values measured %.4f, want 0", got)
+	}
+
+	// One value is always retained, so a single-partial table degrades to that
+	// partial rather than to zero.
+	if got, want := trimmedRootMeanSquare([]float64{9}), 3.0; got != want {
+		t.Errorf("one value measured %.4f, want %.4f", got, want)
 	}
 }

@@ -14,6 +14,11 @@ type tone struct {
 	// glideCents bends the tone down by this much with a 60 ms time constant,
 	// the way a struck head releases its excess tension.
 	glideCents float64
+	// phase is where the tone starts, in radians. It is zero for every case
+	// where the partials are far enough apart not to interact; it matters only
+	// when two of them are close enough to beat, where the beat's phase decides
+	// where the first null falls. See esprit_test.go's split pair.
+	phase float64
 }
 
 // synthesize builds a signal whose partial frequencies, levels and decay times
@@ -24,7 +29,7 @@ func synthesize(tones []tone, sampleRateHz, durationSeconds float64) []float64 {
 
 	for _, t := range tones {
 		decay := math.Log(1000) / t.t60Seconds
-		phase := 0.0
+		phase := t.phase
 
 		for n := range samples {
 			seconds := float64(n) / sampleRateHz

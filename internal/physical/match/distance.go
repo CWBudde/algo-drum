@@ -9,16 +9,31 @@ import (
 // separately. Each is reported in its own unit, so a number here can be read
 // against a tolerance rather than only against another run.
 type Terms struct {
-	// PartialFrequency is the RMS cents error over matched partials. Cents,
-	// because the ear hears pitch as a ratio and a 3 Hz error means something
-	// different at 118 Hz than at 1180 Hz.
+	// PartialFrequency is the trimmed RMS cents error over matched partials.
+	// Cents, because the ear hears pitch as a ratio and a 3 Hz error means
+	// something different at 118 Hz than at 1180 Hz.
 	PartialFrequency float64 `json:"partialFrequencyCents"`
-	// PartialLevel is the RMS dB error of the partials' relative levels — the
-	// balance between the fundamental and the modes above it.
+	// PartialLevel is the trimmed RMS dB error of the partials' relative levels
+	// — the balance between the fundamental and the modes above it.
 	PartialLevel float64 `json:"partialLevelDB"`
-	// PartialDecay is the RMS of |ln(T60_ref / T60_candidate)|, weighted by
-	// each partial's fit quality. A log ratio, because ringing twice as long
-	// and half as long are the same size of mistake.
+	// PartialDecay is the trimmed RMS of |ln(T60_ref / T60_candidate)|. A log
+	// ratio, because ringing twice as long and half as long are the same size
+	// of mistake.
+	//
+	// It used to be weighted by the product of the two fits' R², on the reasoning
+	// that a partial whose envelope is not an exponential has a meaningless
+	// slope. The reasoning is sound and R² does not implement it: measured
+	// against subband ESPRIT over the sixteen velocities of the licensed
+	// reference, median ring-time disagreement is 40 % at R² >= 0.95 and 55 %
+	// below it, which is not a separation. Its replacement candidate,
+	// Partial.DecayRangeDB, was measured on the same evidence and does not
+	// separate them either — it is not even monotone in the disagreement. So the
+	// weighting is gone rather than replaced: an unmeasured confidence is worse
+	// than none, because it looks like a guard.
+	//
+	// What does the job the weighting was meant to do is the trimming, which
+	// needs no per-partial confidence estimate to work.
+	// docs/physical-objective-validation.md §5c and §5f.
 	PartialDecay float64 `json:"partialDecayLogRatio"`
 	// SpectralEnvelope is the mean per-window RMS dB error of the
 	// fractional-octave shape — what the hit sounds like, band by band, as it
@@ -101,41 +116,148 @@ type Weights struct {
 
 // DefaultWeights is the scoring this repository's tom fit uses.
 //
-// The scale is set by pitch: 25 cents is the point where a tuning error stops
-// being a nuance, so PartialFrequency carries 1/25 and every other weight is
-// the reciprocal of that term's own "clearly wrong" threshold — 3 dB of
-// partial balance, a ln-ratio of 0.35 (a factor of 1.4 in ring time), 4 dB of
-// spectral shape, 3 dB of envelope, 40 cents of glide, 6 dB of attack balance.
-// Unmatched is small because the partial terms already absorb what is missing;
-// what is left is a mild preference for completeness.
+// Every weight is the reciprocal of that term's adoption gate, so a candidate
+// scoring exactly at its gate contributes exactly 1.0 and the nine terms are
+// commensurable. That much was always the intent, and TestWeightsAreReciprocalGates
+// makes it structural.
 //
-// Spurious carries the same weight as Unmatched, and the symmetry is load-
-// bearing rather than tidy. It was first set larger, at 1/0.2, on the reasoning
-// that nothing else in the sum absorbs an invented partial while a missing one
-// is charged twice — once directly and once through the blend. A fit run
-// refuted that inside fourteen minutes: it abandoned the drum and converged on
-// two partials with a spurious share of 0.000, because the blend's pressure
-// toward completeness is exactly what the spurious weight works against, and
-// outweighing it makes emptiness the cheapest bank on offer. Measured on that
-// run's own candidates the two degenerate extremes came out within 0.12 of each
-// other, so the search simply drifted between them.
+// The gates are **measured**, not chosen. Each is the 90th percentile of the
+// objective's disagreement with itself, taken over the sixteen velocities of
+// reference/tt08x08-mp-hd-*.wav scored channel-against-channel in both
+// directions — 32 scorings. That pair is coincident: peak inter-channel
+// correlation at exactly 0 samples of lag on every one of the sixteen, at
+// 0.85-0.93. The two signals are two observations of one acoustic event, so any
+// disagreement between them is the instrument's own noise floor, and a candidate
+// at its gate is indistinguishable from a second microphone at the same point in
+// space. cmd/measure-objective performs the measurement, through this Distance
+// rather than through a copy of it.
 //
-// At equal weights the extra asymmetry the argument wanted is still there — it
-// just comes from the blend, where it belongs, rather than from the weight.
-// TestSpuriousDoesNotOutweighCompleteness pins the inequality; it cannot pin the
-// behaviour, for the reason given there.
+// They were measured once before, on 2026-08-01, and that measurement was taken
+// through an estimator with a defect in it: three of the sixteen takes were being
+// collapsed to one- or two-partial tables, and contributed those to the
+// distribution. This is the re-measurement after the repair. It moved five of the
+// nine gates, four of them by more than a factor of two, and every move was in the
+// direction of a *harder* target.
+//
+//	term               2026-08-01  re-measured  gate now
+//	partial frequency     113.0 ¢       76.2 ¢      80 ¢
+//	partial level          17.85 dB      6.81 dB     7 dB
+//	partial decay           1.262        0.558       0.6
+//	spectral envelope       3.65 dB      3.67 dB     4 dB
+//	envelope                3.81 dB      3.84 dB     4 dB
+//	glide                 310.3 ¢      280.1 ¢     290 ¢
+//	attack balance          1.12 dB      1.13 dB     1.2 dB
+//	unmatched share         0.880        0.250       0.3
+//	spurious share          0.346        0.245       0.3  (see below)
+//
+// Gates are rounded *up* from the measured p90, because a gate is what a
+// candidate has to beat and rounding a floor down sets a threshold below the
+// floor.
+//
+// Two causes, separated by measurement rather than divided by assertion. Running
+// the same campaign with the trimming in the three partial terms disabled
+// isolates them:
+//
+//	term               2026-08-01  repaired only  repaired + trimmed
+//	partial frequency     113.0 ¢       112.4 ¢          76.2 ¢
+//	partial level          17.85 dB       7.24 dB         6.81 dB
+//	partial decay           1.262          0.608           0.558
+//	unmatched share         0.880          0.250           0.250
+//	spurious share          0.346          0.245           0.245
+//
+// So the estimator repair is what fixed level, decay, unmatched and spurious —
+// those four were measuring the collapsed takes and nothing else — and the
+// trimming is what fixed frequency, which the repair did not touch at all. They
+// are two different defects and neither substitutes for the other.
+//
+// Three findings from the first measurement survive it, and one does not:
+//
+//   - **The spectral envelope is still the only gate that was ever right.** Its
+//     floor is 3.67 dB against a gate of 4, unmoved by either repair, and every
+//     conclusion drawn from it stands. Note what that means here: it is unmoved
+//     *because* it was never the term the defects were in.
+//   - **AttackBalance is still the most reproducible term in the objective** —
+//     0.245 dB at the median, better than the spectral envelope — and it is still
+//     the one that used to carry the smallest weight, 1/6. It keeps 1/1.2.
+//   - **Glide is still broken.** Its median is 50.0 cents against an
+//     unreadableGlideCents of 40, so more than half the pairs still fail to place
+//     two probes on a surviving fundamental. Fixing the decay estimator did not
+//     fix this, which is evidence that the two are unrelated.
+//   - **"The partial terms were never gateable" is now too strong, and is
+//     withdrawn.** It was true of the collapsed measurement: nothing could beat
+//     113 cents or a 1.26 log-ratio. It is not true of this one. 80 cents is still
+//     not a fine tolerance, and 7 dB of partial balance is still a wide one, but
+//     they are thresholds a model can be held to rather than statements that the
+//     objective cannot see. The six rounds of intervention that were aimed at the
+//     old 25-cent and 0.25 gates were still aimed at thresholds nothing could
+//     reach; that part of the finding stands.
+//
+// Measured consequence: at these weights the objective's disagreement with itself
+// totals **5.73 at the median and 6.38 at p90**. That is a larger number than the
+// 4.32/6.46 the previous gates produced, and it is not a regression — tightening a
+// gate raises the weight, so the same raw disagreement scores higher. Scored
+// under the previous weights this same distribution totals 3.74/4.29, which is the
+// like-for-like comparison and the size of the repair.
+//
+// Which is the whole difficulty with reading totals: **no total recorded before
+// this change is comparable to any total after it**, and not even the sign of the
+// change is meaningful. The readable quantity is the per-term contribution, and
+// there the claim the weights make is intact: no term contributes more than 0.81
+// at its own median, against the 1.0 that means "at the gate". cmd/measure-objective
+// writes the floor into its own report so that a total always arrives beside the
+// floor it should be read against.
+//
+// Spurious is the one deliberate departure from the reciprocal rule. Its measured
+// floor is 0.245 against Unmatched's 0.250, which would make it very slightly the
+// heavier of the two — and that direction has already been refuted by a fit run:
+// it abandoned the drum and converged on two partials with a spurious share of
+// 0.000, because the blend's pressure toward completeness is exactly what the
+// spurious weight works against, and outweighing it makes emptiness the cheapest
+// bank on offer. The margin is now small enough that it would probably not
+// reproduce, which is not a reason to find out. Both terms keep Unmatched's gate.
+// The asymmetry the argument wanted is still there — it comes from the blend,
+// where it belongs. TestSpuriousDoesNotOutweighCompleteness pins the inequality;
+// it cannot pin the behaviour, for the reason given there.
+//
+// The raw distribution, the method and the commands are in
+// docs/physical-objective-validation.md. Re-derive these whenever the estimators
+// in features.go change: the floor is a property of the estimator, not of the
+// drum, and this repository has now twice been in the position of quoting gates
+// measured through an estimator it had since replaced.
 func DefaultWeights() Weights {
 	return Weights{
-		PartialFrequency:    1.0 / 25,
-		PartialLevel:        1.0 / 3,
-		PartialDecay:        1.0 / 0.35,
+		PartialFrequency:    1.0 / 80,
+		PartialLevel:        1.0 / 7,
+		PartialDecay:        1.0 / 0.6,
 		SpectralEnvelope:    1.0 / 4,
-		Envelope:            1.0 / 3,
-		Glide:               1.0 / 40,
-		AttackBalance:       1.0 / 6,
-		Unmatched:           2.0,
-		Spurious:            2.0,
+		Envelope:            1.0 / 4,
+		Glide:               1.0 / 290,
+		AttackBalance:       1.0 / 1.2,
+		Unmatched:           1.0 / 0.3,
+		Spurious:            1.0 / 0.3,
 		MatchToleranceCents: 120,
+	}
+}
+
+// AdoptionGates is DefaultWeights stated the other way round: the value of each
+// term at which a candidate stops being distinguishable from a second observation
+// of the reference. weight = 1/gate is the definition, so this is derived rather
+// than a second source of truth, and it exists so that a report can print the
+// gate beside the score without every caller doing the division.
+func AdoptionGates() Weights {
+	weights := DefaultWeights()
+
+	return Weights{
+		PartialFrequency:    1 / weights.PartialFrequency,
+		PartialLevel:        1 / weights.PartialLevel,
+		PartialDecay:        1 / weights.PartialDecay,
+		SpectralEnvelope:    1 / weights.SpectralEnvelope,
+		Envelope:            1 / weights.Envelope,
+		Glide:               1 / weights.Glide,
+		AttackBalance:       1 / weights.AttackBalance,
+		Unmatched:           1 / weights.Unmatched,
+		Spurious:            1 / weights.Spurious,
+		MatchToleranceCents: weights.MatchToleranceCents,
 	}
 }
 
@@ -387,17 +509,70 @@ func partialAudibility(levelDB float64) float64 {
 	return max(0, levelDB-partialAudibilityFloorDB)
 }
 
-func partialFrequencyError(pairs []pair) float64 {
-	if len(pairs) == 0 {
+// retainedShare is how much of the matched set the three partial terms are
+// aggregated over. The worst fifth is dropped.
+//
+// This is not a tolerance for a bad model. It is a measured property of the
+// estimator that produces both sides of the comparison. Across matched partials
+// the *median* disagreement between two microphones at the same point in space
+// is about one cent and about 0.1 in log-T60 — excellent — with a handful of
+// catastrophic mis-assignments, and plain RMS converts those few into the
+// headline number: one swapped partial in sixteen at 40 dB and 1.4 s of
+// disagreement moves the level term by more than every correctly matched
+// partial in the table put together. Six rounds of intervention were aimed at
+// thresholds that were mostly reporting the estimator's own tail.
+//
+// A fifth is three partials out of the sixteen this repository extracts, which
+// is the observed size of that tail rather than a round number: on the licensed
+// reference the merge defect alone accounts for 15 to 24 of 153 to 164 matched
+// pairs, and a merged partial is precisely a pair whose decay is a beat rather
+// than an exponential.
+//
+// What this does not do is let a candidate off: a partial dropped here is
+// dropped from a term it would have dominated, not from the objective. Anything
+// the candidate fails to produce at all is charged by Unmatched, anything it
+// invents by Spurious, and the whole spectrum by SpectralEnvelope — none of
+// which is trimmed, and all of which a model exploiting the trim would have to
+// pay. The trimming is on the *matched* set, where the failure being trimmed
+// away is a measurement failure rather than a modelling one.
+const retainedShare = 0.8
+
+// trimmedRootMeanSquare is the RMS over the smallest retainedShare of its
+// inputs, which are squared errors.
+//
+// At least one value is always retained, so a short table degrades to its own
+// best member rather than to zero.
+func trimmedRootMeanSquare(squares []float64) float64 {
+	if len(squares) == 0 {
 		return 0
 	}
 
+	ordered := slices.Clone(squares)
+	slices.Sort(ordered)
+
+	// Truncated rather than rounded, which is what makes a small table safe.
+	// int() discards nothing below five values, so a four-partial comparison is
+	// a plain RMS: with four partials there is no basis for calling any one of
+	// them the estimator's tail, and discarding one would hide a real
+	// single-partial error instead of an artifact.
+	// TestDistanceIsolatesWhatChanged/rebalancing is exactly that case.
+	retained := len(ordered) - int((1-retainedShare)*float64(len(ordered)))
+
 	sum := 0.0
-	for _, matched := range pairs {
-		sum += matched.cents * matched.cents
+	for _, square := range ordered[:retained] {
+		sum += square
 	}
 
-	return math.Sqrt(sum / float64(len(pairs)))
+	return math.Sqrt(sum / float64(retained))
+}
+
+func partialFrequencyError(pairs []pair) float64 {
+	squares := make([]float64, 0, len(pairs))
+	for _, matched := range pairs {
+		squares = append(squares, matched.cents*matched.cents)
+	}
+
+	return trimmedRootMeanSquare(squares)
 }
 
 func partialLevelError(pairs []pair) float64 {
@@ -415,42 +590,32 @@ func partialLevelError(pairs []pair) float64 {
 		candOffset = max(candOffset, matched.candidate.LevelDB)
 	}
 
-	sum := 0.0
+	squares := make([]float64, 0, len(pairs))
 
 	for _, matched := range pairs {
 		delta := (matched.reference.LevelDB - refOffset) - (matched.candidate.LevelDB - candOffset)
-		sum += delta * delta
+		squares = append(squares, delta*delta)
 	}
 
-	return math.Sqrt(sum / float64(len(pairs)))
+	return trimmedRootMeanSquare(squares)
 }
 
 func partialDecayError(pairs []pair) float64 {
-	var sum, weight float64
+	squares := make([]float64, 0, len(pairs))
 
 	for _, matched := range pairs {
+		// A partial with no fitted decay on either side contributes nothing
+		// rather than a made-up ratio. What is missing is charged by Unmatched,
+		// which is where a missing thing belongs.
 		if matched.reference.T60Seconds <= 0 || matched.candidate.T60Seconds <= 0 {
-			continue
-		}
-		// A partial whose envelope is not an exponential — a beating pair, a
-		// mode buried under its neighbour — has a meaningless slope. Weighting
-		// by the product of the two fits' R² lets its frequency still count
-		// while its decay does not.
-		confidence := matched.reference.FitQuality * matched.candidate.FitQuality
-		if confidence <= 0 {
 			continue
 		}
 
 		ratio := math.Log(matched.reference.T60Seconds / matched.candidate.T60Seconds)
-		sum += confidence * ratio * ratio
-		weight += confidence
+		squares = append(squares, ratio*ratio)
 	}
 
-	if weight == 0 {
-		return 0
-	}
-
-	return math.Sqrt(sum / weight)
+	return trimmedRootMeanSquare(squares)
 }
 
 func spectralEnvelopeError(reference, candidate []WindowFeature) float64 {

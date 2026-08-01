@@ -97,16 +97,21 @@ func LoadReference(path string, channel Channel) (Reference, error) {
 //
 // The reason is that ChannelMono is a defensible default and a wrong one. It is
 // a real reduction — it aligns the pair before averaging, so it is not the comb
-// filter a bare sum would be — but a stereo room capture reduced that way is a
-// *different signal* from either of its channels, and therefore a different
-// target. This repository's own reference, reference/tom.wav, is stereo, and
-// every number in docs/physical-measured-fit.md and in
-// testdata/physical-fit-tom.json was fitted to its right channel. A run that
+// filter a bare sum would be — but a *spaced* stereo capture reduced that way is
+// a different signal from either of its channels, and therefore a different
+// target. The recording this guard was written for had its channels 1.56 ms
+// apart, correlating 0.36 at zero lag, so averaging it combed the target and
+// every archived number was fitted to its right channel alone. A run that
 // omitted -channel fitted the average instead, announced nothing, printed a
 // plausible baseline and a plausible best, and left its only trace in a
 // "channel": "mono" field of the report that nobody reads. That cost a
 // full-budget fit run, which is why the ambiguity is now an error rather than a
 // default.
+//
+// Note that mono is the *right* reduction for a coincident pair, where there is
+// no arrival-time difference to smear — reference/tt08x08-mp-hd-*.wav peaks at
+// exactly 0 samples of lag. The guard is not an argument against ChannelMono; it
+// is an argument against taking it without deciding. See reference/CREDITS.md.
 //
 // "Not chosen" is deliberately not the same as "equals ChannelMono": passing the
 // mono reduction on a stereo file is a decision someone may legitimately make,

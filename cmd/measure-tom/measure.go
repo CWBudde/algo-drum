@@ -57,6 +57,12 @@ type Take struct {
 	AttackBalanceDB float64 `json:"attackBalanceDB"`
 
 	Decay ir.Metrics `json:"decay"`
+
+	// HighResolution is the same take measured again with subband ESPRIT, and
+	// the partial-by-partial comparison against the table above. Present only
+	// when -high-resolution was asked for: it costs seconds per take, against
+	// the milliseconds the fast estimator costs.
+	HighResolution *HighResolution `json:"highResolution,omitempty"`
 }
 
 // Format records what was decoded, because a table read a year later has to be
@@ -105,6 +111,10 @@ type Row struct {
 	// reports. Zero when the decay fit did not converge.
 	DampingRatioPercent float64 `json:"dampingRatioPercent"`
 	FitQuality          float64 `json:"fitQuality"`
+	// DecayRangeDB is how far the fitted exponential fell before the fitted
+	// noise floor overtook it. It is the confidence the decay term reads, so a
+	// committed table has to carry it beside the ring time it qualifies.
+	DecayRangeDB float64 `json:"decayRangeDB"`
 }
 
 // Repeatability is the scatter across takes at one nominal dynamic. It sizes
@@ -190,8 +200,9 @@ const (
 // because the tables written here are the ones a later fit is compared against,
 // and a reduction nobody chose makes them tables of a different signal. See
 // match.LoadReferenceExplicit.
+// esprit is nil unless the second, high-resolution estimator was asked for.
 func measureTake(path string, channel match.Channel, chosenChannel bool,
-	options match.Options, base BaseRule,
+	options match.Options, base BaseRule, esprit *match.EspritOptions,
 ) (Take, error) {
 	reference, err := match.LoadReferenceExplicit(path, channel, chosenChannel)
 	if err != nil {
@@ -241,6 +252,14 @@ func measureTake(path string, channel match.Channel, chosenChannel bool,
 			"base partial decay fit R²=%.2f: its envelope is not a single exponential, so its T60 is not usable",
 			features.Partials[index].FitQuality,
 		))
+	}
+
+	if esprit != nil {
+		take.HighResolution, err = measureHighResolution(reference, take.Partials,
+			take.BaseHz, options, *esprit)
+		if err != nil {
+			return Take{}, fmt.Errorf("%s: %w", path, err)
+		}
 	}
 
 	return take, nil
@@ -301,10 +320,11 @@ func rows(partials []match.Partial, baseHz float64) []Row {
 
 	for _, partial := range partials {
 		row := Row{
-			FrequencyHz: partial.FrequencyHz,
-			LevelDB:     partial.LevelDB,
-			T60Seconds:  partial.T60Seconds,
-			FitQuality:  partial.FitQuality,
+			FrequencyHz:  partial.FrequencyHz,
+			LevelDB:      partial.LevelDB,
+			T60Seconds:   partial.T60Seconds,
+			FitQuality:   partial.FitQuality,
+			DecayRangeDB: partial.DecayRangeDB,
 		}
 
 		if baseHz > 0 {
