@@ -46,6 +46,16 @@ type evaluator struct {
 	// set to, so its result is evidence about the bound and not a bank to ship.
 	lossScale float64
 
+	// corrections override the loss law at named modes, on both heads, after
+	// the bank has been mapped. It is the same kind of thing as lossScale and
+	// not a knob: the shipped correction table has exactly one entry, the (0,1),
+	// and N3 asks whether a second one at the (1,1) is worth its dishonesty.
+	// A rate given here is the *effective* one — it is applied after DAMP and
+	// D.TILT, which do scale the table's own entries, so a value measured with
+	// this flag has to be divided by that product before it could become a
+	// default.
+	corrections []physical.ModeDecayCorrection
+
 	buffer []float64
 }
 
@@ -102,7 +112,33 @@ func (e *evaluator) config() (physical.PhysicalDrum, error) {
 		drum.ScaleHeadLosses(&config.Resonant, e.lossScale)
 	}
 
+	for _, correction := range e.corrections {
+		setModeDecayCorrection(&config.Batter, correction)
+		setModeDecayCorrection(&config.Resonant, correction)
+	}
+
 	return config, nil
+}
+
+// setModeDecayCorrection writes one correction into a head's table, replacing
+// any entry for the same mode rather than appending a second one — which the
+// configuration rejects outright, and rightly, since two rates for one mode has
+// no meaning.
+//
+// It is applied to both heads because a correction names a mode, not a
+// membrane, and the resonant head is AxisymmetricOnly: it has no m > 0 modes at
+// all, so an entry for one is inert there and costs a table row.
+func setModeDecayCorrection(head *physical.Head, correction physical.ModeDecayCorrection) {
+	for index, existing := range head.ModeDecayCorrections {
+		if existing.AzimuthalOrder == correction.AzimuthalOrder &&
+			existing.RadialOrder == correction.RadialOrder {
+			head.ModeDecayCorrections[index] = correction
+
+			return
+		}
+	}
+
+	head.ModeDecayCorrections = append(head.ModeDecayCorrections, correction)
 }
 
 func (e *evaluator) render(velocity01 float64) ([]float64, error) {

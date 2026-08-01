@@ -77,7 +77,12 @@ type Fingerprint struct {
 	// SearchBlind widens the search space itself, so a checkpoint taken with it
 	// set has positions of a different length. Resuming across it would not
 	// merely mix two searches, it would misread every stored vector.
-	SearchBlind     bool               `json:"searchBlind,omitempty"`
+	SearchBlind bool `json:"searchBlind,omitempty"`
+	// ModeCorrections changes the instrument rather than the search space, so
+	// unlike SearchBlind a resume across it would read every stored vector
+	// correctly and score it against a different drum — which is worse, because
+	// nothing about the result would look wrong.
+	ModeCorrections string             `json:"modeCorrections,omitempty"`
 	SeededRestarts  int                `json:"seededRestarts,omitempty"`
 	SeedWidth       float64            `json:"seedWidth,omitempty"`
 	Quality         string             `json:"quality"`
@@ -104,6 +109,10 @@ func (f Fingerprint) disagreement(other Fingerprint) string {
 		{"contact", f.Contact == other.Contact},
 		{"mallet mass", f.MalletGrams == other.MalletGrams},
 		{"loss scale", f.LossScale == other.LossScale},
+		{
+			"mode corrections, so the drum being fitted is a different one",
+			f.ModeCorrections == other.ModeCorrections,
+		},
 		{
 			"search-blind, so the search space is a different width",
 			f.SearchBlind == other.SearchBlind,

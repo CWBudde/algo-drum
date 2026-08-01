@@ -68,6 +68,83 @@ func (a assignmentFlag) Set(text string) error {
 	return nil
 }
 
+// correctionFlag collects repeatable m,n=rate mode-decay corrections, in the
+// order they were given.
+type correctionFlag struct {
+	entries []physical.ModeDecayCorrection
+}
+
+func (c *correctionFlag) String() string {
+	parts := make([]string, 0, len(c.entries))
+	for _, entry := range c.entries {
+		parts = append(parts, fmt.Sprintf("%d,%d=%g",
+			entry.AzimuthalOrder, entry.RadialOrder, entry.DecayRatePerSecond))
+	}
+
+	return strings.Join(parts, " ")
+}
+
+func (c *correctionFlag) Set(text string) error {
+	mode, raw, found := strings.Cut(text, "=")
+	if !found {
+		return fmt.Errorf("%w: expected m,n=rate, got %q", errInvalidFitOption, text)
+	}
+
+	azimuthal, radial, found := strings.Cut(mode, ",")
+	if !found {
+		return fmt.Errorf("%w: expected m,n=rate, got %q", errInvalidFitOption, text)
+	}
+
+	entry := physical.ModeDecayCorrection{}
+
+	if err := parseOrder(&entry.AzimuthalOrder, azimuthal, "azimuthal order"); err != nil {
+		return err
+	}
+
+	if err := parseOrder(&entry.RadialOrder, radial, "radial order"); err != nil {
+		return err
+	}
+
+	// The radial order starts at 1 — there is no n = 0 Bessel zero — and a
+	// negative rate would be an energy source rather than a loss. Both are
+	// rejected here so the flag fails on the command line instead of turning
+	// every candidate into +Inf several minutes later.
+	if entry.RadialOrder < 1 {
+		return fmt.Errorf("%w: radial order %d: modes are numbered from 1",
+			errInvalidFitOption, entry.RadialOrder)
+	}
+
+	rate, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", errInvalidFitOption, mode, err)
+	}
+
+	if rate < 0 || math.IsNaN(rate) {
+		return fmt.Errorf("%w: rate %v at (%d,%d) is not a loss",
+			errInvalidFitOption, rate, entry.AzimuthalOrder, entry.RadialOrder)
+	}
+
+	entry.DecayRatePerSecond = rate
+	c.entries = append(c.entries, entry)
+
+	return nil
+}
+
+func parseOrder(target *int, text, what string) error {
+	order, err := strconv.Atoi(strings.TrimSpace(text))
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", errInvalidFitOption, what, err)
+	}
+
+	if order < 0 {
+		return fmt.Errorf("%w: %s %d is negative", errInvalidFitOption, what, order)
+	}
+
+	*target = order
+
+	return nil
+}
+
 // flagWasSet reports whether the named flag was actually given on the command
 // line, as opposed to sitting at its default.
 //
@@ -130,6 +207,10 @@ type SearchInfo struct {
 	// objective and not a bank to ship, so a report carrying it should not be
 	// read as a fit result. See blindParameters.
 	SearchBlind bool `json:"searchBlind,omitempty"`
+	// ModeCorrections records any -mode-correction overrides, for the same
+	// reason LossScale is here: they describe a drum whose correction table the
+	// product does not ship, so the bank in such a report is not one either.
+	ModeCorrections string `json:"modeCorrections,omitempty"`
 	// SeedErrorCents records what the analytic pre-solve achieved for each
 	// seeded restart, best first. It is the honest caption for a seeded run: a
 	// low number here says the starting point matched the reference's partial
@@ -185,6 +266,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	fixed := assignmentFlag{}
 	flags.Var(fixed, "fix", "freeze one parameter at a normalized position, as ID=value (repeatable)")
+
+	corrections := &correctionFlag{}
+	flags.Var(corrections, "mode-correction",
+		"add a decay rate to one mode's loss law, as m,n=perSecond (repeatable); "+
+			"a run with this set measures a correction table the product does not ship")
 
 	searchBlind := flags.Bool("search-blind", false,
 		"also search the parameters the objective is measured to be blind to; "+
@@ -317,6 +403,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		contact:         physical.ContactModel(*contact),
 		malletMassKg:    *malletGrams / 1000,
 		lossScale:       *lossScale,
+		corrections:     corrections.entries,
 		// Rendered at the reference's own rate, so no resampler ever enters
 		// the measurement path on either side.
 		buffer: make([]float64, int(*duration*reference.SampleRateHz)),
@@ -346,6 +433,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 			MalletGrams:     *malletGrams,
 			LossScale:       *lossScale,
 			SearchBlind:     *searchBlind,
+			ModeCorrections: corrections.String(),
 			FixedParams:     fixed,
 		},
 	}
@@ -428,6 +516,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 			MalletGrams:     *malletGrams,
 			LossScale:       *lossScale,
 			SearchBlind:     *searchBlind,
+			ModeCorrections: corrections.String(),
 			Quality:         *quality,
 			Variant:         *variant,
 			DurationSeconds: *duration,
