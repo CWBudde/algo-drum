@@ -45,7 +45,10 @@ func benchEvaluator(tb testing.TB, durationSeconds float64) *evaluator {
 		tb.Fatalf("extract: %v", err)
 	}
 
-	probe.reference = target
+	probe.references = []match.Features{target}
+	probe.referencePaths = []string{"synthetic"}
+	probe.velocities = make([]float64, 1)
+	probe.rendered = make([]match.Features, 1)
 
 	return probe
 }

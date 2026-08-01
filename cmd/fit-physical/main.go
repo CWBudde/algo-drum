@@ -128,6 +128,56 @@ func resolveEngineering(fixed assignmentFlag, engineering engineeringFlag) error
 	return nil
 }
 
+// pathsFlag collects a repeatable file path, keeping the order it was given in.
+//
+// -reference used to be a single string and reads the same way when it is given
+// once. Repeating it is what asks for a joint fit: one bank against every take,
+// each with its own free velocity. The order is preserved so the report and the
+// summary name the takes the way the caller listed them — which for a velocity
+// series is the file order, and is the thing the fitted velocities are then
+// compared against.
+type pathsFlag struct {
+	paths []string
+}
+
+func (p *pathsFlag) String() string {
+	return strings.Join(p.paths, " ")
+}
+
+func (p *pathsFlag) Set(text string) error {
+	path := strings.TrimSpace(text)
+	if path == "" {
+		return fmt.Errorf("%w: empty reference path", errInvalidFitOption)
+	}
+
+	p.paths = append(p.paths, path)
+
+	return nil
+}
+
+// duplicate names the first path given twice, or "" when they are all distinct.
+//
+// A repeated take would be scored twice and would weight that hit double in the
+// mean, silently. Refused rather than deduplicated: a caller who listed a file
+// twice meant something, and neither guess is safe.
+//
+// Checked here rather than in Set because flag wraps a Set error with %v, which
+// severs the chain errors.Is walks — the caller would get an unidentifiable
+// error instead of an invalid option.
+func (p *pathsFlag) duplicate() string {
+	seen := make(map[string]bool, len(p.paths))
+
+	for _, path := range p.paths {
+		if seen[path] {
+			return path
+		}
+
+		seen[path] = true
+	}
+
+	return ""
+}
+
 // correctionFlag collects repeatable m,n=rate mode-decay corrections, in the
 // order they were given.
 type correctionFlag struct {
@@ -226,14 +276,19 @@ func flagWasSet(flags *flag.FlagSet, name string) bool {
 }
 
 // Report is what the run writes out.
+//
+// References and Targets are parallel and in the order the takes were given, and
+// both are lists even for a single-take run: a report that sometimes holds one
+// reference and sometimes a list would need every reader to handle both, and the
+// list of one is the same thing said once.
 type Report struct {
-	Reference ReferenceInfo  `json:"reference"`
-	Options   match.Options  `json:"options"`
-	Weights   match.Weights  `json:"weights"`
-	Search    SearchInfo     `json:"search"`
-	Baseline  Candidate      `json:"baseline"`
-	Best      *Candidate     `json:"best,omitempty"`
-	Target    match.Features `json:"target"`
+	References []ReferenceInfo  `json:"references"`
+	Options    match.Options    `json:"options"`
+	Weights    match.Weights    `json:"weights"`
+	Search     SearchInfo       `json:"search"`
+	Baseline   Candidate        `json:"baseline"`
+	Best       *Candidate       `json:"best,omitempty"`
+	Targets    []match.Features `json:"targets"`
 }
 
 // ReferenceInfo records what was measured, so a report can be read a year
@@ -289,7 +344,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("fit-physical", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 
-	referencePath := flags.String("reference", "", "reference WAV file (required)")
+	references := &pathsFlag{}
+	flags.Var(references, "reference",
+		"reference WAV file (required; repeatable — every take given is fitted "+
+			"jointly by one bank, each at its own velocity)")
+
 	channel := flags.String("channel", string(match.ChannelMono), "channel reduction: mono, left or right")
 	outputPath := flags.String("o", "-", "JSON report path, or - for stdout")
 	// Defaulted from the analysis span rather than written out, because the two
@@ -328,6 +387,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 		"also render the fitted bank to this mono WAV file, for listening to")
 	wavDuration := flags.Duration("wav-duration", 3*time.Second,
 		"render duration for -wav; the search's own -duration is far too short to judge a tail by")
+	wavTake := flags.Int("wav-take", 1,
+		"which take's fitted velocity -wav renders at, counting from 1 in the "+
+			"order -reference was given; a joint fit has one velocity per take "+
+			"and no single one of them is the drum")
 
 	fixed := assignmentFlag{}
 	flags.Var(fixed, "fix", "freeze one parameter at a normalized position, as ID=value (repeatable)")
@@ -358,12 +421,31 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("%w: unexpected argument %q", errInvalidFitOption, flags.Arg(0))
 	}
 
-	if *referencePath == "" {
+	if len(references.paths) == 0 {
 		return fmt.Errorf("%w: -reference is required", errInvalidFitOption)
+	}
+
+	if repeated := references.duplicate(); repeated != "" {
+		return fmt.Errorf("%w: reference %q given twice", errInvalidFitOption, repeated)
+	}
+
+	if *wavTake < 1 || *wavTake > len(references.paths) {
+		return fmt.Errorf("%w: wav take %d, with %d reference(s) given",
+			errInvalidFitOption, *wavTake, len(references.paths))
 	}
 
 	if *duration <= 0 {
 		return fmt.Errorf("%w: duration %v", errInvalidFitOption, *duration)
+	}
+
+	// A candidate shorter than the analysis span is scored on its own silence:
+	// every partial's decay is fitted through a window that runs off the end of
+	// the render, so the model is rewarded for stopping rather than for ringing
+	// like the reference. Refused rather than clamped, because the two numbers
+	// disagreeing means one of them was meant to be something else.
+	if analysis := match.DefaultOptions().AnalysisSeconds; *duration < analysis {
+		return fmt.Errorf("%w: duration %v s is shorter than the %v s the objective analyses",
+			errInvalidFitOption, *duration, analysis)
 	}
 
 	if *iterations <= 0 || *population < 4 {
@@ -449,30 +531,62 @@ func run(args []string, stdout, stderr io.Writer) error {
 	// not-chosen case is reported as an invalid option because that is what it
 	// is — a missing flag, not a broken file — while a genuinely unreadable
 	// reference keeps its own error.
-	reference, err := match.LoadReferenceExplicit(*referencePath, match.Channel(*channel),
-		flagWasSet(flags, "channel"))
-	if err != nil {
-		if errors.Is(err, match.ErrChannelNotChosen) {
-			return fmt.Errorf("%w: %w", errInvalidFitOption, err)
-		}
-
-		return err
-	}
-
 	options := match.DefaultOptions()
 
-	target, err := match.Extract(reference.Samples, reference.SampleRateHz, options)
-	if err != nil {
-		return fmt.Errorf("measure reference: %w", err)
+	var (
+		info         = make([]ReferenceInfo, len(references.paths))
+		targets      = make([]match.Features, len(references.paths))
+		sampleRateHz float64
+	)
+
+	for index, path := range references.paths {
+		reference, err := match.LoadReferenceExplicit(path, match.Channel(*channel),
+			flagWasSet(flags, "channel"))
+		if err != nil {
+			if errors.Is(err, match.ErrChannelNotChosen) {
+				return fmt.Errorf("%w: %w", errInvalidFitOption, err)
+			}
+
+			return err
+		}
+
+		// Every take is rendered from one buffer at one rate, and a resampler
+		// is not allowed anywhere in the measurement path on either side. A
+		// series recorded at two rates is therefore refused rather than
+		// converted — and in practice means two different sessions have been
+		// listed as one drum, which is the more useful thing to be told.
+		if index == 0 {
+			sampleRateHz = reference.SampleRateHz
+		} else if reference.SampleRateHz != sampleRateHz {
+			return fmt.Errorf("%w: %s is %g Hz but %s is %g Hz",
+				errInvalidFitOption, path, reference.SampleRateHz,
+				references.paths[0], sampleRateHz)
+		}
+
+		target, err := match.Extract(reference.Samples, reference.SampleRateHz, options)
+		if err != nil {
+			return fmt.Errorf("measure reference %s: %w", path, err)
+		}
+
+		info[index] = ReferenceInfo{
+			Path:         path,
+			Channel:      *channel,
+			SampleRateHz: reference.SampleRateHz,
+			Channels:     reference.Channels,
+			BitDepth:     reference.BitDepth,
+			Frames:       len(reference.Samples),
+		}
+		targets[index] = target
 	}
 
 	base := &evaluator{
-		reference:       target,
+		references:      targets,
+		referencePaths:  references.paths,
 		options:         options,
 		weights:         match.DefaultWeights(),
 		bank:            bank,
 		free:            free,
-		sampleRateHz:    reference.SampleRateHz,
+		sampleRateHz:    sampleRateHz,
 		durationSeconds: *duration,
 		contact:         physical.ContactModel(*contact),
 		malletMassKg:    *malletGrams / 1000,
@@ -480,21 +594,16 @@ func run(args []string, stdout, stderr io.Writer) error {
 		corrections:     corrections.entries,
 		// Rendered at the reference's own rate, so no resampler ever enters
 		// the measurement path on either side.
-		buffer: make([]float64, int(*duration*reference.SampleRateHz)),
+		buffer:     make([]float64, int(*duration*sampleRateHz)),
+		velocities: make([]float64, len(targets)),
+		rendered:   make([]match.Features, len(targets)),
 	}
 
 	report := Report{
-		Reference: ReferenceInfo{
-			Path:         *referencePath,
-			Channel:      *channel,
-			SampleRateHz: reference.SampleRateHz,
-			Channels:     reference.Channels,
-			BitDepth:     reference.BitDepth,
-			Frames:       len(reference.Samples),
-		},
-		Options: options,
-		Weights: base.weights,
-		Target:  target,
+		References: info,
+		Options:    options,
+		Weights:    base.weights,
+		Targets:    targets,
 		Search: SearchInfo{
 			Variant:         *variant,
 			Iterations:      *iterations,
@@ -530,8 +639,18 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("measure the shipped defaults: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(stderr, "reference: %d partials, fundamental %.2f Hz, glide %.1f cents\n",
-		len(target.Partials), fundamentalHz(target), target.GlideCents)
+	for index, target := range targets {
+		_, _ = fmt.Fprintf(stderr,
+			"reference: %-40s %3d partials, fundamental %.2f Hz, glide %.1f cents\n",
+			references.paths[index], len(target.Partials), fundamentalHz(target), target.GlideCents)
+	}
+
+	if len(targets) > 1 {
+		_, _ = fmt.Fprintf(stderr,
+			"joint fit: one bank against %d takes, %d free parameters and %d velocities\n",
+			len(targets), len(free), len(targets))
+	}
+
 	_, _ = fmt.Fprintf(stderr, "baseline:  %s\n", summarize(report.Baseline.Terms))
 
 	// The pre-solve is analytic and takes a second or two, so it runs before the
@@ -543,11 +662,17 @@ func run(args []string, stdout, stderr io.Writer) error {
 	)
 
 	if !*reportOnly && *seededRestarts > 0 {
+		// Seeded from the first take alone. The pre-solve matches modal
+		// frequencies, and a mode's frequency is a property of the drum rather
+		// than of how hard it was hit — the glide the strike does add is what
+		// N5 is trying to measure, so folding sixteen takes' worth of it into
+		// one seed would blur exactly the signal. It is a starting point, not a
+		// result: the unseeded restarts are what would find it wrong.
 		presolve := rand.New(rand.NewSource(*seed))
-		relevant = frequencyRelevant(target, bank, free,
-			options.PartialFloorDB, reference.SampleRateHz, presolve)
-		seeds = frequencySeeds(target, bank, free, min(*seededRestarts, *restarts),
-			options.PartialFloorDB, reference.SampleRateHz, presolve, defaultSeedBudget)
+		relevant = frequencyRelevant(targets[0], bank, free,
+			options.PartialFloorDB, sampleRateHz, presolve)
+		seeds = frequencySeeds(targets[0], bank, free, min(*seededRestarts, *restarts),
+			options.PartialFloorDB, sampleRateHz, presolve, defaultSeedBudget)
 
 		named := make([]string, 0, len(free))
 		specs := drum.PhysicalTomSpecs()
@@ -584,7 +709,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		checkpoint, err := loadStore(*checkpointPath, Fingerprint{
 			SeededRestarts:  len(seeds),
 			SeedWidth:       fingerprintSeedWidth,
-			Reference:       *referencePath,
+			Reference:       strings.Join(references.paths, "\n"),
 			Channel:         *channel,
 			Contact:         *contact,
 			MalletGrams:     *malletGrams,
@@ -641,7 +766,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 			// a defect in this metric has been found by hearing something the
 			// distance called good, and a run one has to finish before it can be
 			// auditioned is one nobody auditions.
-			return finish(stdout, stderr, report, *wavPath, *wavDuration, *outputPath)
+			return finish(stdout, stderr, report, *wavPath, *wavDuration, *wavTake, *outputPath)
 		}
 
 		// An interrupt asks the search to wind up, not the process to die: the
@@ -681,7 +806,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		_, _ = fmt.Fprintf(stderr, "best:      %s\n", summarize(best.Terms))
 	}
 
-	return finish(stdout, stderr, report, *wavPath, *wavDuration, *outputPath)
+	return finish(stdout, stderr, report, *wavPath, *wavDuration, *wavTake, *outputPath)
 }
 
 // finish writes what a run leaves behind: the summary, the optional WAV, and
@@ -692,6 +817,7 @@ func finish(
 	report Report,
 	wavPath string,
 	wavDuration time.Duration,
+	wavTake int,
 	outputPath string,
 ) error {
 	writeSummary(stdout, report)
@@ -705,13 +831,16 @@ func finish(
 			exported = *report.Best
 		}
 
-		peak, err := exportCandidate(wavPath, exported, wavDuration)
+		take := exported.Takes[wavTake-1]
+
+		peak, err := exportCandidate(wavPath, exported, take.Velocity01, wavDuration)
 		if err != nil {
 			return err
 		}
 
-		_, _ = fmt.Fprintf(stderr, "wrote %s: %.2fs at velocity %.3f, source peak %.6g\n",
-			wavPath, wavDuration.Seconds(), exported.Velocity01, peak)
+		_, _ = fmt.Fprintf(stderr,
+			"wrote %s: %.2fs at velocity %.3f, the fit for %s; source peak %.6g\n",
+			wavPath, wavDuration.Seconds(), take.Velocity01, take.Path, peak)
 	}
 
 	return writeReport(outputPath, report)
@@ -1028,16 +1157,24 @@ func writeSummary(stdout io.Writer, report Report) {
 	}
 
 	_, _ = fmt.Fprintf(stdout, "%-8s %-10s %12.4g %12.4g\n",
-		"-", "VEL", report.Baseline.Velocity01, best.Velocity01)
+		"-", "VEL", report.Baseline.Takes[0].Velocity01, best.Takes[0].Velocity01)
 
-	_, _ = fmt.Fprintf(stdout, "\nreference partials (Hz / dB / T60 s):\n")
-	for _, partial := range report.Target.Partials {
+	writeTakes(stdout, *best)
+
+	// The first take's partials, and only the first. A joint fit measures the
+	// same drum sixteen times and printing sixteen partial tables would bury the
+	// bank they were all fitted from; the per-take numbers that do differ are in
+	// the table above and in the report's own takes[].
+	_, _ = fmt.Fprintf(stdout, "\nreference partials (Hz / dB / T60 s) — %s:\n",
+		report.References[0].Path)
+
+	for _, partial := range report.Targets[0].Partials {
 		_, _ = fmt.Fprintf(stdout, "  %8.2f %7.1f %6.2f\n",
 			partial.FrequencyHz, partial.LevelDB, partial.T60Seconds)
 	}
 
 	_, _ = fmt.Fprintf(stdout, "\nfitted partials (Hz / dB / T60 s):\n")
-	for _, partial := range best.Features.Partials {
+	for _, partial := range best.Takes[0].Features.Partials {
 		_, _ = fmt.Fprintf(stdout, "  %8.2f %7.1f %6.2f\n",
 			partial.FrequencyHz, partial.LevelDB, partial.T60Seconds)
 	}
@@ -1046,6 +1183,68 @@ func writeSummary(stdout io.Writer, report Report) {
 	if report.Best != nil {
 		_, _ = fmt.Fprintf(stdout, "fitted   %s\n", summarize(report.Best.Terms))
 	}
+}
+
+// writeTakes prints one line per take, and then says what the fitted velocities
+// imply about the order the takes were given in.
+//
+// The order check is the point of the section. A velocity series is named v01…
+// v16 by the pack that shipped it, in what it says is increasing strike order,
+// and those files were played by hand — so the labelling is a claim, not data.
+// Nothing in the fit uses it: each take carries its own free velocity and the
+// takes never see each other. That makes the fitted velocities an independent
+// read on the ordering, and the inversions counted below are how far the names
+// and the drum disagree.
+//
+// A count is reported rather than a re-ordering. Which of the two is wrong is
+// not something this tool can know — a genuinely non-monotone series and a
+// mislabelled one look identical from here — and quietly renaming files to make
+// a number look better is the opposite of a measurement.
+func writeTakes(stdout io.Writer, best Candidate) {
+	if len(best.Takes) < 2 {
+		return
+	}
+
+	_, _ = fmt.Fprintf(stdout, "\n%-6s %-40s %8s %8s\n", "TAKE", "REFERENCE", "VEL", "TOTAL")
+
+	for index, take := range best.Takes {
+		_, _ = fmt.Fprintf(stdout, "%-6d %-40s %8.3f %8.3f\n",
+			index+1, take.Path, take.Velocity01, take.Terms.Total)
+	}
+
+	inversions, ties := 0, 0
+
+	for i := 1; i < len(best.Takes); i++ {
+		switch {
+		case best.Takes[i].Velocity01 < best.Takes[i-1].Velocity01:
+			inversions++
+		case best.Takes[i].Velocity01 == best.Takes[i-1].Velocity01:
+			ties++
+		}
+	}
+
+	// Every take at one velocity is a baseline, not a fit — position broadcasts
+	// a single velocity across the series — and calling that monotone would be
+	// reading an ordering out of a constant.
+	if ties == len(best.Takes)-1 {
+		_, _ = fmt.Fprintf(stdout,
+			"\nevery take is struck at the same velocity, so this says nothing about the order.\n")
+
+		return
+	}
+
+	if inversions == 0 {
+		_, _ = fmt.Fprintf(stdout,
+			"\nfitted velocities rise monotonically across the %d takes as listed.\n",
+			len(best.Takes))
+
+		return
+	}
+
+	_, _ = fmt.Fprintf(stdout,
+		"\nfitted velocities fall at %d of %d steps in the order listed — "+
+			"the series is not monotone in strike strength, or is not labelled in that order.\n",
+		inversions, len(best.Takes)-1)
 }
 
 // ensureDir creates the directory a run's artifacts are about to be written to.

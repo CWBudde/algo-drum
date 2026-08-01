@@ -61,12 +61,57 @@ func wellSeparatedTones() []tone {
 
 const testSampleRate = 44100
 
+// testHitSeconds is how long a synthetic hit must be to stand in for a recorded
+// one, and it is derived rather than chosen so that widening the analysis span
+// cannot silently outgrow the fixtures again.
+//
+// Two things have to fit inside it. The analysis span is the obvious one. The
+// margin past it is the envelope filter's edge transient: heterodyne filters
+// zero-phase, which rings at *both* ends of the array, so a fit window reaching
+// the last sample is fitting that transient rather than the partial. It is not a
+// small effect — with the fit window ending exactly at the end of a 1.5 s
+// fixture, the 120 Hz partial came back with a decay range of 202 dB and an R²
+// of 0.967, against 78 dB and 1.0000 once 0.2 s of margin was added. The ring
+// times survived it; the confidence attached to them did not.
+//
+// Real recordings have this margin for free — reference/tt08x08/lp/hd is 2.083 s
+// against a fit window ending at 1.60 s — which is why the defect showed up in
+// the fixtures and not in the measurements.
+var testHitSeconds = DefaultOptions().AnalysisSeconds + 0.2
+
+// testNoiseFloorDB is the floor every fixture measured through Extract carries,
+// and it is there to make the decay problem well-posed rather than to make it
+// hard.
+//
+// decayFloorFit estimates an exponential *plus a stationary floor*, which is
+// what a recorded partial is. Give it a mathematically perfect exponential and
+// the floor parameter has nothing to identify it: the trace keeps falling
+// through -200, -400 dB, the model tries to explain that with a floor of zero,
+// and the fit degrades the further the window extends. This is not a defect the
+// estimator can fix — it is a signal no recording produces.
+//
+// It showed up when the fit window widened to 1.60 s (PLAN N17). Halving every
+// ring time in wellSeparatedTones should move the decay term by exactly ln 2 =
+// 0.693 and nothing else. Floorless, it measured 0.591 with the level term
+// dragged to 10.21 dB; at this floor it measures 0.696 with the level term at
+// 0.54 dB. At the old 0.60 s window the floorless case happened to be fine,
+// because the window ended before the trace ran away.
+//
+// -120 dB is chosen to be inaudible in every sense that matters: some 20 dB
+// below the noise floor of a 20-bit recording, and far below the -45 dB
+// truncation and the -42 dB partial floor, so no test's expectations about
+// frequency or level shift because of it.
+const testNoiseFloorDB = -120
+
 func extractTones(t *testing.T, tones []tone) Features {
 	t.Helper()
 
 	options := DefaultOptions()
 
-	features, err := Extract(synthesize(tones, testSampleRate, 1.5), testSampleRate, options)
+	features, err := Extract(
+		synthesizeNoisy(tones, testSampleRate, testHitSeconds, testNoiseFloorDB),
+		testSampleRate, options,
+	)
 	if err != nil {
 		t.Fatalf("Extract() error = %v", err)
 	}

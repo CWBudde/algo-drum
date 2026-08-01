@@ -120,8 +120,8 @@ check-params: gen-params
 # says so — that is the honest default for an unknown drum.
 #
 # One hit does not identify this model's parameters — the fit wants the whole
-# sixteen-velocity series jointly (PLAN.md P10/N5), which this recipe cannot yet
-# express. Until it can, treat a single-file run as a diagnostic, not a fit.
+# sixteen-velocity series jointly (PLAN.md P10/N5), which is what
+# `just fit-physical-series` runs. Treat a single-file run as a diagnostic.
 fit-physical reference="reference/tt08x08/lp/hd/v08.wav" *args="":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -138,6 +138,59 @@ fit-physical reference="reference/tt08x08/lp/hd/v08.wav" *args="":
     go run ./cmd/fit-physical -reference '{{reference}}' -channel mono \
         "${geometry[@]}" \
         -o "fits/fit-$slug.json" -checkpoint "fits/fit-$slug.checkpoint" {{args}}
+
+# Fit one parameter bank jointly to a whole velocity series.
+#
+# This is the fit PLAN.md P10/N5 asks for, and the one whose result is worth
+# quoting. `just fit-physical` scores a bank against a single hit, which does not
+# identify this model: the strike velocity is itself fitted, so one recording
+# leaves the contact parameters and the Berger nonlinearity free to trade against
+# how hard the drum is assumed to have been hit. A series pins that trade —
+# sixteen takes, one shared bank, and one velocity per take.
+#
+# **The file order is not used as evidence, and this matters.** The takes are
+# named v01…v16 in what the pack says is increasing strike order, but they were
+# played by hand and nothing verified the labelling. So each take carries its own
+# free velocity, no take is constrained to be harder than the one before it, and
+# a series whose middle files are swapped costs the fit nothing. The summary then
+# prints the fitted velocities against the file order and counts where the two
+# disagree — the labelling is measured rather than assumed, and neither the tool
+# nor this recipe renames anything to make the number look better.
+#
+# Sixteen takes is sixteen renders and sixteen feature extractions per candidate,
+# so this is roughly sixteen times a single-file run: hours, not minutes. It
+# checkpoints like any other fit, so an interrupt keeps what it found — and the
+# checkpoint fingerprint carries the take list *in order*, since the velocities
+# occupy the tail of every stored position and a re-ordered list would hand each
+# take another take's velocity without saying so.
+#
+# The directory names the drum, so geometry is read off it exactly as
+# fit-physical does, and the fit is named after the series rather than a file.
+fit-physical-series directory="reference/tt08x08/lp/hd" *args="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    slug="$(printf '%s' '{{directory}}' | sed -e 's|^reference/||' -e 's|/$||' -e 's|/|-|g')"
+    takes=()
+    for wav in $(ls '{{directory}}'/*.wav | sort); do
+        takes+=(-reference "$wav")
+    done
+    if [[ ${#takes[@]} -eq 0 ]]; then
+        echo "no .wav files under {{directory}}" >&2
+        exit 1
+    fi
+    geometry=()
+    if [[ '{{directory}}' =~ reference/[a-z]*([0-9]+)x([0-9]+)/ ]]; then
+        diameter="$(awk -v inches="${BASH_REMATCH[1]}" 'BEGIN { printf "%.4f", inches * 0.0254 }')"
+        depth="$(awk -v inches="${BASH_REMATCH[2]}" 'BEGIN { printf "%.4f", inches * 0.0254 }')"
+        geometry=(-set "SIZE=$diameter" -set "DEPTH=$depth")
+        echo "geometry from the path: ${BASH_REMATCH[1]}\" x ${BASH_REMATCH[2]}\" = $diameter m x $depth m" >&2
+    else
+        echo "no <diameter>x<depth> in the reference path: SIZE and DEPTH stay free" >&2
+    fi
+    echo "fitting $(( ${#takes[@]} / 2 )) takes jointly" >&2
+    go run ./cmd/fit-physical "${takes[@]}" -channel mono \
+        "${geometry[@]}" \
+        -o "fits/fit-$slug-series.json" -checkpoint "fits/fit-$slug-series.checkpoint" {{args}}
 
 # Derive the measurement tables from recordings of a real drum.
 #

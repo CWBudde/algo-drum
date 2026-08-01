@@ -35,10 +35,30 @@ func writeSyntheticReference(t *testing.T) string {
 func writeSyntheticReferenceChannels(t *testing.T, channels int) string {
 	t.Helper()
 
-	const (
-		sampleRate = 44100
-		seconds    = 1.5
-	)
+	return writeSyntheticReferenceAs(t, "reference.wav", channels, 44100)
+}
+
+// writeNamedSyntheticReference writes a second mono take beside the first. A
+// joint fit takes several files, and t.TempDir returns one directory per test,
+// so they have to be told apart by name.
+func writeNamedSyntheticReference(t *testing.T, name string) string {
+	t.Helper()
+
+	return writeSyntheticReferenceAs(t, name, 1, 44100)
+}
+
+// writeSyntheticReferenceAt writes a take at another sample rate, for the case
+// a list of takes turns out to come from two sessions.
+func writeSyntheticReferenceAt(t *testing.T, name string, sampleRate int) string {
+	t.Helper()
+
+	return writeSyntheticReferenceAs(t, name, 1, sampleRate)
+}
+
+func writeSyntheticReferenceAs(t *testing.T, name string, channels, sampleRate int) string {
+	t.Helper()
+
+	const seconds = 1.5
 
 	tones := []struct {
 		frequencyHz, amplitude, t60Seconds float64
@@ -48,11 +68,11 @@ func writeSyntheticReferenceChannels(t *testing.T, channels int) string {
 		{330, 0.20, 0.70},
 	}
 
-	data := make([]float32, int(seconds*sampleRate))
+	data := make([]float32, int(seconds*float64(sampleRate)))
 	for _, tone := range tones {
 		decay := math.Log(1000) / tone.t60Seconds
 		for n := range data {
-			seconds := float64(n) / sampleRate
+			seconds := float64(n) / float64(sampleRate)
 			data[n] += float32(tone.amplitude * math.Exp(-decay*seconds) *
 				math.Sin(2*math.Pi*tone.frequencyHz*seconds))
 		}
@@ -65,7 +85,7 @@ func writeSyntheticReferenceChannels(t *testing.T, channels int) string {
 		}
 	}
 
-	path := filepath.Join(t.TempDir(), "reference.wav")
+	path := filepath.Join(t.TempDir(), name)
 
 	file, err := os.Create(path)
 	if err != nil {
@@ -353,7 +373,9 @@ func TestReportOnlyHonoursTheStrikeVelocity(t *testing.T) {
 
 		var decoded struct {
 			Baseline struct {
-				Velocity01 float64 `json:"velocity01"`
+				Takes []struct {
+					Velocity01 float64 `json:"velocity01"`
+				} `json:"takes"`
 			} `json:"baseline"`
 		}
 
@@ -361,7 +383,11 @@ func TestReportOnlyHonoursTheStrikeVelocity(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		return decoded.Baseline.Velocity01
+		if len(decoded.Baseline.Takes) != 1 {
+			t.Fatalf("baseline takes = %d, want 1", len(decoded.Baseline.Takes))
+		}
+
+		return decoded.Baseline.Takes[0].Velocity01
 	}
 
 	if got := baselineVelocity("-velocity", "0.5"); got != 0.5 {
@@ -484,7 +510,7 @@ func TestSearchIsDeterministic(t *testing.T) {
 			// mutation: determinism is a property of the seeding, not of how
 			// long the swarm runs, and this test is on the fast path.
 			"-restarts", "2", "-iterations", "1", "-pop", "4", "-seed", "7",
-			"-duration", "0.3",
+			"-duration", "2",
 		}, &stdout, io.Discard)
 		if err != nil {
 			t.Fatalf("run() error = %v", err)

@@ -21,12 +21,30 @@ type report struct {
 		Terms terms `json:"terms"`
 	} `json:"baseline"`
 	Best struct {
-		Terms    terms    `json:"terms"`
-		Params   []param  `json:"params"`
-		Features features `json:"features"`
+		Terms  terms   `json:"terms"`
+		Params []param `json:"params"`
+		Takes  []take  `json:"takes"`
 	} `json:"best"`
-	Target features `json:"target"`
+	Targets []features `json:"targets"`
 }
+
+// take is one reference take and how the fitted bank scored against it. A fit
+// may hold several — cmd/fit-physical can fit a whole velocity series jointly —
+// and the figures draw the first, because a figure of sixteen overlaid partial
+// tables illustrates nothing. Which take that is is the caller's choice, made
+// by the order the run listed them in.
+type take struct {
+	Path       string   `json:"path"`
+	Velocity01 float64  `json:"velocity01"`
+	Terms      terms    `json:"terms"`
+	Features   features `json:"features"`
+}
+
+// target is the reference features the figures are drawn against, and candidate
+// the fitted ones facing them.
+func (r *report) target() features { return r.Targets[0] }
+
+func (r *report) candidate() features { return r.Best.Takes[0].Features }
 
 type terms struct {
 	PartialFrequency float64 `json:"partialFrequencyCents"`
@@ -78,8 +96,12 @@ func loadReport(path string) (*report, error) {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 
-	if len(parsed.Target.Partials) == 0 {
+	if len(parsed.Targets) == 0 || len(parsed.Targets[0].Partials) == 0 {
 		return nil, fmt.Errorf("%s carries no reference partials — is it a -report-only run?", path)
+	}
+
+	if len(parsed.Best.Takes) == 0 {
+		return nil, fmt.Errorf("%s carries no fitted takes — is it a -report-only run?", path)
 	}
 
 	return &parsed, nil

@@ -11,10 +11,13 @@ import (
 	"github.com/cwbudde/algo-drum/internal/physical/match"
 )
 
+// testVelocity is the strike every export test renders at.
+const testVelocity = 0.5
+
 func testCandidate() Candidate {
 	return Candidate{
-		Velocity01: 0.5,
-		Config:     physical.DefaultPhysicalDrum(),
+		Config: physical.DefaultPhysicalDrum(),
+		Takes:  []TakeResult{{Path: "synthetic", Velocity01: testVelocity}},
 	}
 }
 
@@ -28,7 +31,7 @@ func TestExportRendersTheCandidatesOwnConfig(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "fit.wav")
 
-	peak, err := exportCandidate(path, candidate, 250*time.Millisecond)
+	peak, err := exportCandidate(path, candidate, testVelocity, 250*time.Millisecond)
 	if err != nil {
 		t.Fatalf("exportCandidate() error = %v", err)
 	}
@@ -51,7 +54,7 @@ func TestExportRendersTheCandidatesOwnConfig(t *testing.T) {
 		t.Fatalf("sample count = %d, want %d", len(decoded.Samples), want)
 	}
 
-	reference, err := exportedPeak(candidate.Config, candidate.Velocity01, 250*time.Millisecond)
+	reference, err := exportedPeak(candidate.Config, testVelocity, 250*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +105,7 @@ func TestExportRejectsWhatItCannotWrite(t *testing.T) {
 				path = filepath.Join(t.TempDir(), path)
 			}
 
-			if _, err := exportCandidate(path, testCandidate(), testCase.duration); !errors.Is(err, errInvalidExport) {
+			if _, err := exportCandidate(path, testCandidate(), testVelocity, testCase.duration); !errors.Is(err, errInvalidExport) {
 				t.Fatalf("error = %v, want errInvalidExport", err)
 			}
 		})

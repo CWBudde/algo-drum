@@ -18,10 +18,29 @@ import (
 // so the signal is identical on every run and on every platform, which a test
 // asserting hertz to two decimal places needs it to be.
 func synthesizeNoisy(tones []tone, sampleRateHz, durationSeconds, noiseDB float64) []float64 {
-	samples := synthesize(tones, sampleRateHz, durationSeconds)
+	return dither(synthesize(tones, sampleRateHz, durationSeconds), noiseDB)
+}
+
+// dither adds a flat, deterministic noise floor at the given level *relative to
+// the signal's own peak*.
+//
+// Split out of synthesizeNoisy so the swept generator can have one too. Every
+// fixture that is measured through Extract needs a floor of some kind — see
+// testNoiseFloorDB.
+//
+// Relative rather than absolute, because Extract is gain-invariant and its
+// fixtures have to be too: a floor pinned to an absolute level would sit 26 dB
+// closer to the signal in TestExtractIsGainInvariant's quiet copy, and the
+// distance between the two would then be measuring the fixture's noise rather
+// than the extractor's invariance.
+func dither(samples []float64, noiseDB float64) []float64 {
+	peak := 0.0
+	for _, sample := range samples {
+		peak = max(peak, math.Abs(sample))
+	}
 
 	state := uint64(0x2545F4914F6CDD1D)
-	level := math.Pow(10, noiseDB/20)
+	level := peak * math.Pow(10, noiseDB/20)
 
 	for index := range samples {
 		state = state*6364136223846793005 + 1442695040888963407
@@ -216,14 +235,27 @@ func TestFFTEstimatorMergesADegenerateSplit(t *testing.T) {
 			merged.FrequencyHz, offset)
 	}
 
-	// Its ring time is biased away from the member it does report, because the
-	// envelope it was fitted over is beating rather than exponential. The
-	// tolerance the high-resolution estimator holds itself to on this same
-	// signal is 5 %, so a bias past that is a bias that matters.
+	// Its ring time used to be biased away from the member it does report, by
+	// more than the 5 % the high-resolution estimator holds itself to on this
+	// same signal, because the envelope it was fitted over is beating rather
+	// than exponential.
+	//
+	// That half of the defect is repaired, by the per-partial refinement bound
+	// of PLAN N17 rather than by anything aimed at this case: a beat's later
+	// lobes fall outside the span the surviving member stood above its own floor
+	// in, so the fit no longer averages over them. The bias was 5-6 % and is now
+	// 1.2 %, inside the tolerance the high-resolution estimator is held to.
+	//
+	// The defect N2 is actually about is untouched and is asserted above: the
+	// pair is still merged into one partial, and the 214.83 Hz member — 30 %
+	// shorter in ring time — is still lost entirely. A ring time that is now
+	// accurate *for the member that survived* does not make the table right; it
+	// makes the survivor look more trustworthy than it is, which is why this is
+	// recorded rather than celebrated.
 	bias := (merged.T60Seconds - splitPair[0].t60Seconds) / splitPair[0].t60Seconds
-	if math.Abs(bias) <= 0.05 {
+	if math.Abs(bias) > 0.05 {
 		t.Errorf("the surviving partial's T60 is %.4f s against the member's %.4f s, "+
-			"a bias of %.1f%%; this test exists because that bias is not small",
+			"a bias of %.1f%%; the refinement bound is supposed to hold this inside 5%%",
 			merged.T60Seconds, splitPair[0].t60Seconds, 100*bias)
 	}
 

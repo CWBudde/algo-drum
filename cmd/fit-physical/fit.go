@@ -16,9 +16,14 @@ var errInvalidFitOption = errors.New("invalid fit option")
 // evaluator turns a normalized search vector into a distance from the
 // reference. One per goroutine: it owns a render buffer and nothing else.
 type evaluator struct {
-	reference match.Features
-	options   match.Options
-	weights   match.Weights
+	// references are the takes being fitted, and referencePaths names them in
+	// the same order. A joint fit holds more than one and scores the same bank
+	// against every one of them, each at its own velocity — see dimensions.
+	references     []match.Features
+	referencePaths []string
+
+	options match.Options
+	weights match.Weights
 
 	// bank is the full parameter bank; free lists the indices the search may
 	// move, so a fixed parameter keeps whatever bank already holds.
@@ -57,18 +62,26 @@ type evaluator struct {
 	corrections []physical.ModeDecayCorrection
 
 	buffer []float64
+
+	// velocities and rendered are scratch, one entry per reference, reused
+	// across evaluations so a joint fit allocates no more per candidate than a
+	// single-take one does.
+	velocities []float64
+	rendered   []match.Features
 }
 
 func newEvaluator(base *evaluator) *evaluator {
 	clone := *base
 	clone.bank = slices.Clone(base.bank)
 	clone.buffer = make([]float64, len(base.buffer))
+	clone.velocities = make([]float64, len(base.references))
+	clone.rendered = make([]match.Features, len(base.references))
 
 	return &clone
 }
 
-// dimensions is the search space's width: one per free parameter, plus a last
-// entry for the strike velocity.
+// dimensions is the search space's width: one per free parameter, plus one
+// strike velocity per reference.
 //
 // Velocity is fitted rather than assumed because the recording cannot say what
 // it was: the file is peak normalized and every measure here is deliberately
@@ -76,18 +89,32 @@ func newEvaluator(base *evaluator) *evaluator {
 // was hit. It is not a gain either — it sets the contact duration, the size of
 // the nonlinear glide and the balance between the modal and stochastic layers
 // — so pinning it would be asserting a dynamic on no evidence.
+//
+// **Per reference, and independently.** The takes of a velocity series are
+// named v01…v16 in what the source pack says is increasing order, but they were
+// played by hand and that order is not evidence. Giving each take its own free
+// velocity is what keeps the labelling out of the fit: nothing here reads the
+// index, nothing constrains take n+1 to have been struck harder than take n, and
+// a series whose middle two files are swapped costs the fit nothing. The fitted
+// velocities then *measure* the order rather than assuming it — writeSummary
+// prints them against the file order for exactly that reason.
 func (e *evaluator) dimensions() int {
-	return len(e.free) + 1
+	return len(e.free) + len(e.references)
 }
 
 // apply writes a search vector into the parameter bank and returns the
-// velocity it carries.
-func (e *evaluator) apply(position []float64) float64 {
+// per-reference velocities it carries. The returned slice is owned by the
+// evaluator and is overwritten by the next call.
+func (e *evaluator) apply(position []float64) []float64 {
 	for i, index := range e.free {
 		e.bank[index] = clamp01(position[i])
 	}
 
-	return clamp01(position[len(e.free)])
+	for i := range e.references {
+		e.velocities[i] = clamp01(position[len(e.free)+i])
+	}
+
+	return e.velocities
 }
 
 func (e *evaluator) config() (physical.PhysicalDrum, error) {
@@ -141,6 +168,65 @@ func setModeDecayCorrection(head *physical.Head, correction physical.ModeDecayCo
 	head.ModeDecayCorrections = append(head.ModeDecayCorrections, correction)
 }
 
+// measure renders one candidate bank at every reference's own velocity and
+// reduces each render to features. The returned slice is owned by the evaluator
+// and is overwritten by the next call.
+//
+// One model serves every take. NewDoubleHead is the expensive half — it builds
+// both modal banks, the cavity and the coupling matrix, none of which the
+// velocity touches — while Reset silences the state a previous take left behind
+// and re-seeds the attack layer's noise from the same constant a fresh model
+// gets. The two are therefore bit-exact equivalent, which is not a nicety here:
+// the checkpoint fingerprint carries the baseline cost, so a per-take render
+// that differed from a single-take one by a bit would make two runs of the same
+// search refuse to resume each other.
+func (e *evaluator) measure(position []float64) ([]match.Features, error) {
+	velocities := e.apply(position)
+
+	config, err := e.config()
+	if err != nil {
+		return nil, err
+	}
+
+	model, err := physical.NewDoubleHead(config)
+	if err != nil {
+		return nil, err
+	}
+
+	for index, velocity := range velocities {
+		if index > 0 {
+			model.Reset()
+		}
+
+		if err := e.renderWith(model, velocity); err != nil {
+			return nil, err
+		}
+
+		features, err := match.Extract(e.buffer, e.sampleRateHz, e.options)
+		if err != nil {
+			return nil, err
+		}
+
+		e.rendered[index] = features
+	}
+
+	return e.rendered, nil
+}
+
+// renderWith strikes an already-built model once and fills e.buffer.
+func (e *evaluator) renderWith(model *physical.DoubleHead, velocity01 float64) error {
+	if err := model.Trigger(velocity01); err != nil {
+		return err
+	}
+
+	model.Render(e.buffer)
+
+	return nil
+}
+
+// render is one strike from a fresh model. measure is what the search calls;
+// this is for the places that want a single render without a reference to score
+// it against, which is every benchmark in this package.
 func (e *evaluator) render(velocity01 float64) ([]float64, error) {
 	config, err := e.config()
 	if err != nil {
@@ -152,48 +238,51 @@ func (e *evaluator) render(velocity01 float64) ([]float64, error) {
 		return nil, err
 	}
 
-	if err := model.Trigger(velocity01); err != nil {
+	if err := e.renderWith(model, velocity01); err != nil {
 		return nil, err
 	}
-
-	model.Render(e.buffer)
 
 	return e.buffer, nil
 }
 
-func (e *evaluator) features(position []float64) (match.Features, error) {
-	velocity := e.apply(position)
-
-	samples, err := e.render(velocity)
-	if err != nil {
-		return match.Features{}, err
-	}
-
-	return match.Extract(samples, e.sampleRateHz, e.options)
-}
-
-// cost is the objective mayfly minimizes.
+// cost is the objective mayfly minimizes: the mean distance over every take.
 //
 // A configuration the model rejects returns +Inf rather than an error: the
 // search is allowed to wander into combinations that are not drums (a
 // nonlinear coefficient past the anti-alias bound, say), and the cheapest
-// honest answer is that they are infinitely far from sounding like one.
+// honest answer is that they are infinitely far from sounding like one. One
+// unusable take poisons the whole evaluation for the same reason: the bank is
+// shared, so a bank that cannot produce one of the sixteen hits is not a
+// candidate for the drum that produced all sixteen.
+//
+// The mean, not a trimmed or median aggregate. Every take is a legitimate
+// observation of the same instrument, and trimming would drop whichever hits
+// the model fits worst — which is precisely the evidence a joint fit exists to
+// use. The trimming that is justified happens one level down, inside Distance,
+// where it discards outlying *partials* within a take on a measured argument.
+// Nothing measured says a whole take should be discarded, so nothing here does.
 func (e *evaluator) cost(position []float64) float64 {
-	features, err := e.features(position)
+	rendered, err := e.measure(position)
 	if err != nil {
 		return math.Inf(1)
 	}
 
-	if len(features.Partials) == 0 {
-		return math.Inf(1)
+	total := 0.0
+
+	for index, features := range rendered {
+		if len(features.Partials) == 0 {
+			return math.Inf(1)
+		}
+
+		terms := match.Distance(e.references[index], features, e.weights)
+		if math.IsNaN(terms.Total) {
+			return math.Inf(1)
+		}
+
+		total += terms.Total
 	}
 
-	terms := match.Distance(e.reference, features, e.weights)
-	if math.IsNaN(terms.Total) {
-		return math.Inf(1)
-	}
-
-	return terms.Total
+	return total / float64(len(rendered))
 }
 
 // ParamValue reports one parameter of a fitted candidate.
@@ -218,15 +307,67 @@ type ParamValue struct {
 	Blind bool `json:"blind,omitempty"`
 }
 
-// Candidate is one evaluated point in the search space.
+// Candidate is one evaluated point in the search space: one parameter bank,
+// scored against every take.
 type Candidate struct {
-	Velocity01 float64               `json:"velocity01"`
-	Terms      match.Terms           `json:"terms"`
-	Params     []ParamValue          `json:"params"`
-	Config     physical.PhysicalDrum `json:"config"`
-	Features   match.Features        `json:"features"`
+	// Terms is the aggregate the search minimizes — every field is the mean of
+	// that field over Takes, which for Total is the mean of the per-take totals
+	// because Distance composes its total linearly. With one take it is that
+	// take's terms exactly.
+	Terms  match.Terms           `json:"terms"`
+	Params []ParamValue          `json:"params"`
+	Config physical.PhysicalDrum `json:"config"`
+	Takes  []TakeResult          `json:"takes"`
 	// Convergence is the winning restart's best cost after each iteration.
 	Convergence []float64 `json:"convergence,omitempty"`
+}
+
+// TakeResult is how one candidate bank scored against one reference take.
+//
+// Velocity01 is the interesting field of a joint fit. It is what the search
+// concluded about how hard *that* take was struck, arrived at without any
+// reference to the file's position in the series, so comparing it against the
+// file order tests the labelling instead of trusting it.
+type TakeResult struct {
+	Path       string         `json:"path"`
+	Velocity01 float64        `json:"velocity01"`
+	Terms      match.Terms    `json:"terms"`
+	Features   match.Features `json:"features"`
+}
+
+// meanTerms averages a candidate's per-take terms field by field.
+func meanTerms(takes []TakeResult) match.Terms {
+	mean := match.Terms{}
+	if len(takes) == 0 {
+		return mean
+	}
+
+	for _, take := range takes {
+		mean.PartialFrequency += take.Terms.PartialFrequency
+		mean.PartialLevel += take.Terms.PartialLevel
+		mean.PartialDecay += take.Terms.PartialDecay
+		mean.SpectralEnvelope += take.Terms.SpectralEnvelope
+		mean.Envelope += take.Terms.Envelope
+		mean.Glide += take.Terms.Glide
+		mean.AttackBalance += take.Terms.AttackBalance
+		mean.Unmatched += take.Terms.Unmatched
+		mean.Spurious += take.Terms.Spurious
+		mean.Total += take.Terms.Total
+	}
+
+	count := float64(len(takes))
+	mean.PartialFrequency /= count
+	mean.PartialLevel /= count
+	mean.PartialDecay /= count
+	mean.SpectralEnvelope /= count
+	mean.Envelope /= count
+	mean.Glide /= count
+	mean.AttackBalance /= count
+	mean.Unmatched /= count
+	mean.Spurious /= count
+	mean.Total /= count
+
+	return mean
 }
 
 // pinnedTolerance is how close to a bound counts as pressed against it. One
@@ -236,7 +377,7 @@ type Candidate struct {
 const pinnedTolerance = 0.005
 
 func (e *evaluator) describe(position []float64) (Candidate, error) {
-	features, err := e.features(position)
+	rendered, err := e.measure(position)
 	if err != nil {
 		return Candidate{}, err
 	}
@@ -267,23 +408,41 @@ func (e *evaluator) describe(position []float64) (Candidate, error) {
 		}
 	}
 
+	// apply is called again rather than reusing what measure returned, because
+	// measure's velocities slice is scratch and the candidate outlives it.
+	velocities := e.apply(position)
+	takes := make([]TakeResult, len(rendered))
+
+	for index, features := range rendered {
+		takes[index] = TakeResult{
+			Path:       e.referencePaths[index],
+			Velocity01: velocities[index],
+			Terms:      match.Distance(e.references[index], features, e.weights),
+			Features:   features,
+		}
+	}
+
 	return Candidate{
-		Velocity01: e.apply(position),
-		Terms:      match.Distance(e.reference, features, e.weights),
-		Params:     params,
-		Config:     config,
-		Features:   features,
+		Terms:  meanTerms(takes),
+		Params: params,
+		Config: config,
+		Takes:  takes,
 	}, nil
 }
 
-// position reads the current bank back into a search vector.
+// position reads the current bank back into a search vector, striking every
+// take at the same velocity. That is what a baseline wants — the shipped bank
+// quoted at one stated dynamic — and never what a fit produces, since the whole
+// point of a joint run is that the sixteen velocities come out different.
 func (e *evaluator) position(velocity01 float64) []float64 {
 	position := make([]float64, e.dimensions())
 	for i, index := range e.free {
 		position[i] = e.bank[index]
 	}
 
-	position[len(e.free)] = velocity01
+	for i := range e.references {
+		position[len(e.free)+i] = velocity01
+	}
 
 	return position
 }

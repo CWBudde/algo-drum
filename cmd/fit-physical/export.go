@@ -24,9 +24,14 @@ var errInvalidExport = errors.New("invalid WAV export option")
 // the search position, so what lands on disk is exactly the drum the report
 // describes — including when the report was resumed from a checkpoint, where
 // the position was measured by this build but the bank came from another run.
+//
+// velocity01 is passed rather than read off the candidate because a joint fit
+// has one per take and none of them is the drum. The caller picks which take to
+// listen to; see -wav-take.
 func exportCandidate(
 	path string,
 	candidate Candidate,
+	velocity01 float64,
 	duration time.Duration,
 ) (float64, error) {
 	if path == "" {
@@ -38,7 +43,7 @@ func exportCandidate(
 			errInvalidExport, duration, maxExportDuration)
 	}
 
-	samples, err := renderConfig(candidate.Config, candidate.Velocity01, duration)
+	samples, err := renderConfig(candidate.Config, velocity01, duration)
 	if err != nil {
 		return 0, err
 	}

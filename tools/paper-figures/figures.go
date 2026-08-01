@@ -59,7 +59,7 @@ func logFrequencyAxis(axes *core.Axes) error {
 // drawPartials is the picture the two coverage terms score: which reference
 // partials the model accounted for, which it missed, and which it invented.
 func drawPartials(rep *report, out string) error {
-	ref, can := rep.Target.Partials, rep.Best.Features.Partials
+	ref, can := rep.target().Partials, rep.candidate().Partials
 	pairs := matchPartials(ref, can)
 
 	fig, axes := newFigure(560)
@@ -244,7 +244,7 @@ func drawTerms(rep *report, out string) error {
 // which is what makes "the model rings too long" a reading rather than an
 // impression.
 func drawDecay(rep *report, out string) error {
-	ref, can := rep.Target.Partials, rep.Best.Features.Partials
+	ref, can := rep.target().Partials, rep.candidate().Partials
 
 	fig, axes := newFigure(500)
 
@@ -319,20 +319,20 @@ func drawDecay(rep *report, out string) error {
 // drawBands is the spectral envelope window by window — the term the adoption
 // gate is furthest from, shown in the form that says where it is furthest.
 func drawBands(rep *report, out string) error {
-	centres := rep.Target.BandCentresHz
+	centres := rep.target().BandCentresHz
 	if len(centres) == 0 {
 		return errNoBands
 	}
 
 	candidate := map[string]window{}
-	for _, candWindow := range rep.Best.Features.Windows {
+	for _, candWindow := range rep.candidate().Windows {
 		candidate[candWindow.Name] = candWindow
 	}
 
 	fig := core.NewFigure(figureWidth, 420)
-	panels := len(rep.Target.Windows)
+	panels := len(rep.target().Windows)
 
-	for index, refWindow := range rep.Target.Windows {
+	for index, refWindow := range rep.target().Windows {
 		panel := fig.AddSubplot(1, panels, index+1)
 		panel.AddXGrid()
 		panel.AddYGrid()

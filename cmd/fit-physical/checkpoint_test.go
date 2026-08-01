@@ -14,7 +14,9 @@ func tinySearch(reference, checkpoint string, extra ...string) []string {
 	args := []string{
 		"-reference", reference,
 		"-restarts", "2", "-iterations", "2", "-pop", "4",
-		"-duration", "0.4", "-progress", "0", "-o", os.DevNull,
+		// At least the objective's own analysis span, which fit-physical
+		// refuses to render short of; see the -duration guard.
+		"-duration", "2", "-progress", "0", "-o", os.DevNull,
 	}
 
 	if checkpoint != "" {

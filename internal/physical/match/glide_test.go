@@ -59,7 +59,7 @@ func TestGlideRecoversAKnownLinearSweep(t *testing.T) {
 
 	options := DefaultOptions()
 
-	features, err := Extract(synthesizeSwept([]sweptTone{swept}, testSampleRate, 1.5),
+	features, err := Extract(dither(synthesizeSwept([]sweptTone{swept}, testSampleRate, testHitSeconds), testNoiseFloorDB),
 		testSampleRate, options)
 	if err != nil {
 		t.Fatalf("Extract() error = %v", err)
@@ -122,7 +122,7 @@ func TestGlideIgnoresASecondPartial(t *testing.T) {
 				},
 			}
 
-			features, err := Extract(synthesizeSwept(tones, testSampleRate, 1.2),
+			features, err := Extract(dither(synthesizeSwept(tones, testSampleRate, testHitSeconds), testNoiseFloorDB),
 				testSampleRate, DefaultOptions())
 			if err != nil {
 				t.Fatalf("Extract() error = %v", err)
@@ -157,7 +157,7 @@ func TestGlideBendsWithTheFundamentalNotTheNeighbour(t *testing.T) {
 		amplitude: 0.32, t60Seconds: 0.64,
 	}
 
-	features, err := Extract(synthesizeSwept([]sweptTone{bent, neighbour}, testSampleRate, 1.2),
+	features, err := Extract(dither(synthesizeSwept([]sweptTone{bent, neighbour}, testSampleRate, testHitSeconds), testNoiseFloorDB),
 		testSampleRate, DefaultOptions())
 	if err != nil {
 		t.Fatalf("Extract() error = %v", err)

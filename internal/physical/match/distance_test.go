@@ -358,8 +358,18 @@ func TestSilenceIsNeverCheaperThanADrum(t *testing.T) {
 	weights := DefaultWeights()
 
 	// One partial, nowhere near any of the reference's four.
+	//
+	// The ring time has to be long enough that the partial is still there when
+	// detection looks, which is what makes this candidate "one partial in the
+	// wrong place" rather than "nothing at all". It was 0.05 s, chosen against a
+	// 1.2 s analysis window; at the 2.0 s window of PLAN N17 such a tone is 60 dB
+	// down before the sustain window even opens, so what got detected was sixteen
+	// peaks of the fixture's own noise floor and the term this test is about
+	// stopped being the one under test. 0.2 s restores the intent — one partial,
+	// Unmatched exactly 1.0 — and the degenerate candidate is still scored at
+	// 176 against a wrong drum's far lower total.
 	nearlyNothing := extractTones(t, []tone{
-		{frequencyHz: 923, amplitude: 1, t60Seconds: 0.05},
+		{frequencyHz: 923, amplitude: 1, t60Seconds: 0.2},
 	})
 
 	// A tom that is plainly the wrong tom: every partial a whole tone sharp

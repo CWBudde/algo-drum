@@ -69,6 +69,10 @@ type Snapshot struct {
 // A performance change that is genuinely bit-exact leaves it alone and resumes
 // cleanly, so the guard also doubles as the test of that claim.
 type Fingerprint struct {
+	// Reference is every take the run was given, newline separated and in the
+	// order they were given. Order is part of it: the velocities occupy the tail
+	// of every stored position, one per take, so resuming a re-ordered list
+	// would hand each take another take's velocity and never say so.
 	Reference   string  `json:"reference"`
 	Channel     string  `json:"channel"`
 	Contact     string  `json:"contact,omitempty"`

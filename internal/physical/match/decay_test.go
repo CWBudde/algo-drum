@@ -213,7 +213,7 @@ func TestAQuietPartialIsNoLongerReportedAsRingingLongest(t *testing.T) {
 	tones := wellSeparatedTones()
 
 	features, err := Extract(
-		synthesizeNoisy(tones, testSampleRate, 1.5, -70), testSampleRate, DefaultOptions(),
+		synthesizeNoisy(tones, testSampleRate, testHitSeconds, -70), testSampleRate, DefaultOptions(),
 	)
 	if err != nil {
 		t.Fatalf("Extract() error = %v", err)
