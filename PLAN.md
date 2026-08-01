@@ -2050,6 +2050,60 @@ success criterion 6 is to mean anything.
       quoting the 89-cent reference or an objective total.
       `testdata/physical-reference-v2.json` is unaffected — `analysis` does not
       import `match`.
+      **Refit done, 2026-08-01.** `fits/s3-right-prescribed.json`: right channel,
+      prescribed, Standard, 12 restarts × 16 × 150, 88,584 evaluations to
+      completion. **Total 10.382** against a baseline of 32.442, and
+      `testdata/physical-fit-tom.json` is re-derived from it. Archived runs
+      re-scored under today's objective on the right channel: 11.535 → 15.146
+      (`fit-final-hertzian`), 11.630 → 15.650 (`fit-v4-hertzian`), 11.252 →
+      **18.991** (`fit-final-prescribed`, the bank the fixture and every paper
+      figure came from — best under the old objective, worst under this one).
+      The recipe validates itself: `fit-glidefix-interrupted`, the one archived
+      run made after the fix, re-scores to its reported 10.577 exactly.
+      **What a re-score is not:** it re-*renders* the archived bank through
+      today's synthesis as well as re-measuring it, and the glide fix shipped in
+      **b82c9cb** — the same commit that added `internal/physical/coupling.go`
+      and turned the nonlinear modal coupling on by default. `fit-final-prescribed`'s
+      frequency term moves 56.9 → 102.9 cents, which no glide fix explains, and
+      the shipped baseline moved with it (33.094 → 32.442 on the same bank and
+      channel). So the right-hand column is _what this parameter set is worth
+      today_; what the glide fix alone cost any given run is not recoverable, and
+      an earlier draft of this entry attributed the whole of 11.252 → 18.991 to
+      the 89-cent target. It cannot be.
+      **The result is convergence, not the 1.8% improvement.** That run and this
+      one — 8 restarts vs 12, different seeds, one interrupted and one complete —
+      agree term for term: frequency 48.997/48.936, level 9.172/9.081, decay
+      0.602/0.573, spectral envelope 11.034/11.068, envelope 0.746/0.724,
+      unmatched 0.047 both, spurious 0.330/0.327. The whole gap is glide (1.892 →
+      0.029) and attack balance (0.188 → 0.019). Two independent searches finding
+      the same point makes ~10.4 a statement about the **model's ceiling on this
+      recording**, not about search budget — and all three adoption gates are
+      still missed by the same margins as before (48.9 against 25, 0.573 against
+      0.25, 11.1 against 4). Spectral envelope is now on its sixth failed
+      intervention and has not moved for any of them.
+      One correction to carry forward: the reference's own bend on the **right**
+      channel is **58.9 cents**, not the 54.1 recorded under M6 — that figure was
+      measured on mono, and mono is a different signal.
+      A result worth more than the total: the four analytic seeds started at
+      26.777/26.777/26.777/26.793 cents, against the 35.9–37.0 the measured-fit
+      document uses to argue that no bank the product can express places its
+      modes much closer than that. 26.8 is within 7% of the 25-cent gate, so that
+      claim is too strong as stated. But four _diverse_ seeds agreeing to three
+      decimals is not what four diverse optima look like, and the report cannot
+      distinguish a sharp optimum from a broken diversity constraint. Check that
+      before `-seeded-restarts` is used to argue anything.
+      Two defects surfaced in the tooling and are fixed: `-report-only` could not
+      pin the strike velocity, so re-scoring an archived bank measured it at
+      VEL = 1 (`fit-glidefix-interrupted` reads 19.517 there against 10.577 at
+      its own 0.575, and its unmatched share goes 0.047 → 0.910 — driven that
+      hard the measurement barely finds the reference's partials at all); and
+      `-channel` defaulted to `mono` on a **stereo**
+      reference, silently fitting a different target than every number in the
+      repository — it cost a full-budget run here before it was caught, and is
+      now refused outright. Still outstanding:
+      `web/src/algo/physicalTomPresets.ts` holds the superseded bank, and the
+      paper's figures come from `fit-final-prescribed` — both are shipped-surface
+      changes and neither is mine to make.
       One reading worth carrying into M1a: three tom sources put the **loud-hit**
       glide at 130–165 cents (F&R §18.4 p. 608 quotes Bork & Meyer at 160; Rose
       ~8 %; Gärder ~8 %) while the corrected reference reads 54.1. Not a

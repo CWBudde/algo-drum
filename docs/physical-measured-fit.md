@@ -1009,14 +1009,13 @@ Two consequences, both open:
 winner, because they are what makes the fit auditionable and reproducible and
 they should describe the best fit measured under the current metric.
 
-> **As of 2026-08-01 they no longer do.** Both were derived from this run, which
-> the [glide correction](#a-correction-to-the-glide-term-2026-08-01) supersedes.
-> Whether they are re-derived again is settled in
-> [the refit below](#the-refit-on-the-corrected-glide-term-2026-08-01); until that
-> is done, the committed fixture and the shipped preset describe the best bank
-> found under the **previous** objective. They are still a real bank and still
-> audition — nothing about them changed — but the claim "best fit measured under
-> the current metric" is not one they carry any more.
+> **Superseded 2026-08-01, and they have since parted company.** Both were derived
+> from this run, which the [glide correction](#a-correction-to-the-glide-term-2026-08-01)
+> supersedes; re-scored under today's objective this bank measures **18.991**, the
+> worst of the four archived runs. `testdata/physical-fit-tom.json` has been
+> re-derived from
+> [the refit below](#the-refit-on-the-corrected-glide-term-2026-08-01);
+> `web/src/algo/physicalTomPresets.ts` has **not**, and still ships this bank.
 
 `DefaultPhysicalDrum()` and `DefaultContact()` are **unchanged**, because the fit
 **misses all three gate terms** — partial frequency at 2.28×, partial decay at
@@ -1145,21 +1144,27 @@ about 70.
 terms and it is weighted at 1/40 cents, so an error in the target it is scored
 against moves the sum by an amount that depends on where each candidate happened
 to sit — it is not an offset, and it cannot be subtracted out. The corrected
-target's bend is **[TBD] cents** against the **[TBD] cents** every earlier fit was
-fitted against, so a run whose glide error looked small was in many cases being
-rewarded for landing near a number the reference never produced.
+estimator reads the reference's bend as **58.9 cents**; the old one reported
+**+89.3**, half again as much, and every earlier fit was fitted against that.
+
+The size of the damage is best seen by re-scoring a bank that was tuned onto it.
+`fit-final-prescribed` was credited with a **17.6-cent** glide error under the old
+objective. Measured against the reference's actual bend it is **107.1 cents** out.
+It was not close to the target; it was close to an artefact, and the old objective
+paid it for being there.
 
 That includes the [corrected head-to-head](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31)
 immediately above, which was the current result until this date, and it includes
-`testdata/physical-fit-tom.json`. It also reorders the archived runs — see the
-re-score below, where the run that looked best under the old objective is the
-worst of four under this one.
+the bank that was in `testdata/physical-fit-tom.json` until this refit. It also
+reorders the archived runs — see the re-score below, where the run that looked
+best under the old objective is the worst of four under this one.
 
 ### Re-scoring an archived report under today's objective
 
 An archived report's stored total is a number produced by an objective that no
 longer exists. The report does, however, record its own best point exactly, so the
-bank can be re-measured by **pinning it and asking for a report**:
+bank can be re-measured by **pinning it and asking for a report**. This is the
+only way to put an archived fit and a current one on the same axis:
 
 ```bash
 go run ./cmd/fit-physical -reference reference/tom.wav -channel right \
@@ -1179,9 +1184,11 @@ Four things have to line up or the answer is about a different drum:
 - **`-velocity <best.velocity01>`.** Strike velocity is the eighteenth search
   dimension but it is not a parameter in the bank, so `-fix` cannot reach it and
   `-report-only` used to measure every re-scored bank at VEL = 1. That is not a
-  small distortion: `fit-glidefix-interrupted` scores **20.122** at VEL = 1 and
-  **11.296** at its own 0.575, because velocity moves the level, envelope and
-  attack-balance terms together. The flag exists for exactly this.
+  small distortion: `fit-glidefix-interrupted` scores **19.517** at VEL = 1 and
+  **10.577** at its own 0.5754. Velocity moves the level, envelope and
+  attack-balance terms together, and at VEL = 1 that bank's unmatched share reads
+  0.910 against 0.047 — it is driven so hard that the measurement barely finds the
+  reference's partials in it. The flag exists for exactly this.
 - **`-quality` and `-contact` as the run used them**, both recorded in the
   report's `search` block. A Standard-tier bank re-scored at Draft is a different
   instrument.
@@ -1194,129 +1201,238 @@ the `-loss-scale` sweep, the `v5` run and the 5 g Hertzian run have **no
 comparable total under today's objective** and are deliberately not tabulated
 below.
 
-The comparison, each run re-scored at its own quality tier, contact model and
-channel reduction:
+The comparison, each run re-scored at its own quality tier, contact model, channel
+reduction and velocity. All four were fitted on `-channel right`:
 
-| Archived run               | Total as reported then | Under today's objective |
-| -------------------------- | ---------------------- | ----------------------- |
-| `fit-glidefix-interrupted` | 10.577                 | **[TBD]**               |
-| `fit-final-hertzian`       | 11.535                 | [TBD]                   |
-| `fit-v4-hertzian`          | 11.630                 | [TBD]                   |
-| `fit-final-prescribed`     | 11.252                 | [TBD]                   |
+| Archived run               | Total as reported then | Under today's objective | Glide error then → now |
+| -------------------------- | ---------------------- | ----------------------- | ---------------------- |
+| `fit-glidefix-interrupted` | 10.577                 | **10.577**              | 1.9 ¢ → 1.9 ¢          |
+| `fit-final-hertzian`       | 11.535                 | 15.146                  | 0.1 ¢ → 59.6 ¢         |
+| `fit-v4-hertzian`          | 11.630                 | 15.650                  | — → 49.7 ¢             |
+| `fit-final-prescribed`     | 11.252                 | **18.991**              | 17.6 ¢ → 107.1 ¢       |
 
-Both columns are totals of nine terms; neither is a total the other objective
-would recognize. The left column is kept only so a reader who finds one of these
-numbers elsewhere in the repository can identify which era it came from.
+**The first row is the recipe validating itself.** `fit-glidefix-interrupted` is
+the one archived run made _after_ the glide fix and on the right channel, and
+re-scoring it reproduces its reported total to the digit — 10.577 against 10.577,
+term for term. That is what licenses the other three rows: the recipe is exact
+when nothing has changed, so where it disagrees, something has.
 
 **The ordering changes**, which is the point. `fit-final-prescribed` — the run the
-paper's figures and `testdata/physical-fit-tom.json` come from, and the winner
-under the old objective — is the **worst of the four** under the corrected one,
-because its 17.6-cent glide error was scored against a target [TBD] % too high. A
-re-scored ranking is not a re-fitted ranking either: each of these banks was
+paper's figures come from, and the winner under the old objective — is the **worst
+of the four** under the corrected one. The glide column says why: the two runs
+whose glide error the old objective scored as near-zero are exactly the two that
+move furthest, because a near-zero error against a fabricated target is a bank
+that has been tuned _onto_ the artefact.
+
+Two cautions on reading the right-hand column.
+
+**It is not only the objective that moved.** A re-score renders the archived bank
+through today's synthesis as well as measuring it with today's metric, and the
+model gained nonlinear modal coupling — on by default — between
+`fit-final-prescribed` and now. So these banks re-render as well as re-measure,
+and the shipped baseline moved with them (33.094 → **32.442** at the same bank on
+the same channel). The right-hand column is therefore "what this parameter set is
+worth today", which is the question worth asking, and not "what the glide fix
+alone cost this run", which cannot be recovered.
+
+**A re-scored ranking is not a re-fitted ranking.** Each of these banks was
 optimized against the old objective and is being marked under the new one, so the
-spread says how much the objective moved, not how well each search worked.
+spread says how far the objective moved, not how well each search worked. The only
+honest way to rank two searches is to run both under the same objective, which is
+what the refit below does — and only for the prescribed contact.
+
+Two further runs re-score badly enough to be worth naming so nobody re-derives
+them by hand: `fit-right-prescribed` (7.445 → 18.675) and `fit-right-hertzian`
+(4.486 → 20.801). Both predate the partial correction as well as the glide one, so
+they sit in a **third** era again, and neither number belongs in a table with the
+four above.
 
 ## The refit on the corrected glide term (2026-08-01)
 
-> **Numbers pending.** A full-budget prescribed run on the corrected objective is
-> in flight against the documented `-channel right` target. Every `[TBD]` in this
-> section is waiting on it. The first attempt was run without `-channel` and
-> therefore against the aligned mono downmix — a real fit, but of a different
-> target than any other number on this page, and not quotable beside them. It is
-> the reason [the invocation above](#the-search) now names the flag.
+The prescribed contact was refitted from scratch on the corrected objective. Only
+the prescribed model has been refitted, so **the contact-model comparison is not
+re-established**; the [head-to-head above](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31)
+remains the last word on that question and it is a superseded one.
 
-The prescribed contact was refitted from scratch. Only the prescribed model has
-been refitted, so **the contact-model comparison is not re-established** under
-this objective; the [head-to-head above](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31)
-is the last word on that question and it is a superseded one.
-
-```
+```bash
 go run ./cmd/fit-physical -reference reference/tom.wav -channel right \
     -contact prescribed -quality standard \
     -restarts 12 -pop 16 -iterations 150 -seeded-restarts 4 \
     -o fits/s3-right-prescribed.json -checkpoint fits/s3-right-prescribed.checkpoint
 ```
 
-Twelve restarts of 150 iterations at population 16, Standard quality, **[TBD]
-evaluations**, [TBD] on twelve cores, all restarts complete and not interrupted.
+Twelve restarts of 150 iterations at population 16, Standard quality, **88 584
+evaluations**, 2 h 35 min on twelve cores, all restarts complete and the run not
+interrupted. The report is `fits/s3-right-prescribed.json`, the render
+`renders/s3-right-prescribed.wav`; both are gitignored, so the numbers below are
+quoted rather than linked.
 
-**Total [TBD], from a baseline of [TBD]** at the shipped bank. Each term with its
-threshold and its contribution to the sum (value × weight; a term sitting exactly
-at its threshold contributes 1.0):
+**Total 10.382, from a baseline of 32.442** at the shipped bank. Each term with
+its threshold and with the fit's contribution to the sum (value × weight; a term
+sitting exactly at its threshold contributes 1.0):
 
-| Term                         | Threshold | Baseline | Fitted | contrib |
-| ---------------------------- | --------- | -------- | ------ | ------- |
-| Partial frequency (gate)     | 25 ¢      | [TBD]    | [TBD]  | [TBD]   |
-| Partial decay (gate)         | 0.25      | [TBD]    | [TBD]  | [TBD]   |
-| **Spectral envelope** (gate) | 4 dB      | [TBD]    | [TBD]  | [TBD]   |
-| Partial level                | 3 dB      | [TBD]    | [TBD]  | [TBD]   |
-| Amplitude envelope           | 3 dB      | [TBD]    | [TBD]  | [TBD]   |
-| Glide                        | 40 ¢      | [TBD]    | [TBD]  | [TBD]   |
-| Attack balance               | 6 dB      | [TBD]    | [TBD]  | [TBD]   |
-| Unmatched share              | 0.5       | [TBD]    | [TBD]  | [TBD]   |
-| Spurious share               | 0.5       | [TBD]    | [TBD]  | [TBD]   |
-| **Total**                    | —         | [TBD]    | [TBD]  | —       |
+| Term                         | Threshold | Baseline | Fitted     | contrib  |
+| ---------------------------- | --------- | -------- | ---------- | -------- |
+| Partial frequency (gate)     | 25 ¢      | 120.9 ¢  | 48.9 ¢     | **1.96** |
+| Partial decay (gate)         | 0.25      | 1.030    | 0.573      | 1.64     |
+| **Spectral envelope** (gate) | 4 dB      | 22.47 dB | 11.07 dB   | **2.77** |
+| Partial level                | 3 dB      | 11.87 dB | 9.08 dB    | **3.03** |
+| Amplitude envelope           | 3 dB      | 35.23 dB | 0.72 dB    | 0.24     |
+| Glide                        | 40 ¢      | 57.8 ¢   | 0.03 ¢     | 0.00     |
+| Attack balance               | 6 dB      | 0.74 dB  | 0.02 dB    | 0.00     |
+| Unmatched share              | 0.5       | 0.467    | 0.047      | 0.09     |
+| Spurious share               | 0.5       | 0.423    | 0.327      | 0.65     |
+| **Total**                    | —         | 32.442   | **10.382** | —        |
+
+### The result is convergence, not the new best total
+
+10.382 against `fit-glidefix-interrupted`'s 10.577 is a 1.8 % improvement, and it
+is the least interesting thing about this run. What matters is that the two runs
+**agree term by term**:
+
+| Term               | This run (12 restarts, complete) | `fit-glidefix-interrupted` (8, interrupted) |
+| ------------------ | -------------------------------- | ------------------------------------------- |
+| Partial frequency  | 48.936 ¢                         | 48.997 ¢                                    |
+| Partial level      | 9.081 dB                         | 9.172 dB                                    |
+| Partial decay      | 0.573                            | 0.602                                       |
+| Spectral envelope  | 11.068 dB                        | 11.034 dB                                   |
+| Amplitude envelope | 0.724 dB                         | 0.746 dB                                    |
+| Unmatched share    | 0.047                            | 0.047                                       |
+| Spurious share     | 0.327                            | 0.330                                       |
+| Glide              | **0.029 ¢**                      | **1.892 ¢**                                 |
+| Attack balance     | **0.019 dB**                     | **0.188 dB**                                |
+
+Different restart counts, different random seeds, one complete and one
+interrupted — and **everything the objective can see about the drum is the same
+number**. The entire 10.577 → 10.382 gap is the two bold rows, glide and attack
+balance, which are the two cheapest terms in the sum to polish once the rest is
+settled.
+
+Two independent searches arriving at the same point is a statement about **the
+model's ceiling on this recording**, not about either search. It says the
+remaining 10.4 is not search effort left on the table: the optimizer is finding
+what there is to find, and what it finds is 1.96× the frequency gate, 2.77× the
+envelope gate and 3.03× the partial-level threshold. A better total on this
+reference now needs a different model, not a longer run.
+
+The convergence curve agrees from the inside. The best restart's last three
+iterations read 10.3829, 10.3823, 10.3821 — flat to four digits, where
+[the very first fit](#results) was still visibly descending when its budget ran
+out.
 
 ### What it reaches, and what it still does not
 
-**All three gate terms are missed** — partial frequency [TBD] against 25 ¢,
-partial decay [TBD] against 0.25, spectral envelope [TBD] against 4 dB. That is
-the same verdict the last two rounds reached, on a third objective.
+**All three gate terms are missed**, for the third round running: partial
+frequency 48.9 ¢ against 25, partial decay 0.573 against 0.25, spectral envelope
+11.07 dB against 4.
 
-Two things did move, and they are the reason this run is worth recording rather
-than merely filing:
+The spectral envelope is now on its **sixth** failed intervention — contact model,
+head damping range, seeding, the partial correction, the glide correction, and a
+converged full-budget refit — and it has sat between 11 and 13.6 dB throughout.
+See [the open suggestion above](#the-spectral-envelope-has-not-moved-for-anything)
+that the term may be ill-posed for this model rather than the model failing it;
+nothing here counts against that reading.
 
-- **Partial frequency** falls from the incumbent's 56.9 ¢ to [TBD] ¢, which was
-  the worst-contributing gate term of the previous winner.
-- **Unmatched coverage** improves from 0.151 to [TBD], so the fit produces more of
-  the reference's audible partials than the incumbent did.
+Comparisons with the previous winner have to be made carefully, because
+`fit-final-prescribed` was reported under the old objective and re-scores at
+18.991 under this one. Against its **reported** 56.9 ¢, this run's 48.9 ¢ is an
+improvement, and a modest one; against its **re-scored** 102.9 ¢ it is a large
+one. Neither framing is the story, and the same holds for unmatched coverage
+(0.151 reported, 0.314 re-scored, 0.047 here). The comparison that means something
+is the one in the table above, between two runs measured the same way.
 
-Those two comparisons are the one kind that survives the objective change: both
-terms are per-term measurements against the same corrected partial list, and
-neither is affected by the glide. The **totals** either side of the correction
-still cannot be compared.
+The 476–700 Hz band is unchanged as well: the fit puts **5 partials** there
+(477.7, 498.9, 542.4, 607.3, 656.9 Hz) against the reference's 7, out of 16
+against 14 overall — exactly what the previous winner managed. The band is not
+empty and its density is still not reproduced.
 
-Partial alignment is now close across the whole retained band, which is what the
-frequency term is reporting and what the two lists show directly:
+Where the fit has genuinely closed is the low end and the fundamental's
+neighbourhood, which is what the halved frequency term reports:
 
-| Reference (Hz / dB / T60 s) | Fitted (Hz / dB / T60 s) |
-| --------------------------- | ------------------------ |
-| [TBD]                       | [TBD]                    |
+| Reference (Hz)     | Fitted (Hz) |
+| ------------------ | ----------- |
+| 118.06             | 118.45      |
+| 139.61             | —           |
+| 212.78             | 207.52      |
+| 259.09             | 251.12      |
+| 296.70             | 310.74      |
+| 380.55             | 370.22      |
+| 476.56             | 477.70      |
+| 502.60             | 498.88      |
+| 530.10             | —           |
+| 546.86             | 542.44      |
+| 624.57             | 607.25      |
+| 675.79             | 656.92      |
+| 696.87             | 710.37      |
+| 1598.00            | —           |
+| — (no counterpart) | 186.0       |
+| — (no counterpart) | 269.7       |
+| — (no counterpart) | 341.9       |
+| — (no counterpart) | 428.3       |
+| — (no counterpart) | 742.0       |
+
+Eleven of the fourteen reference partials have a fitted counterpart within about
+3 % — the fundamental to within 6 cents — which is what an unmatched share of
+0.047 means in the concrete. What the fit does not have is the 1598 Hz component
+or the two quiet long-ringing ones at 139.6 and 530.1 Hz, and it invents five
+modes of its own, which is what the 0.327 spurious share is charging for.
 
 ### The seeded restarts, and what the seed error says
 
 Four of the twelve restarts were seeded from the analytic pre-solve, which
-converged at **[TBD] cents** of frequency error — the same order as the 35.9–37.0 ¢
-[recorded against the corrected target](#the-seed-error-is-itself-a-result-about-the-models-reach),
-and far from the 1.0–1.5 ¢ the pre-correction target admitted. By the rule that
-section states — a box around a seed is worth its cost in proportion to how good
-the seed is — a seed that far out is barely a selection at all, and
-`-seeded-restarts` remains off by default.
+converged at **26.777, 26.777, 26.777 and 26.793 cents** of frequency error. Two
+things about that are worth recording.
 
-### An observation at Draft quality
+**It is the best seed error yet measured against a corrected target** — 26.8 ¢
+against the 35.9–37.0 ¢
+[recorded in the head-to-head](#the-seed-error-is-itself-a-result-about-the-models-reach),
+and only just outside the 25 ¢ gate. The claim that no bank the product can
+express places its modes on this target much better than the middle thirties is
+therefore **too strong as stated**, and is narrowed rather than retracted: the
+pre-solve now gets within 7 % of the gate. It remains an open question whether the
+gate is reachable at all.
 
-A parallel run at the **Draft** tier (QUAL = 0, 48 oscillators per head against
-Standard's 96), interrupted at [TBD] evaluations, reached **[TBD]** — slightly
-better than the Standard-tier run above on this objective, at roughly half the
-mode count.
+**All four seeds agree to three decimal places**, from four different starting
+points, which is not what four diverse optima look like. Either the pre-solve's
+diversity constraint is not producing diverse banks or this is a single sharp
+optimum that every start falls into; the report does not distinguish them, and it
+is worth checking before `-seeded-restarts` is used to argue anything.
 
-It is recorded as an observation and nothing more. Both runs are single samples
-from a multi-modal landscape whose restart spread is wider than the difference
-between them, one of the two was interrupted, and QUAL is pinned during a search
-precisely because mode count is a product decision rather than a property of this
-drum. No conclusion about the mode budget is drawn from it here.
+Seeding lost again, on the same paired reading as before — restarts 1–4 are
+seeded, 5–12 are not:
+
+|          | Best       | Mean  |
+| -------- | ---------- | ----- |
+| Seeded   | 10.970     | 13.05 |
+| Unseeded | **10.382** | 11.68 |
+
+The winning restart was unseeded for the third run in a row, and the seeded mean
+is the worse of the two. `-seeded-restarts` stays **off by default**.
 
 ### What moved and what did not
+
+`testdata/physical-fit-tom.json` **has been re-derived from this run.** Its
+`_readme` records the three gate misses (48.9 / 0.573 / 11.07), the re-derivation
+date, why a pre-fix total cannot be compared with a post-fix one, and that the
+bank it replaces was reported as 11.252 and re-measures at 18.991 — so the file
+carries its own provenance and cannot be quoted out of era.
+
+`web/src/algo/physicalTomPresets.ts` still holds the **old** bank. The fixture and
+the shipped **Measured tom** preset therefore disagree, which is a state this
+document should not leave unstated: the preset is the previous winner, a bank
+fitted against an objective that no longer runs. Updating it changes what a user
+hears, so it is left as an outstanding decision rather than made here.
 
 `DefaultPhysicalDrum()` and `DefaultContact()` are **unchanged**, for the third
 time and for the same reason: a candidate that misses every gated term does not
 earn a claim about what the model should sound like out of the box, whatever it
-does to the total.
+does to the total. The rule has now been applied identically across three
+objectives, which is about as much evidence as a rule of this kind can accumulate.
 
-Whether `testdata/physical-fit-tom.json` and the **Measured tom** preset are
-re-derived from this run is **[TBD]**. They currently hold the
-`fit-final-prescribed` bank, which is the best fit under an objective that no
-longer runs.
+There is **no right-channel Draft-tier run** to set against this one. A Draft fit
+does exist (`fits/s1-prescribed.json`, 43 809 evaluations, interrupted, total
+10.296) but it was run on the mono downmix, so it is not comparable to anything in
+this section and no mode-budget conclusion is drawn from it.
 
 ## Reproducing
 
