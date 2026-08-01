@@ -107,24 +107,42 @@ type term struct {
 
 func terms() []term {
 	return []term{
-		{"partial frequency", "cents", func(t match.Terms) float64 { return t.PartialFrequency },
-			func(w *match.Weights) *float64 { return &w.PartialFrequency }, 5},
-		{"partial level", "dB", func(t match.Terms) float64 { return t.PartialLevel },
-			func(w *match.Weights) *float64 { return &w.PartialLevel }, 1},
-		{"partial decay", "log ratio", func(t match.Terms) float64 { return t.PartialDecay },
-			func(w *match.Weights) *float64 { return &w.PartialDecay }, 0.05},
-		{"spectral envelope", "dB", func(t match.Terms) float64 { return t.SpectralEnvelope },
-			func(w *match.Weights) *float64 { return &w.SpectralEnvelope }, 0.5},
-		{"envelope", "dB", func(t match.Terms) float64 { return t.Envelope },
-			func(w *match.Weights) *float64 { return &w.Envelope }, 0.5},
-		{"glide", "cents", func(t match.Terms) float64 { return t.Glide },
-			func(w *match.Weights) *float64 { return &w.Glide }, 10},
-		{"attack balance", "dB", func(t match.Terms) float64 { return t.AttackBalance },
-			func(w *match.Weights) *float64 { return &w.AttackBalance }, 0.1},
-		{"unmatched share", "", func(t match.Terms) float64 { return t.Unmatched },
-			func(w *match.Weights) *float64 { return &w.Unmatched }, 0.05},
-		{"spurious share", "", func(t match.Terms) float64 { return t.Spurious },
-			func(w *match.Weights) *float64 { return &w.Spurious }, 0.05},
+		{
+			"partial frequency", "cents", func(t match.Terms) float64 { return t.PartialFrequency },
+			func(w *match.Weights) *float64 { return &w.PartialFrequency }, 5,
+		},
+		{
+			"partial level", "dB", func(t match.Terms) float64 { return t.PartialLevel },
+			func(w *match.Weights) *float64 { return &w.PartialLevel }, 1,
+		},
+		{
+			"partial decay", "log ratio", func(t match.Terms) float64 { return t.PartialDecay },
+			func(w *match.Weights) *float64 { return &w.PartialDecay }, 0.05,
+		},
+		{
+			"spectral envelope", "dB", func(t match.Terms) float64 { return t.SpectralEnvelope },
+			func(w *match.Weights) *float64 { return &w.SpectralEnvelope }, 0.5,
+		},
+		{
+			"envelope", "dB", func(t match.Terms) float64 { return t.Envelope },
+			func(w *match.Weights) *float64 { return &w.Envelope }, 0.5,
+		},
+		{
+			"glide", "cents", func(t match.Terms) float64 { return t.Glide },
+			func(w *match.Weights) *float64 { return &w.Glide }, 10,
+		},
+		{
+			"attack balance", "dB", func(t match.Terms) float64 { return t.AttackBalance },
+			func(w *match.Weights) *float64 { return &w.AttackBalance }, 0.1,
+		},
+		{
+			"unmatched share", "", func(t match.Terms) float64 { return t.Unmatched },
+			func(w *match.Weights) *float64 { return &w.Unmatched }, 0.05,
+		},
+		{
+			"spurious share", "", func(t match.Terms) float64 { return t.Spurious },
+			func(w *match.Weights) *float64 { return &w.Spurious }, 0.05,
+		},
 	}
 }
 
@@ -210,7 +228,8 @@ func measure(report *Report, path string, options match.Options, allowSpaced boo
 		return fmt.Errorf(
 			"%s: channels are %d samples apart, so this is a spaced pair and its "+
 				"disagreement is mostly two arrival times; pass -allow-spaced to measure it anyway",
-			path, sum.ChannelDelaySamples)
+			path, sum.ChannelDelaySamples,
+		)
 	}
 
 	report.Files = append(report.Files, File{

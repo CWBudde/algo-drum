@@ -272,3 +272,78 @@ func TestLoss1ProducesConstantQOnAnIdealMembrane(t *testing.T) {
 		}
 	}
 }
+
+// TestTheLongestRingingModeIsTheLowestUncorrectedOne states the shape of the
+// loss law as a property rather than as a description, because that shape is
+// PLAN item N3's defect and the item named the wrong mode for it.
+//
+// γ is monotone in k — d0 + d1k + d2k² plus a radiation term that is small
+// everywhere — with exactly one exception, the (0,1) correction. So the mode
+// that rings longest is forced: it is the lowest-wavenumber mode that the
+// correction table does not name, and today that is the (1,1). Nothing about
+// this is a tuning accident, and no value of DAMP or D.TILT moves it, because
+// both scale the whole law.
+//
+// The consequence for N3 is the reason this is pinned. Its instance — "a mode at
+// 186 Hz with T60 1.81 s, the longest-ringing thing the model produces" — is that
+// (1,1), seen at the fitted config where the law is scaled down by about 2.6x.
+// It is not the coupled (0,1) doublet, which is what N3 prescribed damping, and
+// which the correction table already damps by more than twice its structural
+// rate. Damping the doublet harder cannot move the longest mode. Anything that
+// does has to either put a second entry in the correction table or give the law
+// a shape it does not have.
+func TestTheLongestRingingModeIsTheLowestUncorrectedOne(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultPhysicalDrum()
+
+	modes, err := generateHeadModes(config, config.Batter)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	longest, lowestUncorrected := modes[0], Mode{WavenumberPerM: math.Inf(1)}
+
+	for _, mode := range modes {
+		if mode.DecayRatePerSecond < longest.DecayRatePerSecond {
+			longest = mode
+		}
+
+		if mode.DecayCorrectionPerSecond == 0 && mode.WavenumberPerM < lowestUncorrected.WavenumberPerM {
+			lowestUncorrected = mode
+		}
+	}
+
+	if longest.AzimuthalOrder != lowestUncorrected.AzimuthalOrder ||
+		longest.RadialOrder != lowestUncorrected.RadialOrder {
+		t.Errorf("longest-ringing mode is (%d,%d) at %.1f Hz but the lowest uncorrected "+
+			"mode is (%d,%d) at %.1f Hz: the loss law is no longer monotone in k plus "+
+			"one correction, and N3's analysis needs redoing",
+			longest.AzimuthalOrder, longest.RadialOrder, longest.FrequencyHz,
+			lowestUncorrected.AzimuthalOrder, lowestUncorrected.RadialOrder,
+			lowestUncorrected.FrequencyHz)
+	}
+
+	if longest.AzimuthalOrder != 1 || longest.RadialOrder != 1 {
+		t.Errorf("longest-ringing mode is (%d,%d) at %.1f Hz, want the (1,1)",
+			longest.AzimuthalOrder, longest.RadialOrder, longest.FrequencyHz)
+	}
+
+	fundamental, ok := modeByOrder(modes, 0, 1)
+	if !ok {
+		t.Fatal("no (0,1) mode retained")
+	}
+
+	// And the doublet N3 prescribed damping is already the most heavily damped
+	// mode in the bank, by the correction rather than by the law.
+	if fundamental.DecayCorrectionPerSecond <= fundamental.StructuralDecayPerSecond {
+		t.Errorf("(0,1) correction %.2f /s against a structural rate of %.2f /s: the "+
+			"premise that the fundamental is under-damped is back",
+			fundamental.DecayCorrectionPerSecond, fundamental.StructuralDecayPerSecond)
+	}
+
+	t.Logf("longest (%d,%d) at %.1f Hz, T60 %.0f ms; (0,1) at %.1f Hz, T60 %.0f ms",
+		longest.AzimuthalOrder, longest.RadialOrder, longest.FrequencyHz,
+		t60Milliseconds(longest.DecayRatePerSecond),
+		fundamental.FrequencyHz, t60Milliseconds(fundamental.DecayRatePerSecond))
+}

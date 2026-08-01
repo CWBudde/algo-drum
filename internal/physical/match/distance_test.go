@@ -415,7 +415,8 @@ func TestTheEstimatorsTailIsTrimmedAndTheModelsIsNot(t *testing.T) {
 	weights := DefaultWeights()
 
 	exact := Distance(
-		Features{Partials: reference}, Features{Partials: slices.Clone(reference)}, weights)
+		Features{Partials: reference}, Features{Partials: slices.Clone(reference)}, weights,
+	)
 	if exact.PartialFrequency != 0 || exact.Unmatched != 0 {
 		t.Fatalf("a table against itself scored %+v, want zero", exact)
 	}

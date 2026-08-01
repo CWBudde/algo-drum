@@ -131,12 +131,13 @@ as far as it can be, by `TestSpuriousDoesNotOutweighCompleteness`.
 Re-derive all of this if `features.go` changes: the floor is a property of the
 estimator, not of the drum.
 
-> **`features.go` has since changed, and this table is stale.** Result 5a found
-> that the estimator these gates were measured through was collapsing `v09`,
-> `v10` and `v14` to one- or two-partial tables, which is what those takes
-> contributed to the distribution above. The reciprocal-gate rule and the three
-> findings stand; the numbers must be re-measured. `PLAN.md` §N2 carries it as
-> the first thing to do.
+> **This table is superseded. Read Result 7 instead.** Result 5a found that the
+> estimator these gates were measured through was collapsing `v09`, `v10` and
+> `v14` to one- or two-partial tables, which is what those takes contributed to
+> the distribution above. The reciprocal-gate rule and two of the three findings
+> stand; the numbers do not, and the re-measurement moved five of the nine gates.
+> The table is kept because Result 7's "which repair did what" comparison is
+> against it.
 
 ### On the retired spaced pair, for comparison
 
@@ -437,12 +438,81 @@ component is kept only if it appears at several of them within 20 ¢ and 40 % of
 ring time. ESTER's choice is carried in the report as `esterOrder` so the
 disagreement is in the committed table rather than in this paragraph alone.
 
-### What 5a–5e leave open
+### 5f — the decay term's confidence weighting does not work, and neither does its replacement
+
+`partialDecayError` weighted each pair by the product of the two fits' R², on the
+reasoning that a partial whose envelope is not an exponential has a meaningless
+slope. The reasoning is right. R² does not implement it — §5c — and the reason it
+cannot is that a slope drawn through a noise floor is perfectly straight, so the
+statistic that measures straightness is blind to exactly the failure it was hired
+to catch.
+
+The obvious replacement is the dynamic range the slope was read over:
+`Partial.DecayRangeDB`, how far the partial falls inside the fit window before the
+fitted noise floor catches it. It was implemented and measured against the
+subspace estimator on the same 153 pairs, and it does not discriminate either —
+it is not even monotone:
+
+| fitted decay range | pairs | median \|ΔT60\| |
+| ------------------ | ----: | --------------: |
+| 20–35 dB           |     5 |           5.0 % |
+| 35–50 dB           |    33 |          93.4 % |
+| 50–70 dB           |    17 |          42.1 % |
+| ≥ 70 dB            |    98 |          36.9 % |
+
+So the weighting is **gone rather than replaced**. An unmeasured confidence is
+worse than no confidence, because it reads as a guard. What does the job instead
+is trimming — see Result 7 — which needs no per-partial confidence estimate.
+
+The field is still reported, because "how much evidence is there for this ring
+time" is worth having in a committed table even when it does not predict this
+particular disagreement.
+
+### 5g — the Karjalainen decay model, implemented, and measured to change nothing here
+
+Karjalainen, Antsalo, Mäkivirta, Peltonen & Välimäki (JAES 50(11):867–878, 2002)
+fit an explicit exponential-plus-noise-floor model rather than truncating before
+the floor arrives. It is now what `measureDecays` reports
+(`decayFloorFit`): three parameters held as logarithms, Levenberg–Marquardt from
+the log-linear estimate, over the whole window rather than the top 45 dB of it.
+
+On its own model it is exact where truncation is not. A partial standing 30 dB
+above its own noise floor cannot show 45 dB of decay, so the truncation never
+fires and the straight line is drawn through a trace whose last third has already
+flattened: the log-linear reading comes back **+930 %**, the floor model within
+0.1 %. That is an ordinary configuration, not a pathological one, and it is pinned
+by `TestTruncationReadsARingTimeLongAndTheFloorModelDoesNot`.
+
+**On the licensed reference it changes nothing measurable.** Against the subspace
+estimator, over the 108 pairings both estimators produce:
+
+|                        | median \|ΔT60\| |    p75 |     p90 |
+| ---------------------- | --------------: | -----: | ------: |
+| truncated log-linear   |          37.8 % | 78.2 % | 181.7 % |
+| exponential plus floor |          41.4 % | 79.3 % | 176.3 % |
+
+and the refinement lands closer to the subspace estimate on **53 of 108** pairings
+— a coin flip. The one thing that did move in the predicted direction is the long
+bias: the fast estimator reads longer than the subspace one in 63 % of pairs
+rather than 71 %.
+
+The explanation is checkable and is not a defence of the change. These traces
+mostly never reach a floor inside the fit window — the median fitted range is
+86 dB — so the term the model adds is inactive on most of them, and where it is
+inactive the two estimators differ only in how much of a _non_-exponential trace
+they fit a straight line through. Which is §5d again, arriving from a third
+direction.
+
+It is kept because it is right where the old one is wrong, and because it removes
+a threshold whose correctness depended on the signal being measured. It is not
+kept because it improved this reference, and it did not.
+
+### What 5a–5g leave open
 
 Frequency and level are trustworthy; the decay term is not, and the reason is a
-property of the drum rather than of the code. The gates measured in Result 1 were
-taken with the pre-5a estimator, so the takes where it collapsed contributed a
-one-partial table to that measurement. **They have not been re-measured.**
+property of the drum rather than of the code — three independent measurements now
+say so. What the estimator work does not do is make the ring time of one partial
+of this drum a well-defined quantity.
 
 ## Result 6 — identifiability was never measured
 
@@ -462,15 +532,179 @@ flat directions, by construction.
 A central-difference Hessian at the optimum costs ~600 evaluations against the
 88 584 a full fit already spends. `PLAN.md` §P10/N6 carries this.
 
+## Result 7 — the gates, re-measured after the repair
+
+Result 1's gates were taken through the pre-5a estimator, so `v09`, `v10` and
+`v14` contributed one- or two-partial tables to them. This is the same
+measurement after the repair, and after two changes to the objective itself: the
+decay term's confidence weighting removed (§5f), and the three partial terms
+aggregated by a **trimmed** RMS over the smallest 80 % of their squared errors
+rather than a plain one.
+
+The measurement is now repository code — `cmd/measure-objective` — and calls the
+real `match.Distance`. Result 1's method note describes a standalone
+reimplementation kept outside the tree and trustworthy only while it reproduced
+`distance.go` bit-exactly; that is a standing invitation to silent drift, and the
+drift would have been invisible in exactly the way 5a was. The tool also refuses a
+pair whose channels are not coincident, which the old procedure relied on the
+operator to check.
+
+All sixteen files: inter-channel delay **0 samples**, correlation 0.85–0.93.
+
+| Term              | 2026-08-01 p90 | re-measured p90 | gate now |
+| ----------------- | -------------: | --------------: | -------: |
+| Partial frequency |        113.0 ¢ |      **76.2 ¢** |     80 ¢ |
+| Partial level     |       17.85 dB |     **6.81 dB** |     7 dB |
+| Partial decay     |          1.262 |       **0.558** |      0.6 |
+| Spectral envelope |        3.65 dB |         3.67 dB |     4 dB |
+| Envelope          |        3.81 dB |         3.84 dB |     4 dB |
+| Glide             |        310.3 ¢ |         280.1 ¢ |    290 ¢ |
+| Attack balance    |        1.12 dB |         1.13 dB |   1.2 dB |
+| Unmatched share   |          0.880 |       **0.250** |      0.3 |
+| Spurious share    |          0.346 |       **0.245** |  0.3 (†) |
+
+(†) Spurious keeps Unmatched's gate. Its measured floor would make it marginally
+the heavier of the two, and that direction has already been refuted by a fit run
+that abandoned the drum for two partials. The margin is now small enough that it
+would probably not reproduce, which is not a reason to find out.
+
+Gates are rounded **up** from the p90: a gate is what a candidate has to beat, and
+rounding a measured floor down publishes a threshold below the floor.
+
+### Which repair did what
+
+Re-running the campaign with the trimming disabled separates the two causes
+instead of asserting a split:
+
+| Term              | 2026-08-01 | repaired only | repaired + trimmed |
+| ----------------- | ---------: | ------------: | -----------------: |
+| Partial frequency |    113.0 ¢ |       112.4 ¢ |         **76.2 ¢** |
+| Partial level     |   17.85 dB |   **7.24 dB** |            6.81 dB |
+| Partial decay     |      1.262 |     **0.608** |              0.558 |
+| Unmatched share   |      0.880 |     **0.250** |              0.250 |
+| Spurious share    |      0.346 |     **0.245** |              0.245 |
+
+The estimator repair fixed level, decay, unmatched and spurious — those four were
+measuring the collapsed takes and almost nothing else. The trimming fixed
+frequency, which the repair did not touch at all. Two different defects; neither
+substitutes for the other.
+
+### What survives from Result 1, and what does not
+
+- **The spectral envelope is still the only gate that was ever right** — 3.67 dB
+  against a gate of 4, unmoved by either repair. Note _why_ it is unmoved: it was
+  never the term the defects were in. Every conclusion drawn from it stands.
+- **Attack balance is still the most reproducible term in the objective**, 0.245 dB
+  at the median, better than the spectral envelope.
+- **Glide is still broken**: median 50.0 ¢ against an `unreadableGlideCents` of 40,
+  so more than half the pairs still cannot place two probes on a surviving
+  fundamental. Repairing the decay estimator did not repair this, which is
+  evidence the two are unrelated.
+- **"The partial terms were never gateable" is withdrawn.** It was true of the
+  collapsed measurement — nothing could beat 113 cents or a 1.26 log-ratio. It is
+  not true of this one. 80 cents is still not a fine tolerance and 7 dB of partial
+  balance is still a wide one, but they are thresholds a model can be held to. What
+  stands is the narrower claim: the six rounds of intervention aimed at the old
+  25-cent and 0.25 gates were aimed at thresholds nothing could reach.
+
+### On totals
+
+At these weights the objective's disagreement with itself totals **5.73 median,
+6.38 p90**. That is a larger number than the 4.32/6.46 the previous gates
+produced, and it is not a regression: tightening a gate raises its weight, so the
+same raw disagreement scores higher. Scored under the previous weights this
+distribution totals 3.74/4.29, which is the like-for-like comparison.
+
+Which is the difficulty with totals in one paragraph — not even the sign of a
+change across a re-weighting is meaningful. The readable quantity is the per-term
+contribution, and there the weights' claim holds: no term contributes more than
+**0.81** at its own median, against the 1.0 that means "at the gate".
+
+**No total recorded before this change is comparable to any after it.** That was
+true of the previous change too. `cmd/measure-objective` writes the floor into its
+own report so a total always arrives beside the floor it should be read against.
+
+## Result 8 — N3's damping defect is at a different mode than N3 says
+
+PLAN item N3 names one instance: "the model synthesizes a mode at 186 Hz with
+T60 1.81 s, the longest-ringing thing it produces", and prescribes damping "the
+coupled (0,1) doublet specifically". **Those are two different modes.**
+
+The 186 Hz mode is the **batter head's (1,1)**, at the config in
+`testdata/physical-fit-tom.json` where the fitted DAMP and D.TILT scale the loss
+law down by about 2.6× on its k¹ term. It is not a doublet member, it is not
+axisymmetric, and it does not couple to the cavity at all through the compliance
+that makes a doublet: the swept area of every m > 0 mode is exactly zero, so the
+(1,1)'s only cavity path is to a transverse mode at 907 Hz, five times above it.
+
+Its budget, at that config:
+
+| term       | value |      share |
+| ---------- | ----: | ---------: |
+| `Loss1`·k  | 3.329 | **86.7 %** |
+| `Loss0`    | 0.490 |     12.8 % |
+| radiation  | 0.014 |      0.4 % |
+| `Loss2`·k² | 0.005 |      0.1 % |
+| correction | 0.000 |        0 % |
+
+And it is not an accident of the fit. γ is monotone in k with exactly one
+exception, the (0,1) correction, so **the longest-ringing mode is forced to be the
+lowest-wavenumber mode the correction table does not name** — the (1,1), at every
+tuning and every value of DAMP and D.TILT, both of which scale the whole law.
+At shipped defaults it is the (1,1) at 238.7 Hz, T60 587 ms, against the (0,1)'s
+213 ms. `TestTheLongestRingingModeIsTheLowestUncorrectedOne` pins it.
+
+So the prescribed fix cannot reach the named defect. The (0,1) is already the most
+heavily damped mode in the bank — its correction, 24.6 /s shipped, is more than
+twice its structural rate — and damping it further moves the (1,1) not at all.
+
+### The sign-pattern check N3 requires, run
+
+N3 says: before fitting any per-mode damping vector, check the sign pattern; if it
+reproduces the predicted pairwise alternation it is physics, if it is structureless
+it is fitted noise. That check is now possible, because the subspace estimator
+resolves the close pairs the fast one merges. Fourteen two-member pairs across the
+sixteen velocities:
+
+- **The pairwise structure is real and large.** Within a resolved pair the two
+  members' ring times differ by a median factor of **1.55**, minimum 1.11, maximum
+  7.25 — 0.222 s against 1.006 s at 587 Hz, 0.169 s against 1.226 s at 851 Hz. The
+  members sit 3–22 Hz apart, a 1–6 % split, across which any smooth γ(k) gives a
+  ratio of essentially 1.00. **No smooth loss law can express this**, which is the
+  half of N3's second thread that the evidence supports.
+- **The predicted sign is not there.** A cavity doublet's squeezing member is the
+  upper branch and should always be the more damped one. The upper member decays
+  faster in **6 of 13** pairs. That is a coin flip, and it is the answer N3's own
+  test asks for: on this evidence the alternation is not the in-phase/out-of-phase
+  signature.
+
+One limitation, stated because it bounds the conclusion rather than rescuing it:
+every resolved pair sits between 300 Hz and 2.7 kHz. The cavity doublet lives at
+the (0,1), and no pair was resolved there — the low band shows 155, 232–235, 289
+and 305 Hz components whose pairing is ambiguous. So this refutes the squeezing/
+sliding hypothesis **for the pairs that were measurable**, and is silent about the
+fundamental. What it establishes positively is that the model is missing pairwise
+damping freedom across the whole retained band, not only at m = 0 — which is a
+larger gap than N3 describes and points away from the cavity as its cause.
+
 ## What this changes
 
-1. The adoption gates must be re-derived from measured reproducibility rather than
-   from aspiration, and the partial-frequency, partial-decay and glide terms
-   down-weighted or dropped until the estimator is repaired. RMS aggregation
-   should be replaced with a robust statistic — every one of these terms is
-   outlier-dominated.
-2. The one actionable model defect is the **distribution of damping across modes**,
-   and specifically the under-damped coupled (0,1) doublet.
+1. ~~The adoption gates must be re-derived from measured reproducibility rather
+   than from aspiration~~ — **done twice**, Result 1 and then Result 7 after the
+   estimator repair invalidated it. RMS aggregation is now trimmed in the three
+   partial terms, which is what fixed the frequency gate.
+2. The one actionable model defect is the **distribution of damping across modes**
+   — but ~~specifically the under-damped coupled (0,1) doublet~~ is wrong, and
+   Result 8 replaces it. The (0,1) is the most heavily damped mode in the bank.
+   What is missing is **pairwise** damping freedom across the whole retained band,
+   measured at a median factor of 1.55 between members of a resolved pair, and it
+   does not carry the cavity's in-phase/out-of-phase signature.
 3. Six rounds of intervention against the spectral envelope were aimed at a number
    whose composition had never been decomposed. Decomposing a metric before
    optimising against it is cheap; not doing so cost this project months.
+4. Two of this document's own conclusions have now been withdrawn on later
+   evidence — "the partial terms were never gateable" (Result 7) and the (0,1)
+   doublet as N3's defect (Result 8). Both were stated with more confidence than
+   the measurement behind them supported. The pattern is worth naming, because
+   this path's recurring failure is not measuring too little but concluding too
+   much from what was measured.

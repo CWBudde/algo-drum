@@ -791,87 +791,177 @@ recording and can be taken at any time.
       aggregation is still used where the terms are outlier- rather than
       noise-dominated.
 
-      **Superseded in part.** N2 then found that the estimator these gates were
-      measured through was silently collapsing three of the sixteen takes to a
-      one-partial table. The gates must be re-measured; the reciprocal-gate rule
-      and the three findings stand, the numbers do not.
+      **Superseded, and the numbers below are stale.** N2 found that the estimator
+      these gates were measured through was silently collapsing three of the
+      sixteen takes to a one-partial table, and re-measured them: five of the nine
+      moved, all tighter. The reciprocal-gate rule and two of the three findings
+      stand; "the partial terms were never gateable" is withdrawn, and the numbers
+      are superseded by N2's. This item is left in place because N2's separation of
+      the two causes is measured against it.
 
-- [ ] **N2: repair the partial and decay estimators.** _Second estimator built and
-      the comparison run, 2026-08-01; the gate re-measurement is not done._
-      Evidence and every number below:
+- [x] **N2: repair the partial and decay estimators.** _Done 2026-08-01._ Evidence
+      and every number below:
       [`physical-objective-validation.md`](docs/physical-objective-validation.md)
-      §Result 5.
+      §Result 5 and §Result 7.
 
-      Done. Subband ESPRIT with a stabilisation sweep now exists beside the fast
-      estimator (`internal/physical/match/esprit.go`, its dense complex linear
-      algebra in `linalg.go`, exposed by `measure-tom -high-resolution`). It is
-      measurement equipment — no fit calls it and `Distance` does not know it
-      exists. It was compared partial-by-partial across all sixteen velocities,
-      which produced four findings and one repair:
+      Subband ESPRIT with a stabilisation sweep exists beside the fast estimator
+      (`internal/physical/match/esprit.go`, its dense complex linear algebra in
+      `linalg.go`, exposed by `measure-tom -high-resolution`). It is measurement
+      equipment — no fit calls it and `Distance` does not know it exists. The
+      partial-by-partial comparison this item gated everything on was run across
+      all sixteen velocities, and produced:
 
   - **A defect worse than either this item named, now fixed.** The decay fit was
     admitted on a sample count with no bound on the time it spans, so a 6.1 ms
     fragment on `v10` was fitted at −4034 dB/s and extrapolated back to a level of
     **+137 dB**, putting every genuine partial below the relative floor. Three of
     sixteen takes were reduced to one or two partials and the fundamental was
-    reported as 2349.6 Hz. All sixteen now yield sixteen partials. The guard is
-    that no fitted decay may be faster than the envelope filter's own fastest
-    pole.
-  - **The merge defect is real**: 24 fast partials stand for two or more modes,
-    recurring at 304, 351, 586–613 and 851 Hz. `ASYM` is indeed fitted against a
-    target with the asymmetry averaged out.
-  - **`FitQuality` does not discriminate.** Median ring-time disagreement is 39 %
-    at R² ≥ 0.95 and 44 % below it, so `partialDecayError`'s confidence weighting
-    is not protecting the decay term. That weighting needs replacing, not tuning.
+    reported as 2349.6 Hz. All sixteen now yield sixteen. The guard is that no
+    fitted decay may be faster than the envelope filter's own fastest pole.
+  - **The gates re-measured, by repository code.** `cmd/measure-objective` now runs
+    the campaign through the real `match.Distance`, rather than the standalone
+    reimplementation Result 1 relied on, and refuses a non-coincident pair instead
+    of trusting the operator. Five of the nine gates moved, every one of them
+    **tighter**: frequency 113 → 80 ¢, level 17.85 → 7 dB, decay 1.262 → 0.6,
+    unmatched 0.880 → 0.3, spurious 0.346 → 0.3. The target got harder, as this
+    item required.
+  - **The two causes separated by measurement.** Re-running with the trimming
+    disabled shows the estimator repair fixed level, decay, unmatched and
+    spurious — those four were measuring the collapsed takes and nothing else —
+    and the trimming fixed frequency, which the repair did not touch. Two
+    defects, neither substituting for the other.
+  - **RMS replaced by a trimmed RMS** in the three partial terms: the smallest
+    80 % of squared errors, nothing discarded below five pairs. This is aimed at
+    the estimator's tail, not at letting a model off — Unmatched, Spurious and
+    SpectralEnvelope are untrimmed, so anything a candidate fails to produce or
+    invents is still charged in full.
+  - **The decay term's confidence weighting is gone rather than replaced.** R²
+    does not discriminate (median |ΔT60| 40 % at R² ≥ 0.95, 55 % below). Its
+    replacement candidate, `DecayRangeDB`, was implemented, measured on the same
+    153 pairs, and does not discriminate either — it is not even monotone. An
+    unmeasured confidence is worse than none, because it reads as a guard. The
+    field is still reported; the term weights by nothing.
+  - **Karjalainen et al. (2002) implemented** — `decayFloorFit`, the explicit
+    exponential-plus-noise-floor model, Levenberg-Marquardt from the log-linear
+    estimate over the whole window. It is exact where truncation reads **+930 %**
+    long, on an ordinary configuration. On the licensed reference it changes
+    nothing measurable: 53 of 108 pairings move closer to the subspace estimate,
+    which is a coin flip. It is kept because it is right where the old one is
+    wrong and removes a threshold whose correctness depended on the signal — not
+    because it improved this reference, and it did not.
   - **ESTER is unusable here** — its criterion is not unimodal on this signal and
     its argmax picks order 1 for a band holding four partials. Implemented,
-    reported, and not used; a stabilisation sweep decides the order instead.
+    reported, not used.
 
-      Still open, and re-ordered by what the comparison showed:
+      Two predictions this item made were **refuted by the measurements it asked
+      for**, and both are load-bearing for what comes next:
 
-  - **Re-measure the reproducibility and reset the gates.** N1's gates were taken
-    with the pre-repair estimator, so the collapsed takes contributed one-partial
-    tables to them. This is now the first thing to do and it was not possible
-    before the repair.
-  - **Replace the decay term's confidence weighting**, and RMS aggregation where
-    the residual stays outlier-dominated.
-  - **Resolve the merged pairs in the fast estimator**, or accept the merge and
-    stop fitting `ASYM` against a target that cannot show it. `MinSeparationHz`
-    is not the whole of it: an FFT peak picker over an 800 ms Hann window cannot
-    separate 4 Hz at 213 Hz whatever the guard is set to.
-  - Karjalainen, Antsalo, Mäkivirta, Peltonen & Välimäki (JAES 50(11):867–878,
-    2002) — an explicit exponential-plus-noise-floor decay model — is **still
-    unimplemented**, and is now the most likely remaining improvement to the
-    decay estimate.
+  - The ring-time disagreement between the two estimators (median +27 %, fast
+    longer in 63 % of pairs) is **not an estimator defect**. Both recover a known
+    answer to within 3 % in the exact close-neighbour configuration the drum
+    imposes, and the Karjalainen model — the last remaining candidate repair —
+    moved it by nothing. What remains is that the reference's partials are not
+    single exponentials, which is a property of the drum. Three independent
+    measurements now say so. **Do not spend another round trying to fix it in
+    code.**
+  - "The partial terms were never gateable" was true of the collapsed
+    measurement and is **withdrawn**. 80 cents and 7 dB are wide, but they are
+    thresholds a model can be held to.
 
-      One thing this item predicted that the measurement **refuted**: the ring-time
-      disagreement between the two estimators (median +27 %, fast longer in 71 % of
-      pairs) is not an estimator defect. Both recover a known answer to within 3 %
-      in the exact close-neighbour configuration the drum imposes. What remains is
-      that the reference's partials are not single exponentials — a property of the
-      drum, which no estimator repair addresses. Do not spend another round trying
-      to fix it in the code.
+      Left deliberately undone: **the merged pairs are not resolved in the fast
+      estimator**, and `ASYM` is still fitted against a target with the asymmetry
+      averaged out. `MinSeparationHz` is not the whole of it — an FFT peak picker
+      over an 800 ms Hann window cannot separate 4 Hz at 213 Hz whatever the guard
+      is set to — so this is not a threshold change but a second estimator in the
+      fit loop, at seconds per candidate against milliseconds. It is carried to
+      **N15**, with the option of pinning `ASYM` instead.
 
-      **Expect the target to get harder, not easier; that is the correct outcome
-      and must not be tuned away.**
+- [ ] **N3: fix the damping distribution — the one real model defect.**
+      _Re-scoped 2026-08-01; the item as previously written named the wrong mode
+      and prescribed a fix that cannot reach it._ Evidence:
+      [`physical-objective-validation.md`](docs/physical-objective-validation.md)
+      §Result 8.
 
-- [ ] **N3: fix the damping distribution — the one real model defect.** The model
-      synthesizes a mode at 186 Hz with T60 1.81 s, the longest-ringing thing it
-      produces, with no counterpart in the recording. It is simultaneously the top
-      contributor to the spectral-envelope term, most of the spurious share, and
-      part of the frequency error — worth 0.654 of the old total on its own. Two
-      threads:
-  - Damp the coupled (0,1) doublet specifically. Prescribed in
-    [`physical-tom-review.md`](docs/physical-tom-review.md) as its item 2 and never
-    done.
-  - The missing freedom is **structured**, not free-per-mode. No smooth γ(k) can
-    reach the decay gate: fitting a smooth power law to the reference's own T60s
-    leaves 0.677, and the model already achieves 0.573. What a smooth law cannot
-    express is in-phase/out-of-phase head-pair splitting — the squeezing member
-    pumps the cavity and is heavily damped, the sliding member is not. The model
-    has that only for m = 0. **Before fitting any per-mode damping vector, check
-    the sign pattern**: if it reproduces the predicted pairwise alternation it is
-    physics; if it is structureless it is fitted noise.
+      What was wrong with it. The instance — "a mode at 186 Hz with T60 1.81 s,
+      the longest-ringing thing the model produces" — is the **batter head's
+      (1,1)**, seen at the fitted config where DAMP and D.TILT scale the k¹ term
+      down by ~2.6×. It is not a doublet member and not axisymmetric: every m > 0
+      mode has a swept area of exactly zero, so it has no path to the cavity
+      compliance at all, only to a transverse mode at 907 Hz. The prescribed fix,
+      "damp the coupled (0,1) doublet specifically", therefore moves it by
+      nothing — and the (0,1) is already the most heavily damped mode in the bank,
+      its correction more than twice its structural rate.
+
+      Nor is 186 Hz an accident of the fit. γ is monotone in k with exactly one
+      exception, the (0,1) correction, so **the longest-ringing mode is forced to
+      be the lowest-wavenumber mode the correction table does not name** — the
+      (1,1), at every tuning and every value of DAMP and D.TILT, both of which
+      scale the whole law. `TestTheLongestRingingModeIsTheLowestUncorrectedOne`
+      pins this so the next round cannot re-derive it from scratch.
+
+      **The sign-pattern check this item demanded has been run**, using the
+      subspace estimator to resolve the pairs the fast one merges. Fourteen
+      two-member pairs:
+
+  - **The pairwise structure is real and large.** Within a resolved pair the ring
+    times differ by a median factor of **1.55** (min 1.11, max 7.25) across a
+    1–6 % frequency split, where any smooth γ(k) gives 1.00. No smooth loss law
+    can express this. That half of the conjecture is confirmed, and it is the
+    strongest single piece of evidence this path has for what the model lacks.
+  - **The predicted sign is absent.** A cavity doublet's squeezing member is the
+    upper branch and should always be the more damped one; the upper member
+    decays faster in **6 of 13** pairs. On this evidence the alternation is not
+    the in-phase/out-of-phase signature, so **do not implement squeezing/sliding
+    damping as the fix** — that is what the check was for.
+  - Bounding the conclusion: every resolved pair sits between 300 Hz and 2.7 kHz.
+    No pair was resolved at the (0,1), so this is silent about the fundamental
+    specifically. What it establishes is that the missing freedom spans the whole
+    retained band rather than only m = 0, which is a **larger** gap than this item
+    described and points away from the cavity as its cause.
+
+      So the threads are now:
+
+  - **Find what the pairwise splitting actually is.** Real heads split degenerate
+    pairs through thickness and tension inhomogeneity (Worland, JASA 2010), which
+    splits frequency — `ASYM` models that — but the measurement says the two
+    members also *decay* differently, which `ASYM` does not touch. A per-pair
+    damping split with no predicted sign is the shape the evidence supports.
+    Whether that is physics or two modes the estimator is trading energy between
+    is the first thing to establish, and it is answerable: synthesise a known
+    split pair with equal damping and check the subspace estimator does not
+    invent a 1.55 ratio.
+  - **The (1,1) is a separate problem** and the reachable lever for it is the
+    shape of γ(k), not the cavity. Fitting a smooth power law to the reference's
+    own T60s leaves 0.677 and the model already achieves 0.573, so a smooth law
+    is not it either. A second correction-table entry is the cheap experiment and
+    is honest only if it is labelled as fitted.
+  - **Before fitting any per-mode damping vector**, the standing rule still
+    applies and has now been shown to earn its keep: check the structure first.
+    It cost one afternoon and it refuted the mechanism this item was going to
+    spend a round implementing.
+
+- [ ] **N15: decide what to do about `ASYM` and the merged pairs.** _Split out of
+      N2, 2026-08-01._ The fast estimator merges 15–24 of ~160 matched partials
+      into single peaks, recurring at 304, 351, 586–613 and 851 Hz, so `ASYM` is
+      fitted against a target with the asymmetry averaged out of it. This is not a
+      guard setting: an FFT peak picker over an 800 ms Hann window cannot separate
+      4 Hz at 213 Hz at any value of `MinSeparationHz`.
+
+      Three options, and the choice is a real one:
+
+  - Put the subspace estimator in the fit loop. Correct, and costs seconds per
+    candidate against milliseconds — a fit is ~90 000 evaluations.
+  - Run it on the reference only. **Rejected as written**: reference and candidate
+    would then be measured by different instruments, and the partial terms would
+    be scoring the difference between two estimators as if it were the model's
+    error. N2 measured that difference at a median 43 % on ring time.
+  - Pin `ASYM` and stop fitting it. Cheapest, and honest — a parameter the
+    objective cannot see should not be reported as fitted. It stays a user knob.
+
+      Blocked on N3's first thread: if the pairwise splitting turns out to be
+      damping rather than frequency, `ASYM` is the wrong parameter regardless and
+      the question changes.
+
 
 - [ ] **N4: recompute the cavity stiffness against a known-geometry drum.**
       `Cavity.StiffnessScale` ships at 0.083, a factor of twelve below its physical
