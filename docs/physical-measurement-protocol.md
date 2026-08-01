@@ -327,8 +327,21 @@ the coupled `(1,1)/(0,1)`. Re-derive the expected values from the current
 configuration rather than from a table here: N4 retargets the cavity stiffness
 and N5 refits against the licensed reference, and both move these lines.
 
-Note what the same table says about the **ratio base**: the fundamental comes out
-well below the strongest partial on the model's own output, because the attack
-layer dominates the top of the band. That is why `-base-window-db` defaults to 30
-and why `-base-hz` exists. On a recording, look at the table before believing the
-ratios.
+Note what the same table says about the **ratio base**. `-base-window-db` is how
+far below the strongest partial the base may sit, and it now defaults to **20 dB**
+rather than 30, matching `match.DefaultOptions().GlidePartialWindowDB` so that the
+two tools pick the same fundamental from the same recording.
+
+30 was chosen when the attack layer dominated the top of the model's band and the
+fundamental came out well below the strongest partial. That is no longer the case:
+on the shipped configuration the model's fundamental **is** its loudest partial,
+and 20 and 30 return the same base. On the reference they do not. At 30 dB, two of
+the sixteen `tt08x08/lp/hd` takes hand the note to a peak 25 dB down — 199.5 Hz on
+`v04`, 159.7 Hz on `v05`, against the 239 Hz the other fourteen agree on — and
+every base-keyed number follows: the ratio column, the base T60, and the
+repeatability summary, which read **SD 182 cents** for a drum that is stable to
+**SD 2.9 cents** across all sixteen hits.
+
+So: look at the table before believing the ratios, and if a base looks wrong,
+`-base-hz` forces it. A repeatability spread of hundreds of cents across takes of
+one drum at one tuning is nearly always this, not the instrument.

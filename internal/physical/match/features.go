@@ -96,10 +96,28 @@ type Options struct {
 // explained where it is not obvious.
 func DefaultOptions() Options {
 	return Options{
-		// A tom is 40 dB down inside a second. Past that a close-microphone
-		// recording is mostly room, which the model does not have and should
-		// not be fitted to.
-		AnalysisSeconds: 1.2,
+		// Long enough to contain the decay of the drum being measured, which is
+		// the only thing that makes a ring time evidence rather than an
+		// extrapolation.
+		//
+		// This was 1.2 s until PLAN N17, on the reasoning that a tom is 40 dB
+		// down inside a second and past that a close-microphone recording is
+		// mostly room. The first half of that is a statement about a particular
+		// drum and it did not survive the reference moving: on
+		// reference/tt08x08/lp/hd the fundamental rings 0.686 s and the longest
+		// partial 2.5 s, and at the old window the low band's ring times moved
+		// 18.9 % when it was widened by a third. Re-measured across window ends
+		// — partial-matched by frequency within 0.5 %, median |log2 T60 ratio|
+		// below 1 kHz — the movement falls 18.9 % -> 8.1 % -> 4.1 % -> 1.4 % at
+		// window ends 0.60, 0.90, 1.20, 1.60, 1.90 s. 1.60 is where it converges;
+		// the numbers below are that, plus the room the fit needs on either side.
+		//
+		// The room-tail concern is real and is now answered where it belongs.
+		// It is not the analysis span's job to bound the estimator's credulity
+		// by staying too short to see anything: slowestSupportedT60 rejects a
+		// decay this window cannot support, whatever its length, and
+		// DecayFitFloorDB truncates the trace before a floor can flatten it.
+		AnalysisSeconds: 2.0,
 
 		MaxPartials:    16,
 		MinFrequencyHz: 60,
@@ -122,9 +140,12 @@ func DefaultOptions() Options {
 		FFTSize:                 1 << 16,
 
 		// The fit starts after the contact pulse and the glide have settled and
-		// stops where a room tail would start to dominate a real recording.
+		// runs until the ring times it reports stop moving — 1.60 s, per the
+		// convergence measured in AnalysisSeconds above. It ended at 0.60 s
+		// before PLAN N17, which was shorter than 30 % of this reference's own
+		// partials and rendered the longest of them meaningless.
 		DecayFitStartSeconds: 0.05,
-		DecayFitEndSeconds:   0.60,
+		DecayFitEndSeconds:   1.60,
 		DecayFitFloorDB:      -45,
 
 		GlideEarlySeconds: 0.030,
@@ -152,7 +173,12 @@ func DefaultOptions() Options {
 			{Name: "attack", StartSeconds: 0, EndSeconds: 0.020},
 			{Name: "early", StartSeconds: 0.020, EndSeconds: 0.100},
 			{Name: "body", StartSeconds: 0.100, EndSeconds: 0.400},
-			{Name: "tail", StartSeconds: 0.400, EndSeconds: 1.200},
+			// The tail window ends where the analysis does. It has to track
+			// AnalysisSeconds rather than hold a number of its own: audio
+			// inside the analysis span but past the last window is measured by
+			// nothing, so the spectral-envelope term would simply stop looking
+			// at 1.2 s while every other term went on to 2.0.
+			{Name: "tail", StartSeconds: 0.400, EndSeconds: 2.000},
 		},
 		WindowFFTSize:  1 << 14,
 		BandMinHz:      50,
@@ -650,6 +676,46 @@ func fastestObservableT60(cutoffHz float64) float64 {
 	return 3 * math.Ln10 / (dampingRatio * 2 * math.Pi * cutoffHz)
 }
 
+// minimumEvaluationFallDB is how far a partial must actually fall inside its fit
+// window before a ring time may be extrapolated from it.
+//
+// 20 dB is ISO 3382's own answer. A T60 is a 60 dB fall, and a 60 dB fall is
+// almost never observed above the noise, so the standard defines T20 and T30 —
+// ring times read off a 20 or 30 dB decay and multiplied out. It sanctions
+// nothing shorter than 20 dB, and this is the same judgement applied to a
+// partial rather than to a room: below it the extrapolation factor passes three
+// and the answer is mostly the estimator's opinion.
+const minimumEvaluationFallDB = 20
+
+// slowestSupportedT60 is the longest ring time a fit window of this length can
+// carry evidence for, which by the constant above is exactly three times the
+// window.
+//
+// This is the counterpart of fastestObservableT60 and catches the opposite
+// failure. That bound rejects a decay too fast for the envelope filter to have
+// produced; this one rejects a decay too slow for the window to have seen. The
+// two are not symmetric in how they go wrong: an impossibly fast fit announces
+// itself with a catastrophic intercept, while an unsupported slow one looks
+// entirely ordinary and is simply the fitted line's opinion about audio that was
+// never examined.
+//
+// The failure is not hypothetical. On reference/tt08x08/lp/hd, measured through
+// the 0.60 s window this repository shipped until PLAN N17, the ~358 Hz partial
+// came back between 5.1 and 10.4 s across the sixteen takes at R² 0.12-0.77 —
+// a factor of two of disagreement about one component of one drum. It is a real
+// partial: at a 1.60 s window the same component reads 2.48-2.59 s at R²
+// 0.95-0.98, a factor of 1.04. Nothing about the drum changed, only whether the
+// window contained the decay being reported.
+//
+// Note what this deliberately does not do. It does not bound a ring time against
+// the file's own length, which was the first criterion tried and is wrong: a
+// 2.5 s partial in a 2.08 s recording is perfectly measurable if it fell 37 dB
+// while the window was open, and twelve of this reference's partials are exactly
+// that. Evidence is the fall, not the duration.
+func slowestSupportedT60(fitSpanSeconds float64) float64 {
+	return 60 * fitSpanSeconds / minimumEvaluationFallDB
+}
+
 // prominenceDB is how far a peak stands above the higher of the two valleys
 // separating it from a taller peak — the standard topographic definition.
 //
@@ -1053,6 +1119,18 @@ func measureDecays(hit []float64, sampleRateHz float64, options Options, partial
 			// 144 dB above the loudest real partial — after which every genuine
 			// partial sat below the -42 dB relative floor and was discarded.
 			// TestImpossibleDecaysDoNotSilenceTheTable pins it.
+			continue
+		}
+
+		if t60From(slope) > slowestSupportedT60(float64(end-start)/sampleRateHz) {
+			// Slower than this window can carry evidence for. See
+			// slowestSupportedT60: the partial is dropped rather than reported
+			// with a ring time the recording was never examined far enough to
+			// support.
+			//
+			// The span is measured from the clamped sample indices rather than
+			// from DecayFitEndSeconds, so a file that ends before the window
+			// does is judged on the audio it actually has.
 			continue
 		}
 

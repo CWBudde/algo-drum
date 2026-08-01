@@ -1115,7 +1115,61 @@ recording and can be taken at any time.
 
           Practical constraint: the analysis window is 1.2 s and the MP files are
           1.25 s; the higher tunings are shorter and need the tail window shortened
-          before they can be used.
+          before they can be used. Superseded for the current reference by N17,
+          which sizes both windows against the 2.08 s low-pitch files.
+
+      **Geometry is pinned as of 2026-08-01, and no longer part of this item.**
+      `cmd/fit-physical` gained `-set`, which freezes a parameter at a value in its
+      own unit rather than at a normalized position — `drum.ParamSpec.Unmap` is the
+      inverse of the curve `Map` applies, so the caller states 0.2032 m and the
+      model receives 0.2032 m. `just fit-physical` reads `<diameter>x<depth>` off
+      the reference path and passes both, so pointing it at another pack moves the
+      geometry with it and a recording outside `reference/<WxH>/` leaves them free
+      and says so. This matters more than it sounds: `SIZE` and `DEPTH` default to
+      0.3048 m and 0.20 m, so every fit against this 8" × 8" reference up to now
+      was free to answer it with a 12" head on a 20 cm shell — and did, without
+      anything in the report marking it as odd. Two of eighteen parameters are now
+      constants the recording cannot argue with. The head gauges are still fitted;
+      turning the stated Remo ply thicknesses into surface densities is the
+      remaining half of this paragraph.
+
+      **What the sixteen takes determine, measured 2026-08-01** — with the base
+      rule repaired (see below), on `tt08x08/lp/hd`, `cmd/measure-tom -channel
+      mono`:
+
+  - **Batter tuning is nailed.** f0 = **239.66 Hz, total spread 11.6 cents across
+    all sixteen hits**. With the diameter now pinned, that is a direct read on
+    `B.TUNE` and should be seeded or pinned rather than searched — a search that
+    lands 50 cents off is landing outside the instrument's own repeatability.
+  - **The contact model has a clean velocity signature.** Attack balance runs
+    −11.6 dB at v01 to −4.1 dB at v16, **+0.64 dB per step at R² = 0.78**, a 10 dB
+    swing. That is the observable for `HARD`, `ATK.L`, `ATK.T` and the strike
+    velocity map, and it is monotone enough to fit against directly. It is also
+    the term whose reproducibility floor is tightest (0.81 dB p90), so the swing
+    is twelve times the noise.
+  - **The Berger nonlinearity is visible in the glide series.** Per-hit glide runs
+    a median **13.7 ¢ over the soft half against 37.3 ¢ over the hard half**, a
+    factor of 2.7. This is the identification signal the item is built on, and it
+    survives on this reference where the previous one could not measure glide at
+    all. Three of sixteen takes still return no reading.
+  - **The higher mode ratios do not survive the take-to-take comparison.** Only
+    three components appear in twelve or more of the sixteen takes: f/f0 1.000,
+    1.068 and 1.495. The fast estimator retains a different set of partials on
+    each hit, so there is no stable ratio table to pin `R.TUNE` or the cavity
+    coupling against — the fundamental is the only frequency the series agrees
+    on. Repairing that is N17 and N2, and it is the blocker on pre-deriving
+    anything beyond `B.TUNE` from frequencies.
+
+      **A measurement defect found and fixed on the way.** `cmd/measure-tom`
+      defaulted `-base-window-db` to 30 while `match` picks the fundamental for its
+      own glide term at 20, with a written argument for 20 that this violated. At
+      30, `v04` and `v05` handed the note to peaks 24.6 and 26.0 dB down — 199.5
+      and 159.7 Hz against the 239 Hz the other fourteen agree on — and every
+      base-keyed quantity followed. The repeatability summary read **SD 182 cents,
+      spread 709** for a drum stable to **SD 2.9 cents**. Two misidentifications,
+      reported as a property of the instrument. The default is now 20 and the two
+      tools ask the same question the same way; anything quoting the old spread
+      figure is quoting an artefact.
 
 - [ ] **N6: measure identifiability before trusting any fitted bank.** The
       converged fits show the textbook sloppy-model signature (Gutenkunst et al.,

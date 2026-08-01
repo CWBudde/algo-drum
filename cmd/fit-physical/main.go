@@ -292,7 +292,12 @@ func run(args []string, stdout, stderr io.Writer) error {
 	referencePath := flags.String("reference", "", "reference WAV file (required)")
 	channel := flags.String("channel", string(match.ChannelMono), "channel reduction: mono, left or right")
 	outputPath := flags.String("o", "-", "JSON report path, or - for stdout")
-	duration := flags.Float64("duration", 1.2, "candidate render duration in seconds")
+	// Defaulted from the analysis span rather than written out, because the two
+	// are not independent: a candidate rendered for less than the objective
+	// measures is scored partly on silence, and the reference is not. They were
+	// separate literals until PLAN N17 and had already drifted apart by 0.4 s.
+	duration := flags.Float64("duration", match.DefaultOptions().AnalysisSeconds,
+		"candidate render duration in seconds; must cover the analysis span")
 	quality := flags.String("quality", string(physical.QualityDraft),
 		"mode budget during the search: draft, standard or high")
 	contact := flags.String("contact", "",

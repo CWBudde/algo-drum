@@ -75,7 +75,22 @@ func run(args []string, stdout, stderr io.Writer) error {
 		"where the per-partial decay fit begins, after the onset")
 	decayEnd := flags.Float64("decay-end", defaults.DecayFitEndSeconds,
 		"where the per-partial decay fit ends; shorten it in a live room")
-	baseWindowDB := flags.Float64("base-window-db", 30,
+	// 20 dB, matching match.DefaultOptions().GlidePartialWindowDB, which picks
+	// the fundamental for the glide measurement by the same rule and states the
+	// reason: wide enough to reach past a strongly radiating upper mode to the
+	// fundamental below it, narrow enough that a shell resonance or a room mode
+	// well down cannot claim the note. Two tools asking the same question of the
+	// same recording should not answer it differently.
+	//
+	// It was 30 here, and on reference/tt08x08/lp/hd that cost two of the
+	// sixteen takes: v04 and v05 have peaks 24.6 and 26.0 dB down, at 199.5 and
+	// 159.7 Hz, which claimed the note from the 239 Hz fundamental the other
+	// fourteen agree on. Everything keyed to the base followed them — the ratio
+	// column, the base T60, the repeatability summary — and the summary read
+	// **SD 182 cents, spread 709** for a drum whose tuning is in fact stable to
+	// SD 2.9 cents across all sixteen hits. Two misidentifications, not a
+	// property of the instrument.
+	baseWindowDB := flags.Float64("base-window-db", 20,
 		"the ratio base is the lowest partial within this much of the strongest")
 	baseHz := flags.Float64("base-hz", 0,
 		"take every ratio against the partial nearest this frequency instead")
