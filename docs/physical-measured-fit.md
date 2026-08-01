@@ -1,68 +1,57 @@
 # Fitting the physical Tom to a recording
 
-This document records the measurement, the search, what the first fit found, the
-refits that gave each contact model the same budget over the same bank, and the
-**two** corrections to the measurement itself, each of which superseded every fit
-number measured before it.
+This document records the fitting method — what is measured, how it is scored,
+and how the search is run — together with what that objective can and cannot
+resolve, and the two model errors that survive the measurement.
 
-It does **not** close P6's _"fit documented presets from measurement"_ item, and
-it does not meet P8's exit criterion. It builds the machinery both of those need
-and reports honestly how far one recording gets: on the corrected measurement all
-three gate terms are missed, and the shipped default is left alone as a result.
-The gap it leaves is specific enough to be the next piece of work.
+It does not report a current fit. Every fitted bank in the repository was
+measured against `reference/tom.wav`, a recording of unknown provenance now
+being retired, and against an objective whose partial terms have since been
+shown not to reproduce. Both are covered by
+[PLAN.md § P10](../PLAN.md#open-work-p10),
+which is the authority for the plan; this page is the method and the evidence
+behind it and deliberately does not restate P10 at length.
 
-The current result is
-[the refit on the corrected glide term](#the-refit-on-the-corrected-glide-term-2026-08-01).
-**Two objective changes cut this page in three**, and a total from one part cannot
-be compared with a total from another:
+The evidence behind that second claim — how the objective was scored against
+itself, the reproducibility tables, the residual budget and the falsification
+tests — lives in
+[`physical-objective-validation.md`](physical-objective-validation.md). Read it
+before quoting any partial term from any run, past or future.
 
-| Era                                                                                  | What changed                                                           | Status                   |
-| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- | ------------------------ |
-| before [the partial correction](#a-correction-to-the-partial-measurement-2026-07-31) | the partial-level estimator and the detection aperture                 | superseded; do not quote |
-| between it and [the glide correction](#a-correction-to-the-glide-term-2026-08-01)    | the glide was read off the loudest partial rather than the fundamental | superseded; do not quote |
-| after the glide correction                                                           | —                                                                      | current                  |
+## The reference
 
-Every number produced before the last of those was produced by a **different
-objective** than the one that runs today. Nothing below carries an offset that
-could be subtracted out; where a superseded number is kept because the reasoning
-around it still holds, it is labelled as measured under the old objective. A
-report from any era can be re-scored under today's objective — see
-[the re-scoring recipe](#re-scoring-an-archived-report-under-todays-objective),
-which is now the only way to compare an archived fit against a current one.
+The committed reference is the licensed set `reference/tt08x08-mp-hd-v01..v16.wav`
+— an 8" × 8" tom, Remo coated Ambassador batter and clear Diplomat resonant
+head, medium tuning, head strikes at sixteen velocities, 48 kHz 24-bit stereo,
+CC BY 4.0 (Freesound user `quartertone`, pack "Tomtom 08x08inch-multisampled").
+`reference/CREDITS.md` is committed and is the authority on licence, attribution,
+what was verified and what was not, and the measured properties of the files.
 
-## Provenance, and its limits
+Two properties of it matter for everything below:
 
-The target is a tom recording of **unknown provenance** — a sample-library
-file, with no record of the drum's dimensions, head, tuning, mallet,
-microphone, geometry, gain chain or room, and no license the repository could
-redistribute under.
+- **The stereo pair is coincident.** Peak inter-channel correlation falls at
+  exactly 0 samples of lag, at 0.87–0.97 across the set. Summing to mono is safe
+  — there is no comb filter — and, more importantly, the two channels are two
+  observations of the same acoustic event, which is what makes the
+  reproducibility measurement below possible.
+- **The instrument is stated.** Shell diameter and depth are known, so `SIZE` and
+  `DEPTH` are constants rather than fitted parameters, and the head gauges fix
+  both surface densities. Strike position and angle and microphone position and
+  angle remain fitted.
 
-So, plainly: **this is a timbre-match target, not an acoustic validation
-recording.** P6 gates a measured calibration on recorded provenance, and none of
-it is available here. Nothing in the test suite depends on the file,
-`reference/` is gitignored, and no claim in this document should be read as
-"the model was validated against a real drum". What it says is narrower and
-still worth having: given one recorded tom, here is how close the shipped
-parameter range can get to it, and where it runs out of room.
-
-Measured properties of the file itself, which is all the provenance there is:
-
-|                     |                                           |
-| ------------------- | ----------------------------------------- |
-| Format              | 44.1 kHz, 16-bit stereo, 4.49 s           |
-| Level               | peak normalized (1.000 left, 0.762 right) |
-| Channel correlation | 0.36 — there is a room on it              |
-| Onset               | sample 0; the file is trimmed to the hit  |
+`reference/tom.wav` — 44.1 kHz, a **spaced** pair 1.56 ms apart correlating 0.36
+at zero lag, no stated instrument, no licence, not committable — is superseded
+and is being retired (P10's N8). It is a timbre-match target and never was an
+acoustic validation recording; no test depends on it.
 
 ## What is measured
 
 `internal/physical/match` reduces a hit — recorded or rendered — to the same
 feature vector, and `Distance` scores two of them. Everything is built on
-`algo-dsp` and `algo-fft`; nothing here is a hand-rolled transform.
-
-Both sides are peak-normalized at the onset and every term is **gain
-invariant**, which is forced on us: the reference is normalized, so its
-loudness carries no information at all.
+`algo-dsp` and `algo-fft`; nothing here is a hand-rolled transform. Both sides
+are peak-normalized at the onset and every term is **gain invariant**, which is
+forced on us: the reference is normalized, so its loudness carries no
+information.
 
 | Feature            | How                                                                                                                                                                                                                               | Reused from                              |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
@@ -78,137 +67,214 @@ loudness carries no information at all.
 
 ### The distance
 
-Nine terms, each in its own perceptual unit so it can be read against a
-tolerance rather than only against another run. The weight on each is the
-reciprocal of that term's "clearly wrong" threshold — 25 cents of pitch, 3 dB
-of partial balance, a factor of 1.4 in ring time, 4 dB of spectral shape, 3 dB
-of envelope, 40 cents of glide, 6 dB of attack balance, and the two partial-
-coverage shares below — so a just-audible
-error anywhere contributes about the same amount, and the sum means something.
+Nine terms, each in its own perceptual unit so it can be read against a tolerance
+rather than only against another run. The weight on each is the reciprocal of that
+term's **adoption gate**, so a candidate scoring at its gate contributes exactly
+1.0 and the terms are commensurable. The gates and the weights are therefore one
+set of numbers, not two — `AdoptionGates()` is `DefaultWeights()` inverted, and
+`TestWeightsAreReciprocalGates` keeps them that way.
 
-Partials are identified greedily by closeness in cents, each candidate claimed
-at most once, with a tolerance that widens with mode index. Real two-headed
-drums scatter ±20 % around the ideal Bessel series in both directions
-(Richardson, Toulson & Nunn, _JASA_ 131(1) 2012); insisting the tenth partial
-land as tightly as the first would make the series unmatchable rather than the
-fit precise.
+Since **2026-08-01** the gates are measured rather than asserted. Each is the 90th
+percentile of the objective's disagreement with itself over the sixteen velocities
+of the coincident reference pair, scored channel-against-channel in both
+directions — the floor below which a candidate is indistinguishable from a second
+microphone at the same point:
+
+| Term              | Old gate | Measured p90 | Gate now |
+| ----------------- | -------- | ------------ | -------- |
+| Partial frequency | 25 ¢     | 113.0 ¢      | 115 ¢    |
+| Partial level     | 3 dB     | 17.85 dB     | 18 dB    |
+| Partial decay     | 0.25\*   | 1.262        | 1.25     |
+| Spectral envelope | 4 dB     | 3.65 dB      | **4 dB** |
+| Envelope          | 3 dB     | 3.81 dB      | 4 dB     |
+| Glide             | 40 ¢     | 310.3 ¢      | 310 ¢    |
+| Attack balance    | 6 dB     | 1.12 dB      | 1.2 dB   |
+| Unmatched share   | 0.5      | 0.880        | 0.9      |
+| Spurious share    | 0.5      | 0.346        | 0.9      |
+
+\* the old decay _weight_ was `1/0.35` against a gate documented as 0.25 — the one
+place the reciprocal rule was silently broken, so every decay contribution ever
+reported was scaled by a threshold nobody had adopted.
+
+Three things follow, and they are the point of the table:
+
+- **The spectral envelope is the only gate that was ever right.** Its floor is
+  3.65 dB against a gate of 4. Every conclusion drawn from that term stands.
+- **The partial terms were never gateable.** 115 cents is more than a semitone;
+  the number is honest and useless as a quality statement. They are kept at that
+  scale so a candidate cannot be _worse_ than noise, and nothing more is claimed
+  for them until P10/N2 repairs the estimators.
+- **Attack balance was the most reproducible term in the objective and carried the
+  least weight** — 0.26 dB median self-disagreement, better than the spectral
+  envelope's, against a weight of `1/6`. It is now `1/1.2`.
+
+The consequence is arithmetic and damning: at the old weights the objective's
+disagreement with itself totalled **12.89**, while the best fit ever recorded
+scored **10.38** — below the noise floor. At the measured weights the floor is
+**4.32 median / 6.46 at p90**, with no term contributing more than 0.79 at its own
+median. Every total recorded before this change is on the old scale and is not
+comparable to anything after it.
+
+`Spurious` is the one deliberate departure: its floor of 0.346 would justify
+`1/0.35`, which is 2.6× `Unmatched` — an asymmetry a fit run has already refuted
+(see below). Both keep `Unmatched`'s gate.
+
+Partials are identified greedily by closeness in cents, each candidate claimed at
+most once, with a tolerance that widens with mode index. Real two-headed drums
+scatter ±20 % around the ideal Bessel series in both directions (Richardson,
+Toulson & Nunn, _JASA_ 131(1) 2012); insisting the tenth partial land as tightly
+as the first would make the series unmatchable rather than the fit precise.
 
 **Deliberately not used:** any sample-aligned waveform comparison.
 `analysis.CompareSignals`' NRMSE and correlation stay where they are, for
-regression between two renders of the same model. Against a room recording of a
+regression between two renders of the same model. Against a recording of a
 different physical drum they measure the phase relationship between two signals
 that were never meant to share one — large for candidates that sound identical,
 small for candidates that do not.
 
-### Four measurement problems worth recording
+### The two coverage terms, and why both exist
 
-All were found by measurement, not by inspection, and all changed the design.
-The last two were found only after listening to a fitted bank that the distance
-called good and that plainly was not — the metric ranked candidates correctly
-while being wrong about all of them in absolute terms.
+Three degeneracies were found by measurement, each of which the search reached
+within minutes, and the shape of the distance is what closes them.
 
-**A phantom partial, and why the floor is not the fix.** The reference has a
-genuine, isolated component at 87 Hz — 22 dB of topographic prominence, so not
-a shoulder — that is 39.5 dB below the fundamental. A bare local-maximum test
-also accepted ripples on the fundamental's skirt, which prominence now rejects.
-But the 87 Hz peak is real, and no model of a two-headed drum will produce it.
-A level floor tight enough to exclude it also discards the 500–700 Hz cluster
-that carries the drum's character. The fix is instead in the distance: the
-`Unmatched` term is weighted by how loud each partial is, not by count, so
-failing to reproduce a partial costs roughly what that partial was worth. It was
-first weighted by **energy**; see below for why that was too strong a form of
-the same idea.
+- **An error averaged over matched pairs is zero when there are no pairs.** A
+  candidate producing one partial in the wrong place therefore scored better on
+  three of the nine terms than any real drum can. Each partial term is now
+  blended against a fixed penalty in proportion to the unmatched share of the
+  reference, so a missing partial costs what a present-but-wrong one costs.
+  `TestSilenceIsNeverCheaperThanADrum` pins it.
+- **The unmatched share must not be weighted by energy.** Energy is dominated by
+  whichever partial is loudest, so a candidate reproducing that one partial and
+  nothing else reported an unmatched share near zero and the blend did nothing.
+  Each partial is now worth **how far it stands, in dB, above the detection
+  floor** — zero at the floor, growing with prominence; monotone in loudness like
+  energy but compressed. `TestOneLoudPartialIsNotADrum` states the defect
+  directly, and `TestAudibilityFloorTracksTheDetectionFloor` fails if the scoring
+  floor and `Options.PartialFloorDB` drift apart.
+- **Invented partials were free**, which just moves the degenerate optimum from
+  too few modes to too many: `matchPartials` iterates the _reference_, so a
+  candidate partial with no counterpart reached the total only through the
+  spectral envelope. `Spurious` is the mirror image — the share of the
+  candidate's partial audibility, under the same weighting, that no reference
+  partial claimed.
 
-**A degenerate optimum, and the blend that closes it.** An error averaged over
-matched pairs is zero when there are no pairs. A candidate that produces one
-partial in the wrong place therefore scored _better_ on three of the nine
-terms than any real drum can — and the search found it immediately, reaching
-11.2 against the shipped default's 39.2 from a render that sounded like
-nothing. Each partial term is now blended against a fixed penalty in proportion
-to the unmatched share of the reference, so a partial that is missing costs what a
-partial that is present but wrong costs.
-`TestSilenceIsNeverCheaperThanADrum` pins it.
+`Spurious` carries the **same** weight as `Unmatched`, and setting it larger cost
+a run: the search abandoned the drum for two partials, having found that
+inventing nothing is easiest when there is nothing. The blend already supplies
+the asymmetry toward completeness; supplying it a second time through the weight
+inverts the degeneracy instead of closing it.
+`TestSpuriousDoesNotOutweighCompleteness` pins the inequality — and says
+explicitly that it cannot pin the behaviour, because the failure lives in the
+composition of the model with the metric.
 
-**Energy weighting reopened the same degenerate optimum.** The blend above only
-works if the unmatched share is an honest measure of what is missing, and
-weighted by energy it is not. Energy is dominated by whichever partial is
-loudest, and on this reference the 212.78 Hz partial carries **99.4 %** of it.
-A candidate reproducing that one partial and nothing else therefore reported an
-unmatched share of 0.006 — so the blend did nothing, and the three partial
-terms averaged over the single pair that matched and returned excellent numbers
-for a drum with one mode in it. Six of the nine terms were scoring one partial.
-Repricing the two stopped fit runs under the corrected weighting moved them from
-4.517 and 7.827 to **13.143** and **15.102**, and their partial frequency error
-from 9.7 ¢ to 88.1 ¢.
+`Spurious` is counted **only between the lowest and highest reference partial**.
+Outside that span the reference's own detection is unproven, so a partial out
+there is charged by the spectral envelope, on evidence, and not by this.
 
-Plain counting would overcorrect, because of the 87 Hz phantom above: missing a
-component 39 dB down must not cost what missing the fundamental costs. Each
-partial is now worth **how far it stands, in dB, above the detection floor** —
-zero at the floor, growing with prominence. Monotone in loudness like energy,
-but compressed enough that six missing quiet partials cost 54 % rather than
-0.6 %. `TestOneLoudPartialIsNotADrum` states the defect directly, and
-`TestAudibilityFloorTracksTheDetectionFloor` fails if the scoring floor and
-`Options.PartialFloorDB` ever drift apart.
+## What the objective can and cannot measure
 
-**And the mirror of it: invented partials were free.** Making missing partials
-expensive without charging for invented ones just moves the degenerate optimum
-from too few modes to too many. `matchPartials` iterates the _reference_, so a
-candidate partial with no reference counterpart is invisible to every partial
-term and reaches the total only through the spectral envelope. The first run
-under the corrected weighting demonstrated it within six minutes: the candidate
-covered all seven reference partials, reported an unmatched share of **0.000**,
-and made its second-loudest component an invented 182 Hz mode 15 dB down.
+This is the strongest methodological result on the path, and it invalidates most
+of what was previously concluded from these terms.
 
-The `Spurious` term is the mirror image — the share of the candidate's partial
-audibility, under the same dB-above-floor weighting, that no reference partial
-claimed.
+The licensed pair is coincident: two microphones at one point capturing one
+event. Reducing each channel separately through the same feature extraction and
+scoring one against the other therefore measures the **objective's disagreement
+with itself**, with no room path available to explain it. That was done across all
+sixteen velocities, and the result is that **the partial-frequency,
+partial-decay, partial-level and glide terms are not reproducible measurements** —
+their self-disagreement exceeded the adoption gates they were scored against, so
+the 25 ¢ and 0.25 gates were never achievable by any model. The spectral envelope
+is the only one of the nine terms that reproduces, and its self-disagreement is the
+floor any envelope figure must be read against.
 
-**It carries the same weight as `Unmatched`, and getting that wrong cost a run.**
-It was first set larger, at 1/0.2, on the reasoning that nothing else in the sum
-absorbs an invented partial while a missing one is charged twice — once directly
-and once through the blend. A fit refuted that within fourteen minutes: it
-abandoned the drum for **two partials** and a spurious share of 0.000, having
-found that inventing nothing is easiest when there is nothing. Measured on that
-run's own candidates, the dense and sparse extremes came out within 0.12 of each
-other, so the search simply drifted between them.
+That distribution is now what the gates are set from; see the table above.
 
-The two pressures are the same quantity seen from opposite sides. The blend
-already supplies the asymmetry toward completeness that the argument above wanted;
-supplying it a second time through the weight inverts the degeneracy instead of
-closing it. `TestSpuriousDoesNotOutweighCompleteness` pins the inequality — and
-says explicitly that it cannot pin the behaviour, because the failure lives in the
-composition of the model with the metric. Dropping a partial from a synthetic
-candidate leaves its invented partials in place, so the total rises monotonically
-at either weight; in the search, coverage and invention move together, since both
-are consequences of the same tuning.
+The method, the exact commands and the full tables for both references are in
+[`physical-objective-validation.md`](physical-objective-validation.md). Read them
+before quoting any partial term from any run. Rounds of intervention concluded
+"the model is the ceiling" from evidence that cannot support it; those conclusions
+are withdrawn rather than adjusted.
 
-It is counted **only between the lowest and highest reference partial**. Above
-and below that span the reference's own detection is unproven — a room
-recording's noise floor hides modes a model legitimately has — so a partial out
-there is charged by the spectral envelope, on evidence, and not by this. Without
-that bound the term would fit the recording's limitations rather than the drum.
-It is also not blended into the partial terms: those pairs really did match, and
-an invented mode elsewhere does not make a matched one less matched.
+Part of this is estimator resolution rather than the objective's shape:
+`MinSeparationHz` structurally cannot resolve the split mode pairs that
+`TensionAsymmetry` exists to model, and merged pairs beat, which corrupts the
+log-linear decay fit while keeping R² high. Both are measured in
+[`physical-objective-validation.md`](physical-objective-validation.md) and are
+P10's N2.
+
+## The two genuine model errors
+
+Only two of the nine terms carry model error that survives the measurement above:
+the **spectral envelope**, at 11.07 dB against a floor around 3.2–3.4 dB, and the
+**spurious share**, at 0.327 against a 0.121 floor. Both were measured against the
+retired recording, so the totals around them are gone; these two are quoted
+because the envelope term reproduces and because the defect behind them is
+identified.
+
+**They are the same defect seen twice.** The model synthesizes a mode at 186 Hz
+with a T60 of **1.81 s** — the longest-ringing thing it produces — that the
+recording does not contain. It is simultaneously the top contributor to the
+envelope term, most of the spurious share, and part of the frequency error.
+
+**It is a damping-distribution defect, not a spectral-shape one.** Decomposing the
+envelope term by window gives attack 6.46 / early 9.99 / body 14.36 / tail
+13.47 dB: flat at onset, diverging monotonically with time. The residual budgets
+into a measurement floor, a large time-varying part that is the actual target, and
+a small static-shape part — three independent routes agree, and the numbers are in
+[`physical-objective-validation.md`](physical-objective-validation.md#result-2--the-residual-budgeted).
+
+The missing freedom is **structured, not free-per-mode**. No smooth loss law can
+reach the decay gate: fitting a smooth power law to the reference's own T60s
+leaves **0.677**, and the model already achieves **0.573**. What a smooth γ(k)
+cannot express is in-phase/out-of-phase head-pair splitting, which the model has
+only for m = 0. P10's N3 is where that is addressed, and it says to check the sign
+pattern before fitting any per-mode damping vector: alternation is physics,
+structurelessness is fitted noise.
+
+## Recorded negative results
+
+Three fixes for the envelope term were proposed, tested and refuted on
+2026-08-01. They are named here so the work is not repeated; the measurements are
+in
+[`physical-objective-validation.md`](physical-objective-validation.md#result-3--falsification-tests-all-negative).
+
+- **The envelope term is _not_ a band-coverage artifact.** This document
+  previously suggested the term might be ill-posed because it runs to 12.5 kHz
+  where the model has only the stochastic attack layer, and proposed band-limiting
+  it. Band-limiting to 50 Hz–2 kHz, where the model has full modal content, buys
+  about 2 dB of the 11. The hypothesis is real and far too small to rescue the
+  term, and the suggestion is withdrawn.
+- **A fitted static body/radiation post-filter cannot fix it.** The published
+  design (Bank, ICMC 2007) is sound and the topology physically correct, but the
+  falsification test fails: fitting a static `g(f)` across all four windows against
+  a criterion of 3–4 dB at five parameters falls well short, and even a fully free
+  per-band EQ — the absolute limit of any static filter — does not reach it.
+- **Exterior air loading is not the missing mechanism.** The licensed 8" × 8" tom
+  has known geometry, so the ideal model predicts every mode from the fundamental
+  with no free parameter, and the measured (1,1)/(0,1) ratio matches that
+  prediction to about eleven cents while sitting roughly 950 cents from the
+  air-loaded one. The ratio the old recording showed is that drum's two-head
+  tuning, a mechanism the model already represents.
 
 ## The search
 
-`cmd/fit-physical` minimizes the distance with the Mayfly Optimization
-Algorithm ([`github.com/cwbudde/mayfly`](https://github.com/cwbudde/mayfly)), a
+`cmd/fit-physical` minimizes the distance with the Mayfly Optimization Algorithm
+([`github.com/cwbudde/mayfly`](https://github.com/cwbudde/mayfly)), a
 build-time-only dependency imported by that command and nothing else — the
 shipped WASM binary is unchanged.
 
 The search space is **exactly the bank the product exposes**:
-`drum.PhysicalTomSpecs()`, seventeen free normalized parameters (QUAL is pinned
-— it buys mode count with CPU, which is a product decision, not a property of
-this drum), plus strike velocity as an eighteenth dimension. All bounded to
-[0, 1], which is also the only shape mayfly's scalar bounds can express.
-Anything the search finds can therefore be typed into the app or shared as a
-link; a fit that needed a hidden parameter would not be a preset.
+`drum.PhysicalTomSpecs()`, seventeen free normalized parameters (QUAL is pinned —
+it buys mode count with CPU, which is a product decision, not a property of the
+drum), plus strike velocity as an eighteenth dimension. All bounded to [0, 1],
+which is also the only shape mayfly's scalar bounds can express. Anything the
+search finds can therefore be typed into the app or shared as a link; a fit that
+needed a hidden parameter would not be a preset.
 
 Candidates are rendered at the **reference's own sample rate**, so no resampler
-enters the measurement path on either side. The mapping from knob positions to
-SI configuration is `drum.PhysicalTomConfig`, the same function the voice uses
-— extracted and exported for this, because the constant-ζ retune rule, the
+enters the measurement path on either side. The mapping from knob positions to SI
+configuration is `drum.PhysicalTomConfig`, the same function the voice uses —
+extracted and exported for this, because the constant-ζ retune rule, the
 DAMP/DEC/D.TILT composition and the resonant head's reduced asymmetry are
 calibration decisions with their own evidence, and a fitter that reimplemented
 them would be measuring a different instrument than the one that ships.
@@ -217,648 +283,93 @@ Concurrency is between restarts rather than inside one, since mayfly calls the
 objective sequentially. Multi-start suits this landscape anyway: every knob's
 mapping has a detent at its default, so a single swarm can settle into one.
 
-```bash
-just fit-physical reference/tom.wav                    # passes -channel right for you
-go run ./cmd/fit-physical -reference reference/tom.wav -channel right -report-only
-go run ./cmd/fit-physical -reference reference/tom.wav -channel right \
-    -restarts 11 -iterations 150 -pop 20 -o fits/fit-report.json
-```
+A reference with more than one channel and no `-channel` on the command line is
+**refused before the search starts**, naming the file, its channel count and the
+three choices. A full budget was once spent on a target nobody intended, leaving
+its only trace in a `"channel"` field of a report nobody read. Only an absent flag
+is refused; `-channel mono` typed out is a decision and is honoured — and on the
+coincident licensed pair it is the right one, where on the spaced `tom.wav` it
+notched the spectrum.
 
-**`-channel right` is not optional, and it is not the default.** `-channel`
-defaults to `mono`, which is a legitimate reduction — it aligns the two channels
-before averaging, so it is not the comb filter a bare sum would be — but it is a
-_different target_ from the one every result on this page is measured against.
-The right channel is what
-[the corrected target](#the-corrected-target) below is a reduction of, and it is
-what `testdata/physical-fit-tom.json` was fitted to. A full-budget run has
-already been spent on the wrong target this way: it printed a plausible baseline
-and a plausible best, and left its only trace in a `"channel": "mono"` field of
-the report that nobody reads.
+`-progress N` reports every N objective evaluations from inside the objective
+itself — the one place every restart passes through, since mayfly offers no
+per-iteration hook — with the running best, elapsed time and a projected finish.
+The first full run printed nothing at all for forty minutes without it, which is
+indistinguishable from a wedged process.
 
-That silence is now closed. A reference with more than one channel and no
-`-channel` on the command line is **refused before the search starts**, naming
-the file, its channel count and the three choices; `just fit-physical` passes
-`-channel right` itself. Only an absent flag is refused — `-channel mono` typed
-out is a decision and is honoured, and a genuinely mono recording still needs no
-flag. The report's `reference.channel` field remains the thing to check before
-quoting any total.
+`BenchmarkCost` and its siblings break one evaluation down, because the search's
+whole cost is that one number: `DoubleHead.Render` ~69 %, `match.Extract` ~35 %,
+`physical.NewDoubleHead` ~5 % of the render, `drum.PhysicalTomConfig` ~2 µs. A
+CPU profile puts 56 % of the render in `solveMidpoint` and 18 % in `observe`,
+both per-sample and both inherent to the model. Worth recording for its own sake:
+1.2 s of audio takes ~0.5 s to synthesize at Draft quality, so one physical Tom
+costs roughly 0.4× a core in real time — a product number, not just a fitting one.
 
-Driving mayfly from outside its own examples surfaced two defects. Both are
-fixed upstream and released as
+### Two defects found in mayfly
+
+Both are fixed upstream and released as
 [v0.2.0](https://github.com/CWBudde/mayfly/releases/tag/v0.2.0); `go.mod` pins
 [v0.2.1](https://github.com/CWBudde/mayfly/releases/tag/v0.2.1), which adds only
 CI, lint and documentation fixes on top.
 
-- **`Result.BestSolution` is not a solution.** It holds the best cost after each
-  iteration — a convergence curve of `MaxIterations` entries. The name is the
-  whole defect: the field is a `[]float64` exactly like a position vector, so
-  reading it as one compiles, runs, and yields nonsense. Here it panicked on an
-  index past the end of an 18-element bank, which was luck; a search space wider
-  than the iteration count would have silently fitted a drum to noise. The
-  position is `Result.GlobalBest.Position`. It is now `ConvergenceCurve` — a
-  deliberately breaking rename rather than an alias, since keeping the old
-  spelling would have left the trap in place.
+- **`Result.BestSolution` was not a solution.** It holds the best cost after each
+  iteration — a convergence curve. The name was the whole defect: the field is a
+  `[]float64` exactly like a position vector, so reading it as one compiles, runs
+  and yields nonsense. Here it panicked on an index past the end of an 18-element
+  bank, which was luck; a search space wider than the iteration count would have
+  silently fitted a drum to noise. It is now `ConvergenceCurve`, a deliberately
+  breaking rename.
 - **`NC` was unvalidated.** It drives three index expressions that do not
-  bounds-check. Mating reads `males[k]` and `females[k]` for `k < NC/2`, so any
-  population below half the offspring count panics inside the library — and the
-  shipped default of `NC = 20` does that for every `-pop` under 10, which is
-  precisely what someone shrinking the swarm to go faster would write. Mutants
-  are then drawn from the offspring with `rng.Intn`, which panics on the empty
-  slice `NC < 2` leaves behind. `Optimize` now rejects all three cases with an
-  error naming the constraint. `NC` is still set from the population here, since
-  a returned error is not what this caller wants either, and each restart still
-  runs under a `recover` — no longer for a known trigger, but because the
-  objective runs third-party numerics on adversarially-chosen parameters and one
-  restart dying should not take the other seven with it.
-
-### Watching a search that takes an hour
-
-The first full run printed its reference and baseline lines and then nothing at
-all for forty minutes, because the only progress report was per finished
-restart. That is indistinguishable from a wedged process, and it hid the fact
-that the run was over-provisioned by a factor of eight.
-
-`-progress N` now reports every N objective evaluations from inside the
-objective itself — the one place every restart passes through, since mayfly
-offers no per-iteration hook — with the running best, the elapsed time and a
-projected finish. It is what turned "this might take all day" into a measured
-23 minutes, and it is why the iteration count below is a considered number
-rather than a guess.
-
-`BenchmarkCost` and its siblings in `cmd/fit-physical` break one evaluation
-down, because the search's whole cost is that one number:
-
-| Stage                    | Share of one evaluation |
-| ------------------------ | ----------------------- |
-| `DoubleHead.Render`      | ~69%                    |
-| `match.Extract`          | ~35%                    |
-| `physical.NewDoubleHead` | ~5% (of the render)     |
-| `drum.PhysicalTomConfig` | ~2 µs, i.e. nothing     |
-
-Rendering dominates, and a CPU profile puts 56% of it in `solveMidpoint` and
-18% in `observe` — both per-sample, both inherent to the model rather than a
-defect. Worth recording for its own sake: 1.2 s of audio takes ~0.5 s to
-synthesize at **Draft** quality, so one physical Tom costs roughly 0.4× a core
-in real time. That is a product number, not just a fitting one, and `observe`
-accumulates several diagnostic energies per mode per sample that the audio path
-never reads. Neither is touched here — changing the synthesis hot path is not
-something to do in the same breath as fitting it.
-
-## Results
-
-Eight restarts of 80 iterations at population 16, seed 1, Draft quality,
-31 616 evaluations, 41 minutes on twelve cores. The fitted bank is in
-`testdata/physical-fit-tom.json` and is selectable in the app as **Measured
-tom**.
-
-> **Superseded.** Every number in this table and the next was measured through
-> the combed mono downmix and under the energy-weighted `Unmatched` term, both
-> since corrected. They are kept because the reasoning around them is still
-> instructive and because the corrections were found by asking why these numbers
-> disagreed with listening — but they are not comparable to anything measured
-> after, and none of them should be quoted as a result. The current fit is
-> [the corrected head-to-head](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31).
-
-| Term                  | Shipped default | Fitted    | Adoption gate |
-| --------------------- | --------------- | --------- | ------------- |
-| Partial frequency     | 119.4 ¢         | 21.5 ¢    | ≤ 25 ¢ ✅     |
-| Partial decay         | 1.106           | 0.179     | ≤ 0.25 ✅     |
-| **Spectral envelope** | 20.6 dB         | 13.6 dB   | ≤ 4 dB ❌     |
-| Partial level         | 12.4 dB         | 2.0 dB    | —             |
-| Amplitude envelope    | 37.3 dB         | 1.1 dB    | —             |
-| Glide                 | 60.9 ¢          | 18.2 ¢    | —             |
-| Attack balance        | 1.9 dB          | 0.3 dB    | —             |
-| Unmatched energy      | 0.980           | 0.027     | —             |
-| **Total**             | **33.455**      | **6.364** | —             |
-
-**Nothing is pinned at a bound.** That refutes the prediction this work started
-from. The reference's fundamental rings 1.53 s against the shipped model's
-0.21 s, and since DAMP only reaches 0.25× the expectation was that it would
-bottom out and the gap would survive as a finding about the
-`ModeDecayCorrections` anchor. Instead the fit reaches **1.52 s** with DAMP at
-1.26 — _more_ damping than default — by dropping batter tension from 1250 to
-334 N/m. `RetuneTension` holds ζ constant, so lower tension lowers ω and
-lengthens T60 at unchanged damping. The ring time was never out of range; it was
-coupled to a parameter nobody had thought to move. The range is fine, and the
-earlier reasoning was wrong.
-
-### What it does not reach, and why that blocks adoption
-
-The gate says a fit is worth adopting only inside ~25 ¢, ~0.25 log-ratio and
-~4 dB. Two of three pass comfortably. The spectral envelope misses by more than
-three times its threshold, and the partial lists say why:
-
-|                | Reference | Fitted |
-| -------------- | --------- | ------ |
-| Partials found | 16        | 5      |
-| 476–700 Hz     | 9         | 0      |
-
-> **Re-scoped 2026-07-31.** The reference column here was measured with the
-> superseded partial-level estimator and the single-window detector; see
-> [the correction below](#a-correction-to-the-partial-measurement-2026-07-31).
-> The reference is still busiest in this band — the corrected reduction of the
-> right channel puts seven of its fourteen partials between 476 and 700 Hz — but
-> the size of the deficit measured here is not a number that survives, and part
-> of the gap was the target not asking for those partials either. Whether a real
-> excitation gap remains in this band is an **open question** on the corrected
-> metric, not a settled finding.
-
-The recording's character lives in a dense cluster of nine partials between 476
-and 700 Hz. The fitted drum has none there. It matches the fundamental
-(118.06 → 118.68 Hz, T60 1.53 → 1.52 s), the envelope and the glide almost
-exactly, and is empty where the reference is busiest.
-
-The obvious suspect was the Draft mode budget, since QUAL is pinned during the
-search. Re-measuring the fitted bank at every tier rules it out:
-
-| Quality  | Modes | Spectral envelope |
-| -------- | ----- | ----------------- |
-| Draft    | 48    | 13.3 dB           |
-| Standard | 96    | 13.1 dB           |
-| High     | 160   | 13.1 dB           |
-
-Two hundred cents of extra mode count buys 0.2 dB. The sparsity is structural,
-not a budget: within the range the product exposes, this model does not put nine
-resolvable partials in that band. Whether that is the two-head mode series
-itself, the cavity split, or the absence of shell and lug modes is the next
-question, and it is a **P8 finding rather than a fitting failure**.
-
-> **Answered 2026-07-30**, and it is none of those three. The modes are there —
-> 58 of them lie in the band at High quality — and the force that should excite
-> them is not: a smooth half-sine over the measured 5.5–8 ms contact is 34 dB
-> down at 635 Hz, which is the size of the measured deficit. Microphone
-> geometry, strike footprint, cavity coupling, tension asymmetry and mode count
-> were each measured and eliminated. See
-> [`physical-excitation-gap.md`](physical-excitation-gap.md).
->
-> **Reopened 2026-07-31.** That answer was reasoning about a deficit whose size
-> came from the superseded measurement. It is pending re-measurement, in either
-> direction.
-
-So the fit ships as a preset and a fixture, and **the shipped default is
-unchanged**. Moving `DefaultPhysicalDrum()` was the third deliverable of this
-work, and it is deliberately not done: a default is a claim about what the model
-should sound like out of the box, and a candidate that is empty across the band
-carrying the target's character does not earn that on a total-cost improvement
-alone. The preset makes the fit auditionable and the fixture makes it
-reproducible, which is what the evidence supports.
-
-### Reading the restarts
-
-| Restart | 1     | 2     | 3     | 4     | 5     | 6         | 7     | 8      |
-| ------- | ----- | ----- | ----- | ----- | ----- | --------- | ----- | ------ |
-| Total   | 8.821 | 6.598 | 8.044 | 7.110 | 7.904 | **6.364** | 7.050 | 10.634 |
-
-The spread from 6.36 to 10.63 says the landscape is multi-modal and that
-multi-start is doing real work — the median restart is 20% worse than the best.
-The best restart's convergence curve was **still descending at the last
-iteration**, so this is a good point rather than a converged one. A longer run
-would find a better total; on the evidence above it would not close the 476–700
-Hz gap, because that gap does not move with search effort.
-
-## The contact-model head-to-head (2026-07-31)
-
-> **Superseded** by
-> [the re-run on the corrected measurement](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31),
-> which asks the same question with the same budget and answers it the same way.
-> Every number in this section was measured with the partial-level estimator
-> corrected [below](#a-correction-to-the-partial-measurement-2026-07-31), which
-> changed both the reference's partial list and every candidate's. The reasoning is
-> kept — the seam-closing argument and the 5 g run's exposure of the
-> spectral-envelope term stand on their own — but the totals, the term values and
-> the partial counts are not comparable to anything measured after the correction,
-> and none of them should be quoted as a result.
-
-`ContactHertzian` closes the excitation gap measured in
-[`physical-excitation-gap.md`](physical-excitation-gap.md), so the question was
-whether it also closes the fit. It had to be asked _after_ fitting: at the
-shipped bank the Hertzian model already scores better (31.087 against 33.455),
-and a fixed-default comparison cannot separate a better excitation from
-parameters that happen to suit it.
-
-Three runs, each 8 restarts × 150 iterations at population 16, seed 1, Draft,
-**59 056 evaluations** apiece, all restarts complete. The iteration budget is
-nearly double the run above, which the previous section's closing prediction
-makes a test in its own right. Both baselines reproduced to the digit, so these
-are comparable to the 6.364 fit and to each other.
-
-| Term                  | Fitted (80 it) | Prescribed | Hertzian   | Hertzian, 5 g | Gate   |
-| --------------------- | -------------- | ---------- | ---------- | ------------- | ------ |
-| Partial frequency     | 21.5 ¢         | 20.6 ¢ ✅  | 19.6 ¢ ✅  | 27.2 ¢ ❌     | ≤ 25 ¢ |
-| Partial decay         | 0.179          | 0.179 ✅   | 0.493 ❌   | 0.188 ✅      | ≤ 0.25 |
-| **Spectral envelope** | 13.6 dB        | 12.3 dB ❌ | 14.5 dB ❌ | 11.9 dB ❌    | ≤ 4 dB |
-| Partial level         | 2.0 dB         | 2.0 dB     | 2.0 dB     | 2.0 dB        | —      |
-| Amplitude envelope    | 1.1 dB         | 1.0 dB     | 2.8 dB     | 3.1 dB        | —      |
-| Glide                 | 18.2 ¢         | 18.0 ¢     | 0.1 ¢      | 0.0 ¢         | —      |
-| Attack balance        | 0.3 dB         | 0.0 dB     | 0.0 dB     | 1.1 dB        | —      |
-| Unmatched energy      | 0.027          | 0.027      | 0.027      | 0.027         | —      |
-| **Total**             | **6.364**      | **5.901**  | **7.450**  | **6.548**     | —      |
-| Baseline              | 33.455         | 33.455     | 31.087     | 37.868        | —      |
-
-That unmatched row — 0.027 in all four columns, to the digit, across three
-different contact models and two mallet masses — is the defect above, sitting in
-plain sight and read at the time as a shared floor rather than as a signal. It
-is what an energy-weighted share reports when a candidate reproduces the one
-partial carrying 99.4 % of the reference's energy and nothing else, which is
-what all four of these did. The lesson is worth more than the table: a term that
-does not move between candidates is not a constant of the problem, it is a term
-that has stopped measuring.
-
-**The prediction above held.** Nearly doubling the search budget moved the
-prescribed fit 6.364 → 5.901 and left the band untouched, which is what that
-paragraph said would happen and the reason it is worth having written down.
-
-### The seam closes, and it was not the gap
-
-`ATK.T` is the diagnostic, because the previous fit dragged it from 4000 Hz to
-1644 Hz — the stochastic attack layer standing in for a band the excitation never
-reached:
-
-|         | Prescribed | Hertzian    | Hertzian, 5 g |
-| ------- | ---------- | ----------- | ------------- |
-| `ATK.T` | 1261 Hz    | **3426 Hz** | 626 Hz        |
-| `ATK.L` | 0.021      | 0.012       | **0.078**     |
-
-At the shipped 15 g mallet the Hertzian fit leaves `ATK.T` near its 4000 Hz
-default and drops `ATK.L` to the lowest value of the three. The excitation
-reaches the high band for real, so the search stops abusing the noise layer to
-cover it. That is the seam closing, visible as a parameter difference exactly
-where [`physical-contact.md`](physical-contact.md) predicted it.
-
-It does not close the gap:
-
-|                | Reference | Prescribed | Hertzian | Hertzian, 5 g |
-| -------------- | --------- | ---------- | -------- | ------------- |
-| Partials found | 16        | 5          | 7        | 3             |
-| **476–700 Hz** | **9**     | **0**      | **0**    | **0**         |
-
-Hertzian finds two more partials overall and still none in the band carrying
-more than half the reference's character. The contact model buys 12–23 dB above
-800 Hz and 0–4 dB below 700, and the deficit is below 700.
-
-> **Re-scoped 2026-07-31.** The conclusion drawn here — that the excitation model
-> was never the binding constraint and mode density in the band is — was drawn
-> from a reference partial list the correction below has changed, on both sides of
-> the comparison. It is an open question again.
-
-### The 5 g mallet, and what it exposes about the metric
-
-`Strike.MalletMassKg` is the Hertzian model's strongest lever — contact time here
-is set by the head's 0.31 g driving-point mass, not the tip — and it is not in
-the product bank, so the search cannot reach it. The measured velocity law says
-4–6 g against the shipped 15 g, and at 5 g the Hertzian total improves markedly,
-7.450 → 6.548. Taken alone that is a finding about `DefaultPhysicalDrum()`'s
-mallet rather than about the fit.
-
-Taken with the parameters it is something more useful. The 5 g run has the **best
-spectral envelope of any fit ever measured here** (11.9 dB) and the **fewest
-partials** (3). It gets there by parking the attack layer in the gap: `ATK.T` at
-626 Hz, inside the 476–700 Hz band, with `ATK.L` at 0.078 — 3.7× the other two
-runs. Broadband noise satisfies a band-energy metric; it cannot make resolvable
-partials, and the partial-frequency term duly fails the gate at 27.2 ¢.
-
-So the spectral-envelope term is **gameable by the noise layer**, and the partial
-terms are what expose it. This is why the gate is per-term. A single-number
-comparison would have ranked the 5 g Hertzian run as the closest match to the
-recording, when it is the one that resembles it least in structure.
-
-### Verdict
-
-`DefaultContact().Model` **stays `ContactPrescribed`**, and no fitted bank is
-adopted. The prescribed 150-iteration fit is the best total ever measured against
-this reference (5.901, beating 6.364) and passes two of three gate terms, but it
-misses the spectral envelope by 3× and is empty across the band carrying the
-target's character — the same argument that left the shipped default alone the
-first time, applied to the same evidence. `testdata/physical-fit-tom.json` and
-the **Measured tom** preset are therefore unchanged.
-
-The restart spreads say how much weight the ranking carries:
-
-| Run           | Best  | Median | Worst  |
-| ------------- | ----- | ------ | ------ |
-| Prescribed    | 5.901 | 7.838  | 10.166 |
-| Hertzian      | 7.450 | 8.279  | 11.153 |
-| Hertzian, 5 g | 6.548 | 7.703  | 9.588  |
-
-They overlap heavily — the Hertzian best would rank 6th of 8 among the prescribed
-restarts — so this is a consistent ordering rather than a decisive one. It is
-enough to say the Hertzian contact does not earn a calibration pass on fit
-quality. It is not enough to say the prescribed excitation is better physics, and
-the excitation-gap measurements say it is not.
-
-## Is the head-damping range the constraint? (2026-07-31)
-
-> **Superseded.** Every total, term value and baseline below was measured with the
-> partial-level estimator corrected
-> [further down](#a-correction-to-the-partial-measurement-2026-07-31). The
-> question this section asks and the way it answers it — put a bound to the test
-> with a build-time multiplier rather than by widening the shipped spec — are
-> unaffected, and so is the qualitative finding that the search reaches the same
-> physical damping from three different ranges. The numbers are not comparable to
-> anything measured after the correction. The conclusion is independently
-> confirmed by
-> [the corrected head-to-head](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31):
-> `DAMP` fits well clear of its lower bound in both of those runs.
-
-The run under the nine-term distance (`fit-v4-hertzian`, Standard, Hertzian,
-stopped by hand at 47 % of its restart budget, **11.630** from a 32.585
-baseline) fitted `DAMP` to **0.276 against a lower bound of 0.25** — normalized
-position 0.036, effectively pinned. A parameter resting on its bound is a
-statement about the bound, not about the drum, and the only way to tell which is
-to look past it.
-
-Widening the shipped spec to find out is not available: presets store
-_normalized_ positions, so moving `expSpec("physicalTom.damping", …, 0.25, 4, …)`
-would silently retune every saved patch. `-loss-scale` answers the question
-without touching the product — it multiplies every head loss rate on top of
-`DAMP`, so a run at 0.25 searches a range whose floor is four times lower. It is
-not a knob and never will be: a bank fitted at `-loss-scale ≠ 1` describes a drum
-the product cannot be set to. Both the report and the checkpoint fingerprint
-record it, so such a run cannot be mistaken for a normal one or resumed into one.
-
-Three fits, equal budget (4 restarts × 60 iterations, population 12, seed 1),
-identical but for the multiplier:
-
-| Loss scale    | Baseline | **Best**   | Partial decay | Spectral env. | `DAMP` (norm) | Effective |
-| ------------- | -------- | ---------- | ------------- | ------------- | ------------- | --------- |
-| 1.0 (control) | 32.585   | **14.917** | 0.966         | 13.27 dB      | 0.475 (0.231) | 0.475     |
-| 0.5           | 26.388   | **14.924** | 1.263         | 13.01 dB      | 0.866 (0.448) | 0.433     |
-| 0.25          | 26.325   | **14.076** | 1.295         | 12.82 dB      | 2.122 (0.771) | 0.531     |
-
-**The range is not the constraint.** Four times the headroom moves the total by
-0.8 — less than the spread between restarts at this budget — and the search
-converges on the same physical damping regardless of the range it is given:
-effective scales of 0.43–0.53 across all three. `DAMP`'s normalized position
-travels 0.23 → 0.45 → 0.77 to compensate for the multiplier, which is exactly
-what a parameter does when the model can already reach the value the reference
-implies.
-
-**And the two terms do not fall together**, which was the hypothesis. Removing
-loss makes partial decay _worse_ (0.966 → 1.295) while the spectral envelope sits
-flat at ~13 dB and never approaches its 4 dB gate. The envelope's excess is not
-made of over-long modes, so it will not be fixed by damping at all.
-
-At this short budget `DAMP` does not pin even in the control — it fits 0.475, not
-the 0.276 the long run found — so the sweep alone could not speak to that
-particular pin. A full-budget run at `-loss-scale 0.25` settles it:
-
-| Run                 | Restarts        | Best       | `DAMP` (norm)    | Effective damping |
-| ------------------- | --------------- | ---------- | ---------------- | ----------------- |
-| v4, loss scale 1    | stopped at 47 % | **11.630** | 0.276 (0.036) 📌 | 0.2764            |
-| v5, loss scale 0.25 | all 8 complete  | **13.023** | 1.132 (0.545)    | 0.2830            |
-
-Given four times the range the search chose the same physical damping to within
-2 %, and did worse overall than v4 managed in fewer than half the evaluations.
-`DAMP` came off the bound as soon as the bound stopped mattering, which is what a
-non-binding constraint looks like from the inside. **The pin was that basin's
-coincidence, not a limit**, and the head-damping range needs no change.
-
-### What this points at instead
-
-The reference's decay is **non-monotone in frequency**, and no single loss law is:
-its loudest partial at 212.8 Hz dies in 0.146 s while the fundamental at 118.1 Hz,
-12.1 dB quieter, sustains 1.490 s. (Both ring times survive the correction below
-unchanged; the level difference is quoted from the corrected measurement, which
-puts it at 12.1 dB rather than the 25 dB the superseded estimator reported.) The
-fitted candidate has the opposite tilt —
-0.597 s at the fundamental, and 0.71–1.47 s across 240–500 Hz where the reference
-spends 0.26–0.55 s.
-
-`DAMP` scales the whole loss law and `D.TILT` slopes it. Neither can bend it, so
-this is a model-structure question rather than a range or a search question.
-`Head.ModeDecayCorrections` — already scaled by both knobs, already used for the
-measured (0,1) correction — is where a per-mode answer would go. That touches the
-shipped instrument's sound, so it is not a change this document makes.
-
-## Seeding a restart from the reference's partials (2026-07-31)
-
-> **Superseded, and the recommendation is reversed.** The reference partial list
-> the pre-solve aims at, and every fit total in the comparison table, were measured
-> with the partial-level estimator corrected
-> [below](#a-correction-to-the-partial-measurement-2026-07-31). The mechanism, the
-> two defects it exposed, and the paired-comparison design are unaffected; the cent
-> figures and totals are not comparable to anything measured after the correction,
-> and the pre-solve targets a different set of partials now. On that corrected
-> target seeding **lost** — see
-> [the corrected head-to-head](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31)
-> — and `-seeded-restarts` stays off by default. The 12 % win below is a result
-> about a seed that was worth 1 ¢, not about seeding as such.
-
-Mode frequencies are analytic — `physical.GenerateDrumModes` reads them off the
-tension, radius and cavity without rendering a sample — at about a hundredth of a
-full evaluation. That makes it cheap to ask a question the fit cannot: **how
-close can the model's modes get to this recording's partials at all?**
-
-| Measurement                 | Audibility-weighted frequency error |
-| --------------------------- | ----------------------------------- |
-| 20 000 random banks, best   | 11.5 ¢                              |
-| the same, hill-climbed      | 10.5 ¢                              |
-| the fit (`fit-v4-hertzian`) | 59.7 ¢                              |
-| gate                        | 25 ¢                                |
-
-So the model can place its modes on this drum. Read that as a statement about
-mode placement and not about the gate: these figures count the distance to the
-nearest mode, while the gate counts the distance to the nearest partial the
-candidate is actually heard to produce. The two are not the same number, and the
-gap between them is the subject of the cautions below.
-
-> **Retired 2026-07-31.** The 11.5 ¢ and 10.5 ¢ figures — and with them the reading
-> that "the modes are reachable and the search was not reaching them" — were
-> measured against the pre-correction 7-partial target. Against the corrected
-> 14-partial target the same pre-solve floors at **35.9–37.0 ¢**, so the conclusion
-> does not survive: within the searchable space no bank places its modes on this
-> target much better than that. See
-> [the corrected head-to-head](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31).
-
-`-seeded-restarts N` acts on that: a pre-solve finds N diverse frequency-optimal
-banks, and those N restarts search a box around them while the rest search the
-whole cube. Seeded restarts come first and the unseeded ones keep their RNG
-seeds, so they are bit-for-bit what they were and the comparison is paired.
-
-**The first version made things worse**, and the two defects it exposed are worth
-more than the feature. One in the pre-solve, one in the reasoning:
-
-- **`GenerateModes` returns the batter head alone.** It is written for the
-  single-head reference and says so, but the pre-solve was using it to reason
-  about a double-headed drum, so it never saw half the partials. Nine times the
-  resonant tension moved no mode frequency by a single cent. `GenerateDrumModes`
-  is the accessor that returns both.
-- **The box narrowed every parameter, not the ones the seed knew about.** A
-  frequency-only objective has no opinion about damping, the microphone position
-  or the attack layer, so confining a restart to a neighbourhood of _those_ threw
-  away range for nothing. `frequencyRelevant` now probes which dimensions move
-  the modes and boxes only those — probed rather than listed, so it stays true
-  when the parameter table changes.
-
-With both corrected, the pre-solve boxes 4 of 17 free parameters — `SIZE`,
-`B.TUNE`, `R.TUNE`, `ASYM`, which is the wave speed, the two tensions and the
-mode split, discovered by probing rather than written down — and its seeds land
-at 1.0 and 1.3 ¢. The comparison is paired: same budget, same RNG seeds, so the
-unseeded restarts are bit-for-bit identical between the runs.
-
-| Restart | Control    | Seeded, all dimensions | Seeded, masked |
-| ------- | ---------- | ---------------------- | -------------- |
-| 1       | 19.442     | 31.707 🌱              | **16.388** 🌱  |
-| 2       | 16.754     | 19.109 🌱              | **13.132** 🌱  |
-| 3       | 14.917     | 14.917                 | 14.917         |
-| 4       | 16.638     | 16.638                 | 16.638         |
-| Best    | **14.917** | **14.917**             | **13.056**     |
-
-Both seeded restarts improved and neither regressed, for a 12 % better result at
-the same cost — **against a target the pre-solve could reach to 1 ¢**, which the
-corrected target is not, and which is why the flag is off by default. The
-frequency term fell from 94.4 ¢ to 46.1 ¢, partial decay from
-0.966 to 0.766, and the unmatched share from 0.461 to 0.011 — the seeded drum
-produces the reference's partials rather than a handful of them. The spurious
-share rose, 0.413 to 0.638, which is the honest cost: a bank chosen to have a
-mode near every reference partial also has modes elsewhere.
-
-**Two cautions on reading any of this.**
-
-The pre-solve scores the distance to the nearest **mode**; the gate scores the
-distance to the nearest detected **partial**. A mode can sit exactly on a
-reference partial and never be heard — wrong radiation weight, in a pickup null,
-or buried under a louder neighbour — so a 1.0 ¢ seed does not promise a 1.0 ¢
-frequency term, and the fitted 46.1 ¢ is the proof. Mode placement is necessary
-for that term and nowhere near sufficient.
-
-And the objective has to be checked for discrimination before its numbers mean
-anything, because reading both heads roughly doubles the mode count and a dense
-enough bank is near _any_ frequency by accident. Measured over 2000 random banks:
-median 164.8 ¢, p10 56.2 ¢, best 4.1 ¢. A 1.0 ¢ seed is a real selection from
-that distribution, not a free lunch.
-
-## A correction to the partial measurement (2026-07-31)
-
-Two defects in `internal/physical/match/features.go`, both found by probing the
-reference rather than by reading the code, and both now fixed. Together they
-supersede every fit result measured before this date.
-
-### The partial level estimator was ill-conditioned
-
-`measureDecays` computed a partial's strike level as its magnitude in the sustain
-transform divided by the attenuation that window applies to a partial decaying at
-the fitted rate (`sustainWindow.decayAttenuation`). That is exact for an isolated
-exponential. It is unusable as an estimator, because for the default sustain
-window (0.05–0.85 s) the divisor is enormous and depends violently on the fitted
-decay:
-
-| T60     | correction gain |
-| ------- | --------------- |
-| 2.0 s   | 12.4 dB         |
-| 1.5 s   | 16.1 dB         |
-| 1.0 s   | 22.9 dB         |
-| 0.6 s   | 34.2 dB         |
-| 0.3 s   | 54.9 dB         |
-| 0.15 s  | 82.3 dB         |
-| 0.11 s  | 97.5 dB         |
-| 0.073 s | 122.0 dB        |
-
-So the reported level was largely a restatement of the fitted decay rate. A 10 %
-error in T60 at 0.12 s moves the level by 4.5 dB.
-
-The consequence on the reference is concrete. At a 5 Hz peak separation, a **73 ms**
-component (T60 0.073, R² 0.865) was reported as the **loudest partial in the
-recording**, which pushed the fundamental (T60 1.49 s, R² 0.984) to −33.6 dB.
-Levels are all relative to the strongest, so genuine partials then fell below
-`PartialFloorDB` and vanished. That is also why the detected set was non-monotone
-in the level floor.
-
-**Capping the correction was considered and rejected with a measurement.** The
-reference's loudest partial (212.8 Hz) itself carries an 83.7 dB correction, so
-any cap tight enough to exclude the runaways excludes it too.
-
-**The fix** is to take the level from the decay fit's own intercept — the fitted
-line's value at t = 0, read off the partial's heterodyned envelope. It is the same
-quantity, measured directly: it extrapolates back only as far as
-`DecayFitStartSeconds` instead of through the whole Hann taper, and it is a
-least-squares fit over hundreds of samples rather than a ratio of two numbers.
-
-The pre-existing warning in that code still holds and is respected: the level must
-**not** be the envelope's _peak_ inside the fit window, because a strike transient
-smeared through a 150 ms filter once put the 212 Hz partial 32 dB too loud. The
-fit starts after the transient, and the intercept is an extrapolation of the
-fitted decay, not a reading of the peak.
-
-### Detection was blind to short-ringing partials
-
-The sustain transform spans 800 ms, so a partial ringing a tenth of that stands
-roughly 90 dB lower in it. Both detection guards — a relative floor with 20 dB
-headroom, and a count limit of `MaxPartials × 2` — rank on that uncorrected
-magnitude, and they bind _together_. On the reference, loosening either alone
-changes nothing: sweeping headroom 20 → 80 dB at surplus 2 gives 7 partials
-throughout, and sweeping surplus 2 → 32 at headroom 20 also gives 7 throughout.
-Only both loosened (60 dB / 8) reached 9.
-
-`detectPartials` now also reads a second, earlier window
-(`EarlyDetectionStartSecs` 0.05 → `EarlyDetectionEndSecs` 0.30, both new
-`Options` fields), and **each window admits candidates relative to its own
-strongest peak**, so a short partial competes against short-lived content rather
-than against the fundamental's whole ring. The sustain window is admitted first,
-so where both windows see a partial the better-resolved frequency is kept. The
-early window starts after the strike transient, because a broadband click would
-otherwise offer a peak at every frequency. The shipped guard constants are
-unchanged (20 dB, ×2).
-
-### The ordering mattered
-
-The tight guards were, accidentally, what kept the unstable estimator from firing:
-they excluded precisely the short-ringing population where the correction ran
-away. Fixing detection first would have made the measurement worse. Bound the
-estimator, then open the aperture.
-
-`TestShortPartialsDoNotOutrankLongOnes` (`internal/physical/match/level_test.go`)
-pins both on a synthetic two-partial signal — a loud partial at amplitude 1.0
-ringing T60 1.2 s and a quiet one at 0.5 ringing 0.12 s — and depends on no
-recording. It failed twice while being developed: first because the levels were
-inverted, then because the short partial was not detected at all.
-
-### The corrected target
-
-The reference (`-channel right`) now reduces to **14 partials**, against 7 before:
-
-| Hz     | dB    | T60 s | R²   |
-| ------ | ----- | ----- | ---- |
-| 118.1  | −12.1 | 1.490 | 0.98 |
-| 139.6  | −38.2 | 1.552 | 0.77 |
-| 212.8  | 0.0   | 0.146 | 0.94 |
-| 259.1  | −30.9 | 0.260 | 0.75 |
-| 296.7  | −26.8 | 0.554 | 0.98 |
-| 380.5  | −36.5 | 0.468 | 0.41 |
-| 476.6  | −36.7 | 1.137 | 0.79 |
-| 502.6  | −26.6 | 0.257 | 0.92 |
-| 530.1  | −40.9 | 1.198 | 0.96 |
-| 546.9  | −35.7 | 0.843 | 0.94 |
-| 624.6  | −39.4 | 0.599 | 0.94 |
-| 675.8  | −29.9 | 0.629 | 0.93 |
-| 696.9  | −26.6 | 0.344 | 0.91 |
-| 1598.0 | −38.9 | 0.283 | 0.93 |
-
-**Seven of those fourteen lie between 476 and 700 Hz** — the band this document
-calls the recording's character. The previous measurement found two there.
-
-New baselines at the shipped bank, `-channel right`, Standard quality:
-**33.094** prescribed, **33.544** Hertzian.
-
-### What this supersedes
-
-Every fit result measured before this date, without exception. That includes the
-contact-model head-to-head, the `-loss-scale` damping sweep and the seeding
-comparison, each of which now carries a note. The reasoning in those sections is
-kept because it is about method and still holds; the numbers are not comparable
-to anything measured after.
-
-The standing claim that the fit is _empty_ across 476–700 Hz while the reference
-is busiest there is **re-scoped, not resolved**. The reference is still busiest
-there — seven of fourteen partials — but part of the measured gap was the target
-not asking for those partials either, because they were below the floor. Whether
-a real excitation gap remains is an open question.
-
-Both full-budget fits on the corrected metric have since completed; see
-[the head-to-head below](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31).
-They narrow the claim without closing it: both winning banks put **5 of their 16
-partials** in 476–700 Hz against the reference's 7, so the band is no longer
-empty, but neither reproduces its density.
+  bounds-check, and the shipped default of `NC = 20` panicked for every `-pop`
+  under 10 — precisely what someone shrinking the swarm to go faster would write.
+  `Optimize` now rejects all three cases with an error naming the constraint. Each
+  restart still runs under a `recover`, no longer for a known trigger but because
+  the objective runs third-party numerics on adversarially-chosen parameters.
+
+## Corrections to the estimators
+
+Three defects were found by probing the reference rather than by reading the
+code. All are fixed and all are in force; they are recorded because the way they
+were found generalizes.
+
+### A correction to the partial measurement (2026-07-31)
+
+**The partial level estimator was ill-conditioned.** `measureDecays` computed a
+partial's strike level as its magnitude in the sustain transform divided by the
+attenuation that window applies to a partial decaying at the fitted rate. That is
+exact for an isolated exponential and unusable as an estimator: for the default
+sustain window the divisor is enormous and depends violently on the fitted decay,
+running from 12.4 dB at a T60 of 2.0 s to 122 dB at 0.073 s. The reported level
+was largely a restatement of the fitted decay rate. Capping the correction was
+considered and rejected with a measurement — the loudest partial of the old
+reference itself carried an 83.7 dB correction, so any cap tight enough to
+exclude the runaways excluded it too.
+
+The fix is to take the level from the decay fit's own **intercept**: the same
+quantity measured directly, extrapolating back only as far as
+`DecayFitStartSeconds` rather than through the whole Hann taper, and by least
+squares over hundreds of samples rather than as a ratio of two numbers. The level
+must **not** be the envelope's peak inside the fit window — a strike transient
+smeared through a 150 ms filter once put a partial 32 dB too loud.
+
+**Detection was blind to short-ringing partials.** The sustain transform spans
+800 ms, so a partial ringing a tenth of that stands roughly 90 dB lower in it, and
+both detection guards rank on that uncorrected magnitude and bind _together_ —
+loosening either alone changed nothing. `detectPartials` now also reads an earlier
+window (`EarlyDetectionStartSecs` 0.05 → `EarlyDetectionEndSecs` 0.30), and **each
+window admits candidates relative to its own strongest peak**, so a short partial
+competes against short-lived content rather than against the fundamental's whole
+ring. The sustain window is admitted first, so where both see a partial the
+better-resolved frequency is kept. The early window starts after the strike
+transient, because a broadband click would otherwise offer a peak at every
+frequency.
+
+**The ordering mattered.** The tight guards were, accidentally, what kept the
+unstable estimator from firing: they excluded precisely the short-ringing
+population where the correction ran away. Fixing detection first would have made
+the measurement worse. Bound the estimator, then open the aperture.
+`TestShortPartialsDoNotOutrankLongOnes` pins both on a synthetic two-partial
+signal and depends on no recording.
 
 The general lesson is worth as much as the fix: **the conditioning of a
 measurement is a result in its own right.** An exact formula can still be an
@@ -866,658 +377,172 @@ unusable estimator, and the way to find out is to probe it — sweep the paramet
 look at what the correction factor does across the range it is asked to span, and
 check whether the answer is a measurement or a restatement of one of its inputs.
 
-## The head-to-head, re-run on the corrected measurement (2026-07-31)
-
-> **Superseded by the glide correction (2026-08-01).** Every total and term value
-> in this section was measured with the glide term corrected
-> [below](#a-correction-to-the-glide-term-2026-08-01), which was scoring both runs
-> against a reference bend that is not the reference's. The glide column in
-> particular is meaningless: the target it was scored against was wrong, and it is
-> the term the Hertzian run was winning by the largest margin. The reasoning is
-> kept — the per-term reading, the paired seeded/unseeded comparison and the
-> spread analysis are method rather than arithmetic — but the numbers are not
-> comparable to anything measured after, and none of them should be quoted as a
-> result. The contact-model verdict is **not** re-established under the corrected
-> objective; only the prescribed model has been refitted since.
-
-Both contact models were refitted from scratch on the corrected partial
-measurement above, and they replace the [earlier
-head-to-head](#the-contact-model-head-to-head-2026-07-31) outright.
-
-Two runs, identical but for `-contact`: `reference/tom.wav`, `-channel right`,
-Standard quality, 8 restarts × 150 iterations at population 16, seed 1,
-`-seeded-restarts 4`, **59 056 evaluations** each, all restarts complete and
-neither interrupted. Reports are `fits/fit-final-prescribed.json` and
-`fits/fit-final-hertzian.json`; both are gitignored, so the numbers below are quoted
-rather than linked.
-
-**Prescribed wins, 11.252 against 11.535**, from baselines of **33.094** and
-**33.544** at the shipped bank.
-
-Each term is given with its threshold and with its contribution to the total
-(value × weight; a term sitting exactly at its threshold contributes 1.0), which
-is what makes the two columns comparable term by term rather than only in the
-sum:
-
-| Term                         | Threshold | Prescribed | contrib  | Hertzian | contrib  |
-| ---------------------------- | --------- | ---------- | -------- | -------- | -------- |
-| Partial frequency (gate)     | 25 ¢      | 56.9 ¢     | 2.28     | 47.2 ¢   | 1.89     |
-| Partial decay (gate)         | 0.25      | 0.581      | 1.66     | 0.728    | 2.08     |
-| **Spectral envelope** (gate) | 4 dB      | 12.28 dB   | **3.07** | 12.30 dB | **3.08** |
-| Partial level                | 3 dB      | 7.58 dB    | 2.53     | 9.18 dB  | 3.06     |
-| Amplitude envelope           | 3 dB      | 1.27 dB    | 0.42     | 1.18 dB  | 0.40     |
-| Glide                        | 40 ¢      | 17.6 ¢     | 0.44     | 0.12 ¢   | 0.00     |
-| Attack balance               | 6 dB      | 0.03 dB    | 0.00     | 1.31 dB  | 0.22     |
-| Unmatched share              | 0.5       | 0.151      | 0.30     | 0.047    | 0.10     |
-| Spurious share               | 0.5       | 0.275      | 0.55     | 0.359    | 0.72     |
-| **Total**                    | —         | **11.252** | —        | 11.535   | —        |
-| Baseline                     | —         | 33.094     | —        | 33.544   | —        |
-
-**The two baselines moved in opposite directions across the correction** —
-prescribed 33.236 → 33.094, Hertzian 32.585 → 33.544. That is the plainest
-available statement that the correction changed _what is being measured_ rather
-than applying an offset to it, and it is why no baseline or total from either
-side of the correction can be compared with one from the other.
-
-### Verdict: unchanged, on better evidence
-
-`DefaultContact().Model` **stays `ContactPrescribed`**.
-
-The margin is small — 11.252 against 11.535 — and the restart spreads say how
-much weight it carries. Best first:
-
-| Run        | Restart totals                                                     |
-| ---------- | ------------------------------------------------------------------ |
-| Prescribed | **11.252**, 11.741, 12.038, 12.389, 13.220, 14.189, 14.924, 15.461 |
-| Hertzian   | **11.535**, 13.141, 13.169, 13.574, 14.446, 17.355, 17.770, 18.904 |
-
-The spreads overlap at the top and separate below it: Hertzian's best would rank
-**second** among the prescribed restarts, while its remaining seven all fall
-outside the prescribed range's better half. So this is a **consistent ordering
-rather than a decisive one** — the same reading the earlier head-to-head arrived
-at, now on a measurement that survives.
-
-The two also win on **different terms**, which is worth more than the margin:
-
-- **Hertzian is better** on partial frequency (47.2 ¢ against 56.9 ¢), glide
-  (0.12 ¢ against 17.6 ¢, i.e. essentially none) and unmatched share (0.047
-  against 0.151).
-- **Prescribed is better** on partial decay (0.581 against 0.728), partial level
-  (7.58 dB against 9.18 dB), attack balance (0.03 dB against 1.31 dB) and
-  spurious share (0.275 against 0.359).
-
-Prescribed wins the sum because it wins the terms that carry weight here, not
-because it is better everywhere. Nothing in this says the prescribed excitation
-is better physics; the excitation-gap measurements still say it is not.
-
-### Seeding lost, and this supersedes the 12 % win
-
-Restarts 1–4 are seeded and 5–8 are not, so each run is its own paired
-comparison:
-
-|            | Seeded best | Unseeded best | Seeded mean | Unseeded mean |
-| ---------- | ----------- | ------------- | ----------- | ------------- |
-| Prescribed | 11.741      | **11.252**    | 13.20       | 13.10         |
-| Hertzian   | 13.574      | **11.535**    | 15.79       | 14.19         |
-
-**The winning restart in both runs was unseeded.** This supersedes the 12 %
-improvement recorded in [the seeding
-section](#seeding-a-restart-from-the-references-partials-2026-07-31).
-`-seeded-restarts` stays **off by default**, and the recommendation there is
-corrected in place; the method and the masking result are unaffected.
-
-The mechanism is visible in the reports rather than inferred. On the corrected
-target the pre-solve's four converged seeds land at **35.9, 37.0, 37.0 and
-37.0 cents**. On the old target the same pre-solve landed at **1.0–1.5 cents**.
-
-That is the whole story, and it generalizes: **a box around a seed is worth its
-cost in proportion to how good the seed is.** A 1 ¢ seed is a strong selection
-from the random distribution and buys a restart a head start worth more than the
-range it gives up. A 36 ¢ seed against a 25 ¢ gate is barely a selection at all,
-so boxing four dimensions around it only removes range. The pre-solve reports its
-own error before any rendering happens, so this is decidable in advance rather
-than after an hour of search — which makes it a usable rule and not just a
-result.
-
-### The seed error is itself a result about the model's reach
-
-Four converged analytic pre-solves flooring at 35.9–37.0 ¢ against a 25 ¢ gate is
-a statement about the searchable space, not about the search: **no bank the
-product can express places its modes on this target much better than that.**
-
-This **retires** the claim recorded in the seeding section that "the model can
-place its modes on this drum" — 11.5 ¢ over 20 000 random banks, hill-climbed to
-10.5 ¢, read at the time as evidence that the modes were reachable and the search
-was not reaching them. Those figures were measured against the pre-correction
-7-partial target. The corrected target has **14 partials, seven of them between
-476 and 700 Hz** — a seven-partial cluster inside a 224 Hz span — and the analytic
-pre-solve cannot get near it.
-
-Two consequences, both open:
-
-- Whether the 25 ¢ frequency gate is reachable **at all** by tuning within this
-  bank is now an open question, where before it was thought settled in the
-  affirmative.
-- The gate itself may need re-deriving. It was calibrated against a target with
-  half as many partials, and a per-partial cent tolerance does not mean the same
-  thing when seven partials must be placed inside a 224 Hz span.
-
-### What moved and what did not
-
-`testdata/physical-fit-tom.json` and the **Measured tom** preset in
-`web/src/algo/physicalTomPresets.ts` have been re-derived from the prescribed
-winner, because they are what makes the fit auditionable and reproducible and
-they should describe the best fit measured under the current metric.
-
-> **Superseded 2026-08-01, and they have since parted company.** Both were derived
-> from this run, which the [glide correction](#a-correction-to-the-glide-term-2026-08-01)
-> supersedes; re-scored under today's objective this bank measures **18.991**, the
-> worst of the four archived runs. `testdata/physical-fit-tom.json` has been
-> re-derived from
-> [the refit below](#the-refit-on-the-corrected-glide-term-2026-08-01), and
-> `web/src/algo/physicalTomPresets.ts` has since been re-derived from it too, so
-> neither ships this bank any more.
-
-`DefaultPhysicalDrum()` and `DefaultContact()` are **unchanged**, because the fit
-**misses all three gate terms** — partial frequency at 2.28×, partial decay at
-1.66×, spectral envelope at 3.07× their thresholds. The fixture and the preset
-record what was found; the defaults are a claim about what the model should sound
-like out of the box, and a candidate that fails every gated term does not earn
-that on a total-cost improvement alone. This is the same rule applied the same
-way as in the two earlier rounds.
-
-The partial counts show the fit is a drum rather than either degenerate extreme,
-and also where it still is not the target: both winning banks produce **16
-partials, 5 of them between 476 and 700 Hz**, against the reference's 7 in that
-band. The band is no longer _empty_ — that was the pre-correction finding — but
-neither bank reproduces the density there.
-
-Worth recording separately: `DAMP` fits to **0.709 (normalized 0.376)** in the
-prescribed winner and 0.524 (0.267) in the Hertzian one. Neither is near the
-0.25 lower bound, which is consistent with
-[the loss-scale experiment's](#is-the-head-damping-range-the-constraint-2026-07-31)
-conclusion that the earlier pin was a property of that basin and not of the range.
-
-### The spectral envelope has not moved for anything
-
-12.28 dB prescribed, 12.30 dB Hertzian. To two decimal places the term does not
-distinguish the two contact models, and it is the **largest single contributor in
-both runs** at just over 3× its threshold.
-
-It has now survived every intervention tried against it: contact model, head
-damping range (`-loss-scale`, four times the headroom, flat near 13 dB), seeding,
-a corrected target that changed every other term, and — see
-[the refit below](#the-refit-on-the-corrected-glide-term-2026-08-01) — a corrected
-glide term that changed every other term again. A quantity that does not move
-under five independent interventions is behaving less like a hard problem than
-like a badly posed one.
-
-**An open suggestion, not a conclusion:** the term may be ill-posed for this
-model rather than the model failing it. It is mean-removed third-octave band
-shape out to 12.5 kHz, and above about 3 kHz this model has nothing but the
-stochastic attack layer — no shell, no bearing edge, no lug or hardware
-resonances, no room. A 4 dB threshold over that full span may be asking for
-content the model structurally cannot produce, in which case the honest fix is to
-band-limit the term or to re-derive its threshold, not to keep fitting against it.
-Settling that means measuring what the term's value would be over a restricted
-band, which has not been done. Until it is, this is a question and the 4 dB gate
-stands.
-
-## A correction to the glide term (2026-08-01)
+### A correction to the glide term (2026-08-01)
 
 The glide is the one observable `NLIN` moves and nothing else does, so it is the
 term that decides the nonlinearity's calibration. It was being read off the wrong
 partial, at a time by which that partial no longer existed, through a filter wide
-enough to admit its neighbour. Three defects, one term, all in
-`internal/physical/match/features.go`, and all found by probing the reference
-rather than by reading the code.
-
-### It tracked the loudest partial, not the fundamental
-
-`Extract` took the bend from whichever partial peaked highest. On this reference
-that is the 212.8 Hz mode, whose T60 is **0.146 s** — it is in the room's noise
-floor long before the late probe at 0.400 s fires. The 118.1 Hz fundamental
-beneath it is 12.1 dB quieter and rings **1.490 s**, ten times longer.
-
-So the measurement was taken on whichever mode happened to peak highest rather
-than on the one that still existed to be measured, and what it actually read was
-the noise floor the loud mode decayed into. The reading was confident and had no
-outward sign of being wrong, which is why it survived three rounds of fitting.
-
-Neither obvious alternative is right either. The lowest partial outright is wrong
-because the lowest peak in the band may be a shell resonance or a room mode 40 dB
-down, and the bend belongs to the mode that carries the note. `glidePartial` now
-takes **the lowest partial standing within `GlidePartialWindowDB` (20 dB) of the
-loudest** — the guard against the 40 dB-down room mode, with a preference for the
-fundamental, which on a drum is both what "the pitch of the note" means and the
-longest-lived thing in the recording.
-
-### The late probe was nailed to a fixed time
-
-An instantaneous-frequency reading is a reading only while the tracked partial
-still dominates its own passband. Once it is gone, what is left inside the probe
-filter is leakage from the neighbours, and the phase slope reports _their_ offset
-from the carrier.
-
-This was not a corner case; it was the normal case, and it hit the candidates as
-well as the reference. On the model's own renders the (0,1) fundamental has a T60
-of 0.21 s, so at 0.400 s it is some 105 dB below its early level and the probe
-read the nearest long-lived neighbour instead. As cavity coupling separates the
-doublet, that neighbour moves further from the carrier and the reported "glide"
-moved with it: **−13 cents at the shipped stiffness, −717 at 0.30, −625 at a rigid
-cavity.** Those are not downglides. They are the offset to a different mode, and
-they made the term a function of the cavity rather than of `NLIN`.
-
-`GlideLateSeconds` is therefore no longer where the late probe sits but the
-_latest_ it may sit. The probe is walked back to the last point at which the
-partial is still within `GlideFloorDB` (20 dB) of its early level, and the reading
-is **refused** if that point is not at least `GlideMinSpanSeconds` (50 ms) after
-the early probe. Both probes must also land inside the filter's own passband: a
-deviation wider than the cutoff cannot belong to this partial, because the filter
-that produced the signal would have removed it.
-
-A short honest span beats a long dishonest one. The bend is an exponential
-settling with a time constant of tens of milliseconds, so a probe at 0.10 s has
-already seen nearly all of it while a probe at 0.400 s on a dead partial has seen
-none.
-
-Refusal has to be scoreable, and `Features.GlideMeasured` is what makes it so. A
-reference with no reading **zeroes** the term — there is nothing to compare
-against, and a fabricated zero would silently assert that the reference does not
-bend. A candidate with no reading against a reference that has one pays
-`unreadableGlideCents` = 40, exactly one "clearly wrong" glide: nonzero, because a
-candidate that cannot be measured must not outscore one that can and is merely
-wrong, or the cheapest way to satisfy the objective is a drum with no sustain; and
-no larger, because a fundamental that dies early is already charged by the decay
-and envelope terms and charging it twice is double-counting.
-
-### The probe filter admitted the neighbour
-
-`glideCutoffHz` sets the baseband width from the measured spacing to the nearest
-partial. Wide enough to follow a bend of a semitone, narrow enough to exclude the
-neighbour: on this reference the coupled (0,1) pair sits **21.6 Hz** apart, and a
-cutoff admitting both reads their beat as a 96-cent bend where the true one is
-about 70.
-
-### What this supersedes
-
-**Every fit total ever recorded in this repository.** The glide is one of nine
-terms and it is weighted at 1/40 cents, so an error in the target it is scored
-against moves the sum by an amount that depends on where each candidate happened
-to sit — it is not an offset, and it cannot be subtracted out. The corrected
-estimator reads the reference's bend as **58.9 cents**; the old one reported
-**+89.3**, half again as much, and every earlier fit was fitted against that.
-
-The size of the damage is best seen by re-scoring a bank that was tuned onto it.
-`fit-final-prescribed` was credited with a **17.6-cent** glide error under the old
-objective. Measured against the reference's actual bend it is **107.1 cents** out.
-It was not close to the target; it was close to an artefact, and the old objective
-paid it for being there.
-
-That includes the [corrected head-to-head](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31)
-immediately above, which was the current result until this date, and it includes
-the bank that was in `testdata/physical-fit-tom.json` until this refit. It also
-reorders the archived runs — see the re-score below, where the run that looked
-best under the old objective is the worst of four under this one.
-
-### Re-scoring an archived report under today's objective
-
-An archived report's stored total is a number produced by an objective that no
-longer exists. The report does, however, record its own best point exactly, so the
-bank can be re-measured by **pinning it and asking for a report**. This is the
-only way to put an archived fit and a current one on the same axis:
-
-```bash
-go run ./cmd/fit-physical -reference reference/tom.wav -channel right \
-    -report-only -quality standard -contact prescribed \
-    -velocity 0.575 \
-    -fix physicalTom.diameter=0.28694710263046824 \
-    -fix physicalTom.batterTension=0.11845889401102773 \
-    …one -fix per free parameter, from the report's best.params[].normalized…
-```
-
-Four things have to line up or the answer is about a different drum:
-
-- **One `-fix` per free parameter**, each taking the `normalized` value from the
-  report's `best.params` — not the SI `value`, since the mapping from knob
-  position to SI is what `-fix` is expressed in. Parameters marked `"fixed": true`
-  (QUAL) are already pinned and must not be passed.
-- **`-velocity <best.velocity01>`.** Strike velocity is the eighteenth search
-  dimension but it is not a parameter in the bank, so `-fix` cannot reach it and
-  `-report-only` used to measure every re-scored bank at VEL = 1. That is not a
-  small distortion: `fit-glidefix-interrupted` scores **19.517** at VEL = 1 and
-  **10.577** at its own 0.5754. Velocity moves the level, envelope and
-  attack-balance terms together, and at VEL = 1 that bank's unmatched share reads
-  0.910 against 0.047 — it is driven so hard that the measurement barely finds the
-  reference's partials in it. The flag exists for exactly this.
-- **`-quality` and `-contact` as the run used them**, both recorded in the
-  report's `search` block. A Standard-tier bank re-scored at Draft is a different
-  instrument.
-- **`-channel` as the run used it**, from the report's `reference.channel`.
-
-A run whose invocation used a flag the re-score does not reproduce cannot be
-re-scored this way at all. `-loss-scale` and `-mallet-g` are the two that matter
-here: dropping them re-measures the bank on a drum the run was never fitted to, so
-the `-loss-scale` sweep, the `v5` run and the 5 g Hertzian run have **no
-comparable total under today's objective** and are deliberately not tabulated
-below.
-
-The comparison, each run re-scored at its own quality tier, contact model, channel
-reduction and velocity. All four were fitted on `-channel right`:
-
-| Archived run               | Total as reported then | Under today's objective | Glide error then → now |
-| -------------------------- | ---------------------- | ----------------------- | ---------------------- |
-| `fit-glidefix-interrupted` | 10.577                 | **10.577**              | 1.9 ¢ → 1.9 ¢          |
-| `fit-final-hertzian`       | 11.535                 | 15.146                  | 0.1 ¢ → 59.6 ¢         |
-| `fit-v4-hertzian`          | 11.630                 | 15.650                  | — → 49.7 ¢             |
-| `fit-final-prescribed`     | 11.252                 | **18.991**              | 17.6 ¢ → 107.1 ¢       |
-
-**The first row is the recipe validating itself.** `fit-glidefix-interrupted` is
-the one archived run made _after_ the glide fix and on the right channel, and
-re-scoring it reproduces its reported total to the digit — 10.577 against 10.577,
-term for term. That is what licenses the other three rows: the recipe is exact
-when nothing has changed, so where it disagrees, something has.
-
-**The ordering changes**, which is the point. `fit-final-prescribed` — the winner
-under the old objective, and the run the paper's `@results` chapter and its four
-committed figures still describe — is the **worst of the four** under the
-corrected one. The glide column says why: the two runs
-whose glide error the old objective scored as near-zero are exactly the two that
-move furthest, because a near-zero error against a fabricated target is a bank
-that has been tuned _onto_ the artefact.
-
-Two cautions on reading the right-hand column.
-
-**It is not only the objective that moved.** A re-score renders the archived bank
-through today's synthesis as well as measuring it with today's metric, and the
-model gained nonlinear modal coupling — on by default — between
-`fit-final-prescribed` and now. So these banks re-render as well as re-measure,
-and the shipped baseline moved with them (33.094 → **32.442** at the same bank on
-the same channel). The right-hand column is therefore "what this parameter set is
-worth today", which is the question worth asking, and not "what the glide fix
-alone cost this run", which cannot be recovered.
-
-**A re-scored ranking is not a re-fitted ranking.** Each of these banks was
-optimized against the old objective and is being marked under the new one, so the
-spread says how far the objective moved, not how well each search worked. The only
-honest way to rank two searches is to run both under the same objective, which is
-what the refit below does — and only for the prescribed contact.
-
-Two further runs re-score badly enough to be worth naming so nobody re-derives
-them by hand: `fit-right-prescribed` (7.445 → 18.675) and `fit-right-hertzian`
-(4.486 → 20.801). Both predate the partial correction as well as the glide one, so
-they sit in a **third** era again, and neither number belongs in a table with the
-four above.
-
-## The refit on the corrected glide term (2026-08-01)
-
-The prescribed contact was refitted from scratch on the corrected objective. Only
-the prescribed model has been refitted, so **the contact-model comparison is not
-re-established**; the [head-to-head above](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31)
-remains the last word on that question and it is a superseded one.
-
-```bash
-go run ./cmd/fit-physical -reference reference/tom.wav -channel right \
-    -contact prescribed -quality standard \
-    -restarts 12 -pop 16 -iterations 150 -seeded-restarts 4 \
-    -o fits/s3-right-prescribed.json -checkpoint fits/s3-right-prescribed.checkpoint
-```
-
-Twelve restarts of 150 iterations at population 16, Standard quality, **88 584
-evaluations**, 2 h 35 min on twelve cores, all restarts complete and the run not
-interrupted. The report is `fits/s3-right-prescribed.json`, the render
-`renders/s3-right-prescribed.wav`; both are gitignored, so the numbers below are
-quoted rather than linked.
-
-**Total 10.382, from a baseline of 32.442** at the shipped bank. Each term with
-its threshold and with the fit's contribution to the sum (value × weight; a term
-sitting exactly at its threshold contributes 1.0):
-
-| Term                         | Threshold | Baseline | Fitted     | contrib  |
-| ---------------------------- | --------- | -------- | ---------- | -------- |
-| Partial frequency (gate)     | 25 ¢      | 120.9 ¢  | 48.9 ¢     | **1.96** |
-| Partial decay (gate)         | 0.25      | 1.030    | 0.573      | 1.64     |
-| **Spectral envelope** (gate) | 4 dB      | 22.47 dB | 11.07 dB   | **2.77** |
-| Partial level                | 3 dB      | 11.87 dB | 9.08 dB    | **3.03** |
-| Amplitude envelope           | 3 dB      | 35.23 dB | 0.72 dB    | 0.24     |
-| Glide                        | 40 ¢      | 57.8 ¢   | 0.03 ¢     | 0.00     |
-| Attack balance               | 6 dB      | 0.74 dB  | 0.02 dB    | 0.00     |
-| Unmatched share              | 0.5       | 0.467    | 0.047      | 0.09     |
-| Spurious share               | 0.5       | 0.423    | 0.327      | 0.65     |
-| **Total**                    | —         | 32.442   | **10.382** | —        |
-
-### The result is convergence, not the new best total
-
-10.382 against `fit-glidefix-interrupted`'s 10.577 is a 1.8 % improvement, and it
-is the least interesting thing about this run. What matters is that the two runs
-**agree term by term**:
-
-| Term               | This run (12 restarts, complete) | `fit-glidefix-interrupted` (8, interrupted) |
-| ------------------ | -------------------------------- | ------------------------------------------- |
-| Partial frequency  | 48.936 ¢                         | 48.997 ¢                                    |
-| Partial level      | 9.081 dB                         | 9.172 dB                                    |
-| Partial decay      | 0.573                            | 0.602                                       |
-| Spectral envelope  | 11.068 dB                        | 11.034 dB                                   |
-| Amplitude envelope | 0.724 dB                         | 0.746 dB                                    |
-| Unmatched share    | 0.047                            | 0.047                                       |
-| Spurious share     | 0.327                            | 0.330                                       |
-| Glide              | **0.029 ¢**                      | **1.892 ¢**                                 |
-| Attack balance     | **0.019 dB**                     | **0.188 dB**                                |
-
-Different restart counts, different random seeds, one complete and one
-interrupted — and **everything the objective can see about the drum is the same
-number**. The entire 10.577 → 10.382 gap is the two bold rows, glide and attack
-balance, which are the two cheapest terms in the sum to polish once the rest is
-settled.
-
-Two independent searches arriving at the same point is a statement about **the
-model's ceiling on this recording**, not about either search. It says the
-remaining 10.4 is not search effort left on the table: the optimizer is finding
-what there is to find, and what it finds is 1.96× the frequency gate, 2.77× the
-envelope gate and 3.03× the partial-level threshold. A better total on this
-reference now needs a different model, not a longer run.
-
-The convergence curve agrees from the inside. The best restart's last three
-iterations read 10.3829, 10.3823, 10.3821 — flat to four digits, where
-[the very first fit](#results) was still visibly descending when its budget ran
-out.
-
-### What it reaches, and what it still does not
-
-**All three gate terms are missed**, for the third round running: partial
-frequency 48.9 ¢ against 25, partial decay 0.573 against 0.25, spectral envelope
-11.07 dB against 4.
-
-The spectral envelope is now on its **sixth** failed intervention — contact model,
-head damping range, seeding, the partial correction, the glide correction, and a
-converged full-budget refit — and it has sat between 11 and 13.6 dB throughout.
-See [the open suggestion above](#the-spectral-envelope-has-not-moved-for-anything)
-that the term may be ill-posed for this model rather than the model failing it;
-nothing here counts against that reading.
-
-Comparisons with the previous winner have to be made carefully, because
-`fit-final-prescribed` was reported under the old objective and re-scores at
-18.991 under this one. Against its **reported** 56.9 ¢, this run's 48.9 ¢ is an
-improvement, and a modest one; against its **re-scored** 102.9 ¢ it is a large
-one. Neither framing is the story, and the same holds for unmatched coverage
-(0.151 reported, 0.314 re-scored, 0.047 here). The comparison that means something
-is the one in the table above, between two runs measured the same way.
-
-The 476–700 Hz band is unchanged as well: the fit puts **5 partials** there
-(477.7, 498.9, 542.4, 607.3, 656.9 Hz) against the reference's 7, out of 16
-against 14 overall — exactly what the previous winner managed. The band is not
-empty and its density is still not reproduced.
-
-Where the fit has genuinely closed is the low end and the fundamental's
-neighbourhood, which is what the halved frequency term reports:
-
-| Reference (Hz)     | Fitted (Hz) |
-| ------------------ | ----------- |
-| 118.06             | 118.45      |
-| 139.61             | —           |
-| 212.78             | 207.52      |
-| 259.09             | 251.12      |
-| 296.70             | 310.74      |
-| 380.55             | 370.22      |
-| 476.56             | 477.70      |
-| 502.60             | 498.88      |
-| 530.10             | —           |
-| 546.86             | 542.44      |
-| 624.57             | 607.25      |
-| 675.79             | 656.92      |
-| 696.87             | 710.37      |
-| 1598.00            | —           |
-| — (no counterpart) | 186.0       |
-| — (no counterpart) | 269.7       |
-| — (no counterpart) | 341.9       |
-| — (no counterpart) | 428.3       |
-| — (no counterpart) | 742.0       |
-
-Eleven of the fourteen reference partials have a fitted counterpart within about
-3 % — the fundamental to within 6 cents — which is what an unmatched share of
-0.047 means in the concrete. What the fit does not have is the 1598 Hz component
-or the two quiet long-ringing ones at 139.6 and 530.1 Hz, and it invents five
-modes of its own, which is what the 0.327 spurious share is charging for.
-
-### The seeded restarts, and what the seed error says
-
-Four of the twelve restarts were seeded from the analytic pre-solve, which
-converged at **26.777, 26.777, 26.777 and 26.793 cents** of frequency error. Two
-things about that are worth recording.
-
-**It is the best seed error yet measured against a corrected target** — 26.8 ¢
-against the 35.9–37.0 ¢
-[recorded in the head-to-head](#the-seed-error-is-itself-a-result-about-the-models-reach),
-and only just outside the 25 ¢ gate. The claim that no bank the product can
-express places its modes on this target much better than the middle thirties is
-therefore **too strong as stated**, and is narrowed rather than retracted: the
-pre-solve now gets within 7 % of the gate. It remains an open question whether the
-gate is reachable at all.
-
-**All four seeds agree to three decimal places**, from four different starting
-points, which is not what four diverse optima look like. Either the pre-solve's
-diversity constraint is not producing diverse banks or this is a single sharp
-optimum that every start falls into; the report does not distinguish them, and it
-is worth checking before `-seeded-restarts` is used to argue anything.
-
-Seeding lost again, on the same paired reading as before — restarts 1–4 are
-seeded, 5–12 are not:
-
-|          | Best       | Mean  |
-| -------- | ---------- | ----- |
-| Seeded   | 10.970     | 13.05 |
-| Unseeded | **10.382** | 11.68 |
-
-The winning restart was unseeded for the third run in a row, and the seeded mean
-is the worse of the two. `-seeded-restarts` stays **off by default**.
-
-### What moved and what did not
-
-`testdata/physical-fit-tom.json` **has been re-derived from this run.** Its
-`_readme` records the three gate misses (48.9 / 0.573 / 11.07), the re-derivation
-date, why a pre-fix total cannot be compared with a post-fix one, and that the
-bank it replaces was reported as 11.252 and re-measures at 18.991 — so the file
-carries its own provenance and cannot be quoted out of era.
-
-`web/src/algo/physicalTomPresets.ts` **has been re-derived from the same run**, so
-the fixture and the shipped **Measured tom** preset agree again — every one of the
-seventeen bank knobs matches the fixture's normalized position. Two dimensions of
-the search are deliberately not in the preset: `physicalTom.quality`, because mode
-count is a CPU budget the user owns rather than a property of this drum, and
-strike velocity, which is not a bank knob at all. The fit found velocity 0.575, so
-the preset is what the drum sounds like at a medium hit; struck harder it will
-bend further than the fit's target, which is a property of the model and not of
-the preset.
-
-This does change what a user hears, and it was held back until it was asked for:
-a bank fitted against an objective that no longer runs should not stay on the
-shipped surface, but replacing it is a taste decision and not a measurement one.
-
-`docs/paper/paper.typ` **gained a chapter** for this run rather than having its
-existing one restated — `= The refit under the corrected objective`, carrying the
-re-score table, the term-by-term agreement above, the ceiling argument and the
-seed-diversity caution. Its two figures are drawn from this report under a
-`-refit` suffix (`just paper-figures-refit`, backed by new `-suffix` and `-only`
-flags on `tools/paper-figures`), and the four committed figures of the `@results`
-chapter are untouched. That is deliberate and it is the paper's own rule: a
-figure carries no record of the run that drew it, so redrawing a chapter's
-figures from a run that chapter does not describe is a silent way to make a paper
-wrong. The paper therefore still reports `fit-final-prescribed` where it was
-made, and now says in its front matter that the refit chapter is the only section
-whose total is current.
-
-`DefaultPhysicalDrum()` and `DefaultContact()` are **unchanged**, for the third
-time and for the same reason: a candidate that misses every gated term does not
-earn a claim about what the model should sound like out of the box, whatever it
-does to the total. The rule has now been applied identically across three
-objectives, which is about as much evidence as a rule of this kind can accumulate.
-
-There is **no right-channel Draft-tier run** to set against this one. A Draft fit
-does exist (`fits/s1-prescribed.json`, 43 809 evaluations, interrupted, total
-10.296) but it was run on the mono downmix, so it is not comparable to anything in
-this section and no mode-budget conclusion is drawn from it.
+enough to admit its neighbour.
+
+**It tracked the loudest partial, not the fundamental.** `Extract` took the bend
+from whichever partial peaked highest, which on a tom can be a mode that is in the
+noise floor long before the late probe fires — so what was read was the noise the
+loud mode decayed into. Neither obvious alternative is right either: the lowest
+partial outright may be a shell resonance or a room mode 40 dB down.
+`glidePartial` now takes the lowest partial standing within
+`GlidePartialWindowDB` (20 dB) of the loudest.
+
+**The late probe was nailed to a fixed time.** An instantaneous-frequency reading
+is a reading only while the tracked partial still dominates its own passband; once
+it is gone, the phase slope reports the neighbours' offset from the carrier. That
+was the normal case, and it hit candidates as well as the reference: as cavity
+coupling separates the doublet the reported "glide" tracked the neighbour, making
+the term a function of the cavity rather than of `NLIN`. `GlideLateSeconds` is
+therefore no longer where the late probe sits but the _latest_ it may sit. The
+probe is walked back to the last point at which the partial is still within
+`GlideFloorDB` (20 dB) of its early level, and the reading is **refused** if that
+point is not at least `GlideMinSpanSeconds` (50 ms) after the early probe. Both
+probes must also land inside the filter's own passband. A short honest span beats
+a long dishonest one: the bend is an exponential settling with a time constant of
+tens of milliseconds.
+
+**Refusal has to be scoreable**, and `Features.GlideMeasured` is what makes it so.
+A reference with no reading **zeroes** the term — a fabricated zero would silently
+assert that the reference does not bend. A candidate with no reading against a
+reference that has one pays `unreadableGlideCents` = 40, exactly one "clearly
+wrong" glide: nonzero, so that an unmeasurable candidate cannot outscore one that
+is merely wrong; and no larger, because a fundamental that dies early is already
+charged by the decay and envelope terms.
+
+**The probe filter admitted the neighbour.** `glideCutoffHz` sets the baseband
+width from the measured spacing to the nearest partial — wide enough to follow a
+bend of a semitone, narrow enough to exclude the neighbour, which a coupled pair
+tens of Hz apart otherwise fails, reading their beat as a bend.
+
+## The fits against the retired recording
+
+Historical note only. Four full-budget fits and several sweeps were run against
+`reference/tom.wav` under three successive objectives. Their totals are not
+comparable to each other, are not comparable to anything measured against the
+licensed reference, and are not quoted here. The two figures worth carrying
+forward are in [the two genuine model errors](#the-two-genuine-model-errors)
+above; everything else about those runs is superseded either by the change of
+reference or by the reproducibility measurement.
+
+Two method results from that era do survive, because they are about the search
+rather than about the recording:
+
+- **Search effort is not the ceiling.** Two independent runs — different restart
+  counts, different seeds, one complete and one interrupted — converged to the
+  same point and agreed term by term on everything the objective can see, with
+  the best restart's last three iterations flat to four digits.
+- **`-seeded-restarts` stays off by default.** The winning restart was unseeded in
+  three consecutive paired comparisons. The mechanism is measurable in advance:
+  the analytic pre-solve reports its own frequency error before any rendering
+  happens, and a box around a seed is worth its cost only in proportion to how
+  good the seed is. Seeding won when the pre-solve reached ~1 ¢ and lost once the
+  same pre-solve floored in the twenties and thirties.
+
+`testdata/physical-fit-tom.json` and the **Measured tom** preset in
+`web/src/algo/physicalTomPresets.ts` both derive from the last of those runs.
+They record what was found; `DefaultPhysicalDrum()` and `DefaultContact()` are
+**unchanged**, as they have been through every round, because a candidate that
+misses every gated term does not earn a claim about what the model should sound
+like out of the box. Both are due for re-derivation against the licensed
+reference (P10's N5 and N8).
 
 ## Reproducing
 
-The run is deterministic given the seed; `TestSearchIsDeterministic` keeps it
-that way. It is not part of `just ci`: it takes minutes, and it needs a
-reference recording the repository does not contain.
+The run is deterministic given the seed; `TestSearchIsDeterministic` keeps it that
+way. It is not part of `just ci`: it takes minutes, and the licensed reference is
+committed but the analysis is not cheap.
+
+```bash
+just fit-physical <reference.wav>                   # passes a checkpoint for you
+go run ./cmd/fit-physical -reference <ref> -channel mono -report-only
+```
 
 ### Listening to what it found
 
 `-wav <path>` renders the fitted bank alongside the JSON report, at
 `-wav-duration` (3 s by default) rather than the 1.2 s the search itself renders
-— long enough to hear a tail, where the fitting duration is chosen to be just
-long enough to measure one. It renders from the candidate's own recorded config,
-so what lands on disk is the drum the report describes even when the report was
+— long enough to hear a tail, where the fitting duration is chosen to be just long
+enough to measure one. It renders from the candidate's own recorded config, so
+what lands on disk is the drum the report describes even when the report was
 resumed from a checkpoint. The export is peak-normalized, like the reference, so
 it is for listening and not for judging level; the true peak is printed.
 
 This matters because **the distance is a proxy and the recording is the target**.
-Every number in this document is a summary of nine terms that were chosen by
-hand, and a fit that wins on them can still be wrong in a way the terms do not
-represent — the 5 g run above is exactly that, and it is audible long before it
-is arguable. A/B against `reference/tom.wav` before believing any total.
+Every number here is a summary of nine terms chosen by hand, four of which do not
+reproduce, and a fit that wins on them can still be wrong in a way the terms do
+not represent. A/B against the reference before believing any total.
+
+### Re-scoring an archived report
+
+An archived report's stored total was produced by an objective that may no longer
+exist, but the report records its own best point exactly, so the bank can be
+re-measured by pinning it and asking for a report — one `-fix` per free parameter,
+taking the `normalized` value from `best.params` (not the SI `value`, since `-fix`
+is expressed in knob positions), with parameters marked `"fixed": true` left
+alone.
+
+Four things must line up or the answer is about a different drum:
+
+- **`-velocity <best.velocity01>`.** Strike velocity is the eighteenth search
+  dimension but is not a bank parameter, so `-fix` cannot reach it and
+  `-report-only` would otherwise measure every re-scored bank at VEL = 1.
+  Velocity moves the level, envelope and attack-balance terms together, and the
+  distortion is large enough to change the ranking.
+- **`-quality` and `-contact` as the run used them**, both recorded in the
+  report's `search` block. A Standard-tier bank re-scored at Draft is a different
+  instrument.
+- **`-channel` as the run used it**, from `reference.channel`.
+- **Any flag the search itself was run under.** `-loss-scale` and `-mallet-g`
+  describe a drum the product cannot be set to; dropping them re-measures the bank
+  on an instrument the run was never fitted to, so such runs have no comparable
+  total and must not be tabulated with ordinary ones.
+
+A re-score renders the archived bank through today's synthesis as well as
+measuring it with today's metric, so the answer is "what this parameter set is
+worth today" and not "what one correction cost that run", which cannot be
+recovered. And a re-scored ranking is not a re-fitted ranking: each bank was
+optimized against a different objective and is only being marked under this one.
 
 ### Stopping one, and picking it up again
 
-A fit takes the better part of an hour, which is long enough that something
-else will want the machine. `-checkpoint FILE` makes that cheap, and
+A fit takes the better part of an hour. `-checkpoint FILE` makes that cheap, and
 `just fit-physical` passes one by default.
 
 A true continuation is not available: mayfly runs its whole loop inside
 `Optimize`, offers no per-iteration hook and cannot be handed a starting
-population, so a stopped swarm's velocities and personal bests are gone for
-good. Two things can be saved instead, and between them they cover both ways a
-run ends.
+population, so a stopped swarm's velocities and personal bests are gone for good.
+Two things are saved instead.
 
-**Finished restarts.** Multi-start is the outer loop, so a restart that
-finished is finished; a resumed run skips it and replays its position through
-this build's measurement code rather than trusting a stored number. A restart an
-interrupt cut short is recorded but marked incomplete, and re-run.
+**Finished restarts.** Multi-start is the outer loop, so a restart that finished
+is finished; a resumed run skips it and replays its position through this build's
+measurement code rather than trusting a stored number. A restart an interrupt cut
+short is recorded but marked incomplete, and re-run.
 
-**The best point, continuously.** This is the one that matters, and the first
-design missed it. Every restart runs concurrently, so they all finish at roughly
-the same moment — interrupt a run half way and typically _none_ of them is
-complete, and restart-level checkpointing alone would save nothing at all. The
-best position any restart has reached is therefore recorded from inside the
-objective, every 250 evaluations, which bounds what a stop can destroy to a
-quarter of a percent of the run.
+**The best point, continuously.** Every restart runs concurrently, so they all
+finish at roughly the same moment — interrupt a run half way and typically _none_
+is complete, so restart-level checkpointing alone would save nothing. The best
+position any restart has reached is therefore recorded from inside the objective
+every 250 evaluations, which bounds what a stop can destroy to a quarter of a
+percent of the run.
 
-`SIGINT`/`SIGTERM` asks the search to wind up rather than killing the process:
-the objective starts returning `+Inf` without rendering, so mayfly keeps the
-incumbent it already had and every restart still reports the best it genuinely
-found. A stopped run therefore writes a normal report, marked
-`"interrupted": true` — which also qualifies its evaluation count, since the
-tail of that count is refusals rather than measured candidates. A second signal
-kills it the usual way.
+`SIGINT`/`SIGTERM` asks the search to wind up rather than killing the process: the
+objective starts returning `+Inf` without rendering, so mayfly keeps the incumbent
+it had and every restart still reports the best it genuinely found. A stopped run
+writes a normal report marked `"interrupted": true` — which also qualifies its
+evaluation count, since the tail of that count is refusals rather than measured
+candidates. A second signal kills it the usual way.
 
-Resuming onto a checkpoint from a different run is refused, naming the field
-that changed. The guard that matters is not the flags but **`baselineCost`** —
-the shipped bank's distance from the reference, measured end to end through the
-same synthesis and feature extraction the search uses, and computed on every run
-anyway. Any edit that moves a rendered sample or a measured feature moves it
-too, and that is exactly the case a resume must refuse: a best-of taken across
-two different models is not a fit, and nothing downstream would reveal the mix.
-A performance change that really is bit-exact leaves it untouched and resumes
+Resuming onto a checkpoint from a different run is refused, naming the field that
+changed. The guard that matters is not the flags but **`baselineCost`** — the
+shipped bank's distance from the reference, measured end to end through the same
+synthesis and feature extraction the search uses, and computed on every run
+anyway. Any edit that moves a rendered sample or a measured feature moves it too,
+and that is exactly the case a resume must refuse: a best-of taken across two
+different models is not a fit, and nothing downstream would reveal the mix. A
+performance change that really is bit-exact leaves it untouched and resumes
 cleanly, so the guard doubles as a test of that claim.

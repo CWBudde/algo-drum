@@ -158,9 +158,9 @@ allocates nothing.
 > coefficients, the Standard retrigger worst case is **0.70× real time** on
 > `js/wasm` (2.06× on host), against 1.40× with the coupling off. The
 > fixed-point iteration count barely moved — 2.404 to 2.491 — so the cost is the
-> coupling's table walk, not the physics, and it is the subject of PLAN P9/M1b.
+> coupling's table walk, not the physics, and it is the subject of PLAN N9.
 > The two-voice figure below is stale by the same factor. Standard is currently
-> below real time on `js/wasm`; Draft is the shipped answer until M1b lands.
+> below real time on `js/wasm`; Draft is the shipped answer until N9 lands.
 
 Do not use the decaying-tail row for this comparison. That benchmark is bimodal:
 once the modes decay into subnormal range the arithmetic falls off the fast path
@@ -264,7 +264,7 @@ a new one.
 
 The consequence is that repeated hits within a render are identical to each
 other. That is deliberate. Per-trigger variation is a separate mechanism with a
-separate justification (PLAN.md S7).
+separate justification (PLAN.md N10).
 
 ### Termination
 
@@ -312,8 +312,24 @@ The P8 suite covers:
 
 ## What is deliberately still missing
 
-The layer is one band with one decay. A real high band has its own spectral tilt
-that changes with strike position and evolves during the decay, and none of that
-is modelled. It is a reduced model of unresolved modes, not a claim about them,
-and the next thing it needs is measured spectra to fit against rather than more
-parameters.
+The three bands have fixed centres and fixed relative levels. A real high band
+has its own spectral tilt that changes with strike position and evolves during
+the decay, and none of that is modelled. The layer is a reduced model of
+unresolved modes, not a claim about them, and what it needs next is measured
+spectra to fit against rather than more parameters — which the licensed
+reference set now supplies.
+
+## The high band is not where the model's deficiency lives
+
+It is tempting to read the sections above as saying the voice's remaining error
+is above the top retained mode, in the region only this layer covers. **It is
+not**, and the point has been measured rather than argued: band-limiting the
+spectral-envelope error to 50 Hz–2 kHz, where the model has full modal content,
+moves it only from **11.07 to 9.11 dB**. The band-coverage hypothesis is real and
+worth about 2 dB of 11; the rest is inside the modal band.
+
+So widening the attack layer, or moving it, is not the lever. The actionable
+defect is a damping-distribution problem in the modal band — see
+[`physical-objective-validation.md`](physical-objective-validation.md) for the
+residual budget and the falsification tests behind that conclusion, and
+[P10/N3](../PLAN.md) for the work it implies.

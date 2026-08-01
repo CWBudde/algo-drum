@@ -1,6 +1,8 @@
 # Physical drum modelling research
 
-Research date: 2026-07-29
+Research date: 2026-07-29. Survey re-run 2026-08-01 — see
+[The 2026-08-01 re-survey](#the-2026-08-01-re-survey-a-negative-result), whose
+conclusion is negative and is the more useful half of this document.
 
 ## Decision
 
@@ -65,6 +67,57 @@ the browser pipeline.
 The practical architecture is hybrid: physical modal dynamics in the audio
 loop, with coefficients optionally calibrated from offline FDTD/FEM or
 recordings.
+
+## The 2026-08-01 re-survey: a negative result
+
+The table above was written before anything existed. The survey was re-run on
+2026-08-01, after the model had been built, calibrated and measured, to answer a
+narrower and much more useful question: **does any more sophisticated formulation
+target the defect that survives measurement?**
+
+That defect is specific.
+[`physical-objective-validation.md`](physical-objective-validation.md) budgets the
+residual and finds that most of what the objective reports is not reproducible;
+what remains is a **damping-distribution** problem — the spectrum evolves wrongly
+over time, and the largest single contributor is an under-damped coupled `(0,1)`
+doublet that rings far longer than the reference's. That is a question about
+*which mode loses energy how fast*, not about spatial resolution, geometry
+fidelity or state count.
+
+**No surveyed method addresses it.** Recording that is worth more than the
+alternatives it rejects, because each of these had been proposed at least once.
+
+| Formulation | Would it reach the defect? | Why not |
+| --- | --- | --- |
+| FDTD membranes + 3-D air field (Bilbao; Torin/Hamilton/Bilbao) | No | Dead twice over. On **cost**: the CFL condition at audio rate forces a grid step of ~1.24 cm, and Bilbao & Webb needed GPGPUs for exactly this class of model — it is not a `js/wasm` audio-thread candidate at any quality tier. On **fittability**: 10⁴–10⁶ state variables, none of which is a parameter you can fit to a recording, so it moves the damping question from "17 parameters" to "a material loss law plus a mesh". |
+| Digital waveguide mesh (Van Duyne & Smith; Laird) | No | Same CFL/dispersion economics as FDTD with additional boundary-fitting error on a circular rim. Damping enters through wall filters that are *less* directly parameterised per mode than the current loss law, not more. |
+| Functional Transformation Method | No — it is what we already run | For a separable circular membrane the FTM's Sturm–Liouville transform **is** the Fourier–Bessel modal expansion in `internal/physical/modes.go`. Adopting it would rename the implementation, not change it. Its genuine advantage is over geometries where the modes are not analytic, which is not this one. |
+| FEM/BEM | No, and it was never a real-time candidate | Useful offline for shell, bearing edge and radiation, exactly as the table above says. It supplies mode shapes and radiation efficiencies, not the head-pair damping split, and there is no measured shell mobility to fit it against — see [`physical-real-instrument-departures.md`](physical-real-instrument-departures.md). |
+| A resolved 3-D interior air field instead of the lumped/modal cavity | No, and this is provable | Non-uniform cavity modes have **zero net volume**, so they do not change the quasi-static compliance the two heads see: it is exactly `ρc²/V` at one cavity state and at six. The coupling stiffness — the thing the doublet's frequency and damping both depend on — is unaffected. PLAN.md §N4 and `physical-cavity.md` record the arithmetic; the transverse modes the model *does* now carry were added for their own audible partial, not for the coupling. |
+| Port-Hamiltonian formulation | No | It is a restatement of the passivity bookkeeping the model already performs: the discrete-gradient Berger update and the rank-one cavity solve both carry explicit energy arguments and tests. Real value if the model grew several interconnected nonlinear subsystems; none today. |
+| Mass-interaction (CORDIS-ANIMA lineage) | No | A different discretisation of the same physics, with parameters (per-mass damping) that are further from measurable quantities than the modal loss law, not closer. |
+| Differentiable / learned modal synthesis (Zheleznov et al.) | It upgrades the **search**, and search is not the ceiling | The clearest of the negatives. Two independent fitting runs from diverse seeds already agree term for term and land flat to four digits — a better optimiser cannot improve on a fit that already reaches the same optimum from anywhere. The binding constraints are the objective's reproducibility and the model's missing damping structure, both upstream of the gradient. |
+
+Two things the survey did surface as worth having, and both are estimation rather
+than simulation:
+
+- **Modal-decay estimation done properly.** The repository fits decay by
+  log-linear regression on a heterodyned envelope with a hard −45 dB truncation.
+  Karjalainen et al. exists to replace exactly that, with an explicit
+  exponential-plus-noise-floor model; Ege, Boutillon & David demonstrate subband
+  ESPRIT resolving *twin modes* — which is the case the current
+  `MinSeparationHz = 15` structurally cannot resolve — and Badeau, David &
+  Richard supply the order-selection criterion. PLAN.md §P10/N2.
+- **Identifiability analysis.** The converged fits show the textbook sloppy-model
+  signature; Gutenkunst et al. names it and Raue et al. gives the profile-likelihood
+  procedure that separates structural from practical non-identifiability. PLAN.md
+  §P10/N6.
+
+**The design consequence.** Effort belongs in the damping structure, the
+estimator and the objective — not in a more faithful integrator. A model that
+resolves the air in three dimensions and still puts the wrong T60 on the
+fundamental sounds exactly as wrong as this one, and costs four orders of
+magnitude more to run.
 
 ## Recommended reduced model
 
@@ -305,7 +358,21 @@ Validation must be layered so a plausible sound cannot hide incorrect physics.
 Store short derived metrics and scripts where possible. Do not commit
 third-party or newly recorded audio without a clear license and provenance.
 
+That rule is the reason the first recording ever fitted against could not be
+committed, and the reason the current one can:
+`reference/tt08x08-mp-hd-v01..v16.wav` is CC BY 4.0 with a stated instrument, and
+[`reference/CREDITS.md`](../reference/CREDITS.md) carries the licence, the
+attribution the licence requires, the instrument as described by the recordist,
+what was measured here rather than claimed, and per-file checksums. Anything
+added beside it is held to that sheet's shape.
+
 ## Sources
+
+Grouped: the modelling literature the design came from, then the estimation and
+identifiability literature the 2026-08-01 re-survey added. Each entry says what
+it is cited **for**, so an entry that stops being used is visible as such.
+
+### Physical modelling
 
 - F. Avanzini and R. Marogna, ["A Modular Physically Based Approach to the
   Sound Synthesis of Membrane Percussion
@@ -361,4 +428,63 @@ third-party or newly recorded audio without a clear license and provenance.
   arXiv:2601.10453. Gradient-based fitting of nonlinear modal models to
   recordings with the parameters constrained to remain physical throughout
   training — a route to calibration that the derivative-free fitter in
-  `cmd/fit-physical` does not have.
+  `cmd/fit-physical` does not have. _Cited for:_ the differentiable-synthesis row
+  of the re-survey, where it is rejected as a search upgrade rather than a model
+  upgrade.
+- S. Van Duyne and J. O. Smith, "Physical Modeling with the 2-D Digital Waveguide
+  Mesh", ICMC 1993. _Cited for:_ the waveguide-mesh row of the re-survey — the
+  origin of the method and of its dispersion and boundary-fitting problems.
+- S. Bilbao and C. J. Webb, "Physical Modeling of Timpani Drums in 3D on GPGPUs",
+  Journal of the Audio Engineering Society, 2013. _Cited for:_ the cost half of
+  the FDTD rejection — a 3-D membrane-plus-air drum at audio rate is GPGPU work,
+  which settles the question for a browser audio thread without further argument.
+- S. Bank, "Direct Design of Parallel Second-Order Filters for Instrument Body
+  Modeling", ICMC 2007, pp. 458–465. _Cited for:_ the body/radiation post-filter
+  topology — the published, physically correct way to add a static observation
+  filter after a modal sum. Recorded here because that design was tried and
+  **failed the falsification test**: no static `g(f)` can fix a defect that is
+  time-varying. See
+  [`physical-objective-validation.md`](physical-objective-validation.md).
+
+### Estimation, damping and identifiability
+
+Added by the 2026-08-01 re-survey. These are what the survey concluded the path
+actually needs, in place of a more sophisticated integrator.
+
+- M. Karjalainen, P. Antsalo, A. Mäkivirta, T. Peltonen and V. Välimäki,
+  "Estimation of Modal Decay Parameters from Noisy Response Measurements",
+  Journal of the Audio Engineering Society **50**(11):867–878, 2002. _Cited for:_
+  the replacement for the repository's log-linear decay fit — it models the
+  exponential and the noise floor jointly instead of truncating at −45 dB and
+  hoping.
+- C. Ege, X. Boutillon and M. David, "High-resolution modal analysis", Journal of
+  Sound and Vibration **325**(4–5):852–869, 2009. _Cited for:_ subband ESPRIT
+  resolving the closely spaced **twin modes** of a plate — the exact case
+  `match`'s `MinSeparationHz = 15` cannot resolve, and therefore the exact case
+  `TensionAsymmetry` is being fitted blind against.
+- R. Badeau, B. David and G. Richard, "A New Perturbation Analysis for Signal
+  Enumeration in Rotational Invariance Techniques", IEEE Transactions on Signal
+  Processing **54**(2), 2006. _Cited for:_ ESTER, the order-selection criterion a
+  subband-ESPRIT re-estimation needs to decide how many modes are present rather
+  than being told.
+- R. N. Gutenkunst, J. J. Waterfall, F. P. Casey, K. S. Brown, C. R. Myers and
+  J. P. Sethna, "Universally Sloppy Parameter Sensitivities in Systems Biology
+  Models", PLoS Computational Biology **3**(10):e189, 2007. _Cited for:_ the name
+  and the signature of what the converged fits show — a search that reaches the
+  same point from diverse seeds, flat to four digits, over parameter combinations
+  the data does not constrain.
+- A. Raue, C. Kreutz, T. Maiwald, J. Bachmann, M. Schilling, U. Klingmüller and
+  J. Timmer, "Structural and Practical Identifiability Analysis of Partially
+  Observed Dynamical Models by Exploiting the Profile Likelihood",
+  Bioinformatics **25**(15):1923–1929, 2009. _Cited for:_ the procedure that
+  separates structurally non-identifiable parameters from merely
+  under-determined ones — the follow-up to a Hessian eigenspectrum, in PLAN.md
+  §P10/N6.
+- G. Kirby and M. Sandler, Journal of the Acoustical Society of America
+  **150**(1):202–214, 2021, [doi:10.1121/10.0005509](https://doi.org/10.1121/10.0005509).
+  _Cited for:_ the closest published work to this one — measured on a **tom-tom**
+  across 67 strike intensities, with a 20-listener AB test that came out at
+  chance. It is both the strongest external anchor for the velocity-dependent
+  behaviour the licensed pack now supplies, and the standing evidence that a
+  reduced model can be indistinguishable from a recording, so the ceiling here is
+  not the synthesis method.

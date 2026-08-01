@@ -18,7 +18,7 @@ uploaded to Freesound by **quartertone**.
 **Required attribution.** Any distribution of this repository, or of audio
 derived from these files, must carry:
 
-> Tom samples by *quartertone*, from the pack "Tomtom 08x08inch-multisampled"
+> Tom samples by _quartertone_, from the pack "Tomtom 08x08inch-multisampled"
 > (<https://freesound.org/people/quartertone/packs/8767/>), used under CC BY 4.0.
 
 **What was verified, and what was not.** The licence above was read directly from
@@ -40,12 +40,12 @@ first rather than relying on this note.
 This is the first reference in the project with a stated instrument. It fixes
 values that were previously fitted parameters:
 
-| Quantity | Value | Consequence for `cmd/fit-physical` |
-| --- | --- | --- |
-| Shell diameter | 8 in = 0.2032 m | `SIZE` becomes a constant |
-| Shell depth | 8 in = 0.2032 m | `DEPTH` becomes a constant |
-| Batter head | Remo coated Ambassador, 10 mil single ply | batter surface density is known, not fitted |
-| Resonant head | Remo clear Diplomat, 7.5 mil single ply | resonant surface density likewise |
+| Quantity       | Value                                     | Consequence for `cmd/fit-physical`          |
+| -------------- | ----------------------------------------- | ------------------------------------------- |
+| Shell diameter | 8 in = 0.2032 m                           | `SIZE` becomes a constant                   |
+| Shell depth    | 8 in = 0.2032 m                           | `DEPTH` becomes a constant                  |
+| Batter head    | Remo coated Ambassador, 10 mil single ply | batter surface density is known, not fitted |
+| Resonant head  | Remo clear Diplomat, 7.5 mil single ply   | resonant surface density likewise           |
 
 Head gauges are the manufacturer's standard for those models; the surface
 densities that follow from them have not been measured here and the coating's
@@ -86,24 +86,24 @@ Measured here, not claimed by the source:
 
 SHA-256, first 16 hex digits:
 
-| File | SHA-256 (truncated) |
-| --- | --- |
-| `tt08x08-mp-hd-v01.wav` | `261a87ed6543d9b5` |
-| `tt08x08-mp-hd-v02.wav` | `4db659e2abceae6c` |
-| `tt08x08-mp-hd-v03.wav` | `527443eaeef4d238` |
-| `tt08x08-mp-hd-v04.wav` | `aff087b15a1ec604` |
-| `tt08x08-mp-hd-v05.wav` | `15f878f23b7e3026` |
-| `tt08x08-mp-hd-v06.wav` | `d7b1881b771f2b6b` |
-| `tt08x08-mp-hd-v07.wav` | `cc48bff736e56108` |
-| `tt08x08-mp-hd-v08.wav` | `4cbd404bd4cd935b` |
-| `tt08x08-mp-hd-v09.wav` | `55cb42c5291c83c8` |
-| `tt08x08-mp-hd-v10.wav` | `37bd114b4d8fbe56` |
-| `tt08x08-mp-hd-v11.wav` | `a207f94a3d1f6119` |
-| `tt08x08-mp-hd-v12.wav` | `967a29841daa1ba8` |
-| `tt08x08-mp-hd-v13.wav` | `68afacc75573cda4` |
-| `tt08x08-mp-hd-v14.wav` | `9f4caf3ba1d0b206` |
-| `tt08x08-mp-hd-v15.wav` | `31be152e13573b15` |
-| `tt08x08-mp-hd-v16.wav` | `2cd7dc50893e72b2` |
+| File                    | SHA-256 (truncated) |
+| ----------------------- | ------------------- |
+| `tt08x08-mp-hd-v01.wav` | `261a87ed6543d9b5`  |
+| `tt08x08-mp-hd-v02.wav` | `4db659e2abceae6c`  |
+| `tt08x08-mp-hd-v03.wav` | `527443eaeef4d238`  |
+| `tt08x08-mp-hd-v04.wav` | `aff087b15a1ec604`  |
+| `tt08x08-mp-hd-v05.wav` | `15f878f23b7e3026`  |
+| `tt08x08-mp-hd-v06.wav` | `d7b1881b771f2b6b`  |
+| `tt08x08-mp-hd-v07.wav` | `cc48bff736e56108`  |
+| `tt08x08-mp-hd-v08.wav` | `4cbd404bd4cd935b`  |
+| `tt08x08-mp-hd-v09.wav` | `55cb42c5291c83c8`  |
+| `tt08x08-mp-hd-v10.wav` | `37bd114b4d8fbe56`  |
+| `tt08x08-mp-hd-v11.wav` | `a207f94a3d1f6119`  |
+| `tt08x08-mp-hd-v12.wav` | `967a29841daa1ba8`  |
+| `tt08x08-mp-hd-v13.wav` | `68afacc75573cda4`  |
+| `tt08x08-mp-hd-v14.wav` | `9f4caf3ba1d0b206`  |
+| `tt08x08-mp-hd-v15.wav` | `31be152e13573b15`  |
+| `tt08x08-mp-hd-v16.wav` | `2cd7dc50893e72b2`  |
 
 ## `tom.wav` — the superseded reference
 

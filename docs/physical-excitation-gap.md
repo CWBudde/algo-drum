@@ -1,96 +1,97 @@
-# Where the 476–700 Hz band went
+# The excitation-spectrum gap
 
-> **Pending re-measurement (2026-07-31).** Everything in this document rests on a
-> reference reduction taken with a partial-level estimator that has since been
-> corrected — see
-> [`physical-measured-fit.md` § A correction to the partial measurement](physical-measured-fit.md#a-correction-to-the-partial-measurement-2026-07-31).
-> The corrected reduction of the right channel finds 14 partials rather than 7,
-> seven of them in this band, so both the size of the deficit measured here and
-> the conclusions drawn from it are pending re-measurement. Nothing below is
-> retracted; none of it should be quoted as current either.
+This document used to be a study of a band deficit measured against
+`reference/tom.wav`. That recording is being retired — unknown provenance,
+unlicensed, 44.1 kHz, spaced stereo pair; see `PLAN.md` §"P10" item N8 and
+`reference/CREDITS.md` for the licensed replacement. Everything that counted or
+compared partials in that recording has been **deleted** rather than annotated.
 
-[`physical-measured-fit.md`](physical-measured-fit.md) ended on one unexplained
-number. The fit matched the reference's pitch, ring and envelope closely and
-missed its spectral envelope by 13.6 dB against a 4 dB gate, because the
-recording carries nine resolvable partials between 476 and 700 Hz and the model
-produces none there. That document left three suspects: the two-head mode
-series, the cavity split, or the absent shell and lug modes.
+What survives is what was measured against the model itself, plus the analytic
+argument about the contact force, and that turns out to be the useful half.
 
-It is none of the three. **The modes are there and the force that should excite
-them is not.** This is an excitation-spectrum gap, and
-[`physical-tom-review.md`](physical-tom-review.md) §6 predicted it by inspection
-before the fit measured it.
+## Where this now sits
 
-Everything below is measured against `testdata/physical-fit-tom.json` at 44.1 kHz
-— the reference's own rate — with `internal/physical/match`. The reference
-recording is of unknown provenance and is not in the repository; see the
-measured-fit document for what that does and does not license.
+The residual this document was chasing has since been measured a second way, and
+the framing changed. The method and the raw evidence are in
+[objective validation](physical-objective-validation.md); `PLAN.md` §"P10 — The
+objective, the reference, and what is actually broken" carries the plan. Four
+results from there bear directly on this document, and none of them is restated
+here:
 
-## The gap is a hole in the spectrum, not a hole in the mode list
+- The residual **budgets**, and the actionable part of it is time-varying — the
+  spectrum evolves wrongly, flat at onset and diverging monotonically with time.
+  That is a **damping-distribution** problem, not an excitation one.
+- **A static observation or post-filter cannot fix the envelope term.** This is
+  the sharpest constraint on the present document: the deficit below is a
+  missing-excitation story with an observation-side alternative, and the
+  falsification test forecloses the observation side outright — even a fully
+  free per-band EQ, the absolute limit of any static filter, falls well short of
+  the criterion.
+- **Band-limiting kills the "it all lives above the top retained mode" reading.**
+  Restricting to the range where the model has full modal content barely moves
+  the term, so the seam described below is real but small.
+- Most of the terms this document's era scored against were **not reproducible
+  measurements at all** — the objective disagrees with itself on a coincident
+  pair by more than the adoption gates allow. Only the spectral-envelope term
+  survived as a reliable measurement.
 
-The ⅓-octave band levels, candidate minus reference, mean-removed within each
-window so a level difference cannot show up:
+So the excitation defect described below is real and structural, but it is not
+where the remaining error lives. Read this document for what the contact force
+provably cannot do, not for a ranking of work.
 
-| Band (Hz) | 0–20 ms | 20–100 ms | 0.1–0.4 s | 0.4–1.2 s |
-| --------- | ------- | --------- | --------- | --------- |
-| 200       | −5.1    | −8.5      | −0.2      | +23.7     |
-| 252       | −9.5    | +6.2      | +10.5     | +27.0     |
-| 400       | +3.7    | +3.3      | −1.0      | +1.4      |
-| **504**   | −9.7    | −17.7     | **−22.6** | −17.5     |
-| **635**   | −12.7   | −24.0     | **−30.4** | **−35.8** |
-| **800**   | −7.5    | −15.2     | **−21.4** | −27.9     |
-| **1008**  | −7.2    | −19.7     | **−23.9** | −15.8     |
-| 1270      | −6.9    | −11.4     | −15.3     | −7.5      |
-| 2016      | −1.0    | −6.1      | +6.7      | −0.8      |
+Throughout, **476–700 Hz** is used as a fixed band label. It was originally
+picked from the retired recording's partial list; it is retained only so the
+model-internal measurements below stay comparable to each other.
 
-Two things to read off it. The deficit is **band-limited** — it starts abruptly
-between 400 and 504 Hz and is gone again by 2 kHz — and it **deepens with
-time**, from about −10 dB during contact to −30 dB in the body. Below it the
-model is progressively too loud in the tail, which is the same fact stated the
-other way: its low modes carry the whole tail because nothing above them
-survives.
+## The mode list is not the constraint
 
-The mode list is not the constraint. At High quality the batter bank puts **58
-modes between 476 and 700 Hz** and the partial detector finds **none** of them:
+Model-internal. At High quality the batter bank puts 58 modes into the band:
 
-| Quality  | Modes | Highest batter mode | Modes in 476–700 | Partials detected in 476–700 |
-| -------- | ----- | ------------------- | ---------------- | ---------------------------- |
-| Draft    | 48    | 467.6 Hz            | 0                | 0                            |
-| Standard | 96    | 665.1 Hz            | 45               | 0                            |
-| High     | 160   | 852.5 Hz            | 58               | 0                            |
+| Quality  | Modes | Highest batter mode | Modes in 476–700 Hz |
+| -------- | ----- | ------------------- | ------------------- |
+| Draft    | 48    | 467.6 Hz            | 0                   |
+| Standard | 96    | 665.1 Hz            | 45                  |
+| High     | 160   | 852.5 Hz            | 58                  |
 
-Tripling the mode count moves the spectral-envelope term from 13.3 to 13.1 dB.
-Fifty-eight oscillators sit in the band and are inaudible.
+Fifty-eight oscillators sit in the band and are inaudible. Tripling the mode
+count does not move the spectral-envelope term meaningfully. Whatever is wrong,
+it is not that the model lacks oscillators there.
 
 ## What it is not
 
 Each row changes one mechanism away from the fitted bank at High quality and
-re-measures. The spectral-envelope term at the fitted bank is **13.02 dB**.
+re-measures.
 
-| Mechanism          | Change                                  | Spectral envelope | Partials in band |
-| ------------------ | --------------------------------------- | ----------------- | ---------------- |
-| Microphone height  | `Pickup.DistanceM` 0.030 → 0.010 m      | 13.02 → **12.13** | 0 → 0            |
-| Near-field balance | `NearFieldScale` ×2, ×4                 | 13.4, 14.2        | 0                |
-| Near field removed | `NearFieldScale` = 0 (far field only)   | 14.81             | 0                |
-| Strike footprint   | `Strike.ContactRadiusM` ÷ 10            | 12.92             | 0                |
-| Cavity coupling    | AIR → 1                                 | 13.02             | 0                |
-| Tension asymmetry  | ASYM → 1                                | 13.12             | 0                |
-| Loss-law tilt      | D.TILT → 0 (frequency-independent loss) | 16.18             | 2                |
-| Damping            | DAMP → minimum                          | 12.80             | 5                |
+> The spectral-envelope column is a score against the retired recording. It is
+> kept because these rows are **one-at-a-time eliminations** — each is only ever
+> read against the others in the same table, and the elimination they support is
+> a statement about the model, not about that recording. Do not quote any single
+> value as a current fit figure.
+
+| Mechanism          | Change                                  | Spectral envelope |
+| ------------------ | --------------------------------------- | ----------------- |
+| Baseline           | fitted bank, High quality               | 13.02             |
+| Microphone height  | `Pickup.DistanceM` 0.030 → 0.010 m      | 12.13             |
+| Near-field balance | `NearFieldScale` ×2, ×4                 | 13.4, 14.2        |
+| Near field removed | `NearFieldScale` = 0 (far field only)   | 14.81             |
+| Strike footprint   | `Strike.ContactRadiusM` ÷ 10            | 12.92             |
+| Cavity coupling    | AIR → 1                                 | 13.02             |
+| Tension asymmetry  | ASYM → 1                                | 13.12             |
+| Loss-law tilt      | D.TILT → 0 (frequency-independent loss) | 16.18             |
+| Damping            | DAMP → minimum                          | 12.80             |
 
 The microphone row is worth stating explicitly, because it was the leading
 hypothesis. The evanescent near-field term is `exp(−j·d/R)` in the mode's own
-Bessel zero, so the microphone height applies a tilt across the mode series: at
-the shipped 3 cm that is **−29.7 dB** between the fundamental and 635 Hz, which
-is the right size to be the whole deficit. Flattening it to −9.9 dB by dropping
-the microphone to 1 cm — twenty decibels of tilt removed — buys **0.9 dB**. The
+Bessel zero, so microphone height applies a tilt across the mode series: at the
+shipped 3 cm that is **−29.7 dB** between the fundamental and 635 Hz, the right
+size to be the whole deficit. Flattening it to −9.9 dB by dropping the
+microphone to 1 cm — twenty decibels of tilt removed — buys **0.9 dB**. The
 weight was never the problem; there was nothing under it to weigh.
 
-DAMP and D.TILT do move partials into the band, by letting everything ring long
-enough to be resolved, but they wreck the decay term doing it and the spectral
-envelope does not improve. They change what survives, not what was excited.
+DAMP and D.TILT change what survives, not what was excited: they let everything
+ring long enough to be resolved and wreck the decay term doing it.
 
-## What it is
+## What it is: a comb of exact zeros
 
 The contact force is a smooth half-sine over the whole contact interval
 (`addContactPulse`). A half-sine of duration τ has magnitude spectrum
@@ -99,26 +100,30 @@ The contact force is a smooth half-sine over the whole contact interval
 |F(f)| ∝ |cos(π f τ)| / |1 − (2 f τ)²|
 ```
 
-which nulls at `1.5/τ` and falls as `1/f²` after it. At the fitted bank's
-τ = 8.23 ms the first null is at **182 Hz**, and everything above it is out in
-the sidelobes. Its own tilt relative to the fundamental, beside the measured
-deficit in the body window:
+The numerator **vanishes at every `(k+½)/τ`**. These are analytic zeros, not a
+roll-off, and at the fitted bank's τ = 8.23 ms they fall every 121.5 Hz — two of
+them, 547 and 668 Hz, inside the band. Measured on the model's own render they
+sit at −309 and −315 dB.
 
-| Band (Hz)                         | 504       | 635       | 800   | 1008  |
-| --------------------------------- | --------- | --------- | ----- | ----- |
-| Contact-pulse tilt at τ = 8.23 ms | −28.7     | −34.2     | −47.4 | −44.3 |
-| Measured band deficit             | **−22.6** | **−30.4** | −21.4 | −23.9 |
+That is the mechanism, and it explains the eliminations above in one stroke: no
+mode count, no microphone geometry, no loss law and no cavity coupling can
+amplify an excitation of exactly zero. A tilt leaves modes quiet; a zero leaves
+them unexcited.
 
-The onset of the hole is predicted within 4–6 dB by the excitation alone. Above
-800 Hz the measured deficit is smaller than the pulse tilt because the
-stochastic attack layer is filling in there — which is the next section.
+The Hertzian contact built in [`physical-contact.md`](physical-contact.md)
+turns those zeros into finite dips and moves them, but does not remove the comb,
+because it is still one smooth touch and any single touch of duration τ
+interferes with itself. It is worth 0–4 dB below 700 Hz. It is worth 12–23 dB
+_above_ 800 Hz — which is the seam below, not this gap. It does **not** produce
+the re-contacts predicted in earlier drafts of this document: the version that
+appeared to was a discretization artifact that converged away.
 
-### The measured number is real; it measures something else
+## The measured contact time is real; it measures something else
 
-5.5–8 ms is well supported, by measurements this repository already cites: Dahl,
-TMH-QPSR 38(1) 1997; Wagner, KTH MSc 2006; Dahl, Grossbach & Altenmüller, Forum
-Acusticum 2011 (4.5–8 ms across four professional players). The sound audit that
-replaced the old 0.71 ms law with it was right to.
+5.5–8 ms is well supported by measurements this repository already cites: Dahl
+1997; Wagner 2006; Dahl, Grossbach & Altenmüller 2011 (4.5–8 ms across four
+professional players). The sound audit that replaced the old 0.71 ms law with it
+was right to.
 
 But that number is a **contact dwell time**, not a force-pulse duration, and the
 model uses it as the latter. Wagner measured contact electrically, with a foil
@@ -129,8 +134,8 @@ switch, and separately measured the force — and they are not the same interval
 > drumstick ceases. After the drumstick has left the membrane, the force signal
 > shows two weaker impacts starting at t = 3.75 ms and t = 5.6 ms
 
-Those two later impacts are the wave the strike launched, reflected off the rim
-and returning under the stick — Wagner timed the centre-to-rim transit at about
+Those later impacts are the wave the strike launched, reflected off the rim and
+returning under the stick — Wagner timed the centre-to-rim transit at about
 1.7 ms with an accelerometer at the rim. The dwell time is long because the stick
 is touched _again_, not because one force pulse lasts that long (§4.2.1):
 
@@ -143,184 +148,96 @@ So the measured excitation is **three discrete impacts inside an 8 ms window**,
 and `addContactPulse` replaces them with one smooth half-sine spanning the whole
 window. That is wrong twice over: too long, and too smooth.
 
-Both errors cost the same band, and neither is worth correcting alone. Taking
-the main pulse's ~3.5 ms and keeping the half-sine, the same formula gives
-−22.5 dB at 504 Hz and −26.4 dB at 635 Hz — about 7 dB better than the 8.23 ms
-version, still not enough, and, as measured below, not safe either. The rest is
-shape: the
-spectral corner of an impulse is set by its **shortest feature, not its total
+The spectral corner of an impulse is set by its **shortest feature, not its total
 duration**. Three separated impacts, an asymmetric rise, and the 440 Hz stick
 bending mode Wagner extracts in his appendix A are all short features; a
-half-sine has none, so it discards that band and nothing downstream can put it
-back.
-
-For scale, the roll-off a prescribed pulse commits to is entirely a choice of
-shape: a rectangle falls at −6 dB/octave, this half-sine at −12, and a raised
-cosine — the shape Bilbao and Webb use to excite timpani FDTD — at −18.
+half-sine has none. For scale, the roll-off a prescribed pulse commits to is
+entirely a choice of shape: a rectangle falls at −6 dB/octave, this half-sine at
+−12, and a raised cosine — the shape Bilbao and Webb use to excite timpani FDTD
+— at −18.
 
 Two further dependences follow from the same mechanism and the model has
-neither. `contactSampleCount` varies contact only with hardness and velocity,
-but Wagner measures it falling toward the rim (the reflection returns sooner,
-and the head is locally stiffer, Fig. 4.7) and falling with head tension (faster
-wave, narrower pulse, Fig. 4.10). In this model the reflection does not exist, so
+neither. `contactSampleCount` varies contact only with hardness and velocity, but
+Wagner measures it falling toward the rim (the reflection returns sooner, and the
+head is locally stiffer, Fig. 4.7) and falling with head tension (faster wave,
+narrower pulse, Fig. 4.10). In this model the reflection does not exist, so
 neither dependence can.
 
-### Confirming it
-
-Three experiments, all reverted — none of this is in the tree:
-
-| Experiment (all at High quality, fitted bank)         | 504 Hz   | 635 Hz    | Partials in band | Top partial |
-| ----------------------------------------------------- | -------- | --------- | ---------------- | ----------- |
-| Baseline                                              | −22.5    | −30.4     | 0                | 470.6 Hz    |
-| Contact shortened to ~2 ms                            | —        | —         | 3                | 588.5 Hz    |
-| Same 8.23 ms and impulse, rise time skewed to 0.49 ms | −14.3    | −20.2     | 2                | —           |
-| Skewed rise **and** stick-mode ripple                 | **−9.0** | **−17.9** | 3                | —           |
-
-Holding the measured contact duration and the prescribed impulse fixed and
-changing only the force's internal shape recovers 13 dB at 504 Hz and 13 dB at
-635 Hz. Nothing else tried here moves those bands at all.
-
-It does not recover all of it, and the ripple experiment shows why the fix has
-to be physical rather than cosmetic: stick-mode ripple deposits its energy at
-the stick's own frequencies, so a 400 Hz ripple overshoots that band by 16 dB
-while leaving 635 Hz 18 dB short. The band needs a broadband lift from a faster
-rise, not narrowband injection.
-
-The ~2 ms row was run before the literature check, as a deliberately unphysical
-control — the point was only that the band responds to excitation bandwidth. It
-turns out not to be unphysical at all: it is within a factor of two of Wagner's
-measured 3.5 ms main pulse, and the reason it looked wrong is the same conflation
-this document is about.
-
-### Why the width cannot be fixed on its own
+## Why the width cannot be fixed on its own
 
 The obvious first move is to prescribe the pulse at Wagner's measured 3.5 ms and
 leave everything else alone: it needs no new mechanism, and taking the two
-widths' spectra at face value it is worth about 7 dB in the band. That was
-tried, and measured, and it is not safe. At the shipped default, velocity 1:
+widths' spectra at face value it is worth about 7 dB in the band. That was tried
+and measured on the model's own render, at the shipped default, velocity 1:
 
 | 60–1000 Hz peak       | τ = 5.5 ms | τ = 3.5 ms | Δ         |
 | --------------------- | ---------- | ---------- | --------- |
 | Nonlinearity disabled | 39.4 dB    | 53.5 dB    | **+14.1** |
 | Nonlinearity enabled  | 27.6 dB    | 50.9 dB    | +23.3     |
 
-The pulse spectra predict +3.8 dB there. The rest is **null placement**: a
-half-sine of width τ nulls at 1.5/τ, so shortening the pulse drags that zero
-from 273 Hz to 429 Hz — straight through the low mode cluster. It survives with
-the nonlinearity disabled, so it is not a nonlinear artefact, and it is not a
-level shift the output gain could absorb, because τ varies with both velocity
-and hardness and the zero therefore lands on different modes at every dynamic.
+The pulse spectra predict +3.8 dB there. The rest is **null placement**:
+shortening the pulse drags the first zero from 273 Hz to 429 Hz — straight
+through the low mode cluster. It survives with the nonlinearity disabled, so it
+is not a nonlinear artefact, and it is not a level shift the output gain could
+absorb, because τ varies with both velocity and hardness and the zero therefore
+lands on different modes at every dynamic.
 
 This is `physical-tom-review.md` §6's third bullet — "the nulls move with the
 knob… HARD re-picks which two or three modes survive rather than sweeping
 dark↔bright" — measured, and worth 14 dB. Correcting the width alone does not
-make the excitation right; it changes which modes a spectral zero deletes, and
-it would make null placement a de facto tuning parameter. So the constants are
+make the excitation right; it changes which modes a spectral zero deletes, and it
+would make null placement a de facto tuning parameter. So the constants are
 deliberately left as they are, with the defect recorded next to them, until the
 shape is fixed in the same change.
 
+A narrowband substitute does not work either. Stick-mode ripple deposits its
+energy at the stick's own frequencies, so it overshoots wherever the stick
+resonance sits while leaving the rest of the band short. The band needs a
+broadband lift from a faster rise, not narrowband injection.
+
 ## The seam
 
-There is a second, structural half to this, and the search found it on its own.
+There is a second, structural half to this.
 
 The modal bank covers the bottom of the spectrum and the stochastic attack layer
-covers the top. The layer's three bands sit at 0.4×, 1× and 2.5× `Attack.CentreHz`,
-and its design note says the group "starts just above the top retained mode" —
-true at the default 4 kHz centre, where the bands land at 1.6 / 4 / 10 kHz.
+covers the top. The layer's three bands sit at 0.4×, 1× and 2.5×
+`Attack.CentreHz`, and its design note says the group "starts just above the top
+retained mode" — true at the default 4 kHz centre, where the bands land at
+1.6 / 4 / 10 kHz.
 
-At this drum they do not meet. The fit tuned to a 118 Hz fundamental, which is
-low, and at Draft the batter bank runs out at **467.6 Hz**. So the fit dragged
-`ATK.T` down from its 4 kHz default to **1644 Hz**, putting the layer's lowest
-band at **658 Hz** — directly into the hole — and then had to hold `ATK.L` at
-**0.021**, because the same knob that lowers the useful band also raises the
-1644 Hz and 4110 Hz bands the reference does not want. It spent both attack
-parameters trying to cover a gap neither was built for, and could not, because
-the layer is filtered noise and cannot produce resolvable partials.
+At a low tuning they do not meet. At Draft the batter bank runs out at
+**467.6 Hz**, so 468 Hz to 1.6 kHz is served by neither path: above the modes the
+product can afford and below the noise layer that replaces them. Lowering
+`ATK.T` to cover it also lowers the two upper bands, which is the wrong trade;
+and the layer is filtered noise, so it cannot produce resolvable partials in that
+band whatever it is set to.
 
-So 450–1000 Hz is served by neither path: above the modes the product can afford
-and below the noise layer that replaces them.
+Closing the seam means either extending the modal bank's reach at low tunings, or
+letting the attack layer's lowest band track the top retained mode rather than a
+fixed ratio of `ATK.T`. That remains open.
 
-## An observation, offered as a hypothesis
+## The transverse cavity
 
-The reference's three partials above the cluster — **624.4, 1018.4 and
-1331.3 Hz** — are close to the transverse air-cavity series of a cylinder of this
-radius. For a = 0.1584 m, `j′₁₁, j′₂₁, j′₀₁ × c/2πa` = **634, 1052 and 1320 Hz**,
-and the band deficit peaks at exactly 635 Hz. The model's cavity is a lumped
-compliance coupling through swept area alone, so it has no transverse modes and
-cannot couple to any m > 0 head mode.
-
-This is a coincidence of three numbers on a recording whose actual diameter is
-unknown, so it is a hypothesis and not a finding. It is worth testing because a
-transverse cavity mode would also explain why the reference's cluster is a
-~27 Hz comb of nine lines rather than the dense membrane thicket the model puts
-there — an m = 1 cavity resonance lends radiating efficiency to the m = 1 head
-modes near it, which is a mechanism the lumped cavity does not have.
-
-## What this means for P8
-
-The exit criterion asks for modal frequency, decay **and** spectrum inside
-tolerance. Frequency and decay are there. Spectrum is not, and it is now
-attributable rather than open:
-
-- it is not mode count, microphone geometry, strike footprint, cavity coupling
-  or tension asymmetry — each was measured and eliminated;
-- it is the contact force: the model prescribes one smooth half-sine across a
-  measured _dwell_ time that Wagner shows is three separate impacts, which
-  accounts for the onset of the hole to within 4–6 dB and recovers about 20 dB
-  when corrected — 7 dB from the duration, 13 dB from the shape;
-- and it is compounded by a seam between the modal bank and the attack layer
-  that opens at low tunings.
-
-> **Followed up 2026-07-30 — and item 1 below is now partly wrong.** The
-> Hertzian contact was built, calibrated and measured; see
-> [`docs/physical-contact.md`](physical-contact.md). Three corrections to what
-> is written here. The gap is a **comb of exact zeros** at every `(k+½)/τ`, not
-> a −30 dB tilt — 547 and 668 Hz sit inside it at −309 and −315 dB, which is why
-> nothing downstream could lift them and why sliding τ made things worse. The
-> Hertzian contact shallows and moves that comb but does not remove it, because
-> it is still one smooth touch; it is worth 0–4 dB below 700 Hz. And it does not
-> produce the re-contacts predicted below at all — the version that appeared to
-> was a discretization artifact that converged away. What it is worth, by
-> 12–23 dB, is the band above 800 Hz, which is the seam in the next section
-> rather than the gap in this one.
-
-The recommended work, in order:
-
-1. **Correct the pulse width and the pulse shape together, in one change.**
-   They looked separable and they are not — see below. A two-way coupled
-   Hertzian contact is the principled version of both at once: the force follows
-   from compression against the head's own motion, so the asymmetric rise, the
-   rim reflection and the re-contacts emerge instead of being pasted on, the
-   contact interval comes out rather than being prescribed, and the
-   strike-position and tension dependences Wagner measured come with it for
-   free. Avanzini & Rocchesso give the scaling to calibrate it against:
-   τ ∝ (m/K)^(1/(α+1)) and τ ∝ v^(−(α−1)/(α+1)). This changes the shipped sound
-   of the voice and needs its own calibration pass and a re-fit before the
-   numbers here can be compared.
-2. **Close the seam** — either extend the modal bank's reach at low tunings or
-   let the attack layer's lowest band track the top retained mode rather than a
-   fixed ratio of `ATK.T`.
-3. **Test the transverse cavity hypothesis** before assuming it.
-
-A longer or wider search is explicitly not on this list. The fit's best restart
-was still descending and a longer run would find a better total, but every
-mechanism that could put energy in this band was eliminated by measurement
-above, so it would not close this.
+An earlier draft raised a transverse air-cavity series as a hypothesis, on the
+strength of three partial frequencies read off the retired recording. That
+evidence is gone, but the hypothesis was tested and it held, on model-internal
+evidence needing no recording: the modal cavity landed in
+`internal/physical/cavity.go` and its predicted partial tracks the rigid-cylinder
+formula `c·j′_mn/(2πa)` across a 43 % sweep in `c` to ±0.09 %. See `PLAN.md`
+§"P9" item M2 and [`physical-cavity.md`](physical-cavity.md). The lumped
+compliance this document was written against did have no transverse modes; the
+model no longer is that model.
 
 ## Reproducing
 
-The elimination table, the band tables and the three confirmation experiments
-were produced with throwaway probes against `reference/tom.wav`, which the
-repository does not contain. They are not committed: no test may depend on that
-file. What is committed is `testdata/physical-fit-tom.json`, the bank every
-number here was measured at, and `cmd/fit-physical -report-only`, which
-re-measures any bank against any recording.
+The elimination table and the null-placement table were produced with throwaway
+probes; they are not committed. What is committed is
+`testdata/physical-fit-tom.json`, the bank the model-internal numbers here were
+measured at, and `cmd/fit-physical -report-only`, which re-measures any bank
+against any recording. Note that fixture is itself orphaned by the reference
+retirement (`PLAN.md` N8) and will be re-derived against the licensed set.
 
 ## Sources
-
-The contact-time citations the repository already carried are unchanged and
-still hold; what this pass adds is the distinction between the two quantities
-they measure.
 
 - A. Wagner, _Analysis of Drumbeats — Interaction between Drummer, Drumstick and
   Instrument_, MSc thesis, KTH/TMH 2006 —

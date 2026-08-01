@@ -139,14 +139,13 @@ this band must retain couplings among a set of at least two simultaneously loud
 low modes, and a truncation down to self-terms would be guaranteed to return
 zero for reasons that have nothing to do with the coupling's strength.
 
-This is offered as a hypothesis and not as a finding, in the same register as
-that document's transverse-cavity observation. It has not been measured here:
-neither the coupling coefficients for this bank nor the level the cascade would
-reach at realistic strike energies has been computed, and it may well turn out
-to be 30 dB below what the band needs. It is worth testing because it is cheap to
-falsify — the coefficients are a known integral over the retained shapes — and
-because, unlike everything already eliminated, it is a source rather than a
-weighting.
+This was offered as a hypothesis and not as a finding: neither the coupling
+coefficients for this bank nor the level the cascade would reach at realistic
+strike energies had been computed, and it might have turned out 30 dB below what
+the band needs. It was worth testing because it is cheap to falsify — the
+coefficients are a known integral over the retained shapes — and because, unlike
+everything already eliminated, it is a source rather than a weighting. It was
+tested, and it held; the section below is the result.
 
 The cost, if it survives testing, is a known quantity rather than an open
 question: nonlinear modal synthesis with the coupling terms retained runs in real
@@ -409,7 +408,12 @@ because the model had none: a mode pumped by coupling does not depend on
 \(|F(f)|\) at its own frequency, so it can be excited precisely where the
 half-sine's zero comb has deleted the excitation outright.
 
-The same effect shows up as a change to a P8 measurement. In
+The same effect shows up as a change to a P8 measurement. Those figures are
+normalised against `contactReferenceHz` = 118 Hz, a retired reference
+recording's fundamental rather than this bank's 150.08 Hz — see the warning at
+the top of [`physical-contact.md`](physical-contact.md). The Δ is what carries
+the argument and the normaliser cancels out of it, but the absolute levels
+should not be quoted. In
 `TestHertzianContactReachesPastTheModalCeiling` the Hertzian contact's advantage
 over the prescribed one at 800 Hz fell from **11.9 dB to 7.9 dB**, with 1500 Hz
 (15.2 → 15.5) and 2500 Hz (22.9 → 22.9) unmoved. The prescribed side rose; the
@@ -438,18 +442,40 @@ monotonicity and that the coupling steepens the slope — not a fitted match.
 
 ### Calibration status
 
-**The P4 glide calibration is pending a refit.** On the isolated P4 fixture the
-loud glide moved from **102.8 to 104.9 cents** and the test still passes inside
-its \[60,140\] window. That is a much smaller move than the ratio
+**The tension coefficients are fitting constants, not physical values, and the
+refit is now a curve rather than a scalar.**
+
+On the isolated P4 fixture the loud glide moved from **102.8 to 104.9 cents**
+when the coupling channels were added, and the test still passes inside its
+\[60,140\] window. That is a much smaller move than the ratio
 \(\int g^2\,dA/(S^2/A)\) would suggest, and for a specific reason: the P4 fixture
 strikes the head at its centre, where only axisymmetric modes are excited, so the
 orthogonal channels see very little. On the off-centre shipped strike the
-coupling is a real addition to the stiffening and the coefficient has not been
-refitted against a reference recording. `CoefficientNPerM` ships at
-\(\beta A=7.0\times10^5\) N/m, which is the same coefficient the uniform channel
-already carries — it is not a new free parameter, but it is also not a fitted
-one. Refitting it, and the Berger \(\beta\) with it, is follow-up work recorded
-against P9/M1 in `PLAN.md`.
+coupling is a real addition to the stiffening.
+
+`CoefficientNPerM` ships at \(\beta A=7.0\times10^5\) N/m, which is the same
+coefficient the uniform channel already carries — not a new free parameter, but
+not a fitted one either.
+
+What changes the refit is the reference. The glide these coefficients were
+calibrated against came from a single hit on a recording that is now retired
+(`PLAN.md` §"P10" item N8), so the nonlinearity was constrained by **one
+scalar** — and one scalar cannot separate a nonlinear law from a linear tuning
+offset. The licensed replacement carries **sixteen velocities**, and the measured
+glide rises monotonically across them: −130 ¢ at v04, −174 at v08, −353 at v12.
+That is a curve, and it is the cleanest identification signal on the path.
+
+One caution to carry into that refit: the glide **term** in the fitting objective
+is one of the terms measured to be irreproducible — see
+[objective validation](physical-objective-validation.md). The monotone trend
+across sixteen velocities is a stronger signal than any single glide figure, and
+it should be fitted as a trend for that reason.
+
+Refitting both \(\beta\) and \(\beta A\) against that curve is `PLAN.md` §"P10"
+item N5, which now carries the coupling coefficient too. Expect little from the
+coupling itself — its measured reach into 476–700 Hz is ~2 dB and already at its
+useful maximum at the shipped coefficient. Until that refit lands, treat every
+tension coefficient in this document as a fitting constant.
 
 ### Cost
 

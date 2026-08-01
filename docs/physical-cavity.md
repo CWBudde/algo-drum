@@ -56,11 +56,9 @@ At the shipped 12-inch radius the retained six states are
 | (2,1) cos/sin | 3.0542 | 1094.0 Hz |
 | (0,1)         | 3.8317 | 1372.5 Hz |
 
-and at the \(a = 0.1584\) m that
-[`physical-excitation-gap.md`](physical-excitation-gap.md) states its hypothesis
-for, the same table reads 634.5 / 1052.6 / 1320.5 Hz — the three numbers that
-document compares the reference's 624.4 / 1018.4 / 1331.3 Hz partials against. A
-test pins the generated table to them.
+A test also pins the generated table at a second radius, \(a = 0.1584\) m, where
+it reads 634.5 / 1052.6 / 1320.5 Hz; that anchor exists only so the series can be
+checked by hand at two geometries.
 
 ### Coupling coefficients
 
@@ -173,19 +171,26 @@ cavity volume for the uniform mode.
 
 `Cavity.StiffnessScale` is \(s\) and multiplies every \(K_c\) alike, so the
 rigid ceiling keeps its meaning. Unlike the rest of the section it is fitted
-rather than derived — see [Why the air spring is
-fitted](#why-the-air-spring-is-fitted).
+rather than derived, and it is fitted to the wrong instrument — see
+[Why the air spring is scaled, and what it was scaled
+to](#why-the-air-spring-is-scaled-and-what-it-was-scaled-to).
 
-### Why the air spring is fitted
+### Why the air spring is scaled, and what it was scaled to
 
 \(\rho c^2/V\) is the bulk stiffness of a **rigid, sealed** enclosure driven by
-**pistons**. A tom is none of the three: the shell flexes, the vent leaks, and a
-head's axisymmetric mode shape is not a flat plate. Using the rigid value
-therefore over-predicts how much the enclosed air stiffens the axisymmetric
-modes, and by a large factor rather than a marginal one.
+**pistons**, which is why `Cavity.StiffnessScale` is a fraction rather than a
+free gain: 1 is the physical ceiling, not a neutral default. The shipped value is
+0.083, a factor of twelve below it, and it is fitted rather than derived.
 
-Of those three, **the vent is the small one**, and it is worth putting a number
-on it rather than leaving it in a list. A vent is a Helmholtz port, so it is a
+Four mechanisms were offered for a gap that size — vent leakage, the one-mode
+lumped reduction, shell flex, and the head's non-piston mode shape. **All four
+are eliminated**, and between them they eliminate the gap rather than explain it.
+PLAN.md's [N4](../PLAN.md) carries the summary; this section carries the
+arithmetic.
+
+#### The vent diverts a few per cent
+
+A vent is a Helmholtz port, so it is a
 _high-pass_ leak: below \(f_H\) the air flows out and no pressure builds, and
 above it the plug's inertia blocks the flow and the cavity behaves as though
 sealed. With the shipped \(V = 1.459\times10^{-2}\ \mathrm{m^3}\) and a 7 mm
@@ -201,38 +206,114 @@ shell,
 with the diverted fraction \(1/(\omega^2M_aC_a)\) falling as \(1/f^2\) above
 \(f_H\), and three 10 mm vents giving \(f_H = 55.8\) Hz and about 14 %. A
 typical single vent therefore softens the effective stiffness by a few per cent
-at the fundamental and less at every higher mode, where \(s = 0.083\) is a
-twelvefold reduction and would need roughly 92 % of the flow diverted. The vent
-cannot be more than a few per cent of the discrepancy; **shell flex and the
-non-piston mode shape have to carry the rest**.
+at the fundamental and less at every higher mode, where a twelvefold reduction
+would need roughly **92 %** of the flow diverted. The vent is not the mechanism.
 
-Measured on the default 12-inch configuration with a central strike, which
-excites only the modes that have swept area:
+#### Shell flex is arithmetically impossible
 
-| \(s\)           | (0,1) branches   | ratio    |
-| --------------- | ---------------- | -------- |
-| 1 (rigid)       | 155.3 / 290.0 Hz | **1.87** |
-| 0.083 (shipped) | 155.3 / 178.7 Hz | **1.15** |
+Uniform internal pressure is carried in hoop **membrane** stress, not in bending.
+The wall's radial expansion is \(u = pa^2/(Eh)\), so \(\Delta V = 2\pi a L\,u\)
+and the shell's compliance is
 
-The shipped value was 0.04 before the tuning default moved from 600 N/m to
-1250 N/m. It had to be refitted, and roughly in proportion: a stiffer head is
-less influenced by the same air spring, so holding a given _relative_ split
-requires the air stiffness to rise with the head's. \(0.04 \times 1250/600 =
-0.083\) is where the measurement landed as well as where that argument puts it.
+\[
+C_\mathrm{shell} = \frac{2\pi a^3 L}{Eh}.
+\]
 
-A measured two-headed drum separates its two (0,1) branches by 10–20 %:
+With \(a = 0.1524\) m, \(L = 0.2\) m, \(h = 6\) mm maple and \(E \approx 10\) GPa
+that is \(7.4\times10^{-11}\ \mathrm{m^5/N}\), against
+
+\[
+C_\mathrm{air} = \frac{V}{\rho c^2}
+= \frac{1.459\times10^{-2}}{1.204 \times 343^2}
+= 1.03\times10^{-7}\ \mathrm{m^5/N}.
+\]
+
+The shell is **1400× stiffer than the air it encloses**: it adds about **0.07 %**
+of compliance, not a factor of twelve. A softer effective \(E\) does not rescue
+the argument either, because uniform pressure does not excite ovalization — the
+only compliant shell deformation — and closing the gap this way would need
+\(E \approx 7\) MPa, which is rubber rather than maple.
+
+#### The non-piston mode shape is already applied
+
+A head's axisymmetric shape is not a flat plate, but that is a correction the
+model already carries rather than one it is missing. The coupling coefficient
+_is_ the signed swept area \(A_{0n} = 2\pi R^2 J_1(z_{0n})/z_{0n}\), so it
+already contains the net-volume factor \(2J_1(j_{0n})/j_{0n} = 0.4318\) at
+\(n = 1\), and it enters the stiffening **squared**: \(K A^2/m =
+9.707\times10^6 \times (3.1503\times10^{-2})^2 / 6.883\times10^{-3} =
+1.3997\times10^6\), which reproduces the analytic single-head stiffening the
+review quotes. It cannot also be a factor still to be applied; earlier drafts of
+this document counted it twice.
+
+#### There is no factor of twelve — the ceiling was right and the target was wrong
+
+The fourth candidate, the one-mode lumped reduction, is exonerated separately
+below. With all four gone, what is left is the fit's anchor.
+
+0.083 was fitted to reproduce a doublet ratio of **1.16 measured on a snare
+drum**:
 [Fischer, _Modal Analysis of a Snare Drum_, Illinois 2014](https://courses.physics.illinois.edu/phys406/sp2017/Student_Projects/Spring14/Matthew_Fischer_Physics_406_Final_Project_Sp14.pdf)
-found 186 Hz with one head and 215 Hz after adding the resonant head at
-unchanged tuning — "this increase is due only to the coupling between heads" — a
-ratio of 1.16. The rigid value also puts its stiffened branch on top of the (2,1)
-family, so it does not merely mistune the doublet: it masks a mode.
+found 186 Hz with one head and 215 Hz after adding the resonant head at unchanged
+tuning. `cavity_split_test.go` says as much in its first line, and its
+\([1.10, 1.20]\) acceptance window is a snare's. A snare is a **leakier enclosure
+than a tom** — vent, snare beds, throw-off slots — and recomputing Fischer's
+instrument from first principles over-predicts its split by **4.3–8.7×**, which
+is what a wrong anchor looks like rather than what wrong physics looks like.
 
-Two consequences of the rank-one coupling are worth stating, because they bound
-what any choice of \(s\) can do:
+Two of the tom measurements the fit should have used:
+
+- Fletcher & Rossing §18.4 p. 608 relays Bork & Meyer's **32 cm two-headed tom**
+  with the (0,1) doublet at **101 and 191 Hz — a ratio of 1.891**.
+- Gärder (2005) gives lower-branch shifts of **+28.5 %** on a 14" tom and
+  **+37.2 %** on a 15" when the resonant head is fitted, against the snare's
+  +16 %.
+
+**How Fischer's two numbers map onto the doublet is itself ambiguous**, and this
+document used to assert one reading. 186 → 215 was taken here as
+\(f_\mathrm{upper}/f_\mathrm{lower}\); but the interlacing argument below says
+the lower branch is pinned between the two heads' uncoupled fundamentals and
+cannot carry a 16 % rise, so 215 could equally be the upper branch against a
+_single-head_ 186 that is neither branch. Resolving it needs three frequencies —
+\(f_\mathrm{single}\), \(f_\mathrm{lower}\), \(f_\mathrm{upper}\) — which is why
+PLAN's N14 asks for all three.
+
+#### Why the retarget is nonetheless not clean
+
+Retargeting is [P10/N4](../PLAN.md), and it is no longer blocked on a physical
+capture: the licensed reference set is an **8" × 8" tom of known geometry** with
+stated head gauges, so its split can be _computed_ rather than fitted. See
+[`physical-objective-validation.md`](physical-objective-validation.md) for how
+that reference was characterised. Four costs are already known, and none of them
+is small:
+
+- **The parameter saturates rather than lands.** \(s = 0.083\) gives 1.177 exact
+  / 1.151 rendered; \(s = 1\) gives **1.841 exact / 1.830 rendered**, still 2.7 %
+  _below_ Bork & Meyer's 1.891. Re-measured 2026-08-01 to settle a discrepancy
+  with a since-deleted row of this document, which read 290.0 Hz and a ratio of
+  1.867: `TestRigidCavityStiffnessOverpredictsTheSplit` renders **155.3 / 284.2 Hz,
+  ratio 1.8302**, so 1.830 is current and 1.867 is void. Hitting the measurement needs \(s > 1\), which `Validate`
+  forbids and which is above the rigid ceiling. Shipping \(s = 1\) therefore
+  ships a pinned parameter — itself a finding, because something else is about
+  3 % short.
+- **The interleaving constraint is unmet, and it is the stronger one.** The same
+  passage puts the **(1,1) at 179 Hz, _between_ the two (0,1) branches**. The
+  model does not reproduce that ordering at any stiffness scale.
+- **The glide gets diluted.** The cavity adds stiffness the strike does not
+  modulate, so raising \(s\) shrinks the Berger shift: coupled loud-hit glide
+  falls from ~52 cents at 0.083 to ~37 at \(s = 1\), against tom measurements of
+  130–165. Retarget both together or neither.
+- **Three tests encode the snare target.**
+  `TestDefaultCavitySplitMatchesMeasuredDrums` and
+  `TestRigidCavityStiffnessOverpredictsTheSplit` both invert, and
+  `TestDefaultCavityLeavesNoPartialWhereTom2Belongs` guards 200–235 Hz, which is
+  exactly where the upper branch sits at \(s = 0.30\)–\(0.40\). A retarget has to
+  go **all the way**; the intermediate values are the worst.
+
+Two consequences of the rank-one coupling bound what any choice of \(s\) can do:
 
 - Only the **stiffened** branch moves appreciably. Eigenvalue interlacing keeps
-  the lower branch between the two heads' uncoupled (0,1) frequencies — 104.0
-  and 112.3 Hz here — so it cannot rise 16 % no matter how stiff the air is. The
+  the lower branch between the two heads' uncoupled (0,1) frequencies, so the
   quantity to fit is the separation between the branches, not the absolute
   position of the audible one.
 - Every \(m>0\) mode has zero swept area, so \(s\) has no effect on them through
@@ -241,12 +322,9 @@ what any choice of \(s\) can do:
   so they change the shape of the response near their own frequencies rather than
   the doublet the fit is made against.
 
-`Cavity.StiffnessScale` is a fraction rather than a free gain because the rigid,
-sealed, piston-driven enclosure is the stiffest case that exists; 1 is the
-physical ceiling, not a neutral default. The two-head coupling loss that damps
-the (0,1) is a separate mechanism, calibrated from measured decay rates in
-[`physical-calibration.md`](physical-calibration.md), and is unaffected by this
-refit — the model's lumped cavity is not where that loss comes from.
+The two-head coupling loss that damps the (0,1) is a separate mechanism,
+calibrated in [`physical-calibration.md`](physical-calibration.md), and is
+unaffected by any of this — the lumped cavity is not where that loss comes from.
 
 The stored mechanical energy is
 
@@ -306,9 +384,9 @@ structure-of-arrays storage. `Render` allocates nothing.
 This section used to record an open question. P9/M2 answered it, in the negative,
 and the answer is worth more than the resonances the work added.
 
-The fitted \(s = 0.083\) is a factor of **12** below the rigid ceiling. One
-candidate explanation was that the one-mode reduction itself mis-set the
-compliance: a single uniform-pressure state stands in for the whole enclosed
+One candidate explanation for the gap between the fitted \(s\) and the rigid
+ceiling was that the one-mode reduction itself mis-set the compliance: a single
+uniform-pressure state stands in for the whole enclosed
 field, and there is no obvious reason its best-fit stiffness should equal the true
 bulk value. **It does.** Every cavity mode other than the uniform one has zero net
 volume — that is what \(\int_A\Psi_c\,\mathrm{d}A = 0\) for \(j' \neq 0\)
@@ -322,14 +400,11 @@ mode.
 Measured, rather than argued: at \(s = 0.083\) the \((0,1)\) doublet is
 155.3 / 178.7 Hz, a ratio of **1.1509**, and it is 1.1509 both with one cavity
 state and with the shipped six. It does not move to the FFT's 2.93 Hz resolution.
-**\(s\) would still have to be 0.083** to hold the doublet where measurement puts
-it, and the number that would have restored a 1.16 ratio — about 0.09 — is
-likewise unchanged by the transverse modes.
+Whatever \(s\) is retargeted to, the transverse modes will not change the answer.
 
-Together with the vent arithmetic above, that leaves shell flex and the non-piston
-mode shape as the only remaining candidates for the factor of twelve. Neither has
-been measured here separately, and that is now the open question rather than this
-one.
+Together with the vent, shell-flex and mode-shape arithmetic above, that closes
+the last of the four candidates — which is why the section above concludes there
+was never a factor of twelve to explain.
 
 ## What the transverse modes actually do
 
@@ -354,7 +429,7 @@ Measured at the shipped default against the same configuration with
   (\(\times1.155\)), 579.0 Hz at 1.15× radius (\(\times0.871\)), and 663.0 Hz at
   1.4× head tension — a 40 % tension change, five semitones on every head mode,
   moves it by 0.26 %. That is
-  [PLAN's](../PLAN.md) M2 confirm criterion, and a test asserts it.
+  [PLAN's](../PLAN.md) P9/M2 confirm criterion, and a test asserts it.
 - **The microphone barely notices, in broadband terms.** RMS over a second moves
   from 0.057609 to 0.057755 and the peak from 0.8954 to 0.8932. The configured
   pickup is on the batter side and the resonant head's own radiation is
@@ -542,21 +617,9 @@ the _discrimination_ is sharp only while the coupling is weak. Second, the
 tolerances in `cavity_transverse_test.go` are tied to the shipped \(s\), and the
 file says so.
 
-**And \(s\) is currently in question.** A literature lead reported alongside this
-work points at Fletcher & Rossing ch. 18 relaying Bork & Meyer's measurement of a
-32 cm two-headed tom-tom with the \((0,1)\) doublet at 101 and 191 Hz — a ratio of
-**1.89**, which is what the _rigid_ \(s = 1\) produces here (1.87), not the 1.15
-the shipped fit produces. If that holds, the "factor of twelve below the rigid
-ceiling" that the sections above treat as needing a physical explanation is not a
-physical puzzle at all but a fit to the wrong instrument — Fischer's snare rather
-than a tom. **This is not established.** The figures were read from a scan of the
-1991 first edition and relayed second-hand, this repository's bibliography carries
-the second edition, and the primary source behind them, Bork's 1983 PTB report, is
-explicitly unpublished. Nothing above or below should be read as asserting either
-that \(s = 0.083\) is right or that it is wrong; what has changed is that the
-question is open, where §"Why the air spring is fitted" and §"Closed: what the
-one-mode cavity was not hiding" both presume the fitted value and go looking for a
-mechanism to justify its size.
+**And \(s\) is due to be retargeted**, for the reasons in
+[§"There is no factor of twelve"](#there-is-no-factor-of-twelve--the-ceiling-was-right-and-the-target-was-wrong)
+above; the sharpness of M2's confirmation is one of the costs listed there.
 
 The M2 result does not depend on how that lands. The partial tracks \(c\) and
 \(1/a\) and ignores \(T\) at \(s = 1\) as well as at \(s = 0.083\); only the size
@@ -658,9 +721,11 @@ The P3 suite covers:
   transverse resonance tracking shell radius and sound speed but not head tension;
 - the enclosed-air state count bounded, and the retained modes held inside the
   same anti-alias limit as the heads;
-- the fitted (0,1) split inside the measured 10–20 % band, no partial left within
-  10 dB of the fundamental where the (2,1) belongs, and the rigid stiffness still
-  overshooting that band — so the fit cannot be dropped without a failure;
+- the fitted (0,1) split inside a 10–20 % band, no partial left within 10 dB of
+  the fundamental where the (2,1) belongs, and the rigid stiffness overshooting
+  that band. These three encode the **snare** target and are the tests P10/N4
+  has to invert; they are listed here because they currently gate CI, not
+  because the band they assert is a tom's;
 - earlier in-phase than out-of-phase zero crossings for identically tuned
   heads;
 - lossless total-energy conservation and non-trivial energy exchange;

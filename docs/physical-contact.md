@@ -6,6 +6,26 @@ of measuring what it actually bought. It bought less than that document
 predicted, for a reason worth having found, and it bought something else that
 document did not ask for.
 
+> **Normalisation warning (2026-08-01).** Every dB figure in this document, and
+> in [`physical-nonlinearity.md`](physical-nonlinearity.md), is normalised
+> against `contactReferenceHz` = **118 Hz** — the fundamental of
+> `reference/tom.wav`, which is being retired (`PLAN.md` §"P10" item N8) and
+> which was never this bank's fundamental anyway; the model's is 150.08 Hz. The
+> 118 Hz bin therefore reads the leakage skirt of the 150 Hz partial and acts as
+> an overall-level normaliser rather than as a fundamental. That was already
+> uncomfortable when the recording was current. Now that it is retired,
+> normalising by it is **indefensible**, and the constant should be re-pointed at
+> the bank's own fundamental in the code. 118 Hz has a second life as the
+> denominator that makes `MinSeparationHz = 15` an unusable resolution limit —
+> see [objective validation](physical-objective-validation.md).
+>
+> The figures are left as measured rather than silently renormalised: they cannot
+> be recomputed without re-running the model, and a doc edit that adjusts them by
+> hand would be a fabrication. Read every level and every Δ below as **relative
+> to a retired reference's fundamental**. The Δ columns are the ones that carry
+> the argument, and they are conservative in that direction — referring to the
+> bank's own 150.08 Hz raises them (800 Hz would go +7.9 → +13.2 dB).
+
 The short version:
 
 - The 476–700 Hz gap is not a spectral **tilt**, it is a spectral **comb**. The
@@ -212,14 +232,6 @@ that band for real, which is the precondition for pushing `ATK.T` back up to
 where it belongs and letting the attack layer stand in only for what is genuinely
 unresolvable.
 
-> **Confirmed by fitting, 2026-07-31.** Refitting the whole bank under each
-> contact model at 150 iterations leaves `ATK.T` at **3426 Hz** under Hertzian
-> against **1261 Hz** under prescribed, with `ATK.L` at its lowest of any run.
-> The search stops leaning on the noise layer, exactly as predicted here — and
-> the fit still finds **0 partials** in 476–700 Hz against the reference's 9, so
-> the seam and the gap really are two different things. See
-> [`physical-measured-fit.md`](physical-measured-fit.md).
-
 ### How this was measured
 
 Stated because the first version of this table was made by a program that was
@@ -238,14 +250,10 @@ them reverses the sign of the whole table.
   window over one second is 60 dB down at 7 ms, and the table measured through
   one comes out with the Hertzian contact _duller_ than the prescribed one
   everywhere.
-- Levels are relative to 118 Hz. That is the reference _recording's_ fundamental,
-  not this bank's, which is 150.1 Hz — so the 118 Hz bin is reading the leakage
-  skirt of the 150 Hz partial and acts as an overall-level normalizer rather than
-  as a literal fundamental. It is kept because every figure in this document and
-  in [`physical-nonlinearity.md`](physical-nonlinearity.md) is relative to it, and
-  because it is the conservative choice: referring to the bank's own 150.08 Hz
-  raises every Δ (800 Hz goes +7.9 → +13.2 dB). Nothing in the argument depends
-  on which is used.
+- Levels are relative to `contactReferenceHz` = 118 Hz — a retired recording's
+  fundamental, not this bank's. See the warning at the top of this document; this
+  is the one thing here that still depends on `reference/tom.wav`, and it wants
+  re-pointing at 150.08 Hz in the code rather than in prose.
 
 ### What the mode coupling changed
 
@@ -313,51 +321,32 @@ for the drum as shipped — K = 1e6 N/m^1.5 predicts 7.3 ms against the 15 g mal
 — so flipping the model without touching anything else gives the best available
 single-change result rather than a broken one.
 
-### Whether the pass is worth starting — measured 2026-07-31
+### Whether the pass is worth starting — open
 
-> **Superseded numbers (2026-08-01).** The three totals below were measured before
-> two corrections to the measurement itself — the partial-level estimator and the
-> detection aperture, then the glide term — and against the mono reduction rather
-> than the documented `-channel right` target. They are not comparable to any
-> current fit total, and the 476–700 Hz column in particular counted against a
-> reference partial list that has since changed. Both models were refitted on the
-> corrected partial measurement, where prescribed still won (11.252 against
-> 11.535, and those two are superseded in their turn); see
-> [`physical-measured-fit.md`](physical-measured-fit.md). **The conclusion below
-> is unchanged** — the Hertzian contact does not pay for its calibration pass —
-> but it now rests on that later head-to-head, not on this table.
+It was answered once, by fitting both contact models head-to-head against
+`reference/tom.wav`. Those totals are **deleted**: that recording is retired
+(`PLAN.md` §"P10" item N8), the objective that scored them is now known not to
+resolve most of what it reported (see
+[objective validation](physical-objective-validation.md)), and the run predated
+two corrections to the measurement itself. Nothing is carried
+forward from it, in either direction — there is currently **no fitted evidence**
+on whether the Hertzian contact pays for its calibration pass.
 
-It is not, on fit quality. Both models were given the same bank and the same
-budget against `reference/tom.wav`, 8 restarts × 150 iterations:
-
-| Contact        | Best total | Partial decay | Spectral envelope | 476–700 Hz |
-| -------------- | ---------- | ------------- | ----------------- | ---------- |
-| Prescribed     | **5.901**  | 0.179 ✅      | 12.3 dB ❌        | 0 of 9     |
-| Hertzian, 15 g | 7.450      | 0.493 ❌      | 14.5 dB ❌        | 0 of 9     |
-| Hertzian, 5 g  | 6.548      | 0.188 ✅      | 11.9 dB ❌        | 0 of 9     |
-
-The prescribed excitation wins on total and on the decay gate, and neither model
-comes within 3× of the spectral-envelope gate. The restart distributions overlap
-heavily, so read this as "the Hertzian contact does not pay for its calibration
-pass", not as "the prescribed contact is better physics" — the measurements
-higher up this page say plainly that it is not. What the fit shows is that the
-band this model fails to populate is one the contact model cannot reach either.
-
-The 15 g mallet is confirmed as too heavy for this model: at the measured 5 g the
-Hertzian total improves 7.450 → 6.548. That is a finding about
-`DefaultPhysicalDrum()`, not about the contact switch, and it is recorded rather
-than applied for the same reason the switch is — mallet mass moves the impulse,
-so it belongs to the same calibration pass.
-
-`DefaultContact().Model` therefore stays `ContactPrescribed`, now on fitted
-evidence rather than on an open question.
+`DefaultContact().Model` therefore stays `ContactPrescribed` on the grounds in
+the section above — flipping it is a calibration pass, not a switch — and the
+question reopens with the joint refit across the licensed sixteen-velocity
+reference (`PLAN.md` N5). The mallet-mass finding higher up this page is
+unaffected: it is measured against the model and against Dahl's velocity ratio,
+not against any recording.
 
 ## Reproducing
 
 Everything above is in `internal/physical/contact_test.go`, which is in
-`just test`. Nothing here depends on `reference/tom.wav`; the frequencies quoted
-come from the measured fit and the tests run against `DefaultPhysicalDrum` at
-44.1 kHz so they line up with it.
+`just test`. No render here depends on `reference/tom.wav` — the tests run
+against `DefaultPhysicalDrum` at 44.1 kHz — but the **normalisation** does, via
+`contactReferenceHz` = 118 Hz. That constant is the retirement's one remaining
+hook into this document and into the tests that assert its tables; see the
+warning at the top.
 
 Both tables in "What it does buy" are asserted row by row, in both coupling
 states, by `TestHertzianContactReachesPastTheModalCeiling`, to ±1.5 dB. Its

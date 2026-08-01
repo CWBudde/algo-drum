@@ -4,7 +4,9 @@ P6 adds one controlled departure from an ideal circular drum and records why
 the other candidates remain outside the audio loop. The shipped addition is
 deterministic degenerate-mode splitting. Shell, hardware, bearing-edge, vent,
 and measured-transfer layers still require measurements from an identified
-instrument before they can alter the model.
+instrument, captured at more than one strike position, before they can alter the
+model — see
+[How the licensed reference changes the gate](#how-the-licensed-reference-changes-the-gate).
 
 ## Non-uniform tension
 
@@ -70,10 +72,46 @@ gate is:
    microphone geometry, sample rate, room, license, and raw-file checksums;
 2. train on at least two hit velocities and two positions, then evaluate a
    held-out hit;
-3. improve predeclared modal-frequency, modal \(T_{60}\), and log-spectrum
-   tolerances without worsening the other metrics;
+3. improve a predeclared tolerance on a metric that has been shown to
+   reproduce, without worsening the other metrics;
 4. retain finite deterministic output, zero render allocations, bounded
    passive coupling, and the measured WASM modal budget.
+
+### How the licensed reference changes the gate
+
+This gate was written when no recording in the project could satisfy clause 1 at
+all, so it read as a permanent bar. That is no longer true.
+`reference/tt08x08-mp-hd-v01..v16.wav` is CC BY 4.0, committed, and carries a
+stated instrument — 8" × 8", Remo coated Ambassador batter and clear Diplomat
+resonant, 48 kHz 24-bit — with licence, attribution, instrument description and
+per-file checksums in [`reference/CREDITS.md`](../reference/CREDITS.md).
+
+Clause by clause, against that set:
+
+- **Clause 1 is partly satisfied.** Dimensions, heads, sample rate, licence and
+  checksums are all present, and the tuning state is identified by the pack's own
+  `vlp`…`vhp` labelling. **Support, strike position and angle, microphone
+  distance and angle, and the room are not stated** and are not determinable from
+  the files, so they remain fitted parameters. A shell or hardware candidate is
+  exactly the kind of layer those unknowns could absorb, so this is a real
+  limitation and not a formality.
+- **Clause 2 is half satisfied.** Sixteen velocities is comfortably more than
+  "at least two hit velocities", and held-out evaluation across the velocity
+  curve is straightforward. **Positions are not available**: the pack is one
+  strike position per tuning. Until a multi-position capture exists, a candidate
+  cannot be trained across positions and the position half of this clause cannot
+  be waived — a shell resonance and a strike-position error are confusable
+  precisely because a single position cannot separate them.
+- **Clause 3 was rewritten**, and this is the substantive change. It used to name
+  modal-frequency and modal-\(T_{60}\) tolerances specifically. Scored against
+  itself on two **coincident** channels of the same hit, the objective's
+  partial-frequency and partial-decay terms do not reproduce, so an improvement
+  in either is not evidence of anything; the spectral-envelope term is the only
+  one of the nine that does reproduce. Method and figures in
+  [`physical-objective-validation.md`](physical-objective-validation.md). Any
+  predeclared tolerance under this clause must be traceable to a measured
+  reproducibility figure — PLAN.md §P10/N1 — and a candidate that improves only
+  the unreliable terms is rejected, not accepted.
 
 A shell bank would need measured shell poles, damping, and signed coupling to
 both heads. A bearing-edge correction belongs in per-mode frequency and decay

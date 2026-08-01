@@ -73,17 +73,26 @@ check-params: gen-params
 # The progress log is stderr, which the tool does not open, so redirect it into
 # fits/ alongside the report it belongs to:
 #
-#   just fit-physical reference/tom.wav "-o fits/fit-x.json …" 2> fits/fit-x.log
+#   just fit-physical reference/tt08x08-mp-hd-v08.wav "-o fits/fit-x.json …" 2> fits/fit-x.log
 #
-# -channel right is spelled out rather than left to the tool's `mono` default:
-# reference/tom.wav is a stereo capture, and its right channel is the target
-# every number in docs/physical-measured-fit.md and in
-# testdata/physical-fit-tom.json was fitted to. Averaging the pair instead is a
-# legitimate reduction of a *different* signal, so a run that took the default
-# could not be compared with any of them. A -channel in {{args}} comes later on
-# the command line and still wins, for a reference that is not this one.
-fit-physical reference="reference/tom.wav" *args="":
-    go run ./cmd/fit-physical -reference {{reference}} -channel right \
+# The default reference is the committed, CC BY 4.0, 8"x8" tom at medium pitch
+# and mid velocity — see reference/CREDITS.md for licence, provenance and the
+# measured properties. It replaced reference/tom.wav, which had unknown
+# provenance and no licence and is being retired (PLAN.md P10/N8).
+#
+# -channel mono is spelled out rather than left implicit because the choice is
+# load-bearing and was wrong for the previous reference. This pair is
+# *coincident* (peak inter-channel correlation at exactly 0 samples of lag), so
+# averaging it is a clean reduction. tom.wav's channels are 1.56 ms apart and
+# correlate 0.36 at zero lag, so summing *that* file combs the target, which is
+# why every archived number was fitted to its right channel alone. A -channel in
+# {{args}} comes later on the command line and still wins.
+#
+# One hit does not identify this model's parameters — the fit wants the whole
+# sixteen-velocity series jointly (PLAN.md P10/N5), which this recipe cannot yet
+# express. Until it can, treat a single-file run as a diagnostic, not a fit.
+fit-physical reference="reference/tt08x08-mp-hd-v08.wav" *args="":
+    go run ./cmd/fit-physical -reference {{reference}} -channel mono \
         -o fits/fit-report.json -checkpoint fits/fit-report.checkpoint {{args}}
 
 # Derive the measurement tables from recordings of a real drum.

@@ -41,9 +41,16 @@ the range. See [`physical-calibration.md`](physical-calibration.md#tuning-and-co
 
 AIR spans zero coupling up to the calibrated air spring, not up to the rigid
 enclosure: `Cavity.StiffnessScale` is fitted in the configuration and is not
-exposed as a control, so the knob's top of travel is now the measured 10–20 %
-(0,1) split rather than the 1.87 ratio the rigid formula produces. See
+exposed as a control, so the knob's top of travel is a fitted (0,1) split well
+below the ratio the rigid ρc²/V formula produces. See
 [`physical-cavity.md`](physical-cavity.md).
+
+That fit is anchored to a measurement of a **snare**, and PLAN.md §N4 and
+§P10/N4 are recomputing it against the licensed 8" × 8" tom, whose geometry is
+known well enough to compute the split rather than fit it. Expect AIR's top of
+travel to move, and expect it to move a long way: the retarget is all-or-nothing,
+because the intermediate stiffness values put a spurious partial exactly where
+the model is currently tested for not having one.
 
 QUAL is the _batter_ head's oscillator budget. The resonant head runs the same
 selection and then keeps only the axisymmetric modes that anything can excite, so

@@ -70,6 +70,32 @@ amplitude \(T_{60}\); its highest retained mode, at 1310 Hz once the reclaimed
 resonant-head budget went to the batter head, decays in about 0.11 s. These are
 model targets, not claims about a commercial drum.
 
+### What a smooth loss law cannot reach
+
+The law is smooth in \(k\) — \(d_0 + d_1k + d_2k^2\), plus a radiation term that
+is itself a smooth function of the mode's own \(ka\). That is a structural limit,
+and it has now been measured rather than assumed. Fitting the best smooth power
+law to a real tom's own measured \(T_{60}\)s leaves **0.677** in log-decay error,
+while the fitted model already reaches **0.573**. So no choice of \(d_0\),
+\(d_1\), \(d_2\) and \(d_\mathrm{rad}\) can reach the 0.25 decay gate: the model
+is already past the ceiling a smooth \(\gamma(k)\) imposes, and adding terms to
+the polynomial is not the way forward.
+
+The missing freedom is **structured, not free-per-mode**. A two-headed drum
+splits each head-pair mode into an in-phase and an out-of-phase member: the
+squeezing member pumps the cavity and is heavily damped, the sliding member is
+not. The model has that mechanism, but only for \(m = 0\), and only as the
+\(\Delta\) correction above. Extending it is
+[P10/N3](../PLAN.md), which also states the check that keeps the extension
+honest — a fitted per-mode damping vector is physics if its sign pattern
+reproduces the predicted pairwise alternation, and fitted noise if it is
+structureless.
+
+The 0.25 gate is itself not a reachable target, for a reason that has nothing to
+do with the loss law: the objective disagrees with itself by more than that when
+the same hit is scored through two coincident microphones. See
+[`physical-objective-validation.md`](physical-objective-validation.md).
+
 ## Tuning and constant Q
 
 `RetuneTension` sets a head's tension and rescales \(d_1\), \(d_2\) and the
@@ -107,6 +133,15 @@ batter head's fundamental is 104 Hz, which is a floor tom rather than a rack
 tom; the drum only began to read correctly near the old ceiling of 1400. The
 range is now 300–3500 N/m, or 75–251 Hz, so the usable pitch sits mid-travel
 instead of against the stop.
+
+That value is corroborated twice from outside this repository, which matters
+because tension is otherwise the parameter with the least external anchoring.
+Fletcher & Rossing Fig. 18.11 gives **351 N/m** for a 33 cm tom head "at the low
+end of the normal playing range", and an independent derivation for a 13-inch
+10-mil head gives **420 N/m**. Both are consistent with a shipped 1250 N/m at a
+tuning well above the low end — a factor of three in tension is a fifth in pitch.
+Neither is a measurement of this drum, so they bound the default rather than set
+it.
 
 ## Configuration schema
 
@@ -260,8 +295,8 @@ The report contains:
   [`physical-nonlinearity.md`](physical-nonlinearity.md).
 
 `analysis.CompareSignals` supplies gain-fitted normalized waveform RMSE,
-waveform correlation, and log-spectrum RMSE in dB for regression or for a
-future locally recorded input set.
+waveform correlation, and log-spectrum RMSE in dB, for regression and for
+comparison against the recorded reference set below.
 
 ## Reference-set provenance
 
@@ -295,13 +330,38 @@ incorrect 0.25–8 ms hardness-only contact law. At the shipped hardness its
 normal hit was just 0.71 ms, far outside the measured tom-stick range.
 
 This set catches deterministic changes and anchors analytic targets. It is not
-an acoustic validation recording and must not be described as one. A measured
-set can be added later without changing the report or comparison formats,
-provided its drum dimensions, head/tuning state, mallet, microphone, geometry,
-gain chain, sample rate, room, license, and raw-file checksums are recorded.
+an acoustic validation recording and must not be described as one.
 
 `just check-physical-reference` regenerates and diffs the fixture; it is part of
 `just ci`.
+
+## The recorded reference set
+
+The synthetic fixture above is a regression anchor. Acoustic validation uses
+`reference/tt08x08-mp-hd-v01`–`v16.wav`, and that set is the first one on this
+path whose provenance is known:
+
+- **Licence** CC BY 4.0, with the attribution
+  [`reference/CREDITS.md`](../reference/CREDITS.md) states verbatim. It must be
+  carried by any distribution of audio derived from it.
+- **Instrument** an 8" × 8" tom — diameter and depth are therefore constants
+  rather than fitted parameters — with a Remo coated Ambassador batter and a
+  Remo clear Diplomat resonant head, so both surface densities follow from the
+  manufacturer's gauges instead of being fitted.
+- **Capture** 48 kHz, a **coincident** XY pair, sixteen velocities of the same
+  head strike at one tuning.
+
+Everything the two properties above buy is why P10 is possible at all: the known
+geometry lets the cavity split be computed rather than fitted
+([`physical-cavity.md`](physical-cavity.md)), and the coincident pair lets the
+fitting objective be scored against itself. What that measurement found — the
+objective's self-disagreement, the residual budget, and four refuted hypotheses —
+is in [`physical-objective-validation.md`](physical-objective-validation.md).
+
+`reference/tom.wav`, which earlier work on this path was fitted against, is
+44.1 kHz, a spaced pair, of unknown provenance and unlicensed. It is being
+retired ([P10/N8](../PLAN.md)) and no number derived from it survives in this
+document.
 
 ## Dependency compatibility
 

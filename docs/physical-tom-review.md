@@ -317,14 +317,33 @@ the (0,1) by 13 dB: a boom, not a pitched drum.
   (3,1)). Measured from the code: `(0,2) 2.2974`, `(3,1) 2.6511`. **The code is
   correct.** The mislabelling was in my research prompt.
 - **Mode ratios / air loading.** I expected the missing exterior air loading to
-  be a major defect. It is not, at this diameter. Real two-headed drums scatter
-  **±20 % around the ideal Bessel series in both directions** — Rossing's snare
-  gives (1,1)/(0,1) = 1.25, [Sørensen 2009](https://courses.physics.illinois.edu/phys406/sp2017/Student_Projects/Spring09/Knud_Sorensen/K_Sorensen_Phys498POM_Spring09_Final_Report.pdf)
-  gives 1.85 for a tom (figure 03), so no fixed ratio set is right.
-  [Richardson, Toulson & Nunn, _JASA_ 131(1) 2012](https://pubmed.ncbi.nlm.nih.gov/22280713/)
-  give the practical target: tune the batter (1,1) to ≈**1.5×** the (0,1). This
-  model's _coupled_ value is 165.4/107.7 = **1.54**. That is already on target.
-  **Drop air loading from the priority list.**
+  be a major defect. It is not, at this diameter. **Drop air loading from the
+  priority list** — and that verdict, challenged in 2026-08 and re-tested, now
+  rests on much better evidence than the argument I gave for it.
+
+  The argument I gave was scatter: that real two-headed drums land ±20 % either
+  side of the ideal Bessel series, so no fixed ratio set is right. That figure
+  does not survive. It came from putting single-headed and coupled two-headed
+  measurements in one column. Separated, uncoupled or single-headed instruments
+  run **1.85–2.16** (Sørensen 1.85; Fletcher & Rossing Table 18.7's 12-inch tom
+  2.16) and coupled two-headed ones run **1.52–1.56** (Gärder 2005) — two tight
+  clusters, not one wide one. The model's 1.54 sits in the coupled cluster, where
+  it belongs. Scatter of ±20 % was never measured on one class of drum, and an
+  argument from it proves nothing either way.
+
+  What settles it is a drum of **known geometry**. The licensed 8" × 8"
+  reference states its diameter, so fixing the fundamental predicts every other
+  mode with no free parameter at all. Measured (1,1)/(0,1) is **1.584** against
+  the ideal membrane's **1.594** — an 11-cent match, and roughly **950 cents**
+  from the ~1.78 an air-loaded head would give. There is no room in that for an
+  added-mass term. Detail in
+  [`physical-objective-validation.md`](physical-objective-validation.md) §"Exterior
+  air loading is not the missing mechanism".
+
+  [Richardson, Toulson & Nunn, _JASA_ 131(1) 2012](https://pubmed.ncbi.nlm.nih.gov/22280713/)'s
+  practical target — tune the batter (1,1) to ≈**1.5×** the (0,1) — is unchanged,
+  and this model's coupled 1.54 still meets it.
+
 - **Cavity coupling** — I read the +3 Hz shift as under-coupling; isolating it
   shows ~5× over-coupling (defect 4).
 - **Damping fix** — "raise d2 100×" was the wrong basis; constant Q needs a k¹
@@ -349,8 +368,24 @@ damping dominate — **do not copy its radiation weighting.**
    ζ ≈ 5 % → γ ≈ 33 /s at 104 Hz. `ModeDecayCorrections` already exists for
    exactly this. This single change is most of the difference between "boing"
    and "thump".
-   **Implemented 2026-07-30** as PLAN.md item S2. The (0,1) T60 went from
-   2213 ms to 211 ms and suite RT60 from ~2.1 s to 0.27–0.55 s.
+   **Partly done, and the remainder is now the highest-value fix on the path.**
+   PLAN.md item S2 landed the correction on the batter head's own (0,1) on
+   2026-07-30: that mode's T60 went from 2213 ms to 211 ms and suite RT60 from
+   ~2.1 s to 0.27–0.55 s. What this item asked for and did not get is the loss on
+   the **coupled doublet** — the pair the cavity creates, whose squeezing member
+   pumps the air and should be heavily damped while its sliding partner is not.
+   The model still has no such splitting, and the consequence is measurable: it
+   synthesizes a **186 Hz mode with a T60 of 1.81 s**, the longest-ringing thing
+   it produces and absent from the reference. That single mode is the top
+   contributor to the spectral-envelope term, most of the spurious-partial share,
+   and part of the frequency error — i.e. to the one metric that survived the
+   objective's own reproducibility check. It is PLAN.md §P10/N3, and it is the
+   single highest-value model fix outstanding. See
+   [`physical-objective-validation.md`](physical-objective-validation.md) for the
+   residual budget that identifies it, and note its warning: check the sign
+   pattern of any fitted per-mode damping vector before believing it, because
+   in-phase/out-of-phase splitting predicts pairwise alternation and a
+   structureless vector is fitted noise.
 3. **Refit the cavity split** to a 10–20 % (0,1) separation instead of ρc²/V,
    which will also remove the spurious −9 dB partial at 219 Hz.
    **Implemented 2026-07-30** as PLAN.md item S3. `Cavity.StiffnessScale = 0.04`
@@ -400,10 +435,21 @@ A/B: `current-model.wav` vs `prototype-fixed.wav`.
 
 ## Where the literature is genuinely thin
 
-No published modal table for a mounted 12–14" tom (the anchors above are snare
-and a student tom report). No measured felt-mallet contact time. No numeric
-radiation-vs-internal damping split for any drum. No published overall T60 for
-a tom hit. No measurement of a tom vent resonance — a first-principles estimate
+Two of the gaps listed here in 2026-07-30 have since closed and are struck from
+the list. **A modal table for a real tom** now exists in the repository: the
+licensed 8" × 8" reference supplies frequencies, ratios and per-mode decays for a
+drum of stated diameter, depth and head models — though its per-mode T60s carry
+the estimator uncertainty measured in
+[`physical-objective-validation.md`](physical-objective-validation.md) and must
+not be quoted finely. And **overall T60 for a tom** is published after all:
+Fletcher & Rossing §18.4, Table 18.8 gives 0.8–1.05 s for a mounted 32 cm tom,
+with the same passage showing the mount itself moving the fundamental's decay
+5.5 s → 0.6 s with support-arm length. The 3–4 s figures that made this model's
+0.27–0.55 s look wrong are wire-suspended artefacts.
+
+Still thin: no measured felt-mallet contact time. No numeric
+radiation-vs-internal damping split for any drum. No measurement of a tom vent
+resonance — a first-principles estimate
 puts a 12"×9" tom's Helmholtz frequency near 30 Hz, far below the (0,1), so
 **do not model a vent resonance**. The ζ→T60 conversions, the departure
 percentages and the doublet ratios in this document are my own arithmetic from
@@ -415,7 +461,7 @@ cited inputs; recompute before committing them to code.
 | ------------------------------------------ | ---------------------------------------------------- |
 | `01-excitation-spectrum.png`               | contact-pulse spectra vs. the mode bank's span       |
 | `02-mode-map.png`                          | flat per-mode T60; 116 dB spread in per-mode weights |
-| `03-mode-ratios.png`                       | model vs. two measured drums — ±20 % scatter         |
+| `03-mode-ratios.png`                       | model vs. two measured drums                         |
 | `04-output-spectrum.png`                   | the 646 Hz cliff                                     |
 | `05-decay-envelope.png`                    | 2.2 s overall decay                                  |
 | `06-band-decay.png`                        | all octave bands decaying in parallel                |

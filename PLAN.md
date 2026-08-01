@@ -724,1486 +724,349 @@ WASM size budget), H5 (take dependabot's first PRs).
 
 ## Physical drum synthesis path
 
-Research completed: **2026-07-29**. See
-[`docs/physical-model-research.md`](docs/physical-model-research.md) for the
-model comparison, equations, repository fit, validation strategy, and primary
-sources.
+A double-headed physical tom, selectable per Tom track, running beside the
+procedural voices rather than replacing them. Modal banks per head, a lumped +
+modal cavity between them, a Berger tension nonlinearity, a Rayleigh/Lommel
+radiation weight and a stochastic attack layer above the modal ceiling.
 
-### Scope and architecture decision
+**This section is the forward backlog.** The phases that built the model are
+closed; what they established lives in `docs/physical-*.md`, and each phase below
+points at the document that holds its evidence. Numbers are not repeated here —
+if a figure appears in both places, the document is the one to trust.
 
-- [x] Add a **parallel, explicitly selected physical model**. Preserve the
-      existing procedural voices, their parameter meanings, and old share links.
-- [x] Target a **double-headed tom first**. It covers circular head modes,
-      strike position/contact, frequency-dependent loss, radiation, enclosed-air
-      coupling, and nonlinear tension without making snare collision a
-      prerequisite.
-- [x] Keep the physical core independent of sequencer/UI state. Use SI units
-      internally and a flat, precomputed, allocation-free modal state.
-- [ ] Prototype in `algo-drum`; extract a generic modal bank to `algo-dsp` only
-      after its API has been proven by this implementation.
-- [ ] Use `algo-pde` for offline frequency-domain/reference calculations, not
-      for audio-rate time evolution. Resolve its GitHub/module-path mismatch
-      before taking a direct dependency.
+Research record and primary sources:
+[`docs/physical-model-research.md`](docs/physical-model-research.md).
 
-### P0 — Baseline and contracts
+### Where it stands
 
-- [x] Define `PhysicalDrum`, `Head`, `Mode`, `Strike`, `Cavity`, and `Pickup`
-      parameter structs, units, valid ranges, defaults, and versioned
-      serialization.
-- [x] Define quality tiers by retained frequency/mode count; benchmark both
-      native and `GOOS=js GOARCH=wasm` before fixing the shipped tier.
-- [x] Add a benchmark harness that reports samples/second, real-time factor,
-      allocations, and active modes at 48 kHz/512-sample chunks.
-- [x] Establish the integration contract: explicit model selection, deterministic
-      reset/trigger, finite output, zero allocations in `Render`, and no changes
-      to existing procedural output when physical mode is not selected.
+| Phase                            | What it settled                                                                                                                                              | Record                                                                                       |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| **P0–P2** contracts, modal bank, loss/radiation | Parameter structs, quality tiers, allocation-free `Render`, Fourier–Bessel modes, exact state transitions, the frequency-dependent loss law and the radiation weight. | [`physical-calibration.md`](docs/physical-calibration.md)                                     |
+| **P3** resonant head + cavity    | Passive rank-one pressure coupling, validated against an offline frequency-domain solve.                                                                        | [`physical-cavity.md`](docs/physical-cavity.md)                                                |
+| **P4** nonlinear hit behaviour   | Bounded Berger potential, discrete-gradient passivity, anti-alias bound, measured glide.                                                                        | [`physical-nonlinearity.md`](docs/physical-nonlinearity.md)                                    |
+| **P5** product integration       | Generated control bank, A/B against the procedural path, versioned persistence and share links.                                                                | [`physical-product-integration.md`](docs/physical-product-integration.md)                      |
+| **P6** real-instrument departures | Deterministic degenerate splitting and a rotated tension axis. Shell/edge/vent corrections were **refused** for want of a measurement, and the acceptance gate written down. | [`physical-real-instrument-departures.md`](docs/physical-real-instrument-departures.md)        |
+| **P8** sound correction (S1–S10) | The voice stopped sounding like a ringing sine: the `d₁k` loss term and constant Q, the damped (0,1), the fitted cavity split, the corrected radiated sum, the audible glide, the hybrid attack layer, and the retune that made tuning stop changing sustain. | [`physical-tom-review.md`](docs/physical-tom-review.md), [`physical-hybrid.md`](docs/physical-hybrid.md) |
+| **P9** model-structure gaps (M1–M7) | Nonlinear mode-to-mode coupling (M1) and a modal cavity (M2) — the latter being **the first externally checkable prediction this model made and had come true**, a rigid-cylinder air mode confirmed against sound speed, radius, depth and head tension. | [`physical-nonlinearity.md`](docs/physical-nonlinearity.md), [`physical-cavity.md`](docs/physical-cavity.md) |
+| **P10** the objective itself     | The instrument used to judge P8 and P9 **cannot resolve most of what it reports**. Gates re-derived from measured reproducibility; the reference replaced with a licensed one of known geometry. | [`physical-objective-validation.md`](docs/physical-objective-validation.md)                    |
 
-Exit: an empty/silent physical backend is selectable in tests and the measured
-WASM budget is recorded.
+Two things from that history are worth restating because they constrain
+everything after them:
 
-Initial P1 microbenchmark baseline (2026-07-29, 48 modes, 48 kHz/512-sample
-chunks, zero allocations): 3.49–3.96 Msamples/s (72.7–82.6× real time) on
-Linux/amd64 and 1.71 Msamples/s (35.6×) on `js/wasm` under Node. The Standard
-tier remains a prototype default until the production Worker/AudioWorklet path
-is measured.
+- **Six rounds of intervention concluded "the model is the ceiling" from evidence
+  that could not support it.** Every partial-based conclusion drawn before
+  2026-08-01 is withdrawn rather than adjusted. Decomposing a metric before
+  optimising against it is cheap; not doing so cost this project months.
+- **Four separate defects were found in tests that passed _because_ of the defect
+  they were meant to guard.** When a physical correction lands and a test fails,
+  the test is the first suspect, not the last.
 
-### P1 — Linear single-head modal prototype
+### Open work (P10)
 
-- [x] Generate circular Fourier-Bessel modes, including both orientations of
-      each \(m>0\) pair; test zeros, ordering, normalization, and analytic modal
-      frequencies.
-- [x] Implement stable damped two-pole/exact-state modal updates with
-      precomputed coefficients and structure-of-arrays storage.
-- [x] Project a finite-area, band-limited strike onto the modes. Expose velocity,
-      hardness, strike radius, and strike angle.
-- [x] Add separate diagnostic outputs for head displacement/velocity and the
-      radiated pickup sum.
-- [x] Validate center/off-center selection rules, determinism, finite output,
-      bounded lossless energy, monotonic damped energy, and zero steady-state
-      allocations.
+Ordered. N2 gates the measurement-dependent items; N9–N13 are independent of any
+recording and can be taken at any time.
 
-Exit: an auditionable single circular head whose pitch, mode mix, and decay move
-predictably with physical parameters and strike position.
+- [x] **N1: derive the adoption gates from measured reproducibility.** _Done
+      2026-08-01._ Each gate is now the p90 of the objective's disagreement with
+      itself over the sixteen velocities of the coincident reference pair, scored
+      both ways round, and each weight is `1/gate` — a rule `AdoptionGates()` and
+      `TestWeightsAreReciprocalGates` now make structural rather than aspirational.
 
-### P2 — Loss, radiation, and calibration
+      Three findings came out of it. The **spectral envelope was the only gate that
+      was ever right** (measured floor 3.65 dB against a gate of 4). The **partial
+      terms were never gateable** — nothing can beat 113 cents or a 1.26 log-ratio
+      — so their gates are now honest and, as quality statements, useless. And
+      **attack balance was the most reproducible term in the objective while
+      carrying the smallest weight**, `1/6` against a 0.26 dB median; it is now
+      `1/1.2`.
 
-- [x] Replace the provisional uniform decay with a two-parameter
-      frequency-dependent modal decay law; retain room for measured per-mode
-      corrections.
-- [x] Add mode-dependent radiation weights and a compact radiation/microphone
-      filter using `algo-dsp`.
-- [x] Add offline analysis tooling for modal peaks, decay times, pitch-glide
-      tracks, spectra, and waveform/spectrum regression metrics using
-      `algo-fft`/`algo-dsp`.
-- [x] Define an openly licensed or locally measured reference set: multiple
-      velocities, strike radii, and microphone positions, with provenance and
-      recording conditions.
+      The arithmetic that matters: at the old weights the objective's
+      self-disagreement totalled **12.89** while the best fit ever recorded scored
+      **10.38** — below its own noise floor. At the measured weights the floor is
+      **4.32 median / 6.46 at p90** and no term contributes more than 0.79 at its
+      median. **No total recorded before this change is comparable to any total
+      after it.**
 
-Exit: low modal frequencies and decay times match analytic/reference targets;
-the radiated output is clearly distinguished from a raw point pickup.
+      Not done here, and left to N2 because it needs the repaired estimators: RMS
+      aggregation is still used where the terms are outlier- rather than
+      noise-dominated.
 
-### P3 — Resonant head and cavity
+      **Superseded in part.** N2 then found that the estimator these gates were
+      measured through was silently collapsing three of the sixteen takes to a
+      one-partial table. The gates must be re-measured; the reciprocal-gate rule
+      and the three findings stand, the numbers do not.
 
-- [x] Add an independently tuned resonant-head modal bank.
-- [x] Implement a passive lumped cavity spring/damper driven by swept head
-      volume; couple the ideal axisymmetric modes first.
-- [x] Test the zero-coupling limit, in-phase/out-of-phase modal splitting, and
-      lossless energy exchange/conservation.
-- [x] Compare the reduced transfer function against an offline
-      frequency-domain reference; add only evidenced cross-coupling terms.
-- [x] Expose batter tuning, resonant tuning, shell depth, and air/coupling as
-      physical parameters with safe update semantics.
+- [ ] **N2: repair the partial and decay estimators.** _Second estimator built and
+      the comparison run, 2026-08-01; the gate re-measurement is not done._
+      Evidence and every number below:
+      [`physical-objective-validation.md`](docs/physical-objective-validation.md)
+      §Result 5.
 
-Exit: changing either head or shell depth causes explainable coupled-mode
-changes, and a batter hit audibly excites the resonant head.
+      Done. Subband ESPRIT with a stabilisation sweep now exists beside the fast
+      estimator (`internal/physical/match/esprit.go`, its dense complex linear
+      algebra in `linalg.go`, exposed by `measure-tom -high-resolution`). It is
+      measurement equipment — no fit calls it and `Distance` does not know it
+      exists. It was compared partial-by-partial across all sixteen velocities,
+      which produced four findings and one repair:
 
-Completed 2026-07-29. The passive rank-one pressure coupling, update semantics,
-validation equations, transfer-function reference, and native/WASM benchmark
-results are documented in
-[`docs/physical-cavity.md`](docs/physical-cavity.md).
+  - **A defect worse than either this item named, now fixed.** The decay fit was
+    admitted on a sample count with no bound on the time it spans, so a 6.1 ms
+    fragment on `v10` was fitted at −4034 dB/s and extrapolated back to a level of
+    **+137 dB**, putting every genuine partial below the relative floor. Three of
+    sixteen takes were reduced to one or two partials and the fundamental was
+    reported as 2349.6 Hz. All sixteen now yield sixteen partials. The guard is
+    that no fitted decay may be faster than the envelope filter's own fastest
+    pole.
+  - **The merge defect is real**: 24 fast partials stand for two or more modes,
+    recurring at 304, 351, 586–613 and 851 Hz. `ASYM` is indeed fitted against a
+    target with the asymmetry averaged out.
+  - **`FitQuality` does not discriminate.** Median ring-time disagreement is 39 %
+    at R² ≥ 0.95 and 44 % below it, so `partialDecayError`'s confidence weighting
+    is not protecting the decay term. That weighting needs replacing, not tuning.
+  - **ESTER is unusable here** — its criterion is not unimodal on this signal and
+    its argmax picks order 1 for a band holding four partials. Implemented,
+    reported, and not used; a stabilisation sweep decides the order instead.
 
-### P4 — Nonlinear hit behaviour
+      Still open, and re-ordered by what the comparison showed:
 
-- [x] Implement a Berger-style reduced tension modulation driven by modal
-      displacement/strain energy.
-- [x] Give the update a discrete energy/passivity argument and conservative
-      parameter bounds; add an oversampled or high-precision reference test.
-- [x] Verify velocity-dependent attack spectrum and downward modal-frequency
-      glides without runaway energy or aliasing.
-- [x] Evaluate the provisional force pulse against measured contact durations.
-      Its original 0.71 ms default was wrong by nearly an order of magnitude;
-      replace it with a bounded, velocity- and hardness-dependent 5.5–8 ms
-      half-sine contact while retaining the allocation-free real-time contract.
+  - **Re-measure the reproducibility and reset the gates.** N1's gates were taken
+    with the pre-repair estimator, so the collapsed takes contributed one-partial
+    tables to them. This is now the first thing to do and it was not possible
+    before the repair.
+  - **Replace the decay term's confidence weighting**, and RMS aggregation where
+    the residual stays outlier-dominated.
+  - **Resolve the merged pairs in the fast estimator**, or accept the merge and
+    stop fitting `ASYM` against a target that cannot show it. `MinSeparationHz`
+    is not the whole of it: an FFT peak picker over an 800 ms Hann window cannot
+    separate 4 Hz at 213 Hz whatever the guard is set to.
+  - Karjalainen, Antsalo, Mäkivirta, Peltonen & Välimäki (JAES 50(11):867–878,
+    2002) — an explicit exponential-plus-noise-floor decay model — is **still
+    unimplemented**, and is now the most likely remaining improvement to the
+    decay estimate.
 
-Exit: louder hits produce a controlled, reference-comparable pitch glide and
-attack change while all fuzz/finite/energy tests remain green.
+      One thing this item predicted that the measurement **refuted**: the ring-time
+      disagreement between the two estimators (median +27 %, fast longer in 71 % of
+      pairs) is not an estimator defect. Both recover a known answer to within 3 %
+      in the exact close-neighbour configuration the drum imposes. What remains is
+      that the reference's partials are not single exponentials — a property of the
+      drum, which no estimator repair addresses. Do not spend another round trying
+      to fix it in the code.
 
-Completed 2026-07-29. The bounded Berger potential, discrete-gradient
-passivity argument, anti-alias parameter bound, oversampled reference,
-velocity/glide measurements, active native/WASM benchmarks, and the corrected
-measurement-bounded contact pulse are documented in
-[`docs/physical-nonlinearity.md`](docs/physical-nonlinearity.md).
+      **Expect the target to get harder, not easier; that is the correct outcome
+      and must not be tuned away.**
 
-### P5 — Product integration
+- [ ] **N3: fix the damping distribution — the one real model defect.** The model
+      synthesizes a mode at 186 Hz with T60 1.81 s, the longest-ringing thing it
+      produces, with no counterpart in the recording. It is simultaneously the top
+      contributor to the spectral-envelope term, most of the spurious share, and
+      part of the frequency error — worth 0.654 of the old total on its own. Two
+      threads:
+  - Damp the coupled (0,1) doublet specifically. Prescribed in
+    [`physical-tom-review.md`](docs/physical-tom-review.md) as its item 2 and never
+    done.
+  - The missing freedom is **structured**, not free-per-mode. No smooth γ(k) can
+    reach the decay gate: fitting a smooth power law to the reference's own T60s
+    leaves 0.677, and the model already achieves 0.573. What a smooth law cannot
+    express is in-phase/out-of-phase head-pair splitting — the squeezing member
+    pumps the cavity and is heavily damped, the sliding member is not. The model
+    has that only for m = 0. **Before fitting any per-mode damping vector, check
+    the sign pattern**: if it reproduces the predicted pairwise alternation it is
+    physics; if it is structureless it is fitted noise.
 
-- [x] Add a Physical Drum lab/editor with model selection, head dimensions and
-      tuning, damping, hit position/hardness, cavity coupling, nonlinear amount,
-      pickup position, quality tier, audition, and reset.
-- [x] Decide after profiling whether the first physical tom replaces the Tom
-      track when selected or appears as a separate experimental instrument;
-      never make this an implicit preset change.
-- [x] Extend the generated parameter metadata rather than hand-maintaining a
-      second Go/TypeScript parameter table.
-- [x] Version persistence and URL sharing; old states must decode to the
-      unchanged procedural engine.
-- [x] Extend Worker/WASM command validation, recovery, E2E coverage, and
-      accessibility for the new controls.
+- [ ] **N4: recompute the cavity stiffness against a known-geometry drum.**
+      `Cavity.StiffnessScale` ships at 0.083, a factor of twelve below its physical
+      ceiling of 1 — and there is **no factor of twelve to explain**: all four
+      candidate mechanisms are eliminated in
+      [`physical-cavity.md`](docs/physical-cavity.md), and 0.083 was fitted to a
+      doublet ratio of 1.16 **measured on a snare**, which is a leakier enclosure
+      than a tom. The ceiling was right and the target was wrong.
 
-Exit: users can A/B the procedural and physical paths in the production browser
-build without audio-pipeline or persistence regressions.
+      The licensed 8" × 8" reference unblocks this: known geometry, stated head
+      gauges, so the split is computable rather than fitted. Four costs are known
+      and none is small — the parameter **saturates rather than lands** (s = 1 gives
+      1.841 exact / 1.830 rendered, re-measured 2026-08-01, still 2.7 % below Bork &
+      Meyer's 1.891, so shipping it ships a pinned parameter); the **interleaving
+      constraint is unmet and is the stronger one**; the **glide gets diluted**, so
+      retarget it and the Berger coefficients together or neither; and M2's
+      confirmation is a weak-coupling result that degrades as s rises. **Retarget
+      all the way or not at all** — the intermediate values are the worst, and three
+      tests encode the snare target and must be re-quoted with it.
 
-Completed 2026-07-29. The generated control bank, bounded physical mappings,
-passive cavity-coupling control, independent A/B state, version-4
-persistence/share migration, Worker/WASM validation, accessibility behavior,
-and production-browser coverage are documented in
-[`docs/physical-product-integration.md`](docs/physical-product-integration.md).
+- [ ] **N5: refit jointly across all sixteen velocities.** `tt08x08-mp-hd`, mono —
+      safe here because the pair is coincident. Pin what is now known (diameter,
+      depth, both surface densities from the stated Remo gauges) and fit the rest
+      against the whole velocity curve rather than one hit.
 
-### P6 — Real-instrument departures
+      This is what finally constrains the Berger nonlinearity, including
+      `CoefficientNPerM` — which ships at the same coefficient the uniform channel
+      already carries, so it is not a new free parameter but not a fitted one
+      either. The measured glide rises monotonically with strike velocity (−130 ¢ at
+      v04, −174 at v08, −353 at v12), which is the cleanest identification signal on
+      the path. Expect little from the mode-coupling term itself: its measured reach
+      into the target band is ~2 dB and already at its useful maximum.
 
-- [x] Add deterministic degenerate-mode splitting/non-uniform tension.
-- [x] Evaluate a small shell/hardware modal bank and bearing-edge/vent
-      corrections, accepting each only when measurements justify it. None were
-      accepted without an instrument-specific measurement residual; the
-      acceptance gate is documented in
-      [`docs/physical-real-instrument-departures.md`](docs/physical-real-instrument-departures.md).
-- [~] Fit documented presets from measurement while preserving the underlying
-      SI parameters and provenance. The machinery exists and has produced one
-      fit; the *provenance* half of the item does not, and cannot with the
-      recording available. See below.
-- [x] Consider measured modal transfer functions as an optional calibration
-      layer, not a replacement for the physical state. The documented decision
-      is to fit interpretable modal residuals first and require phase-coherent,
-      held-out evidence before adding a real-time transfer layer.
+      This also closes P6's one unmet clause — a documented preset fitted *with
+      provenance*, which was impossible while the recording had none.
 
-Implemented 2026-07-29: physical-config v5 adds bounded, deterministic
-cosine/sine pair splitting and a rotated principal tension axis, with exact
-zero-asymmetry migration for v4 configs. The generated physical Tom bank adds
-append-only ASYM/AXIS controls and app-state v5 preserves v4 links. The
-measurement-fit preset and the phase exit criterion remain open because the
-repository contains no identified real-tom recording set.
+      Practical constraint: the analysis window is 1.2 s and the MP files are
+      1.25 s; the higher tunings are shorter and need the tail window shortened
+      before they can be used.
 
-Sound re-audit 2026-07-29: corrected the default hit from peripheral to central,
-replaced the erroneous sub-millisecond contact, and removed an unevidenced
-equal-phase sum of opposite-side head radiation that cancelled the coupled
-fundamental. App-state v6 migrates only the former shipped HIT.R detent. The
-mechanical, observation, persistence, and regression audit is recorded in
-[`docs/physical-sound-audit.md`](docs/physical-sound-audit.md).
+- [ ] **N6: measure identifiability before trusting any fitted bank.** The
+      converged fits show the textbook sloppy-model signature (Gutenkunst et al.,
+      PLoS Comput. Biol. 3(10):e189, 2007) and there is no Jacobian, Hessian or
+      Fisher-information code in the repository. A central-difference Hessian at the
+      optimum is ~600 evaluations against the 88 584 a fit already spends; its
+      eigenspectrum says how many parameter combinations the data constrains. Follow
+      with profile likelihood (Raue et al., Bioinformatics 25(15), 2009) to separate
+      structurally from practically non-identifiable.
 
-**Superseded in part by P8 (2026-07-30).** That audit's contact-duration finding
-holds — 4.5–8 ms is well supported by two independent measurement studies — but
-it drew the wrong conclusion from it. A smooth half-sine force over the whole
-contact interval is 40 dB down at the top of the retained mode bank, and the
-`physicalTomOutputGain = 4` added to recover the level is compensating for a
-missing signal path (a separate stochastic attack layer), not for a mis-scaled
-pulse. The audit also moved the default hit to `Radius01 = 0.12`, effectively the
-geometric centre, which spreads strike coupling over 116 dB; the sources describe
-central playing as a _region_. See
-[`docs/physical-tom-review.md`](docs/physical-tom-review.md).
+      **One flat direction is provable without running anything**: each mode's
+      observed amplitude goes as Φ(r_strike)·Φ(r_mic), symmetric under exchange, and
+      for axisymmetric modes the angles enter only as a difference. So (HIT.R,
+      MIC.R) is identifiable at best up to a swap and (HIT.A, MIC.A) only through
+      Δθ — four parameters carrying at least two exactly flat directions, by
+      construction.
 
-**Measurement fitting added 2026-07-30.** `internal/physical/match` reduces a
-recorded or rendered hit to one feature vector and scores two of them on eight
-perceptual terms; `cmd/fit-physical` searches the exposed parameter bank against
-a recording with the Mayfly algorithm. Both are offline only — the shipped WASM
-binary is unchanged. Recorded in
-[`docs/physical-measured-fit.md`](docs/physical-measured-fit.md), with the
-fitted bank in `testdata/physical-fit-tom.json` and a **Measured tom** preset in
-the voice editor.
+- [ ] **N7: rewrite the paper against the new reference.** _Deferred
+      deliberately._ `docs/paper/` describes a fit to a recording of unknown
+      provenance under an objective now known not to resolve most of what it
+      reports. Do **not** patch numbers into it. The rewrite must:
+  - remove every result derived from the old recording rather than annotating it,
+    including the figures drawn from those runs;
+  - state the reference's licence and provenance, which it can now do;
+  - report the reproducibility measurement as a **first-class result** — it is the
+    strongest methodological finding on the path and belongs in the method chapter,
+    not a footnote;
+  - carry the recorded negative results, which are worth more than the fits they
+    replace;
+  - re-derive `<comb-eq>` and the channel table against a coincident pair, where
+    the comb argument no longer applies.
 
-The item stays open, for two reasons rather than one. The recording is of
-unknown provenance, so the SI-parameter and provenance half of this item is
-untouched — there is nothing to preserve. And the fit itself does not meet its
-own adoption gate: modal frequency (21.5 ¢) and decay (0.179 log-ratio) pass
-comfortably, spectrum (13.6 dB against a 4 dB gate) does not, so
-`DefaultPhysicalDrum()` is deliberately unchanged.
+      Blocked on N2 and N5: nothing to report until the objective is trustworthy and
+      a fit against the licensed reference exists.
 
-Exit: a measured tom can be matched within documented tolerances for modal
-frequency, decay, and spectrum across more than one hit.
+- [ ] **N8: retire `reference/tom.wav`.** Unknown provenance, unlicensed, 44.1 kHz,
+      spaced pair. It cannot be committed and no test may depend on it. Deleting it
+      today orphans `testdata/physical-fit-tom.json`, the paper's figures and much of
+      [`physical-measured-fit.md`](docs/physical-measured-fit.md). Retire it in the
+      same change that re-derives those against the licensed set — after N5.
 
-**Progress against this exit criterion, and the one thing blocking it.**
-Frequency and decay are inside tolerance on one hit, and nothing is pinned at a
-parameter bound — the range is adequate, which was genuinely in doubt. Spectrum
-is not, and the reason is specific and reproducible: the reference carries nine
-resolvable partials between 476 and 700 Hz and the model produces none there, at
-any quality tier (Draft 13.3 dB, Standard 13.1, High 13.1 — mode count is not
-the constraint). Also still outstanding: "across more than one hit" — this is a
-single strike from a single file.
+- [ ] **N9: make the nonlinear mode coupling affordable on `js/wasm`.** The
+      retrigger worst case at 120 oscillators went 1.40× → **0.70× real time**
+      (4.39× → 2.06× on host), zero allocations throughout. The fixed-point
+      iteration count barely moved (2.404 → 2.491), so this is the table walk
+      itself: three separate index arrays, no blocking by channel or receiver,
+      rebuilt per iteration rather than updated. 128 coefficients buys 0.79× and
+      costs 0.4 dB in the target band, which is the first thing to try. Independent
+      of any recording.
 
-**That band is now explained**, in
-[`docs/physical-excitation-gap.md`](docs/physical-excitation-gap.md). It is not
-the two-head mode series, the cavity split or the absent shell modes. The modes
-are present — 58 of them lie in the band at High quality and none is audible —
-and the excitation is not. `addContactPulse` prescribes a smooth half-sine over
-the whole contact interval, whose spectrum nulls at 1.5/τ and falls as 1/f²
-after it; at the fitted τ = 8.23 ms that is −28.7 dB at 504 Hz and −34.2 dB at
-635 Hz, against a measured band deficit of −22.6 and −30.4 dB. Microphone
-height, near-field balance, strike footprint, cavity coupling and tension
-asymmetry were each measured and eliminated — twenty decibels of microphone tilt
-buys 0.9 dB.
-
-An independent literature check sharpened this into a second, separable error.
-The 5.5–8 ms the shipped law prescribes is well supported, but it is a **contact
-dwell time, not a force-pulse width**, and the model spends it as the latter.
-Wagner (KTH 2006 §4.1.1, §4.2.1) measured contact electrically and force
-separately: the stick "would already leave the drumhead after approximately
-3.5 ms", and the dwell runs on only because the wave reflected from the rim
-returns under it, producing two further weaker impacts at 3.75 ms and 5.6 ms. So
-the measured excitation is three discrete impacts inside an 8 ms window and
-`addContactPulse` replaces them with one smooth half-sine across the whole of it
-— too long *and* too smooth. Prescribing the main pulse at 3.5 ms is worth ~7 dB
-in the band; holding duration and impulse fixed and skewing the rise to 0.49 ms
-is worth a further ~13 dB. The shape half is exactly what
-[`docs/physical-tom-review.md`](docs/physical-tom-review.md) §6 predicted by
-inspection.
-
-**The width and the shape are not separable.** Prescribing the pulse at
-Wagner's 3.5 ms and leaving the shape alone looked like the cheap half and was
-tried: it raises the default drum's 60–1000 Hz peak by 14.1 dB with the
-nonlinearity disabled, because a half-sine nulls at 1.5/τ and shortening the
-pulse drags that zero from 273 Hz to 429 Hz through the low mode cluster. That
-is the review's "the nulls move with the knob" bullet, measured. It is not a
-level shift the output gain can absorb — τ varies with velocity and hardness, so
-the zero lands on different modes at every dynamic. The constants are therefore
-left as they are with the defect recorded beside them, and the correction has to
-be one change rather than two.
-
-**The Hertzian contact was built and measured (2026-07-30).**
-`Strike.Contact.Model` now selects it; it is off by default;
-[`docs/physical-contact.md`](docs/physical-contact.md) is the record. It did not
-close the gap, and it corrected two things written above.
-
-The gap is a **comb**, not a tilt. The half-sine's spectrum
-`|cos(πfτ)|/|1−(2fτ)²|` has exact analytic zeros every `(k+½)/τ`, and at the
-fitted 8.23 ms two of them — 547 and 668 Hz — fall inside the gap at −309 and
-−315 dB. A tilt leaves modes quiet; a zero leaves them unexcited. That is the
-complete explanation of why mode count, microphone geometry, cavity coupling and
-the loss law were each eliminated, and of why shortening τ cost 14 dB: it slides
-the comb, and the comb must land somewhere.
-
-The Hertzian contact turns those zeros into −26 and −29 dB and moves them, but it
-does **not** remove the comb — it is still one smooth touch, and one touch of
-duration τ interferes with itself wherever it sits, leaving a −51 dB dip of its
-own at 465 Hz. Below 700 Hz it is worth 0–4 dB. Above 800 Hz it is worth
-**+11.8 dB at 800 Hz, +15.1 at 1.5 kHz, +22.9 at 2.5 kHz** in the modal-only
-render, which is the *seam*, not the gap.
-
-It also does not reproduce Wagner's separation and re-contacts. The version that
-appeared to — 4.15 ms lobe inside a 7.48 ms dwell, seven impacts — was a
-discretization artifact and converged away under substep refinement; the
-converged contact is one smooth touch. That near-miss is written up in full
-because it imitated the exact phenomenon being looked for.
-
-What it did establish, and this is the useful part: **contact time here is set by
-the head, not by the tip.** The head's driving-point mass under the stick is
-0.31 g against a 15 g mallet, so a 900-fold stiffness range spans only 1.51 in
-duration while mass moves it almost proportionally. Three consequences. The
-7.26 ms it predicts is a genuine prediction, and it lands inside Dahl's and
-Wagner's 5.5–8 ms. HARD loses most of its authority, since tip stiffness cannot
-reach the measured factor of two. And `Strike.MalletMassKg` stops being a free
-loudness knob and becomes measurable — the measurement says 4–6 g, not the
-shipped 15 g, because that is what reproduces the measured velocity law
-(0.65–0.66 against Dahl's 0.69, where 15 g gives 0.92).
-
-Closing P8 therefore still needs: structure *inside* the contact interval, which
-is the one thing neither model supplies and the only thing that removes a comb;
-the seam between the modal bank's top and the attack layer's lowest band closed
-at low tunings — for which the Hertzian contact is now the precondition, since it
-puts real excitation where `ATK.T` was dragged down to fake it; and the
-transverse-cavity hypothesis tested. Adopting the Hertzian contact is a
-calibration pass in its own right: it delivers 1.9× the impulse, and
-`Pickup.OutputGain`, the nonlinear tension coefficients, `Attack.LevelRelative`,
-`Strike.MalletMassKg` and the fitted preset would all have to move with it.
-
-**Measured 2026-07-31, and the pass is not worth starting yet.** Refitting the
-whole bank under each contact model at 150 iterations — 8 restarts, 59 056
-evaluations each — puts prescribed at **5.901** against Hertzian's 7.450, or
-6.548 once the mallet is dropped to the measured 5 g. The seam does close exactly
-as predicted: `ATK.T` sits at 3426 Hz under Hertzian against 1261 Hz under
-prescribed, so the search stops using the noise layer to fake a band the
-excitation never reached. The gap does not: **all three fits find 0 partials in
-476–700 Hz** where the reference has 9, and none comes within 3× of the 4 dB
-spectral-envelope gate. So the excitation model was never the binding constraint
-on this fit, and P8's remaining question is mode density in that band. The 5 g
-mallet is separately confirmed as the better value, and is recorded rather than
-applied because it belongs to the same calibration pass. Two by-products worth
-keeping: the 150-iteration prescribed fit is the best total ever measured here
-(5.901, against the documented 6.364) and still fails the gate, confirming that
-search effort does not move the band; and the 5 g run scores the *best* spectral
-envelope of any fit while finding the *fewest* partials, by parking `ATK.T` at
-626 Hz inside the gap with `ATK.L` at 3.7× — the spectral-envelope term is
-gameable by the noise layer, which is why the gate is per-term. See
-[`docs/physical-measured-fit.md`](docs/physical-measured-fit.md).
-
-### P7 — Snare research extension
-
-Gated behind **P8**. A snare adds mechanisms on top of the two-head/air system,
-so starting it before the tom sounds like a tom would build on an uncalibrated
-foundation and make it impossible to attribute a bad snare sound to its own
-model rather than to the inherited one.
-
-- [ ] First add a clearly labelled reduced snare-contact model driven by the
-      resonant head.
-- [ ] Separately prototype 1-D snare strings with distributed unilateral
-      membrane contact and an energy-conserving update.
-- [ ] Keep any full 2-D heads + 3-D air FDTD implementation as a quality/reference
-      path until measured WASM performance proves it can meet the real-time
-      contract.
-
-Exit: the reduced musical model and the high-fidelity research model have
-separate names, tests, and performance expectations.
-
-### P8 — Sound correction (open, highest priority on this path)
-
-Measured diagnosis **2026-07-30**, with an independent literature check. Full
-evidence, citations and the list of conclusions this pass reversed are in
-[`docs/physical-tom-review.md`](docs/physical-tom-review.md).
-
-The mechanics are correct — mode labels, eigenmodes, exact state transitions, the
-passive cavity solve, the discrete-gradient Berger update and the energy
-bookkeeping all check out. The model sounds wrong because of four calibration
-errors, one architectural mismatch, and a compute budget spent on the least
-audible mechanism. Measured against `DefaultPhysicalDrum()` at 48 kHz, velocity
-0.8:
-
-| Defect                                 | Measured                                     | Target                                      |
-| -------------------------------------- | -------------------------------------------- | ------------------------------------------- |
-| Damping ~4–11× too weak and flat vs. f | γ = 3.1 /s every mode; T60 1.8–2.3 s         | γ = 11–41 /s; T60 ∝ 1/f                     |
-| The fundamental rings **longest**      | (0,1) T60 = 2213 ms                          | (0,1) T60 ≈ 209 ms — the **shortest**       |
-| No usable bandwidth                    | highest retained mode **646 Hz**             | audible content to several kHz              |
-| Cavity coupling ~5× too strong         | (0,1) doublet 107.7/219.4 Hz, ratio **2.04** | ratio ≈ **1.16**                            |
-| Pitch glide inaudible but expensive    | 38 cents, costs 6× the voice                 | audible glide over a few tenths of a second |
-
-Damping is the dominant error and the reason the voice reads as a low ringing
-sine rather than a drum. The two-parameter law `γ = d0 + d2·k²` has no k¹ term,
-so it **cannot express constant Q** — and the measured structure for a
-two-headed drum is roughly constant ζ ≈ 1.1 % above the fundamental, with
-ζ ≈ 5.07 % on the (0,1) caused by the two-head coupling itself. Raising `d2`
-alone gives T60 ∝ 1/f², which is the wrong shape.
-
-The table is the 2026-07-30 diagnosis, kept as written so the corrections stay
-attributable to a measurement. All five rows are now closed, by S1 through S6 and
-S8, though rows 3 and 5 were closed differently from how they are written: the
-bandwidth came from a hybrid noise layer rather than from more modes, and the
-glide's "6× the voice" cost premise turned out not to exist. The numbers in the
-table describe the voice as diagnosed, not as it now stands.
-
-Cheap, high-impact, no architecture change:
-
-- [x] **S1 (high): add a `d1·k` term to the modal loss law** and calibrate to
-      constant Q. For ζ = 1.1 % and this head's wave speed c = 41.40 m/s,
-      `d1 = ζ·c ≈ 0.455 m/s`. Raise the `DAMP` ceiling well above its present
-      12 /s — the fundamental alone needs ≈ 33 /s — and expose a damping _tilt_
-      rather than only a uniform scale. Today `DAMP` and the strip `DEC` both
-      scale every loss term by the same factor, so nothing can change the shape.
-      **Done 2026-07-30.** `Head.Loss1MPerSecond` makes the law
-      `γ = d0 + d1·k + d2·k²`; the reference set uses `d1 = 0.4554` (batter) and
-      `0.4919` (resonant), with `d0` cut from 3/4 to 0.8/1.0 — it had to be,
-      since `d0` is the term that flattens ζ toward low frequencies. ζ now holds
-      1.12–1.24 % across the retained band. Config schema v6, with v5 migrating
-      at `d1 = 0` so old configurations keep their flat damping exactly. `DAMP`
-      turned out not to need rescaling, only honest labelling: it was a
-      0.75–12 "/s" range that `reconfigure` immediately divided by 3, so its
-      real effect was always a 0.25–4× multiplier and the spec now says so —
-      same 16× span, identical mapping for every persisted position, no
-      migration. The absolute ceiling rose anyway because the law beneath it
-      changed. The new **`D.TILT`** control (0–3, default 1) scales the
-      frequency-dependent terms against `d0`, so the decay _shape_ is
-      adjustable: 0 reproduces the old flat behaviour, 1 is constant Q.
-- [x] **S2 (high): damp the (0,1) modes specifically.** ζ ≈ 5 % → γ ≈ 33 /s at
-      104 Hz, sourced to two-head coupling. `Head.ModeDecayCorrections` already
-      exists for exactly this. S1 + S2 are a few lines and are most of the
-      difference between "boing" and "thump".
-      **Done 2026-07-30.** Default corrections of +24.6 /s (batter (0,1)) and
-      +26.4 /s (resonant), landing both on ζ ≈ 5 %: T60 211 ms and 196 ms
-      against the 2213 ms it shipped with. The corrections scale with `DAMP`,
-      `DEC` and `D.TILT` like every other loss, or those controls would have no
-      authority over the one mode whose length is most audible.
-      Measured across the nine-condition reference suite, RT60 went from a
-      uniform 2.06–2.17 s to 0.27–0.55 s, and per-mode T60 now falls with
-      frequency (211 ms at 104 Hz, 151 ms at 645 Hz) instead of sitting flat at
-      ≈ 2.2 s. Peak level dropped from 1.20 to 0.78 at velocity 1, so the voice
-      no longer arrives at the master limiter already clipping;
-      `physicalTomOutputGain = 4` is left for S4 to delete.
-      One existing test asserted the defect: `TestDefaultBatterSideSoundIs`
-      `FundamentalLed` required the (0,1) to be the strongest partial over
-      1.4 s, which a correctly damped fundamental cannot be. It now checks that
-      the fundamental leads the _attack_ and that the sustain peak moves above
-      it — the pitch envelope a real tom has.
-- [x] **S3: refit the cavity split** to a 10–20 % (0,1) separation instead of
-      deriving it from ρc²/V. The rigid-cavity formula over-predicts ~5× because
-      the shell is compliant, the vent leaks and the heads are not pistons;
-      verified by isolating the air spring (batter only, centre hit:
-      104.00 → 191.89 Hz, against an analytic 215.1 Hz). This also removes a
-      spurious −9 dB partial at 219 Hz sitting where (2,1) should be.
-      **Done 2026-07-30.** New `Cavity.StiffnessScale` multiplies the rigid
-      ρc²/V, shipped at **0.04**. On a central strike the (0,1) doublet moves from
-      108.4/219.7 Hz (ratio 2.03) to 105.5/123.0 Hz (ratio **1.17**), inside the
-      measured 10–20 % band, and the 219.7 Hz partial — which sat 3 dB below the
-      fundamental, on top of the (2,1) at 221.8 Hz — is gone. The field is a
-      fraction, not a free gain: the rigid, sealed, piston-driven enclosure is
-      the stiffest case there is, so 1 is the physical ceiling. Config schema v7;
-      this is the **only** migration in the chain whose compatibility value is
-      not the zero value, since an absent `stiffnessScale` decodes to 0, which is
-      the uncoupled limit rather than the old sound, so `migrateV6Config` writes
-      1 explicitly. No app-state bump: `StiffnessScale` is calibration, not a
-      control, and AIR (`Cavity.Coupling01`) is unchanged — its top of travel is
-      now the calibrated split instead of the rigid one.
-      One correction to the diagnosis this item was written from: the _audible_
-      fundamental cannot rise 16 %. Eigenvalue interlacing pins the lower branch
-      between the two heads' uncoupled (0,1) frequencies, 104.0 and 112.3 Hz, for
-      any rank-one air coupling; only the stiffened branch carries the shift, so
-      the branch **separation** is the fittable quantity. Level is barely
-      affected — the voice peak at velocity 1 went 0.78 → 0.90, since the peak
-      belongs to the attack transient, not to the fundamental.
-      A pre-existing test defect surfaced here.
-      `TestDoubleHeadReferenceTransferMatchesTimeDomain` compared the nonlinear
-      time-domain model against `ReferenceFrequencyResponse`, which is linearized
-      at rest, so its residual was tension modulation rather than the coupled
-      solve it claims to check: 0.31 % at the chosen 137 Hz but **27 %** at
-      300 Hz. It now runs with nonlinearity off, where the two agree to 0.034 %,
-      and the tolerance is tightened from 5e-3 to 1e-3.
-- [x] **S4: fix the radiated sum.** Weight volume **acceleration** by
-      `SweptAreaM2` for the axisymmetric modes — already computed, currently
-      unused in the output — and use a directivity factor for m > 0. Remove
-      `PickupShape` from the radiated path; a far-field radiation efficiency and
-      a near-field point mode shape are different objects, and multiplying them
-      nulls modes arbitrarily as the microphone angle moves. Keep the mode shape
-      for the diagnostic contact pickup and for strike-position weighting, where
-      it is correct. Summing velocity also adds a spurious −6 dB/octave tilt.
-      Then delete `physicalTomOutputGain`.
-      The `(ka/√(1+ka²))^(m+1)` rolloff itself is **not** the problem and should
-      be kept: m ≠ 0 modes have null net volume velocity, and a real snare's
-      (1,1) is measurably not a strongly radiated mode.
-      **Done 2026-07-30**, with two of this item's own premises corrected by
-      measurement before any code was written.
-      **The −6 dB/octave claim is wrong.** `(ka/√(1+(ka)²))^(m+1)` is ≈ ka at
-      m = 0, so weighting velocity by it already carries the acceleration tilt.
-      Multiplying by ω as well while keeping the exponent would have added ≈ +10 dB
-      of unjustified tilt across the band, and the refitted output gain would have
-      hidden it. `TestAxisymmetricRadiationWeightIsFrequencyIndependent` now
-      asserts the m = 0 weight contains no ω at all; the "6 dB per octave against
-      the old sum" test this item implied is a tautology — new/old is jω per mode
-      by construction — and is deliberately not written.
-      **The naive generalization of the swept area drops the multipole factor.**
-      Extending `2πR²J₁(z)/z` to `2πR²J_{m+1}(z)/z` and letting the rolloff carry
-      the m > 0 normalization loses `1/(2^m m!)`, which is 1.03e7 at m = 8:
-      measured on the shipped basis it raises the (10,1) edge mode **401×**, to a
-      quarter of the fundamental, where multipole theory puts it seven orders
-      down. It would have measured as "brighter" and sounded like a plate. The
-      implemented weight is the exact Rayleigh/Lommel closed form
-      `2πR²·z·J_{m+1}(z)·J_m(u)/(z²−u²)` with `u = ka·sinθ`, which reduces
-      *identically* to the swept area on axis and gets `1/(2^m m!)` from `J_m(u)`'s
-      own small-argument behaviour. No arbitrary length scale, no free exponent.
-      Dropping `PickupShape` was right, and its consequence was larger than this
-      item assumed: far-field physics leaves every m > 0 mode ≥ 23 dB down even
-      with the mic against the head — correct for a distant mic, since a 12-inch
-      head below 600 Hz really is nearly a monopole, and wrong for the close one a
-      tom is recorded with at d/a ≈ ⅓. So the weight became a **sum** of the
-      far-field term and an explicitly fitted evanescent near-field term
-      (`Pickup.NearFieldScale`, decaying as `exp(-z·d/R)` with the mode's own
-      structural wavenumber, shaped by `PickupShape` — which is the right object
-      there and only there). The (1,1) goes from −21.1 dB to −7.1 dB relative to
-      the fundamental. Both terms multiply the same acceleration, so the weight is
-      still one precomputed scalar per mode and the per-sample cost is unchanged.
-      Mic geometry was refitted with it — 0.65 of the radius, 30 mm up, a real
-      close mic — giving (0,1) 0 dB, (1,1) −7.1/−10.4, (0,2) −8.5, (2,1)
-      −9.3/−17.5, down to −34.5 dB at the top of the band. **MIC.R is now the
-      model's strongest timbral control** rather than an inert knob, which is why
-      the plan's proposal to repurpose it was dropped.
-      `physicalTomOutputGain` is **deleted**; `Pickup.OutputGain` is fitted so a
-      velocity-1 hit peaks at 0.90 on its own, and a test in `internal/drum`
-      keeps it that way. Config schema v8. This is the one migration in the chain
-      that cannot promise the old sound — the old product is not a physical
-      quantity and is not recoverable from a scale factor — so the correction
-      applies to old and new alike; what migrates is the mixture, and zero
-      near-field is its exact absence. Also fixed: `migrateV6Config` assigned
-      `ConfigVersion` rather than 7, so once the version moved a v6 document would
-      have skipped every later migration silently, with its own test still
-      passing.
-      Two tests turned out to be passing *because* of the defect, the third and
-      fourth instances of that pattern here. `TestDefaultBatterSideSoundIsFunda`
-      `mentalLedInTheAttack` required the fundamental to lead the default
-      configuration's attack, which is a property of *where the drum is hit*, not
-      of the model: measured across radius and window, a centre hit is
-      fundamental-led everywhere and a 0.30 hit is (1,1)-led from 43 ms on. It is
-      now scoped to the centre hit, with a companion test that the fundamental
-      stays within 12 dB of the strongest partial on the default. And the
-      nonlinear attack centroid was measured full-band, where the fundamental's
-      *level* dominates: it moved 112.373 → 112.377 Hz, measuring nothing. Above
-      the fundamental the mechanism is unambiguous, 243.8 → 310.1 Hz.
-- [x] **S5: move the default strike radius** from 0.12 to ≈ 0.3 of the radius.
-      **Done 2026-07-30**, at 0.30. Measured against radius, the fundamental sits
-      2.07 dB below the strongest partial at 0.12, 7.23 at 0.22, 9.78 at 0.30 and
-      11.22 at 0.36 — monotone, with no sweet spot, so this trades low-end weight
-      for the (1,1) family rather than optimizing anything, and HIT.R exposes the
-      trade. The (1,1) already leads at 0.12 once S4 lands, so S5 deepens an
-      effect S4 introduced rather than creating one. App-state format v11 migrates
-      the exact 0.12 detent in **both** physical banks — the v6 rule touched only
-      Tom 1, which was right then because that bank did not exist before v9 — and
-      the two detent rules stay separately gated so a blob deliberately dragged
-      back to 0.45 is preserved. Two latent decoder bugs were fixed alongside:
-      the byte-length table had no branch for the immediately preceding version,
-      which would have made `decodeState` return null for every blob in every
-      user's localStorage and every share link in the wild, and the bank-width
-      ternary would have read the previous version's bank one slot short and
-      desynchronized every offset after it. Neither was covered; both are now.
-- [x] **S6: make the glide audible and cheap.** Raise the tension coefficient
-      toward the 157-cent headroom `MaximumTensionRatio = 0.2` already permits,
-      and replace the 8-iteration fixed-point solve with an energy-proportional
-      single-factor detune (Avanzini et al., _JASA_ 131(1) 2012 — the short-time
-      average tension variation is approximately proportional to system energy).
-      Every published tom analysis treats the downward glide as _the_
-      characteristic feature, so this is worth keeping; it is the 6× cost for
-      38 cents that is not.
-      **Done 2026-07-30 — half of it, because the other half was unnecessary.**
-      The glide is 102.8 cents at full velocity, up from 37.9, from raising both
-      tension coefficients fourfold. Measured: ×1 37.9 cents, ×2 65.7, ×4 102.8,
-      ×8 135.7, ×16 152.0 against a 157-cent cap, with the quiet-hit glide at 1.5,
-      2.3, 3.0, 7.5 and 14.3 — so ×4 is an audible semitone that keeps the
-      velocity dependence, while past ×8 the loud hit sits on the `tanh` plateau
-      and the glide flattens into a hold-then-drop.
-      **The single-factor detune was not implemented, because the 6× premise is
-      false.** The solve early-exits: mean **2.88** iterations at full velocity,
-      not 8, and sweeping the coefficient over a 32× range moves it only to 3.09,
-      since a stiffer law both perturbs the tension more and contracts faster once
-      `tanh` saturates. There was no cost to buy back, so the discrete-gradient
-      solve keeps its exact energy bookkeeping and nothing was traded for nothing.
-      Also worth recording: the guard this item would have relied on is not one.
-      `TestNonlinearFrequencyBoundKeepsRetainedModesBelowNyquist` computes its
-      bound from `MaximumTensionRatio` and the wavenumbers alone, so the
-      coefficient does not appear in it and it cannot fail however far it is
-      raised. What actually binds is the 4× oversampled trajectory comparison
-      (0.0773 % → 0.0833 % against a 1.5 % ceiling) and the velocity-dependence
-      clause. The glide now has an assertion in cents, since the ratio test passes
-      at 38 cents and 38 cents is not audible as a bend.
-- [ ] **S7: jitter mode frequencies per trigger** by a fraction of a percent so
+- [ ] **N10: jitter mode frequencies per trigger** by a fraction of a percent so
       repeated hits are not identical (Cook, PhISEM, ICMC 1996). The static
       degenerate split from P6's `TensionAsymmetry` is a different mechanism and
-      stays.
+      stays. Blocked on repeated hits at one dynamic: the licensed pack's sixteen
+      velocities are single takes, so this needs a repeated-hit capture or a
+      different pack. Confound to watch — a frequency spread that tracks take peak
+      level is the Berger nonlinearity, not jitter.
 
-Then the architecture:
+- [ ] **N11: assert the damping shape across the _modal_ octave bands.** P8's one
+      unmet exit clause. `damping_test.go` asserts constant ζ, near-proportional
+      decay rate and the (0,1) as the fastest-decaying mode of the low band, and
+      `TestAttackBandsDecayAtTheirOwnRate` does the same one attack band at a time —
+      but nothing states it across the modal bands, where a uniformly damped bank
+      would still pass today's tests. State it quantitatively: "the bands' envelopes
+      differ" is nearly guaranteed by construction, since the attack layer decays in
+      tens of milliseconds and the modal band in hundreds.
 
-- [x] **S8 (high): go hybrid.** Pure modal synthesis cannot cover a drum's
-      bandwidth in a browser. Mode count for a membrane grows as f²:
-      N(f) ≈ (a·k)²/4, so this head needs ~130 oscillators for 1 kHz, ~530 for
-      2 kHz and **~3300 for 5 kHz**, against a shipped budget of 48. Keep modal
-      synthesis for the low, individually resolved band and add a **separate
-      1–8 kHz stochastic attack layer** driven by the contact force, with its own
-      fast decay. This is what the published tom-analysis work does — Kirby &
-      Sandler (DAFx-20) found 5–10 key modes sufficient for the _sustain_ of a
-      central strike precisely because the attack is modelled separately — so it
-      is cheaper than what the voice runs today, not more expensive. Fund it from
-      S6 and from reducing the resonant head to the axisymmetric modes that
-      actually couple to the cavity; its 48 oscillators are currently computed
-      and then discarded from the output.
-      **Done 2026-07-30**, and the funding claim was stronger than written: 44 of
-      the resonant head's 48 oscillators are not merely discarded but provably
-      never excited — the strike force reaches only batter modes, and the cavity,
-      the sole path between the heads, couples through a swept area that is exactly
-      zero for every m > 0 mode. So `Head.AxisymmetricOnly` is **bit-exact**, which
-      a test asserts by comparing two renders sample for sample (with `==`, not the
-      bit patterns: the only difference is fewer additions of exact zero, and
-      `x + 0` maps `-0` to `+0`). The filter runs *after* mode selection, not
-      during it — skipping candidates inside the budget loop would free their slots
-      and the loop would refill them with higher-order axisymmetric modes that *do*
-      drive the cavity, which is a different instrument, not a cheaper one.
-      That paid for `Quality.ModeLimit()` becoming the batter budget at 48/96/160,
-      taking Standard from 646 Hz to 915 Hz. Bandwidth grows as √N, so this is 0.6
-      of an octave, not one — the honest figure, against this item's own arithmetic.
-      Measured on js/wasm under Node, worst case with the nonlinear solve never
-      idling: **1.66× real time at 102 oscillators**, against the 1.48× the old 96
-      cost, with zero allocations. A wider modal band and an added noise layer for
-      slightly less than before. Two simultaneous physical toms remain below real
-      time (≈ 0.8×), as they already were (0.74×) — improved, not fixed, and Draft
-      exists for it.
-      The attack layer is one bandpass of noise driven by the **contact force**, so
-      hardness and velocity carry into it with no second trigger; a one-pole
-      release (20 ms, following DAMP and DEC) so the burst outlasts contact; and
-      xorshift64* seeded from a constant and rewound by `Reset`, because much of
-      the suite compares renders exactly. Level fitted by spectral balance in the
-      43 ms attack window, relative to the strongest low partial: 1–2 kHz goes
-      **−66.9 → −32.3 dB** and 2–5 kHz **−83.9 → −27.0 dB**. The first figures are
-      the defect — with modal synthesis alone there is nothing up there at all.
-      Its envelope enters `IsActive`, or the voice would cut the burst off. New
-      `ATK.L` and `ATK.T` at indices 16 and 17; app-state v12. See
-      [`docs/physical-hybrid.md`](docs/physical-hybrid.md).
-      One bookkeeping fix found on the way: `TestPhysicalTomParamIDsAreStable`
-      pinned only 15 of 16 indices, so `D.TILT` sat outside the guard that exists
-      to stop a slot's meaning changing under links already in the wild. It now
-      requires every index to be pinned.
+- [ ] **N12: two model-internal soundness gaps.** Both found while fixing a
+      validated config that could render NaN.
+  - `Validate()` accepts a head with **zero total loss**, structural and radiation.
+    Finite, but the modes never decay and `IsActive()` stays true forever — a hung
+    voice in the modal bank, where the clamp in `attack.go` cannot reach it.
+  - `attack.levelRelative = 1000` and `pickup.outputGain = 100` let the physical
+    voice hand ~1e4 to the master chain. Legitimate and clamped downstream, but the
+    ceilings look chosen for headroom rather than measured.
 
-Deliberately **not** doing:
+- [ ] **N13: citation debt.** `docs/paper/references.bib` is missing three keys the
+      prose already leans on: Kirby & Sandler, JASA **150**(1):202–214 (2021),
+      doi:10.1121/10.0005509 — measured on a **tom-tom** at 67 strike intensities
+      with a 20-listener AB test at chance — plus `bork1983` and `garder2005`. Bork
+      is **unpublished** and citable only via Fletcher & Rossing, which the entry
+      must say. Two literature gaps also remain genuinely open and should be
+      recorded as such rather than guessed: **felt-mallet contact time**, and a
+      numeric **radiation-versus-internal damping split** for any drum.
 
-- [ ] ~~Add exterior air loading to harmonicise the mode ratios.~~ Rejected on
-      evidence. Real two-headed drums scatter ±20 % around the ideal Bessel
-      series _in both directions_, so no fixed ratio set is right; the practical
-      target is batter (1,1) ≈ 1.5× the (0,1) (Richardson, Toulson & Nunn,
-      _JASA_ 131(1) 2012), and this model's coupled value is already
-      165.4/107.7 = **1.54**. Timpani-style harmonicisation is a kettle/air-load
-      effect at a much larger diameter.
-- [ ] ~~Model a tom vent (Helmholtz) resonance.~~ A first-principles estimate
-      puts a 12"×9" tom near 30 Hz, far below the (0,1). No measurement of one
-      was found.
+- [ ] **N14: the doublet pair, by physical capture.** The one measurement the
+      sample pack cannot supply. Ten centre hits with the resonant head removed, ten
+      with it refitted, batter tuning untouched; Fischer's protocol on a tom.
+      Capture **three** frequencies, not two — `f_single`, `f_lower`, `f_upper` —
+      because [`physical-cavity.md`](docs/physical-cavity.md) reads Fischer's
+      186 → 215 as `f_upper/f_lower` while its own interlacing argument says the
+      lower branch is pinned and cannot carry the shift. `T = σc²` must be applied to
+      the **uncoupled** fundamental or the air spring is baked into the tension.
+      Postponed by the user 2026-08-01 for noise reasons; N4 now supplies most of
+      what this was for, so it is no longer blocking.
 
-- [x] **S9: the tuning knob was also a sustain knob.** Reported from listening —
-      "the drum only sounds good for rather high B.TUNE values" — and the
-      measurement found two causes at once.
+**Exit.** The objective's gates are traceable to measured reproducibility under
+repaired estimators; a fit exists against the licensed reference with at least one
+test depending on a measured number; the long-ringing spurious mode is either
+fixed with a measured improvement or closed by the measurement that rejected the
+fix; and the paper reports that state rather than the previous one.
 
-      **The default pitch was a floor tom.** At the shipped 600 N/m the 12-inch
-      batter head's fundamental is 104.00 Hz; the whole range topped out at
-      158.85 Hz, so the drum only began to read as a rack tom against the stop.
-      Now 1250 N/m and 150.10 Hz, with the range 300–3500 N/m (75–251 Hz) so the
-      usable pitch is mid-travel. Every mode moved with it, which incidentally
-      raised the top retained mode from 915 Hz to 1310 Hz at Standard.
+### Closed on evidence — do not re-open
 
-      **And ζ drifted with the knob.** `Loss1MPerSecond` *is* ζc, but it was
-      stored as an absolute constant, so it only meant ζ = 1.1 % at the default
-      tension: 2.20 % at the bottom of the range, 0.72 % at the top. A 300 Hz
-      partial's T60 therefore ran 0.166 s → 0.423 s across the travel, and
-      turning the drum up made it ring half again as long as well as higher. New
-      `physical.RetuneTension` scales `Loss1`, `Loss2` and the mode decay
-      corrections by √(T_new/T_old) — each of them is proportional to c — and
-      `physicalTom.reconfigure` goes through it instead of assigning the tension
-      field. `TestRetuningHoldsConstantQ` pins ζ across the range and
-      `TestRetuningMovesPitchAndNotMuchElse` states it as a player would: 4× the
-      tension is 2× the pitch and ½ the T60, so the ring length in *cycles* does
-      not change.
+Each was proposed, tested and refuted. Recorded so the work is not repeated;
+detail and citations in
+[`physical-objective-validation.md`](docs/physical-objective-validation.md) and
+[`physical-model-research.md`](docs/physical-model-research.md).
 
-      ζ is now 0.72 %, not 1.1 %, because 0.72 % is what the old coefficients
-      happened to produce at the tuning that was reported as sounding right. The
-      (0,1) correction stays at its absolute rate, holding that mode's T60 at
-      213 ms — the same anchor — which puts it near ζ = 3.4 % rather than the 5 %
-      the 104 Hz default produced from the same number.
+- **Exterior air loading to harmonicise the mode ratios.** Rejected in P8, argued
+  back in P9 on the model's (1,1)/(0,1) being pinned at 1.588 against a recording's
+  1.802, and re-closed 2026-08-01 on far better evidence: the licensed drum's
+  geometry is **known**, so fixing the fundamental predicts every other mode with no
+  free parameter, and the measured ratio is **1.584 against 1.594 ideal** — an
+  11-cent match, ~950 cents from the air-loaded ~1.78. The 1.802 belongs to that
+  drum's two-head tuning, a mechanism the model already has.
+- **A tom vent (Helmholtz) resonance.** A first-principles estimate puts a 12"×9"
+  tom near 30 Hz, far below the (0,1), and no measurement of one was found.
+- **The spectral-envelope residual as a band-coverage artifact.** Band-limiting to
+  50 Hz–2 kHz, where the model has full modal content, buys **2 dB of 11**.
+- **A fitted static body/radiation post-filter.** The topology is physically
+  correct (Bank, ICMC 2007) and the falsification test still fails: 9.34 dB at five
+  free parameters against a 3–4 dB criterion, and **7.81 dB with a fully free
+  per-band EQ** — the absolute limit of any static filter. Worth keeping because it
+  forecloses the dishonest version, where a 26–40-coefficient filter against 24
+  bands drives the term to zero by construction and teaches nothing.
+- **A more sophisticated formulation.** A survey of FDTD and 3-D air fields,
+  waveguide meshes, the Functional Transformation Method, FEM/BEM, port-Hamiltonian
+  formulations, mass-interaction and differentiable/learned synthesis found **none
+  that targets the defect surviving measurement**. FDTD is dead on cost and on
+  fittability; FTM *is* this model's modal expansion for a separable circular
+  membrane; a 3-D air field changes nothing about the coupling stiffness, because
+  non-uniform cavity modes have zero net volume; and differentiable modal synthesis
+  upgrades the **search**, which is not the ceiling — two independent runs already
+  agree term for term.
+- **A per-mode damping vector fitted freely.** Not refuted but pre-empted: see N3's
+  sign-pattern check. A structureless result is fitted noise, and it will score
+  well.
 
-      Three fitted values had to follow the retuning, none of them optional:
-      `Cavity.StiffnessScale` 0.04 → 0.083 (a stiffer head is less moved by the
-      same air spring, and 0.04 × 1250/600 = 0.083 is both the argument and the
-      measurement); the Berger coefficients ×2 again, to 9.6e6/6.4e6, because the
-      same strike is a smaller *relative* tension excursion on a stiffer head —
-      the fourfold raise that gave 102.8 cents at 600 N/m gave 20.7 at 1250, and
-      the glide is back to 96.9; and `Pickup.OutputGain` 0.0033 → 0.0048 for a
-      velocity-1 peak of 0.895.
+### Gated and deferred
 
-- [x] **S10: the attack layer sounded like noise, not like a stick.** Reported
-      from listening about ATK.L and ATK.T. Two defects, both measurable against
-      the model's own loss law.
-
-      **The release was far too long.** `Attack.DecaySeconds` was a fitted 20 ms
-      one-pole, which is a 138 ms T60. The head's loss law, extrapolated into the
-      band the layer stands for, gives 149 ms at 1 kHz, 75 ms at 2 kHz, 30 ms at
-      5 kHz and 18 ms at 8 kHz — so the layer rang about twice too long at the
-      bottom of its range and **seven times** too long at the top. Broadband noise
-      held that far past the strike does not fuse into the attack; it is heard as
-      a separate source.
-
-      **And one rate covered the whole span.** Constant Q means the absolute decay
-      rate rises with frequency, so 8 kHz should die several times faster than
-      1 kHz. A single release cannot express that.
-
-      The layer is now three bands at 0.4, 1 and 2.5 × `Attack.CentreHz`, each
-      with its own envelope whose rate is *derived* from the batter head's loss
-      law at that band's centre — 94 ms T60 at 1.6 kHz, 37 ms at 4 kHz, 15 ms at
-      10 kHz. `DecaySeconds` became a dimensionless `DecayScale`, defaulting to 1,
-      which exists only because the law is being read past where it was fitted.
-      `DAMP`, `DEC` and `D.TILT` now reach the layer for free because they are
-      applied to the head first — and `D.TILT` genuinely applies, where a single
-      band had no shape to tilt.
-
-      `Attack.CentreHz` moved 3 kHz → 4 kHz, which is a separate defect: at 3 kHz
-      the lowest band sat at 1.2 kHz, **below** the 1310 Hz top retained mode.
-      Noise where the model already has resolved modes is both a double count and
-      the wrong texture, since that region is heard as pitch.
-      `TestAttackLayerStartsAboveTheModalBand` keeps them apart.
-
-      Three summed envelopes are about three times as loud as one, so `ATK.L` was
-      refitted to 0.05 on a narrowed 0–0.15 range. That is the one range change,
-      so app-state format version 13 doubles a stored position and moves an
-      untouched v12 detent to the new default — the same two-rule shape
-      `migrateStrikeRadius` uses, applied to both Tom banks. Physical config
-      schema 8 → 9.
-
-Execution order: **S1 + S2 first** — they are cheap, independent, and should be
-audible immediately — then S4, S3, S5, then S6/S7, then S8. S1 and S2 landed
-together on 2026-07-30, S3 followed the same day ahead of S4 — harmless, they
-touch different code — and S4, S5, S6 and S8 landed together on 2026-07-30 in
-that order. S9 and S10 were added the same day from listening reports and landed
-in that order — S9 first, because the attack layer's derived decay rates read the
-retuned head's loss law. **S7 is the only item left**, and it is the smallest.
-
-Exit: per-mode T60 within a documented tolerance of the measured ζ structure,
-the (0,1) the fastest-decaying mode rather than the slowest, audible content
-above 1 kHz, no compensating output gain, and a hit whose octave-band envelopes
-decay at visibly different rates. The regression suite must assert the damping
-_shape_, not only its scale — today's tests would pass a uniformly damped bank.
-
-Progress against that exit: four of the five clauses now hold.
-`internal/physical/damping_test.go` asserts the damping shape — constant ζ across
-the series, decay rate near-proportional to frequency, and the (0,1) the
-fastest-decaying mode of the low band. S4 deleted `physicalTomOutputGain`, with a
-test in `internal/drum` that fails if a compensating gain comes back. S8 supplied
-the bandwidth, and S10's refit restated it against the retuned head and the
-three-band layer: 1–2 kHz moves from −45.5 to −31.6 dB and 2–5 kHz from −77.7 to
-−31.1 dB relative to the strongest low partial, asserted in both directions so the
-layer cannot be quietly removed.
-
-The octave-band envelope clause is the one still open. It is now *possible* —
-before S8 there was content in only two bands to compare — and it should be
-written rather than deferred a fourth time. Note it needs stating carefully: the
-attack layer decays in tens of milliseconds and the modal band in hundreds, so
-"the bands' envelopes differ" is nearly guaranteed by construction. The assertion
-worth having is quantitative and against the *modal* bands, where a uniformly
-damped bank would still pass today's tests.
-
-S10 does add part of it: `TestAttackBandsDecayAtTheirOwnRate` asserts each attack
-band matches the loss law at its own centre and decays strictly faster than the
-band below, which is the same shape property one octave-band at a time. What is
-missing is the modal half.
-
-S3 adds a second shape assertion the criterion did not ask for but needs, in
-`internal/physical/cavity_split_test.go`: the (0,1) split inside the measured
-10–20 % band, nothing left within 10 dB of the fundamental where the (2,1)
-belongs, and the rigid stiffness still overshooting that band — the last so the
-fitted scale cannot be quietly deleted as a redundant coefficient.
-
-One qualification the exit criterion needs: the (0,1) is the fastest-decaying
-mode _of the low band_, not of the whole bank. Constant Q means modes far above
-it legitimately decay faster in absolute rate — the (4,2) at 480 Hz reaches
-34 /s against the fundamental's 33 /s — so the assertion is scoped to modes
-below 3× the fundamental. Requiring it bank-wide would forbid constant Q.
-
-### P9 — Model-structure gaps
-
-Opened **2026-07-31** from a review of the shipped model against
-[`docs/paper/paper.typ`](docs/paper/paper.typ) and against recent literature.
-P8 is a calibration phase: every one of its items moves a number the model
-already has. These four are different — each is a mechanism the model does not
-have, or a piece of evidence the path does not have, and each changes either the
-shipped sound or the method rather than a coefficient. None of them is a
-prerequisite for closing P8, and none of them is optional if the path's own
-success criterion 6 is to mean anything.
-
-- [x] **M1: the nonlinearity contributes pitch and no spectral content.** _Landed
-      2026-07-31._ `internal/physical/coupling.go` adds the channels the Berger
-      law projects away: `U = (β̃/4) Σ_c ⟨g,ψ_c⟩²` over channels built from the
-      gradient products of a four-mode pump set, with the uniform channel left to
-      the existing `tanh`-capped law because it reproduces it _exactly_. Shipped
-      **enabled**; migrated documents get it inert and render bit-identically
-      (SHA-256 over the raw IEEE bits of one second, captured from a worktree of
-      the pre-coupling tree). Measured: a mode at 524.9 Hz that the strike cannot
-      reach rises **47.8 dB**, one at 725.4 Hz rises **51.8 dB**, and with the
-      cavity off both are exactly zero without it. The discrete-gradient identity
-      holds to 2.5e-15 and the lossless system drifts 1.1e-11 over a second. See
-      [`docs/physical-nonlinearity.md`](docs/physical-nonlinearity.md) §"P9/M1".
-      Three follow-ups fall out of it:
-  - [ ] **M1a: refit the tension coefficients.** The P4 glide moved only
-        102.8 → 104.9 cents, but only because the P4 fixture is a _centre_ hit,
-        where the orthogonal channels barely see anything; on the shipped
-        off-centre strike the coupling is a real addition to the stiffening.
-        `CoefficientNPerM` ships at βA = 7.0e5 N/m — the same coefficient the
-        uniform channel already carries, so not a new free parameter, but not a
-        fitted one either. Both it and Berger's β want refitting against a
-        reference recording together.
-  - [ ] **M1b: the cost is not affordable on `js/wasm`.** The retrigger worst
-        case at 120 oscillators went 1.40x → **0.70x** real time on `js/wasm`
-        (4.39x → 2.06x on host), zero allocations throughout. The fixed-point
-        iteration count barely moved (2.404 → 2.491), so this is the table walk
-        itself: three separate index arrays, no blocking by channel or receiver,
-        rebuilt per iteration rather than updated. 128 coefficients buys 0.79x
-        and costs 0.4 dB in the target band, which is the first thing to try.
-  - [x] **M1c: `docs/physical-contact.md`'s 8 dB is now a pre-coupling figure.**
-        _Closed 2026-07-31._ The table was **stale, not wrong**: the method was
-        recovered — it is `renderedBandDB` in `contact_test.go`, a single-bin
-        **rectangular-window** DFT over a one-second modal-only render — and it
-        reproduces the committed figures to about a dB at six of seven
-        frequencies. (A Hann window fails here and fails misleadingly: it is
-        ~60 dB down at 7 ms, so it deletes the very transient being measured and
-        flips the sign of the result. Recorded because it cost an afternoon.)
-        Re-derived in both coupling states: **800 Hz +11.9 → +7.9 dB**, 1500 Hz
-        +15.2 → +15.5, 2500 Hz +22.9 → +22.9. The structural statement is worth
-        more than the numbers: **below 1 kHz the coupling moves both contact
-        columns by 5–13 dB; above 1 kHz neither moves by half a dB.** The
-        coupling populates modes independently of `|F(f)|`, so it fills the
-        comb's zeros and stops where the pumps' cubic reach stops
-        (`PumpMaxFrequencyHz` × 3); the contact model repairs the envelope's
-        tail. Gap and seam, and not substitutes.
-        `TestHertzianContactReachesPastTheModalCeiling` now asserts all seven
-        frequencies × both contact models × both coupling states to ±1.5 dB,
-        with the method in its doc comment, so it cannot rot silently again.
-        Two things it exposed, both open:
-    - [ ] **The 635 Hz row does not reproduce.** Recorded −29/−25, measured
-          −25.0/−18.1 uncoupled. Some model change between P8 and now moved it,
-          and because the original program was never committed it cannot be
-          bisected against the recorded number. This is the cost of the practice
-          the change above just ended; there is nothing to do but note it.
-    - [ ] **`contactReferenceHz` is 118 Hz — the _recording's_ fundamental,
-          not the model's 150.08 Hz.** Every dB figure in
-          `physical-contact.md` and `physical-nonlinearity.md` is normalised by
-          a leakage skirt rather than a partial. Not cosmetic: the two contact
-          models deliver different total impulse, so the normaliser changes the
-          _difference_ — referring to the bank's own fundamental takes 800 Hz
-          from +7.9 to **+13.2 dB**. Kept at 118 because it is the conservative
-          reading and both documents are quoted against it. Wants deciding
-          rather than inheriting; whichever way it lands, both documents get
-          re-quoted in one pass.
-  - [ ] **M1d: the "0 partials in 476–700 Hz" baseline is stale, and the M1
-        falsification specified against it is void.** _Measured 2026-07-31_ with
-        `cmd/fit-physical -report-only -quality high` against
-        `reference/tom.wav`, and reproduced digit-for-digit through the same
-        `match.Extract` path. With the coupling **off** the current tree already
-        reports **3** partials in band (5 on the fitted bank), so the count has
-        no zero to rise from and cannot decide anything.
-        `docs/physical-excitation-gap.md` has carried a "pending re-measurement"
-        banner since the partial estimator was corrected; this is that banner
-        cashing out, and **every conclusion in that document rests on a count
-        the corrected detector no longer produces**. Restate the test against
-        band energy: off −18.45 dB, shipped −16.48 dB, the widest legal setting
-        (β to the 1e9 ceiling, `PumpCount` 8, 4096 coefficients, r = 0.2345
-        against the bound `1/(4·0.45²)−1` = 0.234568) −17.68 dB. So the
-        coupling's reach into the band is **≈2 dB and already at its useful
-        maximum at the shipped coefficient** — pushing β harder buys nothing and
-        by 2.8e8 the render is degenerate. The reference wants 7 partials there;
-        the model gives 4. **The coupling is not the mechanism that closes that
-        gap**, which also caps what M1a's refit can be expected to buy.
-        Neither coupling-attributable partial lands on a `2f_a ± f_b` or
-        `f_a ± f_b ± f_c` frequency, and with 58 modes in the band that
-        arithmetic is untestable at the detector's resolution — so drop it as a
-        criterion rather than reporting agreement that means nothing.
-  - [x] **M1e: a validated config could render NaN.** _Closed 2026-07-31._
-        `CoefficientNPerM` validated to 1e9 while the solve diverged from
-        **6.98e8** at Quality High/48 kHz. The diagnosis is the useful part:
-        this is **not** a passivity failure — `U = (β̃/4)Σ_c ĝ_c²` is a sum of
-        squares and is passive at every β̃ — it is the discrete fixed point
-        ceasing to contract, at `β̃h²ρ(G) < 2` with **G quadratic in the modal
-        state**. The Berger law is immune because its `tanh` caps the tension
-        regardless of displacement; the channel tensions have no cap. **So no
-        β̃ ceiling derivable from the configuration alone can be sufficient** —
-        measured, a tenfold velocity drop raises the threshold 130× against the
-        100× predicted, and the h⁻² scaling holds across tiers and rates.
-        Fixed in the solve rather than the validator: the fixed point returns
-        its residual, and growth beyond 4× (a converging solve never exceeds
-        0.126) means the iterate carries no information, so the step is
-        re-solved from the same pre-step state with the coupling off — the
-        Berger-only update, whose stability is unconditional. Self-healing as
-        the state decays. Ceiling also tightened to 1e8, 143× above shipped.
-        Placement was argued: `internal/drum`'s per-sample clamp cannot help,
-        because the NaN reaches `reverb.ProcessSample` and the limiter lookahead
-        **before** the clamp and poisons the FDN delay lines permanently — the
-        voice never recovers rather than glitching for a sample. Bit-exactness
-        verified over 27 one-second renders (3 tiers × 5 velocities, plus
-        44.1/96 kHz, widened pump settings, the new ceiling), SHA-256 over raw
-        IEEE bits, all identical.
-        A second defect of the same class was found and closed with it:
-        all three batter structural loss coefficients at their validated `0`
-        made `newAttackLayer` compute `Inf/(Inf+1)` = NaN and **every sample**
-        of the output NaN. Fixed by clamping the derived release
-        (`maxAttackReleaseSeconds = 1`) rather than flooring the loss law,
-        because no single loss knob is individually required to be positive and
-        a bound on the combination would both shrink `cmd/fit-physical`'s search
-        space and still admit `Loss2 = 1e-12`, which validates today and leaves
-        the layer at 0.68 of peak four seconds after the strike. A systematic
-        sweep of **every** validated field to both ends now exists; those two
-        were the only unsafe endpoints.
-        Left open by it:
-    - [ ] `Validate()` accepts a head with **zero total loss**, structural and
-          radiation. Finite now, but the modes never decay and `IsActive()`
-          stays true forever — the same hung-voice shape, in the modal bank
-          where a clamp in `attack.go` cannot reach it.
-    - [ ] `attack.levelRelative = 1000` and `pickup.outputGain = 100` let the
-          physical voice hand ~1e4 to the master chain. Legitimate and clamped
-          downstream, but the ceilings look chosen for headroom rather than
-          measured — candidates for the tightening the coupling coefficient got.
-    - [ ] Two runs disagree on whether β̃ ≈ 2.8e8 produces a **degenerate**
-          render (one partial) or merely a denser one; spectral flatness rises
-          monotonically in the second run. Nothing rides on it — the new ceiling
-          excludes the band — but the disagreement is unexplained.
-
-      **The original statement, kept because the argument is the record.** The
-      Berger law collapses the geometric nonlinearity to a **single scalar over
-      total strain**: `nonlinearHead.tensionAt` takes one strain measure
-      `S = Σ Γᵢqᵢ²` and returns one tension, and every mode is then detuned by
-      the same relative amount, `Δωᵢ² = ΔT·kᵢ²/σ`. No mode can transfer energy
-      to any other, at any amplitude. So the only two mechanisms in the model
-      that can put energy _at_ a frequency are the contact force's spectrum and
-      the stochastic attack layer, and P8's entire spectral investigation is
-      constrained by that without ever saying so.
-      Real heads struck hard do not behave this way. The membrane's geometric
-      nonlinearity comes from a **quartic** potential, `U ∝ ∫(|∇w|²)²dA`, which
-      is _even_ in the modal amplitudes, so its force is **cubic and odd** and
-      generates only **odd** combinations — `3fₐ`, `2fₐ ± f_b`, `fₐ ± f_b ± f_c`
-      — plus the internal resonances those admit between near-commensurate
-      modes. It generates **no `2fᵢ` and no `fᵢ ± fⱼ`**: those need a _quadratic_
-      potential term, which a shell, a curved plate or a static preload
-      asymmetry has and a flat tensioned head does not. Dahl (TMH-QPSR 38(1),
-      1997) measures the resulting brightening _with striking force_ — which
-      this model currently attributes entirely to the contact pulse shortening
-      with velocity and to the attack layer's force-driven envelopes.
-      **Design requirement that falls out of the parity: `|P| ≥ 2`.** The lowest
-      combination consumes three frequency slots, so a single pump mode reaches
-      only `fₐ` and `3fₐ`. Any truncated coupling set `P` tested against a target
-      band must therefore contain at least two simultaneously loud modes; a
-      self-term-only truncation is guaranteed to return zero for reasons that
-      have nothing to do with the coupling's strength, and would falsify nothing.
-      **Why this is now actionable rather than aspirational.** Diaz, Constanzo &
-      Sandler, "nlm: Real-Time Non-linear Modal Synthesis in Max",
-      arXiv:2603.10240 (2026), https://arxiv.org/abs/2603.10240, code at
-      https://github.com/rodrigodzf/nlm — coupled nonlinear modal oscillators for
-      strings, membranes and plates, with energy-conserving integration, running
-      in real time as Max externals. That is the architecture this repository
-      already has: a precomputed modal bank, an implicit energy-conserving step,
-      and a fixed-point closure that measures 2.88 mean iterations. Feasibility
-      is not the open question.
-      **Truncation is.** The cubic von Kármán term carries a coupling tensor over
-      mode _quadruples_, `Γᵢⱼₖₗ`; even factored, evaluating it is cubic in the
-      retained modes per sample, and at 96 batter oscillators that is not
-      affordable against a shipped worst case of **1.66× real time on js/wasm**
-      (and ≈0.8× for two simultaneous toms, i.e. already unaffordable). So the
-      item is not "add von Kármán"; it is **measure how few couplings carry the
-      audible effect** — the terms among the three to five loudest low modes
-      first, never self-terms alone — with the cost re-measured on `js/wasm`
-      under the same worst case (retrigger before every chunk, nonlinear solve
-      never idling) and the same zero-allocation contract.
-      **And what such a change claims is structure, not magnitude.** The local
-      quartic `∫(|∇w|²)²dA` is not exact von Kármán either: full von Kármán
-      condenses the in-plane displacement through an Airy stress function, giving
-      a quartic with an inverse-biharmonic kernel. Berger is that family's
-      _uniform_ limit (in-plane stress spatially constant) and the local quartic
-      its _local_ limit (stress follows the local slope, no elastic
-      redistribution); the truth is bracketed between them. So the measurable
-      claim is which frequencies can be generated and by which mode sets. The
-      coefficient is fitted either way, which is also why the falsification below
-      is run at the passivity-bounded _maximum_ rather than at a fitted value.
-      **Test P8's band first, because it is the cheapest falsification.**
-      [`docs/physical-excitation-gap.md`](docs/physical-excitation-gap.md)
-      eliminates mode count, microphone geometry, strike footprint, cavity
-      coupling and tension asymmetry and lands on the contact force. It never
-      considers a nonlinear _source_ term, because the model has none. This
-      matters specifically: the excitation deficit is a **comb of exact zeros**
-      at every `(k+½)/τ`, and a mode pumped by coupling from the loud (0,1) does
-      not depend on `|F(f)|` at its own frequency, so it can be excited where the
-      comb has deleted the excitation outright. Hypothesis: cubic coupling among
-      the loud low modes deposits energy at `2fₐ ± f_b` inside the gap. Note the
-      (0,1) cannot do this alone — at `f₀₁ ≈ 150 Hz` its only self-term is
-      `3f₀₁ ≈ 450 Hz`, _below_ the 476–700 Hz band — so the retained set must
-      pair it with at least one more loud mode for the experiment to mean
-      anything.
-      Falsified if, with coupling at its passivity-bounded maximum, the partial
-      count in 476–700 Hz measured by `cmd/fit-physical -report-only` against the
-      fitted bank stays at 0 — the number every P8 experiment has returned.
-      Second measurement, independent of any recording: the attack centroid's
-      slope against striking velocity, compared with Dahl's measured slope, with
-      the contact pulse and the attack layer both disabled so the slope can only
-      come from coupling.
-      Two constraints on any implementation. It must keep the discrete-gradient
-      energy argument — the coupling has to be the gradient of a single potential
-      or the passivity result in
-      [`docs/physical-nonlinearity.md`](docs/physical-nonlinearity.md) stops
-      holding — and it must respect the anti-alias bound `r < 1/(4ν²) − 1`, which
-      currently bounds a _uniform_ detune and says nothing about energy moved to a
-      combination frequency above Nyquist — and a cubic term reaches `3f`, so the
-      worst case is three times the highest retained mode, not twice.
-      _As landed:_ both constraints held. The discrete gradient needed no
-      Gonzalez projection — because `U` is a sum of functions of scalar quadratic
-      forms, the scalar secant already _is_ the vector one. And the alias worst
-      case is tighter than `3f_top`: every retained term carries a pump index, so
-      the bound is `f_maxP + 2 f_top`, which is 3 631 Hz against 21 600 Hz on the
-      shipped bank (the table actually built reaches 2 709 Hz).
-
-- [x] **M2: the cavity has no transverse modes, and that may be visible in the
-      reference.** _Implemented and **confirmed** 2026-07-31._ The modal cavity
-      landed in `internal/physical/cavity.go`; the confirmation is in
-      `internal/physical/cavity_transverse_test.go` and
-      [`docs/physical-cavity.md`](docs/physical-cavity.md) §"The same criterion,
-      measured in the rendered output".
-      **M2's own criterion, met.** A partial at **664.3 Hz** in the rendered
-      output tracks the rigid-cylinder prediction `c·j′_mn/(2πa)` — a formula
-      containing nothing about either head. Across a 43 % sweep in `c` the
-      observed frequency over `c` is constant to **±0.09 %** on the (2,1), the
-      clean one with no head mode near it; across a **ten-semitone retune of
-      every head mode** it moves 2.5 Hz, where a head mode would have gone 911 →
-      1313 Hz. Radius tracks to ±0.23 %, though radius cannot discriminate on
-      its own (both families go as 1/a). A free extra discriminator: the family
-      is axially uniform, and doubling the shell depth moves it 0.45 % — in the
-      wrong direction for an axial `c/2L` mode, which would have run 1225 → 613.
-      Second half of the criterion also met: with `NearFieldScale = 0` the m = 1
-      head family straddling the transverse mode gains **13–23 dB** through the
-      cavity path, m = 2 gains nothing (consistent — that cavity mode is 24 dB
-      weaker and 90 Hz from its neighbours), and the lumped-cavity negative
-      control is silent at 48 dB down. On the shipped configuration the audible
-      band gain is **+5.6 dB**, not tens.
-      **This is the first externally-checkable prediction the model has made and
-      had come true**, and it is worth saying in those terms rather than as a
-      passing test.
-      Three qualifications that belong with it:
-  - [ ] **The confirmation is a weak-coupling result.** At the shipped
-        `StiffnessScale` = 0.083 the partial sits 0.7 % off the pure air
-        formula; at s = 1 it is a hybridised head/air mode **14 % above** it and
-        acquires a mild tension dependence of its own. The verdict survives
-        either way, but "it sits where `c·j′/2πa` says" degrades to "it sits
-        14 % above, consistently". This is a third cost on the retarget in M5.
-  - [ ] **The original attribution was wrong, and the reason generalises.** The
-        partial was first reported as something the _nonlinear coupling_ adds.
-        The 2×2 shows the **modal cavity creates it** and the coupling only adds
-        ~8 dB of drive. The first reading came from a 16-entry, −42 dB partial
-        table in which the peak surfaced in one cell only, so switching coupling
-        off looked like removing it when it had merely dropped below threshold.
-        **That table is not a test of existence** — do not use it as one.
-  - [ ] `Pickup`'s claim that a zero `NearFieldScale` leaves "very nearly the
-        axisymmetric modes alone" does not hold: the batter's own (1,1) still
-        sits 4.8 dB below the strongest peak. The comment wants correcting.
-
-      **The original statement, kept because the argument is the record.**
-      `Cavity` was one lumped compliance with one scalar pressure
-      state, so head modes couple to it only through swept area
-      `A₀ₙ = 2πR²J₁(z₀ₙ)/z₀ₙ` — which is **identically zero for every m > 0
-      mode**. `Head.AxisymmetricOnly` is bit-exact for exactly that reason, and a
-      test asserts it sample for sample. That is a property of the model, not of
-      a drum: in a real shell the m = 1 and m = 2 transverse air modes exist and
-      do couple to the head modes of matching angular order.
-      The hypothesis is already recorded in
-      [`docs/physical-excitation-gap.md`](docs/physical-excitation-gap.md) §"An
-      observation, offered as a hypothesis". The reference's partials at
-      **624.4 / 1018.4 / 1331.3 Hz** sit close to the transverse cylinder series
-      `j′₁₁, j′₂₁, j′₀₁ × c/2πa` = **634 / 1052 / 1320 Hz** at a = 0.1584 m, and
-      the measured ⅓-octave band deficit peaks at **635 Hz**. A transverse cavity
-      mode would give m > 0 head modes the coupling path they currently lack, and
-      would lend radiating efficiency to the m = 1 modes near it — which is a
-      mechanism for why the reference's cluster reads as a sparse ~27 Hz comb
-      rather than the dense membrane thicket the model puts there.
-      **This is three numbers agreeing on a recording of unknown provenance,
-      whose diameter is unknown, so the item is a test and not an
-      implementation.** Two further cautions, both from the sources: the
-      excitation-gap document is flagged pending re-measurement, because the
-      corrected partial estimator finds 14 partials in the right channel rather
-      than 7 and changes the size of the deficit every number there rests on; and
-      the transverse series depends on the shell radius and on `c`, neither of
-      which is known for that recording, so a fit that "confirms" it by choosing a
-      radius has confirmed nothing.
-      **The cheap version.** Replace the single scalar pressure state with a
-      handful of cavity modes (the axisymmetric one the model already has, plus
-      m = 1 and m = 2), each with its own overlap coefficient against the head
-      modes of matching angular order. The rank-one Sherman–Morrison elimination
-      becomes a k × k Woodbury solve, which for k ≤ 4 is still two passes and a
-      tiny dense solve rather than the dense system the paper says the coupling
-      would otherwise be — so the cost claim is checkable before the physics is.
-      Confirmed if a partial appears near the predicted transverse frequency
-      whose position moves with **shell radius and sound speed and not with head
-      tension**, and if m = 1 head modes acquire measurable output through the
-      cavity path with the near-field pickup term removed. Killed if the added
-      partials track head tension (then they are head modes, and the coupling
-      coefficients are wrong) or if `Head.AxisymmetricOnly` remains bit-exact
-      after the change (then nothing was actually coupled).
-      **The related suspicion, worth recording with it.**
-      `Cavity.StiffnessScale` is fitted at **0.083**, a factor of 12 below the
-      rigid ceiling of 1. [`docs/physical-cavity.md`](docs/physical-cavity.md)
-      attributes that to shell flex, vent leakage and non-piston mode shapes, and
-      those are all real — but a factor of 12 is a lot to hang on them, and part
-      of it may be the one-mode reduction mis-setting the compliance. If
-      separating the transverse modes moves the fitted scale materially toward
-      the ceiling at an unchanged split ratio, that is evidence for the reduction
-      being the cause; if it does not move, the shell-and-leak explanation stands
-      and should be restated as measured rather than assumed.
-
-- [ ] **M3 (do this one first): measure one real tom.** This is the weakest
-      thing on the whole path and the cheapest to fix.
-
-      **Status 2026-07-31: the protocol and the tooling exist; only the capture
-      is outstanding.** [`docs/physical-measurement-protocol.md`](docs/physical-measurement-protocol.md)
-      gives six numbered measurements, each naming the Go field it lands in, the
-      capture procedure, the analysis and the failure modes; `cmd/measure-tom`
-      derives the tables, reusing `internal/physical/match` wholesale rather
-      than adding a second detector. It validates against the model's own
-      render, recovering six independently documented numbers from audio. **M3
-      is now a half-day of studio time, not an open research task.** It splits:
-  - [ ] **M3a — the doublet pair.** Ten centre hits with the resonant head
-        removed, ten with it refitted, batter tuning untouched. Fischer's
-        protocol on a tom. This is the item that should gate M1 and M2, and
-        since **M5** opened it is the highest-value measurement on the path: it
-        decides between a snare-derived 1.16 and a tom-derived 1.891 on the
-        actual instrument rather than on a 1983 report nobody can read.
-        **Capture three frequencies, not two** — `f_single`, `f_lower`,
-        `f_upper`. `docs/physical-cavity.md` reads Fischer's 186 → 215 as
-        `f_upper/f_lower`, while its own interlacing argument says the lower
-        branch is pinned and cannot carry the shift; the measurement settles
-        which reading is right, and that paragraph needs editing either way.
-        Capture 1 does double duty: `T = σc²` must be applied to the
-        **uncoupled** fundamental or the air spring is baked into the tension.
-  - [ ] **M3b — the modal and decay take.** Ten hits at 0.30 R, one dynamic.
-        Yields four tables from one file: modal ratios, per-mode T60 → ζ(f), the
-        (1,1) cos/sin split (a direct read of `TensionAsymmetry.SplitRatio` =
-        0.004, never measured), and the S7 jitter. **S7 is blocked on this
-        specifically**, and there is no config field for it yet. Confound to
-        watch: a frequency spread that tracks take peak level is the Berger
-        nonlinearity, not jitter.
-  - [ ] **Contact time is downgraded within M3.** A piezo on the stick measures
-        the stick's own bending modes (Wagner: 400 Hz / 1 kHz / 1.7 kHz), not
-        contact force, and `DefaultContact`'s comment already records the
-        on-head contact time as head-dominated — 14.5 → 7.1 ms over four decades
-        of tip stiffness, then a plateau. So the expensive measurement would
-        constrain a parameter the sound is documented as insensitive to. The
-        protocol substitutes drop heights onto a massive rigid surface, which
-        takes the head out of the loop and yields Hertz's α from the slope of
-        `log τ` against `log v`. Marked "do this last, or not at all".
-  - [ ] **The acceptance criterion, currently unstated as a deliverable**:
-        commit the derived JSON plus a provenance sheet under `testdata/`, and
-        make **one test depend on a measured number**. That is what this item is
-        written toward and it should be named as the exit.
-
-      **The original statement.** Every number in the
-      physical model has been checked **against the model**. The committed
-      fixture `testdata/physical-reference-v2.json` is generated from the model
-      itself, deterministically — the paper says so in "What the model is not":
-      it is a regression reference, not an acoustic validation reference. The one
-      recording is of unknown provenance, unlicensed, not in the repository, and
-      **no test depends on it or may**.
-      [`docs/physical-tom-review.md`](docs/physical-tom-review.md) §"Where the
-      literature is genuinely thin" states the resulting position plainly: no
-      published modal table for a mounted 12–14" tom, no measured felt-mallet
-      contact time, no numeric radiation-vs-internal damping split for any drum,
-      no published overall T60 for a tom hit. The anchors actually in use are a
-      snare (Rossing), a student tom report (Sørensen) and a student snare
-      project (Fischer) — and the cavity split ratio, one of only four _measured_
-      rows in the paper's provenance table, comes from the snare.
-      A phone microphone plus a contact mic or a cheap accelerometer produces a
-      modal table and a T60 curve in an afternoon. What to capture:
-      - modal frequencies and their ratios to the (0,1), for the model's ±20 %
-        scatter claim and for `TensionAsymmetry`;
-      - per-mode T60, which is the ζ-versus-frequency structure S1/S2 were
-        calibrated to from the literature and never checked on an instrument;
-      - the coupled (0,1) doublet **with and without the resonant head at
-        unchanged batter tuning** — Fischer's protocol, applied to a tom instead
-        of a snare, which is the direct measurement of the cavity split ratio
-        that `Cavity.StiffnessScale` is fitted to;
-      - a strike-position series (centre, 0.30 R, near the rim), since S5 showed
-        HIT.R trades low-end weight monotonically and S4 made MIC.R the strongest
-        timbral control — both currently unfalsifiable;
-      - repeated hits at one dynamic, which is the only thing that can size S7's
-        per-trigger jitter;
-      - contact time across dynamics if a piezo on the stick is feasible, against
-        Wagner's 3.5 ms pulse inside an 8 ms dwell.
-      Record provenance with it and commit the **derived tables** — drum make and
-      size, heads, tuning, mic distance and angle, room, rig, and a licence — so
-      a test may finally depend on a measurement. The audio itself need not be
-      committed for the tables to be usable.
-      What it buys: it converts fitted rows of the paper's provenance table into
-      measured ones, and it converts measured-from-a-different-instrument rows
-      into instrument-matched ones. **M1 and M2 are worth materially less without
-      it**, because a model-structure change with no external reference can only
-      be judged by ear — which is how S9 and S10 arrived, and both of those
-      turned out to be right for reasons the ear could not have supplied.
-
-- [ ] **M4: the fitting method is derivative-free over a differentiable model.**
-      The paper's "The search" describes a Mayfly swarm over an expensive render;
-      "Seeding a restart from the reference's partials" then observes that mode
-      frequencies are **analytic** — read off tension, radius and cavity without
-      rendering a sample, at roughly a hundredth of the cost of one evaluation —
-      and uses that observation to seed 2 of 8 restarts, for a measured 12 %
-      better result at equal budget.
-      That observation is stronger than the use it is put to. The modal bank is a
-      sum of exponentially damped sinusoids in its own parameters: ∂f/∂T and
-      ∂f/∂σ follow from `f ∝ √(T/σ)`, and ∂γ/∂d₀, ∂γ/∂d₁, ∂γ/∂d₂ are linear by
-      construction of the loss law. A large part of the search space has closed-
-      form derivatives that the search does not use at all.
-      References. Zheleznov, Bilbao, Wright & King, "Stable Differentiable Modal
-      Synthesis for Learning Nonlinear Dynamics", arXiv:2601.10453 (JAES, DAFx
-      special issue) — gradient-based learning of _nonlinear_ modal dynamics with
-      the physical parameters kept accessible and constrained to stay physical
-      through training, which is exactly the failure mode a naive autodiff fit
-      hits. One correction to how it is usually cited here: it is demonstrated on
-      **synthetic** data from a nonlinear string, not on real recordings, so it
-      establishes the technique and not the result. Also Lee, Choi, Kim et al.,
-      "Differentiable Modal Synthesis for Physical Modeling of Planar String
-      Sound and Motion", NeurIPS 2024.
-      **Which of the two this proposes to change: the offline fitting tool, not
-      the runtime.** The engine is Go and compiles to WASM; the differentiable-
-      synthesis ecosystem is PyTorch/JAX. Two honest options, and the item is to
-      choose between them rather than to assume the second:
-      - _Gradients in Go._ Extend the analytic pre-solve from frequencies to
-        decay rates and per-mode levels and gradient-descend that sub-problem,
-        leaving Mayfly for the parameters that genuinely need a render (contact,
-        attack layer, microphone). No second model, no drift, and it reuses
-        machinery that already exists and is already paired-tested.
-      - _A second implementation._ A PyTorch/JAX mirror of the modal bank would
-        buy full end-to-end gradients and cost a duplicate model that must be
-        kept numerically equal to the Go one across every config-schema
-        migration. Given that the schema is at version 10 with an explicit
-        migration for each, drift is the main risk and a cross-check test against
-        the Go render is the minimum price of entry.
-      One obstacle that belongs to either option: the objective in
-      `internal/physical/match` is **not differentiable end to end** — partial
-      detection, peak picking and the coverage shares are all discrete. A
-      gradient method needs a differentiable surrogate (multi-resolution STFT is
-      the usual choice), which is a _different_ distance from the one the paper
-      defines and gates on, so the surrogate would have to be shown to correlate
-      with the gated terms before any result from it counts.
-      Related, and the reason this item touches the attack layer too:
-      [`docs/physical-excitation-gap.md`](docs/physical-excitation-gap.md)
-      records the seam as a fit pathology — the search dragged `ATK.T` from its
-      4 kHz default down to **1644 Hz** and pinned `ATK.L` at **0.021**, spending
-      both attack parameters on a band neither was built for (1261 Hz in the
-      later prescribed-contact fit; 3426 Hz under Hertzian, where the seam
-      closes). Shier, Caspe, Robertson, Sandler, Saitis & McPherson,
-      "Differentiable Modelling of Percussive Audio with Transient and Spectral
-      Synthesis", https://arxiv.org/pdf/2309.06649, train transient and spectral
-      encoders **jointly** rather than layering one over the other's ceiling,
-      which is the same seam approached from the fitting side rather than the
-      model side.
-
-- [ ] **M5: `Cavity.StiffnessScale` may be calibrated to the wrong instrument.**
-      Opened **2026-07-31**, and it dissolves an anomaly three documents have
-      been hedging about.
-      The scale ships at **0.083**, a factor of twelve below its physical
-      ceiling of 1. Shell flex, vent leakage and non-piston mode shapes have all
-      been offered for that gap and all three are now eliminated: the vent is a
-      Helmholtz **high-pass** leak diverting 2–16 % where ~92 % is needed, and
-      the lumped reduction is exonerated because non-uniform cavity modes have
-      zero net volume, so the quasi-static compliance is exactly `ρc²/V` and the
-      doublet ratio is identical at one and six cavity states.
-      The likely reason is much duller. **0.083 was fitted to reproduce a
-      doublet ratio of 1.16, measured on a snare** — `cavity_split_test.go` says
-      so in its first line, and its `[1.10, 1.20]` window is a snare's.
-      Fletcher & Rossing §18.4, p. 608 (2nd ed.) reports Bork & Meyer's **32 cm
-      two-headed tom-tom** with the (0,1) doublet at **101 and 191 Hz, ratio
-      1.891**. Verified by reading the passage, not relayed. 32 cm is a
-      diameter (F&R state tom sizes as diameters throughout the section), so
-      12.6" — within 5 % of this model's default drum, the closest published
-      match that exists. Corroborated from a second direction by Gärder 2005
-      (Chalmers MSc 2005:23, verified in full): the lower branch moves **+28.5 %**
-      on a 14" tom and **+37.2 %** on a 15" tom when the resonant head is
-      fitted, against the snare's +16 %.
-      **So there may be no factor of twelve to explain. The ceiling was right
-      and the target was wrong.** But the retarget is not clean, and these are
-      the reasons not to just do it:
-  - **The parameter saturates rather than lands.** Measured sweep: s = 0.083
-    gives 1.177 exact / 1.151 rendered; s = 1 gives **1.841 / 1.830** — 2.7 %
-    _below_ 1.891, not the "within 1 %" first reported. Hitting the measurement
-    needs s > 1, which `Validate` forbids and which is the rigid ceiling.
-    Shipping s = 1 ships a pinned parameter, which is a finding about the model
-    — something else is ~3 % short, plausibly the head-to-head area ratio or the
-    swept-area coupling.
-  - **The same passage carries a number nobody relayed: the (1,1) at 179 Hz,
-    _between_ the two (0,1) branches**, with the upper branch at 191 Hz above
-    it. The model does not reproduce that interleaving at any stiffness scale.
-    This is the stronger constraint and it is currently unmet.
-  - **The glide gets worse.** The cavity adds stiffness the strike does not
-    modulate, so it dilutes the Berger shift: coupled loud-hit glide falls from
-    ~52 cents at 0.083 to ~37 at s = 1, against tom measurements of 130–165.
-    Retarget both together or neither.
-  - **M2's confirmation sharpness degrades** (see above).
-  - **Two tests invert.** `TestDefaultCavitySplitMatchesMeasuredDrums` and
-    `TestRigidCavityStiffnessOverpredictsTheSplit` both encode the snare target.
-    And `TestDefaultCavityLeavesNoPartialWhereTom2Belongs` guards 200–235 Hz,
-    which is exactly where the upper branch sits at s = 0.30–0.40 — so a
-    retarget must go **all the way**; the intermediate values are the worst.
-  - **What it does not cost:** agreement with `reference/tom.wav` is flat once
-    the broken glide term is excluded (see M6), the fundamental moves +1.6
-    cents, and the partial count is unchanged. 476–700 Hz band energy actually
-    _improves_ by 2.4× toward the reference.
-      Also stale and unrelated to the decision: the comment at the shipped
-      `StiffnessScale` quotes "106.6/124.2 Hz"; the retuned default gives
-      153.8/181.1. The ratio is right, the absolute numbers are not.
-      **Do not decide this by fitting.** M6 shows the recording has essentially
-      nothing to say about the parameter. It is settled by measurement — M3a —
-      or not at all.
-
-- [x] **M6: the fit objective's glide estimator was measuring the wrong mode.**
-      _Closed 2026-07-31._ Two independent faults in `measureGlide`, and the
-      second one reaches further than any fix in this phase.
-      **Fault 1: the late probe fired after the tracked partial was dead.**
-      `GlideLateSeconds` was nailed to 0.400 s while the model's (0,1) has
-      T60 ≈ 0.21 s — ~105 dB down by then — so the probe read leakage from a
-      _neighbouring_ partial and reported the offset to it as a glide. At
-      `StiffnessScale` = 0.30, tracking 154.65 Hz, it locked to 235.66 Hz. That
-      is the −717 cents. Readings that looked fine at the shipped stiffness were
-      equally unsupported (envelope −123 dB); they happened to land near zero.
-      **Fault 2, the consequential one: the glide was read off the _loudest_
-      partial, not the fundamental — so the reference recording's own target was
-      an artefact.** On `reference/tom.wav` the loudest partial is 212.74 Hz
-      with T60 0.162 s; the 118.05 Hz fundamental is 7.7 dB quieter and rings
-      1.53 s. The committed target of **+89.3 cents** was measured on a mode
-      that had decayed into the noise floor by 0.15 s. Tracking the fundamental
-      gives a monotone trajectory and **+54.1 cents**. The model's tension
-      coefficients have been fitted against a target 65 % too high.
-      Fixed: `glidePartial` prefers the lowest partial within 20 dB of the
-      loudest; the late probe walks back to where the tracked partial is still
-      within 20 dB of its early level and both probes must sit inside the
-      filter's passband; a `GlideMeasured` sentinel routes through `glideError`
-      so an unreadable candidate scores one "clearly wrong" unit rather than
-      noise, and an unreadable _reference_ zeroes the term. Walk-back was chosen
-      over sentinel-only because sentinel-only would kill the term on nearly
-      every model render and leave NLIN unconstrained; the bend settles in tens
-      of milliseconds, so a short honest span beats a long dishonest one.
-      **Effect on the objective:** across a `StiffnessScale` sweep the total ran
-      32.83–53.15, spread **20.3**; it now runs 32.98–34.10, spread **1.1**, and
-      the residual is not the glide term. The "retarget costs +16" reading was
-      pure artefact — it did not add noise, it inverted a conclusion.
-      Downstream, still to re-derive: `testdata/physical-fit-tom.json` (every
-      `glideCents`, `Terms.Glide` and `Total`), and any paper figure or sentence
-      quoting the 89-cent reference or an objective total.
-      `testdata/physical-reference-v2.json` is unaffected — `analysis` does not
-      import `match`.
-      **Refit done, 2026-08-01.** `fits/s3-right-prescribed.json`: right channel,
-      prescribed, Standard, 12 restarts × 16 × 150, 88,584 evaluations to
-      completion. **Total 10.382** against a baseline of 32.442, and
-      `testdata/physical-fit-tom.json` is re-derived from it. Archived runs
-      re-scored under today's objective on the right channel: 11.535 → 15.146
-      (`fit-final-hertzian`), 11.630 → 15.650 (`fit-v4-hertzian`), 11.252 →
-      **18.991** (`fit-final-prescribed`, the bank the fixture and every paper
-      figure came from — best under the old objective, worst under this one).
-      The recipe validates itself: `fit-glidefix-interrupted`, the one archived
-      run made after the fix, re-scores to its reported 10.577 exactly.
-      **What a re-score is not:** it re-*renders* the archived bank through
-      today's synthesis as well as re-measuring it, and the glide fix shipped in
-      **b82c9cb** — the same commit that added `internal/physical/coupling.go`
-      and turned the nonlinear modal coupling on by default. `fit-final-prescribed`'s
-      frequency term moves 56.9 → 102.9 cents, which no glide fix explains, and
-      the shipped baseline moved with it (33.094 → 32.442 on the same bank and
-      channel). So the right-hand column is _what this parameter set is worth
-      today_; what the glide fix alone cost any given run is not recoverable, and
-      an earlier draft of this entry attributed the whole of 11.252 → 18.991 to
-      the 89-cent target. It cannot be.
-      **The result is convergence, not the 1.8% improvement.** That run and this
-      one — 8 restarts vs 12, different seeds, one interrupted and one complete —
-      agree term for term: frequency 48.997/48.936, level 9.172/9.081, decay
-      0.602/0.573, spectral envelope 11.034/11.068, envelope 0.746/0.724,
-      unmatched 0.047 both, spurious 0.330/0.327. The whole gap is glide (1.892 →
-      0.029) and attack balance (0.188 → 0.019). Two independent searches finding
-      the same point makes ~10.4 a statement about the **model's ceiling on this
-      recording**, not about search budget — and all three adoption gates are
-      still missed by the same margins as before (48.9 against 25, 0.573 against
-      0.25, 11.1 against 4). Spectral envelope is now on its sixth failed
-      intervention and has not moved for any of them.
-      One correction to carry forward: the reference's own bend on the **right**
-      channel is **58.9 cents**, not the 54.1 recorded under M6 — that figure was
-      measured on mono, and mono is a different signal.
-      A result worth more than the total: the four analytic seeds started at
-      26.777/26.777/26.777/26.793 cents, against the 35.9–37.0 the measured-fit
-      document uses to argue that no bank the product can express places its
-      modes much closer than that. 26.8 is within 7% of the 25-cent gate, so that
-      claim is too strong as stated. But four _diverse_ seeds agreeing to three
-      decimals is not what four diverse optima look like, and the report cannot
-      distinguish a sharp optimum from a broken diversity constraint. Check that
-      before `-seeded-restarts` is used to argue anything.
-      Two defects surfaced in the tooling and are fixed: `-report-only` could not
-      pin the strike velocity, so re-scoring an archived bank measured it at
-      VEL = 1 (`fit-glidefix-interrupted` reads 19.517 there against 10.577 at
-      its own 0.575, and its unmatched share goes 0.047 → 0.910 — driven that
-      hard the measurement barely finds the reference's partials at all); and
-      `-channel` defaulted to `mono` on a **stereo**
-      reference, silently fitting a different target than every number in the
-      repository — it cost a full-budget run here before it was caught, and is
-      now refused outright.
-
-      **Both shipped-surface items closed 2026-08-01, on request.**
-      `web/src/algo/physicalTomPresets.ts` now holds this run's bank — all
-      seventeen knobs matching `testdata/physical-fit-tom.json` exactly, QUAL and
-      velocity deliberately excluded — so the fixture and the **Measured tom**
-      preset agree again. The paper gained a `@refit` chapter reporting this run
-      (the re-score table, the term-by-term agreement with
-      `fit-glidefix-interrupted`, the ceiling argument, the seed-diversity
-      caution) with its own two figures under a `-refit` suffix; `@results` and
-      its four PNGs are left exactly as they were, because the paper's rule is
-      that a run is reported where it was made and a chapter's figures are never
-      redrawn from a run that chapter does not describe. `tools/paper-figures`
-      grew `-suffix` and `-only` for that, and `just paper-figures-refit` is the
-      recipe. Still outstanding on the paper: nothing establishes the
-      contact-model ordering until hertzian is refitted.
-      One reading worth carrying into M1a: three tom sources put the **loud-hit**
-      glide at 130–165 cents (F&R §18.4 p. 608 quotes Bork & Meyer at 160; Rose
-      ~8 %; Gärder ~8 %) while the corrected reference reads 54.1. Not a
-      conflict — the reference is probably not a loud hit — but the nonlinearity
-      was fitted against it, so the fitted coefficients are fitting constants
-      before they are physical values.
-
-- [ ] **M7: literature anchors that were missing and now are not.** From the
-      2026-07-31 search. Each of these replaces an assumption, and the first two
-      make the model look better than the record claimed:
-  - **Mounting is a first-order damping parameter.** F&R §18.4: changing the
-    support-arm length moves the fundamental's decay **5.5 s → 0.6 s**. The 3–4 s
-    figures that made the model's 0.27–0.55 s look wrong are wire-suspended
-    artefacts; Table 18.8 gives **0.8–1.05 s** for a mounted 32 cm tom. Head
-    construction moves 500 Hz T60 by >2× while the fundamental barely shifts —
-    a damping _tilt_, which is exactly the control S1 added.
-  - **The "±20 % mode-ratio scatter" was an artefact of mixing measurements.**
-    Uncoupled/single-headed run 1.85–2.16 (Sørensen 1.85; F&R Table 18.7's 12"
-    tom 2.16); coupled two-headed run 1.52–1.56 (Gärder). The model's 1.54 is
-    right, and the claim should be restated.
-  - **Tension corroborated twice**: F&R Fig. 18.11 gives **351 N/m** for a 33 cm
-    tom head "at the low end of the normal playing range"; an independent
-    derivation gives 420 N/m on a 13" 10-mil head. Consistent with the shipped
-    1250 N/m at a higher tuning, which the protocol's `T = σc²` chain makes
-    checkable on a real drum.
-  - **Still genuinely open**, and the search did not close them: felt-mallet
-    contact time, and a numeric radiation-vs-internal damping split for any
-    drum.
-  - **Uncited and should be**: Kirby & Sandler, JASA **150**(1):202–214 (2021),
-    doi:10.1121/10.0005509 — the journal successor to the cited DAFx-20 paper,
-    measured on a **tom-tom** at 67 strike intensities with a 20-listener AB
-    test at chance. Also `bork1983` and `garder2005` want adding to
-    `references.bib`; Bork is **unpublished** and citable only via F&R, which
-    the entry must say.
-  - **A licensed refit target exists**: a CC BY 4.0 12×8 tom pack with
-    documented diameter and depth, four tuning tiers × five strike positions.
-    Worth evaluating against `reference/tom.wav`, whose provenance is unknown
-    and whose diameter is inferred.
-
-Exit: one measured tom exists in the repository as a licensed, provenance-
-carrying derived table that at least one test depends on; M1 and M2 have each
-been either implemented with a measured improvement against that table and a
-re-measured `js/wasm` cost, or closed by the measurement that rejected them,
-with the rejecting measurement written down; and M4 is resolved as a documented
-decision between the two options above with a cost attached — code is not
-required for it to exit, a decision is.
-
-**Ordering, revised 2026-07-31.** M1 and M2 both landed, out of the order below
-and before M3 — which the original text warned against, and the warning was
-half right. M2's verdict did **not** need the recording: its criterion turned
-out to be internal to the model (a partial that tracks `c` and ignores tension)
-and it confirmed cleanly. M1's did: the falsification specified for it was void
-because its baseline had gone stale (M1d), so M1 shipped judged by ear and by
-band energy, exactly the position the original ordering existed to avoid.
-
-The revised order is **M3a, then M5, then M1a, then M4** — with M3a first for
-the same reason M3 was first, now sharpened: **M5 cannot be settled by fitting
-at all** (M6 measured the objective flat across that parameter), so a
-measurement is not merely better evidence, it is the only evidence. M5 second
-because it is one decision gating a shipped-sound change that three tests
-encode. M1a third, and expect little from it: M1d caps the coupling's reach into
-the target band at ~2 dB, already at maximum. M4 last, unchanged in rationale —
-though M6 is a caution for it, since a differentiable surrogate would have
-inherited the same broken glide target without anyone noticing.
-
-**The original ordering, kept because the argument is the record:** M3, then M2,
-then M1, then M4. M3 first because it is the only
-item that makes the others falsifiable — M2's whole hypothesis rests on three
-numbers from a recording whose diameter is unknown, and M1's brightening claim
-needs a measured centroid-versus-force slope to be checked against. M2 second
-because it is one experiment, already specified, that would explain two open
-anomalies at once (the 635 Hz deficit and the factor-of-12 stiffness scale) and
-because a rank-4 Woodbury solve is a smaller change than any coupling scheme.
-M1 third: it is the real physics gap and it is now demonstrably real-time, but
-it is also the one item that can move the shipped sound in ways no current test
-would catch, so it wants an external reference in place first. M4 last because
-it changes the method rather than the instrument — a better search cannot find
-what the model cannot produce, which is the same argument
-[`docs/physical-excitation-gap.md`](docs/physical-excitation-gap.md) uses to
-rule out a longer run.
-
-One qualification on that order, from reading the sources rather than from
-assuming it: M2 is partly testable _before_ M3, because its confirm/kill
-criteria above (partials that move with radius and not tension;
-`AxisymmetricOnly` ceasing to be bit-exact) are internal to the model and need
-no recording at all. Only the last step — checking the predicted transverse
-frequencies against a real shell — needs M3. So M2's implementation can start in
-parallel; only its verdict has to wait.
+- **P7 — snare research extension.** Gated behind a tom that sounds like a tom.
+  Starting it now would build on an uncalibrated foundation and make it impossible
+  to attribute a bad snare sound to its own model rather than the inherited one.
+  When it starts: a clearly labelled reduced snare-contact model driven by the
+  resonant head first; 1-D snare strings with distributed unilateral membrane
+  contact and an energy-conserving update as a separate prototype; and any full
+  2-D-heads-plus-3-D-air FDTD kept as a quality/reference path until measured WASM
+  performance proves it can meet the real-time contract. The reduced musical model
+  and the high-fidelity research model must have separate names, tests and
+  performance expectations.
+- **Extract a generic modal bank to `algo-dsp`** — only after this implementation
+  has proven the API.
+- **Use `algo-pde` for offline frequency-domain reference work**, not for
+  audio-rate evolution. Resolve its GitHub/module-path mismatch before taking a
+  direct dependency.
 
 ### Physical-path success criteria
 
@@ -2217,12 +1080,15 @@ parallel; only its verdict has to wait.
    in the production Worker/AudioWorklet pipeline.
 5. Claims distinguish analytic prediction, reduced physical approximation,
    empirical calibration, and full numerical simulation.
-6. **It sounds like the instrument.** Per-mode decay, the radiated tonal
-   balance, and the attack transient are each checked against a cited
-   measurement rather than only against the model's own analytic targets, and no
-   compensating output gain, EQ or envelope stands between the physics and the
-   mix. P8 exists because criteria 1–5 were all met while criterion 6 was not:
-   every internal invariant held, and the voice still did not sound like a tom.
+6. **It sounds like the instrument.** Per-mode decay, the radiated tonal balance,
+   and the attack transient are each checked against a cited measurement rather
+   than only against the model's own analytic targets, and no compensating output
+   gain, EQ or envelope stands between the physics and the mix. P8 exists because
+   criteria 1–5 were all met while criterion 6 was not.
+7. **The instrument that judges criterion 6 is itself measured.** P10 exists
+   because criterion 6 was assessed for months by a metric whose reproducibility
+   had never been established. Any gate quoted anywhere on this path must be
+   traceable to a measured floor.
 
 ---
 
