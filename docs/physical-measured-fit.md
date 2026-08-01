@@ -289,10 +289,41 @@ shipped WASM binary is unchanged.
 The search space is **exactly the bank the product exposes**:
 `drum.PhysicalTomSpecs()`, seventeen free normalized parameters (QUAL is pinned —
 it buys mode count with CPU, which is a product decision, not a property of the
-drum), plus strike velocity as an eighteenth dimension. All bounded to [0, 1],
+drum), plus **one strike velocity per reference take**. All bounded to [0, 1],
 which is also the only shape mayfly's scalar bounds can express. Anything the
 search finds can therefore be typed into the app or shared as a link; a fit that
 needed a hidden parameter would not be a preset.
+
+### Fitting a whole velocity series
+
+`-reference` is repeatable, and every take given is scored by one shared bank —
+`just fit-physical-series <directory>` runs the sixteen-file series. This is the
+fit worth quoting, and a single-file run is a diagnostic: the strike velocity is
+itself fitted, so one recording leaves the contact parameters and the Berger
+nonlinearity free to trade against how hard the drum is assumed to have been hit.
+A series pins that trade.
+
+The objective is the **mean** of the per-take distances. Not a trimmed or median
+aggregate: that would discard whichever hits the model fits worst, which is the
+evidence a joint fit exists to use. The trimming that is justified happens one
+level down, inside `Distance`, over partials, on a measured argument.
+
+**The file order is not evidence and is not used as any.** The takes are named
+v01…v16 in what the pack calls increasing strike order and were played by hand,
+so the labelling is a claim. Each take carries its own free velocity, no take is
+constrained to be struck harder than the one before it, and reversing the list
+leaves the cost bit-identical. The fitted velocities are therefore an independent
+read on the labelling: the summary prints them against the file order and counts
+the steps where the two disagree. It reports a count and re-orders nothing — a
+genuinely non-monotone series and a mislabelled one look identical from here.
+
+Inside one evaluation a single model serves every take, `Reset` between strikes
+rather than a fresh `NewDoubleHead`. That is bit-exact against a fresh model, and
+has to be: the checkpoint fingerprint carries the baseline cost, so a difference
+of one bit would make two runs of the same search refuse to resume each other.
+The checkpoint fingerprint also carries the take list **in order**, since the
+velocities occupy the tail of every stored position and a re-ordered list would
+hand each take another take's velocity without saying so.
 
 Candidates are rendered at the **reference's own sample rate**, so no resampler
 enters the measurement path on either side. The mapping from knob positions to SI

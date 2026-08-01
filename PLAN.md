@@ -972,9 +972,14 @@ recording and can be taken at any time.
     with. **Run the fit before the entry** — the first ever made against this
     reference — and read it for where `D.TILT` lands.
 
-  - **N17 gates that fit**, and is not optional: 27 % of the new reference's
-    partials are assigned a ring time longer than the window they are fitted in.
-    A fit started now would be matching the model to that.
+  - **N17 gated that fit and is now done** (2026-08-01): the windows are 2.0 s /
+    1.60 s and a partial can no longer be credited with a ring time its window
+    did not show. What still gates the fit is the *consequence* — every gate in
+    `DefaultWeights` was measured through the old windows, so `measure-objective`
+    has to be re-run and the gates re-edited before a total from this objective
+    means anything. Result 10's −0.52 was measured at the old windows too, and
+    truncation shortens long decays, so re-measuring it should if anything make
+    the slope steeper, not flatter.
 
   - **The instrument for that experiment exists**, so it is not what the next
     round is spent on: `cmd/fit-physical -mode-correction m,n=perSecond` adds an
@@ -1037,6 +1042,75 @@ recording and can be taken at any time.
     exactly one member — so a later addition has to be a deliberate edit with a
     measurement behind it.
 
+- [x] **N17: re-size the analysis and decay windows for the new reference.**
+      _Opened and closed 2026-08-01._ **Done:** `analysisSeconds` 1.2 → 2.0,
+      `decayFitEndSeconds` 0.60 → 1.60, the `tail` spectral window 1.2 → 2.0 so it
+      still ends where the analysis does, and `cmd/fit-physical -duration` now
+      *defaults from* `match.DefaultOptions().AnalysisSeconds` and refuses a value
+      below it, because the two being separate literals is how they drifted 0.4 s
+      apart in the first place.
+
+      The window end was measured rather than chosen. Re-extracting all sixteen
+      takes at five window ends and matching partial-to-partial by frequency
+      within 0.5 %, the median |log2 T60 ratio| below 1 kHz between successive
+      ends is **18.9 % → 8.1 % → 4.1 % → 1.4 %** at 0.60, 0.90, 1.20, 1.60,
+      1.90 s. 1.60 is where it converges; above 1 kHz it was settled at 1 %
+      throughout, confirming this was a low-band problem specifically.
+
+      Three things came out of it that were not in the item as written:
+
+  - **The guard's criterion is the *fall*, not the duration.** "No fitted T60 may
+    exceed the analysed span" — the rule this item asked for — is wrong, and
+    measuring it is what showed that: twelve of this reference's partials
+    legitimately ring longer than the 2.08 s file, and they are fine, because
+    they fell 37 dB while the window was open. What shipped instead is
+    `slowestSupportedT60`: a partial must fall at least 20 dB inside its fit
+    window, so **T60 may not exceed three times the window**. 20 dB is ISO 3382's
+    own floor — it defines T20 and T30 precisely because a 60 dB fall is rarely
+    observed, and sanctions nothing shorter. The guard is *decisive* at the old
+    window (max T60 10.39 s → 1.51 s, the ~358 Hz runaway gone) and *inert* at
+    the new one (nothing rejected, output bit-identical to the pre-guard run) —
+    which is the right shape: the guard states the standard, the window is what
+    lets the reference meet it.
+  - **A long window is not free, and the fix is per partial.** The refinement
+    (`decayFloorFit`) was fitted over the whole window. Its model is one
+    exponential plus a **stationary** floor, and past the point a partial has
+    fallen below its own floor its band holds a neighbour's *decaying* skirt,
+    which the model can only absorb by bending the first exponential towards it.
+    Two partials 27.7 Hz apart, the lower ringing 0.21 s and the longer-lived
+    upper one 0.64 s: at a 0.60 s window the lower reads T60 0.240 s at its true
+    level; at 1.60 s it reads **0.443 s at −21.5 dB**. The level is the worse
+    error — it is the fitted line extrapolated back to the strike. The refinement
+    is now bounded per partial at twice the span the partial stood above its own
+    floor: one span of decay to fit, one of floor to identify the floor, nothing
+    beyond. Without this, widening the window would have been a net regression.
+  - **It repaired half of a defect N2 documents, by accident.** The fast
+    estimator's merged degenerate split was biased 5–6 % in ring time because it
+    was fitted over a beating envelope; the beat's later lobes now fall outside
+    the bound, and the bias is 1.2 %. The defect N2 is actually about is
+    untouched — the pair is still merged and the 30 %-shorter member still lost
+    entirely — so `TestFFTEstimatorMergesADegenerateSplit` records the change
+    rather than celebrating it. An accurate ring time for the survivor makes it
+    look more trustworthy than it is.
+
+    Fixture fallout worth knowing, since it will recur the next time a window
+    moves: a *noiseless* synthetic exponential is a degenerate input to a
+    floor-fitting estimator — the floor parameter has nothing to identify it, so
+    the fit degrades the further the window runs. Synthetic hits are now
+    `testHitSeconds` long (derived from `AnalysisSeconds`, plus margin for the
+    zero-phase filter's edge transient, which rings at *both* ends) and carry a
+    `testNoiseFloorDB` = −120 dB floor relative to peak. Relative, not absolute,
+    or `TestExtractIsGainInvariant` measures the fixture's noise instead of the
+    extractor.
+
+    **Still open, and it is the next thing:** `cmd/measure-objective` must be
+    re-run and the gates in `DefaultWeights` re-edited by hand — every one of
+    them was measured through the old windows. Until that is done the nine terms
+    are being weighted by reciprocals of a floor measured on a different
+    estimator. N16's Results 2–10 follow after that, and N3's fit after those.
+
+<details><summary>The item as originally written</summary>
+
 - [ ] **N17: re-size the analysis and decay windows for the new reference.**
       _Opened 2026-08-01, when the reference became `tt08x08/lp/hd`._ Evidence:
       [`physical-objective-validation.md`](docs/physical-objective-validation.md)
@@ -1078,6 +1152,8 @@ recording and can be taken at any time.
     caveat: truncation shortens long decays, so the true exponent is if anything
     steeper than −0.52.
 
+</details>
+
 - [ ] **N4: recompute the cavity stiffness against a known-geometry drum.**
       `Cavity.StiffnessScale` ships at 0.083, a factor of twelve below its physical
       ceiling of 1 — and there is **no factor of twelve to explain**: all four
@@ -1117,6 +1193,49 @@ recording and can be taken at any time.
           1.25 s; the higher tunings are shorter and need the tail window shortened
           before they can be used. Superseded for the current reference by N17,
           which sizes both windows against the 2.08 s low-pitch files.
+
+      **The joint fit exists as of 2026-08-01; what remains of this item is
+      running it and reading the result.** `cmd/fit-physical -reference` is
+      repeatable, and every take given is scored by one shared parameter bank.
+      The search space grows by one dimension per take — `len(free) + N`, one
+      strike velocity each — the objective is the **mean** of the per-take
+      distances, and the report carries a `takes[]` entry per file with that
+      take's velocity, terms and features beside the one bank they were all
+      fitted from. `just fit-physical-series <directory>` is the recipe; it reads
+      the geometry off the path exactly as `fit-physical` does and names the
+      output after the series. One model serves every take inside an evaluation
+      — `Reset` between strikes rather than a fresh `NewDoubleHead`, which is
+      bit-exact against a fresh one and has to be, since the checkpoint
+      fingerprint carries the baseline cost. Cost: sixteen renders and sixteen
+      extractions per candidate, so roughly sixteen times a single-file run.
+
+      The aggregate is the plain mean, deliberately. A trimmed or median
+      aggregate across takes would discard whichever hits the model fits worst,
+      which is exactly the evidence this item exists to use; the trimming that
+      *is* justified happens one level down inside `Distance`, over partials,
+      on a measured argument. `TestJointAggregateIsTheMeanOfTheTakes` pins it.
+
+      **The velocity labelling is measured, not assumed** — added because the
+      order may be wrong. The takes are named v01…v16 in what the pack calls
+      increasing strike order and were played by hand, so that ordering is a
+      claim rather than data. Nothing in the fit reads it: each take carries its
+      own free velocity, no take is constrained to be struck harder than the one
+      before it, and the takes never see each other.
+      `TestJointCostIgnoresTheOrderTheTakesWereGivenIn` pins that as a bit-exact
+      invariance under reversing the list. The fitted velocities are therefore an
+      *independent* read on the labelling, and the summary prints them against
+      the file order and counts the steps where the two disagree. It reports a
+      count and does not re-order anything: a genuinely non-monotone series and a
+      mislabelled one are indistinguishable from here, and renaming files to
+      improve a number is the opposite of a measurement.
+
+      **The numbers below are stated against the file order and inherit its
+      uncertainty.** The +0.64 dB/step attack-balance trend and the soft-half /
+      hard-half glide split both bin the takes by index. That the trend is
+      R² = 0.78 rather than 0.98 is consistent with a labelling that is roughly
+      but not exactly right. The first joint fit's velocities are what settles
+      it, and re-deriving both against the fitted order — rather than the file
+      order — is part of reading its result.
 
       **Geometry is pinned as of 2026-08-01, and no longer part of this item.**
       `cmd/fit-physical` gained `-set`, which freezes a parameter at a value in its

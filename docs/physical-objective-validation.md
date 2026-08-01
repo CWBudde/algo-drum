@@ -28,6 +28,20 @@ here should be restated at length elsewhere — link to it instead.
 >   current, so each can be re-run. Until that is done, do not quote any of them
 >   as a property of the reference the fit now aims at. Re-running them is
 >   `PLAN.md` N16.
+> - **Every result below, Result 10 included, was measured through the analysis
+>   and decay windows that shipped before `PLAN.md` N17** — `analysisSeconds` 1.2
+>   and `decayFitEndSeconds` 0.60. Those are now 2.0 and 1.60, and the estimator
+>   they front has changed with them: a ring time must now be supported by a
+>   20 dB fall inside its own window, and the decay refinement is bounded per
+>   partial instead of spanning the whole window. This is a second, independent
+>   reason not to quote a number here without re-running it, and it applies to
+>   the gate table as much as to the results: **the gates in `DefaultWeights` are
+>   pre-N17 and `cmd/measure-objective` has not yet been re-run.**
+>
+>   Direction is known where it can be reasoned about. Truncation shortens long
+>   decays, so Result 10's `f^-0.52` should if anything steepen. Result 5's
+>   fast-versus-ESPRIT disagreement should narrow, since part of it was the fast
+>   estimator fitting past the end of its partials.
 
 ## Why this was needed
 
