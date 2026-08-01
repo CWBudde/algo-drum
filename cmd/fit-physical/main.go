@@ -21,6 +21,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -64,6 +65,65 @@ func (a assignmentFlag) Set(text string) error {
 	}
 
 	a[strings.TrimSpace(name)] = value
+
+	return nil
+}
+
+// engineeringFlag is -set: the same pinning as -fix, stated in the parameter's
+// own unit rather than as a normalized position.
+//
+// Two flags rather than one because the two cannot be told apart from the value.
+// SIZE is a head diameter in metres over an exponential 0.16–0.50 range, so
+// `SIZE=0.2032` is a legal normalized position (0.203 m, as it happens) *and* a
+// legal diameter (0.2032 m, normalized 0.2098). Guessing which was meant would
+// be wrong about one in two, silently, and the failure mode is a fit against a
+// drum of the wrong size that still converges and still reports a total.
+//
+// -fix is kept as the primary because a report prints normalized positions and
+// a resumed search stores them; -set exists for the values that come from
+// outside the model, where the instrument is known.
+type engineeringFlag map[string]float64
+
+func (e engineeringFlag) String() string {
+	return assignmentFlag(e).String()
+}
+
+func (e engineeringFlag) Set(text string) error {
+	return assignmentFlag(e).Set(text)
+}
+
+// resolveEngineering folds -set assignments into the -fix map, converting each
+// through its own parameter's curve. A name given to both flags is an error
+// rather than a precedence rule: the two would usually disagree, and silently
+// preferring one is exactly the failure -set exists to prevent.
+func resolveEngineering(fixed assignmentFlag, engineering engineeringFlag) error {
+	specs := drum.PhysicalTomSpecs()
+
+	for name, value := range engineering {
+		index := slices.IndexFunc(specs, func(spec drum.ParamSpec) bool {
+			return spec.ID == name || spec.Label == name
+		})
+		if index < 0 {
+			return fmt.Errorf("%w: no parameter %q", errInvalidFitOption, name)
+		}
+
+		spec := specs[index]
+
+		if _, both := fixed[name]; both {
+			return fmt.Errorf("%w: %s is given to both -fix and -set", errInvalidFitOption, name)
+		}
+
+		// Out of range is refused rather than clamped. Unmap clamps, which is
+		// right for a knob and wrong here: a caller who states a 0.60 m head on
+		// a range that stops at 0.50 has made a mistake, and silently fitting a
+		// 0.50 m drum would answer a question nobody asked.
+		if value < spec.Min || value > spec.Max || math.IsNaN(value) {
+			return fmt.Errorf("%w: %s = %v %s is outside the model's range %v-%v %s",
+				errInvalidFitOption, name, value, spec.Unit, spec.Min, spec.Max, spec.Unit)
+		}
+
+		fixed[name] = spec.Unmap(value)
+	}
 
 	return nil
 }
@@ -267,6 +327,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 	fixed := assignmentFlag{}
 	flags.Var(fixed, "fix", "freeze one parameter at a normalized position, as ID=value (repeatable)")
 
+	engineering := engineeringFlag{}
+	flags.Var(engineering, "set",
+		"freeze one parameter at a value in its own unit — metres, N/m, degrees — "+
+			"as ID=value (repeatable); use for what the instrument is known to be")
+
 	corrections := &correctionFlag{}
 	flags.Var(corrections, "mode-correction",
 		"add a decay rate to one mode's loss law, as m,n=perSecond (repeatable); "+
@@ -277,6 +342,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 			"a run with this set is evidence about the objective, not a bank to ship")
 
 	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	if err := resolveEngineering(fixed, engineering); err != nil {
 		return err
 	}
 

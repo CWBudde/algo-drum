@@ -104,6 +104,19 @@ func TestRunRejectsInvalidOptions(t *testing.T) {
 		"unknown parameter": {"-reference", reference, "-fix", "physicalTom.nope=0.5"},
 		"unfixable value":   {"-reference", reference, "-fix", "DAMP=2"},
 		"malformed fix":     {"-reference", reference, "-fix", "DAMP"},
+		"unknown set":       {"-reference", reference, "-set", "physicalTom.nope=0.2"},
+		"malformed set":     {"-reference", reference, "-set", "SIZE"},
+		// Out of the model's range is refused rather than clamped: a 0.9 m head
+		// is a mistake, and fitting the 0.5 m one the range stops at would answer
+		// a question nobody asked.
+		"oversized drum": {"-reference", reference, "-set", "SIZE=0.9"},
+		"tiny drum":      {"-reference", reference, "-set", "SIZE=0.01"},
+		// Both flags naming one parameter is an error rather than a precedence
+		// rule, because 0.2032 is a legal value for each and they mean different
+		// drums.
+		"fix and set disagree": {
+			"-reference", reference, "-fix", "SIZE=0.2032", "-set", "SIZE=0.2032",
+		},
 		"stray argument":    {"-reference", reference, "extra"},
 		"unknown channel":   {"-reference", reference, "-channel", "centre"},
 		"unknown contact":   {"-reference", reference, "-contact", "impulse"},
@@ -233,6 +246,83 @@ func TestReportOnlyMeasuresTheShippedDefaults(t *testing.T) {
 
 	if info, err := os.Stat(report); err != nil || info.Size() == 0 {
 		t.Errorf("report file: %v (size %v)", err, info)
+	}
+}
+
+// TestSetPinsTheStatedEngineeringValue is the property -set exists for: the
+// number the caller types is the number the model gets, in the unit the
+// instrument is described in.
+//
+// The committed reference is an 8" × 8" tom, so its head diameter and shell
+// depth are both 0.2032 m and are known rather than fitted. Typing that through
+// -fix instead would set a *normalized position* of 0.2032, which on SIZE's
+// exponential 0.16–0.50 range is 0.203 m — near enough to look right — and on
+// DEPTH's 0.05–0.60 range is 0.0765 m, a 3-inch shell. This test is what keeps
+// the two from being confusable in practice as well as in the doc comment.
+func TestSetPinsTheStatedEngineeringValue(t *testing.T) {
+	t.Parallel()
+
+	const eightInches = 0.2032
+
+	report := filepath.Join(t.TempDir(), "report.json")
+
+	err := run([]string{
+		"-reference", writeSyntheticReference(t), "-report-only", "-o", report,
+		"-set", "SIZE=0.2032",
+		"-set", "DEPTH=0.2032",
+	}, io.Discard, io.Discard)
+	if err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	var parsed struct {
+		Baseline struct {
+			Params []struct {
+				Label      string  `json:"label"`
+				Normalized float64 `json:"normalized"`
+				Value      float64 `json:"value"`
+				Fixed      bool    `json:"fixed"`
+			} `json:"params"`
+		} `json:"baseline"`
+	}
+
+	contents, err := os.ReadFile(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := json.Unmarshal(contents, &parsed); err != nil {
+		t.Fatal(err)
+	}
+
+	seen := 0
+
+	for _, param := range parsed.Baseline.Params {
+		if param.Label != "SIZE" && param.Label != "DEPTH" {
+			continue
+		}
+
+		seen++
+
+		if math.Abs(param.Value-eightInches) > 1e-9 {
+			t.Errorf("%s = %v m, want %v m", param.Label, param.Value, eightInches)
+		}
+
+		if !param.Fixed {
+			t.Errorf("%s was not pinned", param.Label)
+		}
+
+		// The whole point: the position that reached it is *not* the number
+		// typed, so a caller cannot get here by accident through -fix.
+		if math.Abs(param.Normalized-eightInches) < 1e-3 {
+			t.Errorf("%s normalized %v coincides with the engineering value; "+
+				"this test can no longer tell -set from -fix",
+				param.Label, param.Normalized)
+		}
+	}
+
+	if seen != 2 {
+		t.Errorf("found %d of the 2 pinned parameters in the report", seen)
 	}
 }
 

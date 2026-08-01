@@ -185,6 +185,71 @@ func TestParamSpecMapEndpointsAndMonotonicity(t *testing.T) {
 	}
 }
 
+// TestParamSpecUnmapInvertsMap covers every spec in the product, because Unmap
+// is what lets a caller state a value in the unit the thing is measured in —
+// cmd/fit-physical's -set pins an 8" tom's head at 0.2032 m through it — and an
+// inversion that is wrong for one curve kind would be wrong silently, producing
+// a plausible number for the wrong drum.
+func TestParamSpecUnmapInvertsMap(t *testing.T) {
+	for track := range TrackCount {
+		for _, spec := range SpecsForTrack(track) {
+			for step := range 101 {
+				position := float64(step) / 100
+
+				value := spec.Map(position)
+
+				// Map's default snap makes it non-injective inside a half-byte
+				// window: every position in there returns Shipped, so only one
+				// of them can come back. Unmap(Shipped) is Default by
+				// construction, which is the direction -set relies on.
+				if math.Abs(position-spec.Default) < byteStep/2 {
+					if got := spec.Unmap(value); got != spec.Default {
+						t.Errorf("%s: Unmap(Shipped) = %v, want Default %v",
+							spec.ID, got, spec.Default)
+					}
+
+					continue
+				}
+
+				if len(spec.Choices) > 0 {
+					continue
+				}
+
+				if got := spec.Unmap(value); math.Abs(got-position) > 1e-9 {
+					t.Errorf("%s: Unmap(Map(%v)) = %v, off by %g",
+						spec.ID, position, got, got-position)
+				}
+			}
+		}
+	}
+}
+
+// TestParamSpecUnmapClampsBadInput keeps the inverse total. Callers are expected
+// to range-check first — cmd/fit-physical refuses an out-of-range -set rather
+// than clamping it — but Unmap itself must not return NaN or an infinity into a
+// position that then indexes the search space.
+func TestParamSpecUnmapClampsBadInput(t *testing.T) {
+	for track := range TrackCount {
+		for _, spec := range SpecsForTrack(track) {
+			for name, in := range map[string]float64{
+				"far below Min": spec.Min - 1e6,
+				"far above Max": spec.Max + 1e6,
+				"zero":          0,
+				"negative":      -1,
+				"NaN":           math.NaN(),
+				"+Inf":          math.Inf(1),
+				"-Inf":          math.Inf(-1),
+			} {
+				got := spec.Unmap(in)
+				if math.IsNaN(got) || got < 0 || got > 1 {
+					t.Errorf("%s: %s input: Unmap(%v) = %v, outside [0, 1]",
+						spec.ID, name, in, got)
+				}
+			}
+		}
+	}
+}
+
 func TestParamSpecMapClampsBadInput(t *testing.T) {
 	spec := bassSpecs[bassParamPitchTo]
 

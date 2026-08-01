@@ -107,6 +107,18 @@ check-params: gen-params
 # its right channel alone. A -channel in {{args}} comes later on the command line
 # and still wins.
 #
+# **The drum's geometry is pinned, not fitted.** Every committed pack states its
+# shell as <diameter>x<depth> inches in the directory name, so this recipe reads
+# it off the path and passes it as -set SIZE=/-set DEPTH= in metres. Leaving them
+# free let the search answer an 8"x8" recording with a 12" head on a 20 cm shell —
+# the shipped defaults — and then report the result as a fit. Two parameters of
+# eighteen become constants, and they are two the recording cannot argue with.
+#
+# Derived rather than typed so it cannot drift from the reference: point the
+# recipe at another pack and the geometry follows. A recording outside
+# reference/<WxH>/ has no geometry to read, so the recipe leaves both free and
+# says so — that is the honest default for an unknown drum.
+#
 # One hit does not identify this model's parameters — the fit wants the whole
 # sixteen-velocity series jointly (PLAN.md P10/N5), which this recipe cannot yet
 # express. Until it can, treat a single-file run as a diagnostic, not a fit.
@@ -114,7 +126,17 @@ fit-physical reference="reference/tt08x08/lp/hd/v08.wav" *args="":
     #!/usr/bin/env bash
     set -euo pipefail
     slug="$(printf '%s' '{{reference}}' | sed -e 's|^reference/||' -e 's|\.wav$||' -e 's|/|-|g')"
+    geometry=()
+    if [[ '{{reference}}' =~ reference/[a-z]*([0-9]+)x([0-9]+)/ ]]; then
+        diameter="$(awk -v inches="${BASH_REMATCH[1]}" 'BEGIN { printf "%.4f", inches * 0.0254 }')"
+        depth="$(awk -v inches="${BASH_REMATCH[2]}" 'BEGIN { printf "%.4f", inches * 0.0254 }')"
+        geometry=(-set "SIZE=$diameter" -set "DEPTH=$depth")
+        echo "geometry from the path: ${BASH_REMATCH[1]}\" x ${BASH_REMATCH[2]}\" = $diameter m x $depth m" >&2
+    else
+        echo "no <diameter>x<depth> in the reference path: SIZE and DEPTH stay free" >&2
+    fi
     go run ./cmd/fit-physical -reference '{{reference}}' -channel mono \
+        "${geometry[@]}" \
         -o "fits/fit-$slug.json" -checkpoint "fits/fit-$slug.checkpoint" {{args}}
 
 # Derive the measurement tables from recordings of a real drum.

@@ -81,6 +81,57 @@ func (s ParamSpec) Map(value01 float64) float64 {
 	return s.Min + (s.Max-s.Min)*val
 }
 
+// Unmap is Map's inverse: the normalized position at which this spec reads the
+// given engineering value. Out-of-range values clamp to the ends of the range.
+//
+// It exists so that a caller who knows a value in the unit the instrument is
+// actually described in — a head diameter in metres, a tension in N/m — can
+// state it without hand-inverting the curve. cmd/fit-physical's -set does
+// exactly that, and getting the exponential inversion wrong by hand is a silent
+// error: 0.2032 m on SIZE is normalized 0.2098, and a plausible-looking 0.2032
+// typed into -fix is 0.2027 m of *normalized position*, i.e. 0.203 m — which
+// happens to be close enough to look right and is a coincidence of this one
+// parameter's range.
+//
+// Round-tripping is exact except across Map's default snap: Map returns Shipped
+// verbatim within half a persistence byte of Default, so Unmap(Map(x)) can
+// differ from x inside that dead zone. Unmap(Shipped) is Default, which is the
+// direction that matters here.
+func (s ParamSpec) Unmap(value float64) float64 {
+	if math.IsNaN(value) {
+		return s.Default
+	}
+
+	if value == s.Shipped {
+		return s.Default
+	}
+
+	if len(s.Choices) > 0 {
+		if len(s.Choices) == 1 {
+			return 0
+		}
+
+		return clamp01(value / float64(len(s.Choices)-1))
+	}
+
+	if s.Kind == paramExp {
+		// Min and Max are both positive on every exponential spec — a ratio
+		// curve through zero has no meaning — but a caller can still ask for
+		// zero or less, and log would return -Inf rather than an error.
+		if value <= 0 {
+			return 0
+		}
+
+		return clamp01(math.Log(value/s.Min) / math.Log(s.Max/s.Min))
+	}
+
+	if s.Max == s.Min {
+		return 0
+	}
+
+	return clamp01((value - s.Min) / (s.Max - s.Min))
+}
+
 // choiceSpec builds a discrete selector rendered by the same normalized Knob
 // as continuous parameters. Shipped is the zero-based selected choice.
 func choiceSpec(id, label, name string, choices []string, shipped int) ParamSpec {
