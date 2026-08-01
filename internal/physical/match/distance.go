@@ -132,41 +132,56 @@ type Weights struct {
 // microphone at the same point in space. cmd/measure-objective performs the
 // measurement, through this Distance rather than through a copy of it.
 //
-// They have now been measured three times, and the third measurement is a
-// different *drum*, not a different estimator. The reference set moved from the
+// They have now been measured four times. The third measurement was a different
+// *drum*, not a different estimator: the reference set moved from the
 // medium-pitch head strikes to the low-pitch ones on 2026-08-01, because that is
-// the sound the fit is now aiming at; the floor is a property of the estimator
-// **and of what it is pointed at**, so it had to be re-derived rather than
-// carried over. All three columns are the p90 of the same 32 scorings, taken
-// through this Distance:
+// the sound the fit is now aiming at, and the floor is a property of the
+// estimator **and of what it is pointed at**. The fourth is the same drum through
+// the analysis and decay windows PLAN N17 widened, plus the repair N17 turned out
+// to need. All four columns are the p90 of the same 32 scorings, taken through
+// this Distance:
 //
-//	term              mp-hd, defective  mp-hd, repaired  lp-hd (current)  gate now
-//	partial frequency        113.0 ¢           76.2 ¢          65.0 ¢       70 ¢
-//	partial level             17.85 dB          6.81 dB         6.76 dB      7 dB
-//	partial decay              1.262            0.558           0.589        0.6
-//	spectral envelope          3.65 dB          3.67 dB         3.24 dB      3.5 dB
-//	envelope                   3.81 dB          3.84 dB         1.38 dB      1.5 dB
-//	glide                    310.3 ¢          280.1 ¢           2.3 ¢       10 ¢
-//	attack balance             1.12 dB          1.13 dB         0.81 dB      0.9 dB
-//	unmatched share            0.880            0.250           0.280        0.3
-//	spurious share             0.346            0.245           0.293        0.3  (see below)
+//	term              mp-hd, defective  mp-hd, repaired  lp-hd pre-N17  lp-hd (current)  gate now
+//	partial frequency        113.0 ¢           76.2 ¢         65.0 ¢          65.5 ¢       70 ¢
+//	partial level             17.85 dB          6.81 dB        6.76 dB         6.42 dB      7 dB
+//	partial decay              1.262            0.558          0.589           0.535        0.55
+//	spectral envelope          3.65 dB          3.67 dB        3.24 dB         3.24 dB      3.5 dB
+//	envelope                   3.81 dB          3.84 dB        1.38 dB         1.38 dB      1.5 dB
+//	glide                    310.3 ¢          280.1 ¢          2.3 ¢          23.4 ¢       30 ¢
+//	attack balance             1.12 dB          1.13 dB        0.81 dB         0.81 dB      0.9 dB
+//	unmatched share            0.880            0.250          0.280           0.223        0.25
+//	spurious share             0.346            0.245          0.293           0.239        0.25  (see below)
 //
 // Every term is at least as reproducible on the low-pitch set as on the medium,
-// and two are dramatically more so. **Glide is the headline**: 280.1 ¢ → 2.3 ¢,
-// a factor of 120. That is not an estimator change — the estimator is untouched.
+// and two are dramatically more so. **Glide was the headline**: 280.1 ¢ → 2.3 ¢,
+// a factor of 120. That is not an estimator change — the estimator was untouched.
 // The medium-pitch fundamental died before the late probe, so more than half of
 // those pairs were placing two probes on a partial that was no longer there and
 // measuring the noise between them; the low-pitch fundamental rings long enough
 // that both probes land on signal. A term that was documented here as "still
-// broken" turns out to have been broken *by the target*, and on this reference it
-// is the single most reproducible thing the objective measures. The envelope term
+// broken" turned out to have been broken *by the target*. The envelope term
 // improves for the same underlying reason — 2.5 s of file against 1.25 s, so the
 // tail being compared is real signal rather than floor.
 //
-// The consequence to keep in view: the glide gate is now 10 cents. A candidate
-// whose pitch bend is 30 cents wrong used to contribute 0.10 and now contributes
-// 3.0. Glide has gone from a term the objective could not see to one of the
-// terms most able to dominate a total, and no fit has yet been run under it.
+// The fourth column is where that headline is partly withdrawn, and the reason is
+// worth stating plainly because it is the strongest evidence in this comment for
+// re-measuring rather than carrying numbers forward. N17 widened the analysis
+// span to 2.0 s and the decay window to 1.60 s, and it bounded the decay
+// refinement per partial. The widening improved every partial term. The bound, in
+// its first form, was a regression that nothing in the N17 work could see: it made
+// short partials' *levels* unidentifiable, one bad fit re-based the whole level
+// table, and glide — which picks its partial off that table — went from 2.3 ¢ to
+// 286 ¢, with frequency, level, unmatched and spurious all following it. See
+// minimumRefinementSpanSeconds in decay.go for the measurement and the repair.
+// The current column is post-repair; every term is at or better than it was
+// before N17 except glide, which is not back to 2.3 ¢ and may not be reachable
+// again — the level table it depends on is a different table now.
+//
+// The consequence to keep in view: the glide gate is 30 cents rather than the
+// 10 it briefly was. A candidate whose pitch bend is 30 cents wrong contributes
+// 1.0. Glide is no longer a term the objective cannot see, but neither is it the
+// fine instrument the pre-N17 column suggested, and no fit has yet been run under
+// any of these weights.
 //
 // Gates are rounded *up* from the measured p90, because a gate is what a
 // candidate has to beat and rounding a floor down sets a threshold below the
@@ -194,30 +209,29 @@ type Weights struct {
 //
 //   - **The spectral envelope is still the term that was always right.** 3.24 dB
 //     against a gate of 3.5, and it was 3.67 against 4 on the other drum: the one
-//     term neither an estimator defect nor a change of target has moved much.
-//     Every conclusion drawn from it stands.
+//     term neither an estimator defect, nor a change of target, nor N17's windows
+//     have moved at all. Every conclusion drawn from it stands. It and
+//     AttackBalance are the two terms that do not read the partial table, which is
+//     exactly why they are the two that never move.
 //   - **AttackBalance is still the most reproducible term in the objective**,
 //     0.231 dB at the median, and it is still the one that used to carry the
 //     smallest weight, 1/6. It now carries 1/0.9.
-//   - **"Glide is broken" is withdrawn — it was a statement about the target.**
-//     See the headline above. On this reference its median is 0.803 cents, which
-//     is the best-behaved term in the whole objective. What survives of the old
-//     finding is narrower and still useful: the glide estimator fails silently
-//     and completely when the fundamental does not outlive the late probe, so it
-//     is a reliable term only on a reference whose fundamental rings, and it must
-//     be re-checked rather than assumed on any new one.
+//   - **"Glide is broken" was withdrawn and is now half re-instated.** It is not
+//     broken by the target here — the low-pitch fundamental does outlive the late
+//     probe — but it is the term most sensitive to the partial table underneath
+//     it, because measureGlide reads the partial off that table. 23.4 ¢ at p90
+//     with a 119.8 ¢ maximum is one take in sixteen where the two channels track
+//     different partials. Treat it as usable and fragile, and re-check it rather
+//     than assume it on any new reference or after any estimator change.
 //   - **"The partial terms were never gateable" stays withdrawn.** 65 cents and
-//     6.8 dB are wide tolerances but they are thresholds a model can be held to.
+//     6.4 dB are wide tolerances but they are thresholds a model can be held to.
 //     The six rounds of intervention aimed at the old 25-cent and 0.25 gates were
 //     still aimed at thresholds nothing could reach; that part stands.
 //
 // Measured consequence: at these weights the objective's disagreement with itself
-// totals **5.92 at the median and 6.68 at p90** on this reference. Read that as
-// the floor, not as a score: no fit total below 5.92 is distinguishable from the
-// objective's own noise, whatever else it claims. The same distribution scored
-// under the previous, mp-hd-derived weights totals 4.68/5.72, which is the
-// like-for-like number and is not a regression — tightening a gate raises the
-// weight, so identical raw disagreement scores higher.
+// totals **6.54 at the median and 7.86 at p90** on this reference. Read that as
+// the floor, not as a score: no fit total below 6.54 is distinguishable from the
+// objective's own noise, whatever else it claims.
 //
 // Which is the whole difficulty with reading totals: **no total recorded before
 // this change is comparable to any total after it**, and not even the sign of the
@@ -237,8 +251,8 @@ type Weights struct {
 // a spurious share of 0.000, because the blend's pressure toward completeness is
 // exactly what the spurious weight works against, and outweighing it makes
 // emptiness the cheapest bank on offer. So both terms were pinned to Unmatched's
-// gate. On lp-hd the order is the other way round (unmatched 0.280, spurious
-// 0.293) and both round up to the same 0.3, so the departure is no longer doing
+// gate. On lp-hd the order is the other way round (unmatched 0.223, spurious
+// 0.239) and both round up to the same 0.25, so the departure is no longer doing
 // anything and the equality is now what the measurement says rather than an
 // override of it. The refuted direction is still refuted, and the inequality is
 // still worth pinning in case a future measurement separates them:
@@ -258,13 +272,13 @@ func DefaultWeights() Weights {
 	return Weights{
 		PartialFrequency:    1.0 / 70,
 		PartialLevel:        1.0 / 7,
-		PartialDecay:        1.0 / 0.6,
+		PartialDecay:        1.0 / 0.55,
 		SpectralEnvelope:    1.0 / 3.5,
 		Envelope:            1.0 / 1.5,
-		Glide:               1.0 / 10,
+		Glide:               1.0 / 30,
 		AttackBalance:       1.0 / 0.9,
-		Unmatched:           1.0 / 0.3,
-		Spurious:            1.0 / 0.3,
+		Unmatched:           1.0 / 0.25,
+		Spurious:            1.0 / 0.25,
 		MatchToleranceCents: 120,
 	}
 }

@@ -25,6 +25,53 @@ func matchDefaults() match.Options { return match.DefaultOptions() }
 // command's own arithmetic — ratios, damping ratios, the doublet pick — and a
 // signal whose partials are known exactly is the only way to check those
 // without also asserting what the model sounds like.
+
+// syntheticFloorDB is how far below the peak the fixtures' noise floor sits.
+//
+// It is not decoration. The decay estimator these tests run through models a
+// partial as an exponential plus a **stationary floor**, and a floor is a fitted
+// parameter: a signal that decays smoothly past the 16-bit quantisation step and
+// on down has no identifiable one, so the fit trades floor against rate and the
+// ring time comes back short. A 0.5 s partial at full scale reaches the PCM16
+// floor at 0.80 s, which is the width of the refinement window
+// (minimumRefinementSpanSeconds), so the fixture sat exactly on that edge: the
+// measured damping ratio moved outside its two per cent tolerance when the
+// window moved by 50 ms.
+//
+// -80 dB puts the floor at 0.67 s instead, leaving an eighth of a second of it
+// inside the window to be identified from. Real recordings all have this — the
+// reference the tool is pointed at has a room in it — so the fixture is more like
+// its target with a floor than without. It is deliberately no louder: at -70 dB
+// the noise itself grows peaks the partial detector picks up, and
+// TestDoubletWarnsWhenThereIsNoStiffenedBranch found one at 208 Hz in a fixture
+// that has nothing but a 150 Hz tone in it.
+const syntheticFloorDB = -80
+
+// dither adds a deterministic broadband floor at noiseDB below the signal's peak.
+// Deterministic because a test that resynthesises different noise on every run
+// reports a different damping ratio on every run.
+func dither(samples []float64, noiseDB float64) {
+	peak := 0.0
+	for _, sample := range samples {
+		peak = math.Max(peak, math.Abs(sample))
+	}
+
+	if peak <= 0 {
+		return
+	}
+
+	// A fixed-seed linear congruential generator rather than math/rand, so the
+	// sequence is pinned to this file and cannot move under a runtime change.
+	state := uint64(0x2545F4914F6CDD1D)
+	amplitude := peak * math.Pow(10, noiseDB/20)
+
+	for index := range samples {
+		state = state*6364136223846793005 + 1442695040888963407
+		uniform := float64(state>>11)/float64(uint64(1)<<53)*2 - 1
+		samples[index] += amplitude * uniform
+	}
+}
+
 func syntheticHit(t *testing.T, dir, name string, frequencies, t60s, amplitudes []float64) string {
 	t.Helper()
 
@@ -45,6 +92,8 @@ func syntheticHit(t *testing.T, dir, name string, frequencies, t60s, amplitudes 
 				math.Exp(-decay*time) * math.Sin(2*math.Pi*frequencies[index]*time)
 		}
 	}
+
+	dither(samples, syntheticFloorDB)
 
 	path := filepath.Join(dir, name)
 

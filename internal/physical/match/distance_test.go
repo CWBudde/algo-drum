@@ -37,13 +37,13 @@ func TestWeightsAreReciprocalGates(t *testing.T) {
 	}{
 		{"partial frequency", DefaultWeights().PartialFrequency, 70},
 		{"partial level", DefaultWeights().PartialLevel, 7},
-		{"partial decay", DefaultWeights().PartialDecay, 0.6},
+		{"partial decay", DefaultWeights().PartialDecay, 0.55},
 		{"spectral envelope", DefaultWeights().SpectralEnvelope, 3.5},
 		{"envelope", DefaultWeights().Envelope, 1.5},
-		{"glide", DefaultWeights().Glide, 10},
+		{"glide", DefaultWeights().Glide, 30},
 		{"attack balance", DefaultWeights().AttackBalance, 0.9},
-		{"unmatched", DefaultWeights().Unmatched, 0.3},
-		{"spurious", DefaultWeights().Spurious, 0.3},
+		{"unmatched", DefaultWeights().Unmatched, 0.25},
+		{"spurious", DefaultWeights().Spurious, 0.25},
 	}
 
 	reported := AdoptionGates()

@@ -34,9 +34,24 @@ here should be restated at length elsewhere — link to it instead.
 >   they front has changed with them: a ring time must now be supported by a
 >   20 dB fall inside its own window, and the decay refinement is bounded per
 >   partial instead of spanning the whole window. This is a second, independent
->   reason not to quote a number here without re-running it, and it applies to
->   the gate table as much as to the results: **the gates in `DefaultWeights` are
->   pre-N17 and `cmd/measure-objective` has not yet been re-run.**
+>   reason not to quote a number here without re-running it.
+>
+>   **The gates are no longer among them.** `cmd/measure-objective` was re-run on
+>   `reference/tt08x08/lp/hd/v*.wav` through the post-N17 estimator on
+>   2026-08-01 and the gates in `DefaultWeights` are that measurement — partial
+>   decay 0.6 → 0.55, glide 10 → 30, unmatched and spurious 0.3 → 0.25, the rest
+>   unchanged. Read the comment on `DefaultWeights` for the four-column table; the
+>   floor is now 6.54 median / 7.86 p90, so **no total below 6.54 means anything**.
+>
+>   That re-run is also what found the one N17 defect nothing in N17 could see.
+>   The per-partial refinement bound had no lower limit, so a fast partial's level
+>   became unidentifiable, one bad fit re-based the whole level table, and the
+>   glide floor went from 2.3 ¢ to 286 ¢ with four other terms following it.
+>   `minimumRefinementSpanSeconds` in `internal/physical/match/decay.go` records
+>   the measurement and the repair. The lesson generalises: **an estimator change
+>   justified by a stability measurement has to be checked against a
+>   reproducibility one**, because the two can move in opposite directions and
+>   this one did.
 >
 >   Direction is known where it can be reasoned about. Truncation shortens long
 >   decays, so Result 10's `f^-0.52` should if anything steepen. Result 5's

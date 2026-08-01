@@ -1103,11 +1103,44 @@ recording and can be taken at any time.
     or `TestExtractIsGainInvariant` measures the fixture's noise instead of the
     extractor.
 
-    **Still open, and it is the next thing:** `cmd/measure-objective` must be
-    re-run and the gates in `DefaultWeights` re-edited by hand — every one of
-    them was measured through the old windows. Until that is done the nine terms
-    are being weighted by reciprocals of a floor measured on a different
-    estimator. N16's Results 2–10 follow after that, and N3's fit after those.
+    **The gates are re-measured and re-edited, and doing it found the one defect
+    the N17 work could not see.** `cmd/measure-objective` re-run on the sixteen
+    lp/hd takes through the post-N17 estimator came back *worse than pre-N17 on
+    every term that reads the partial table*: glide 2.3 ¢ → 286 ¢, level 6.76 →
+    11.23 dB, unmatched 0.280 → 0.434, and partial decay 0.589 → 0.745 — the term
+    the widening was for. Only spectral envelope and attack balance were
+    unmoved, and they are exactly the two terms that do not read that table.
+
+    The cause was the per-partial refinement bound, not the widening. The bound
+    had no lower limit, so a fast partial got a refinement window two of its own
+    spans wide — 105 points for a 26 ms partial — and the three-parameter fit
+    could then trade a steep slope against a low floor for free. On v16's right
+    channel a 2511.8 Hz component came back at T60 45 ms with an intercept of
+    +31.4 dB against its own observed peak of −41.2 dB, became the loudest thing
+    in the table, and pushed a sixteen-partial table down to two, both above
+    2 kHz, on a drum whose fundamental is 240 Hz. Across the set, both channels
+    named the ~240 Hz fundamental as loudest on 15 of 16 takes before N17 and on
+    7 of 16 after it. `measureGlide` picks its partial off that table, which is
+    the whole path from a decay-window bound to a 120× glide regression.
+
+    `minimumRefinementSpanSeconds` = 0.8 s is the repair, and the constant's
+    comment carries the sweep it was chosen from. Post-repair every term is at or
+    better than pre-N17 except glide, which recovers to 23.4 ¢ and probably
+    cannot return to 2.3 ¢ — that number belonged to a level table that no longer
+    exists. Gates now: decay 0.6 → **0.55**, glide 10 → **30**, unmatched and
+    spurious 0.3 → **0.25**; frequency 70, level 7, spectrum 3.5, envelope 1.5
+    and attack 0.9 unchanged. The floor is **6.54 median / 7.86 p90**.
+
+    **The transferable lesson, and the reason this is written out at length:** an
+    estimator change justified by a *stability* measurement must be checked
+    against a *reproducibility* one before it ships. N17's window study measured
+    how much a ring time moves when the window moves, and by that measure the
+    bound was an improvement. The two-microphone floor measures something the
+    stability study structurally cannot — whether the estimator says the same
+    thing about the same event twice — and by that measure the bound was a
+    regression large enough to break a different term entirely.
+
+    **Next:** N16's Results 2–10 re-measured against these gates, then N3's fit.
 
 <details><summary>The item as originally written</summary>
 

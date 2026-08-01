@@ -320,6 +320,60 @@ func fastestObservableT60(cutoffHz float64) float64 {
 	return 3 * math.Ln10 / (dampingRatio * 2 * math.Pi * cutoffHz)
 }
 
+// minimumRefinementSpanSeconds is the shortest window the exponential-plus-floor
+// refinement may be fitted over, however short the partial is.
+//
+// The refinement's floor is a *parameter*, not something to truncate away, and a
+// parameter has to be identifiable from the data. Two spans of a fast partial are
+// not enough data: at 2 kHz decimation a 26 ms partial gets 105 points, half of
+// them signal, and the three-parameter fit is then free to trade a steep slope
+// against a low floor at almost no cost in residual. The result is not a wrong
+// ring time, which would be survivable; it is a wrong *level*, because the level
+// is that fitted line extrapolated back to the strike.
+//
+// This was measured, and it was measured as damage already done. PLAN N17 added
+// the per-partial bound above with no lower limit, and on
+// reference/tt08x08/lp/hd/v16 the right channel's 2511.8 Hz component was then
+// fitted over 105 points at R^2 0.508, came back at T60 45 ms, and extrapolated
+// to an intercept of +31.4 dB against its own observed peak of -41.2 dB. It
+// became the loudest thing in the table, every real partial fell below
+// PartialFloorDB relative to it, and a sixteen-partial table became two — both
+// above 2 kHz, on a drum whose fundamental is 240 Hz. This is the same failure
+// fastestObservableT60 was written for, arriving through a different door.
+//
+// It is not a rare accident. Across the sixteen takes, both channels named the
+// ~240 Hz fundamental as their loudest partial on 15 of 16 before N17 and on only
+// 7 of 16 after it. Since the level table is normalised to whatever is loudest
+// and measureGlide picks its partial off that, one bad fit re-bases everything
+// downstream — which is how a bound meant to sharpen ring times moved the glide
+// term's reproducibility floor from 2.3 cents to 286.
+//
+// 0.8 s is where that stops, chosen by re-measuring the objective's own floor
+// over the sixteen takes at a sweep of lower limits (p90, cmd/measure-objective):
+//
+//	limit        none   0.4 s   0.8 s   1.0 s   1.2 s   1.55 s  (pre-N17)
+//	glide       286.0    86.2    23.4    23.4   119.8   119.8     2.3
+//	decay       0.745   0.654   0.535   0.548   0.506   0.512    0.589
+//	frequency    82.6    72.8    65.5    69.4    64.2    57.2     65.0
+//	level       11.23    7.41    6.42    6.33    5.92    5.71     6.76
+//	unmatched   0.434   0.348   0.223   0.245   0.204   0.215    0.280
+//	spurious    0.362   0.360   0.239   0.261   0.204   0.228    0.293
+//
+// At 0.8 s every term is at or better than it was before N17 except glide, and
+// glide is an order of magnitude better than the unbounded version. Past 0.8 s
+// the partial terms keep improving slowly and glide falls apart again, because at
+// 1.55 s the bound is inert (the window is 1.55 s long) and the fits it was
+// protecting come back. 0.8 s is the corner, not a compromise between two goods.
+//
+// The reason this is a *lower limit* rather than a reason to delete the bound: a
+// reproducibility measurement compares two microphones on one hit, so it cannot
+// see a bias both channels share, and the neighbour contamination the bound
+// exists for is exactly such a bias. Reproducibility can only say the bound was
+// costing more than it could possibly be worth. Held above 0.8 s it is no longer
+// doing so, and it still shortens the window for every partial whose own span is
+// under 0.4 s, which is the case it was written for.
+const minimumRefinementSpanSeconds = 0.8
+
 // minimumEvaluationFallDB is how far a partial must actually fall inside its fit
 // window before a ring time may be extrapolated from it.
 //
@@ -477,7 +531,12 @@ func measureDecays(hit []float64, sampleRateHz float64, options Options, partial
 		// beyond that, where there is no more information about *this* partial
 		// and a growing amount about its neighbours. It is still bounded by the
 		// global window, which is what a short recording enforces.
-		fitEnd := min(end, start+2*len(times))
+		//
+		// And it is bounded from *below* by minimumRefinementSpanSeconds, which
+		// the first version of this was missing and which cost the objective more
+		// than the bound itself was worth. See that constant.
+		fitEnd := min(end, start+max(2*len(times),
+			int(minimumRefinementSpanSeconds*sampleRateHz)))
 
 		// It is decimated first: the envelope has already been low-passed at
 		// `cutoff`, which is at most 40 Hz, so at decayTraceRateHz it is
