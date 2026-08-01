@@ -315,6 +315,18 @@ single-change result rather than a broken one.
 
 ### Whether the pass is worth starting — measured 2026-07-31
 
+> **Superseded numbers (2026-08-01).** The three totals below were measured before
+> two corrections to the measurement itself — the partial-level estimator and the
+> detection aperture, then the glide term — and against the mono reduction rather
+> than the documented `-channel right` target. They are not comparable to any
+> current fit total, and the 476–700 Hz column in particular counted against a
+> reference partial list that has since changed. Both models were refitted on the
+> corrected partial measurement, where prescribed still won (11.252 against
+> 11.535, and those two are superseded in their turn); see
+> [`physical-measured-fit.md`](physical-measured-fit.md). **The conclusion below
+> is unchanged** — the Hertzian contact does not pay for its calibration pass —
+> but it now rests on that later head-to-head, not on this table.
+
 It is not, on fit quality. Both models were given the same bank and the same
 budget against `reference/tom.wav`, 8 restarts × 150 iterations:
 

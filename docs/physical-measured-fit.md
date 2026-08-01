@@ -2,7 +2,8 @@
 
 This document records the measurement, the search, what the first fit found, the
 refits that gave each contact model the same budget over the same bank, and the
-correction to the measurement itself that superseded everything before it.
+**two** corrections to the measurement itself, each of which superseded every fit
+number measured before it.
 
 It does **not** close P6's _"fit documented presets from measurement"_ item, and
 it does not meet P8's exit criterion. It builds the machinery both of those need
@@ -11,10 +12,23 @@ three gate terms are missed, and the shipped default is left alone as a result.
 The gap it leaves is specific enough to be the next piece of work.
 
 The current result is
-[the corrected head-to-head](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31);
-every fit number recorded before
-[the measurement correction](#a-correction-to-the-partial-measurement-2026-07-31)
-carries a superseded banner and should not be quoted.
+[the refit on the corrected glide term](#the-refit-on-the-corrected-glide-term-2026-08-01).
+**Two objective changes cut this page in three**, and a total from one part cannot
+be compared with a total from another:
+
+| Era                                                                                  | What changed                                                           | Status                   |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- | ------------------------ |
+| before [the partial correction](#a-correction-to-the-partial-measurement-2026-07-31) | the partial-level estimator and the detection aperture                 | superseded; do not quote |
+| between it and [the glide correction](#a-correction-to-the-glide-term-2026-08-01)    | the glide was read off the loudest partial rather than the fundamental | superseded; do not quote |
+| after the glide correction                                                           | —                                                                      | current                  |
+
+Every number produced before the last of those was produced by a **different
+objective** than the one that runs today. Nothing below carries an offset that
+could be subtracted out; where a superseded number is kept because the reasoning
+around it still holds, it is labelled as measured under the old objective. A
+report from any era can be re-scored under today's objective — see
+[the re-scoring recipe](#re-scoring-an-archived-report-under-todays-objective),
+which is now the only way to compare an archived fit against a current one.
 
 ## Provenance, and its limits
 
@@ -56,7 +70,7 @@ loudness carries no information at all.
 | Partials           | Hann-windowed 64k transform of two windows — the sustain, and an earlier 0.05–0.30 s window — topographic peak prominence, log-domain parabolic interpolation; each window admits candidates relative to its _own_ strongest peak | `dsp/window`, `algo-fft`, `dsp/spectrum` |
 | Per-partial decay  | heterodyne to baseband, zero-phase Butterworth low-pass whose cutoff is set from the measured spacing to the nearest neighbour, log-linear fit with R²                                                                            | `dsp/filter/design`, `dsp/filter/biquad` |
 | Per-partial level  | the intercept of that same decay fit — the fitted line's value at t = 0, read off the partial's heterodyned envelope                                                                                                              | —                                        |
-| Glide              | residual phase slope of the loudest partial at 30 ms against 400 ms                                                                                                                                                               | as above                                 |
+| Glide              | residual phase slope of the **fundamental** — the lowest partial within 20 dB of the loudest — at 30 ms against the latest probe that partial still supports, refused outright if it supports none                                | as above                                 |
 | Spectral shape     | ⅓-octave band levels, mean-removed, in four windows (attack / early / body / tail)                                                                                                                                                | `stats/frequency`                        |
 | Amplitude envelope | frame RMS in dB, peak-referred                                                                                                                                                                                                    | `stats/time`                             |
 | Attack balance     | 1–8 kHz against 100–500 Hz in the first 20 ms                                                                                                                                                                                     | —                                        |
@@ -204,11 +218,30 @@ objective sequentially. Multi-start suits this landscape anyway: every knob's
 mapping has a detent at its default, so a single swarm can settle into one.
 
 ```bash
-just fit-physical                       # the default reference and settings
-go run ./cmd/fit-physical -reference reference/tom.wav -report-only
-go run ./cmd/fit-physical -reference reference/tom.wav \
+just fit-physical reference/tom.wav                    # passes -channel right for you
+go run ./cmd/fit-physical -reference reference/tom.wav -channel right -report-only
+go run ./cmd/fit-physical -reference reference/tom.wav -channel right \
     -restarts 11 -iterations 150 -pop 20 -o fits/fit-report.json
 ```
+
+**`-channel right` is not optional, and it is not the default.** `-channel`
+defaults to `mono`, which is a legitimate reduction — it aligns the two channels
+before averaging, so it is not the comb filter a bare sum would be — but it is a
+_different target_ from the one every result on this page is measured against.
+The right channel is what
+[the corrected target](#the-corrected-target) below is a reduction of, and it is
+what `testdata/physical-fit-tom.json` was fitted to. A full-budget run has
+already been spent on the wrong target this way: it printed a plausible baseline
+and a plausible best, and left its only trace in a `"channel": "mono"` field of
+the report that nobody reads.
+
+That silence is now closed. A reference with more than one channel and no
+`-channel` on the command line is **refused before the search starts**, naming
+the file, its channel count and the three choices; `just fit-physical` passes
+`-channel right` itself. Only an absent flag is refused — `-channel mono` typed
+out is a decision and is honoured, and a genuinely mono recording still needs no
+flag. The report's `reference.channel` field remains the thing to check before
+quoting any total.
 
 Driving mayfly from outside its own examples surfaced two defects. Both are
 fixed upstream and released as
@@ -835,9 +868,20 @@ check whether the answer is a measurement or a restatement of one of its inputs.
 
 ## The head-to-head, re-run on the corrected measurement (2026-07-31)
 
+> **Superseded by the glide correction (2026-08-01).** Every total and term value
+> in this section was measured with the glide term corrected
+> [below](#a-correction-to-the-glide-term-2026-08-01), which was scoring both runs
+> against a reference bend that is not the reference's. The glide column in
+> particular is meaningless: the target it was scored against was wrong, and it is
+> the term the Hertzian run was winning by the largest margin. The reasoning is
+> kept — the per-term reading, the paired seeded/unseeded comparison and the
+> spread analysis are method rather than arithmetic — but the numbers are not
+> comparable to anything measured after, and none of them should be quoted as a
+> result. The contact-model verdict is **not** re-established under the corrected
+> objective; only the prescribed model has been refitted since.
+
 Both contact models were refitted from scratch on the corrected partial
-measurement above. These are the first fit numbers on this page that are not
-superseded, and they replace the [earlier
+measurement above, and they replace the [earlier
 head-to-head](#the-contact-model-head-to-head-2026-07-31) outright.
 
 Two runs, identical but for `-contact`: `reference/tom.wav`, `-channel right`,
@@ -965,6 +1009,15 @@ Two consequences, both open:
 winner, because they are what makes the fit auditionable and reproducible and
 they should describe the best fit measured under the current metric.
 
+> **As of 2026-08-01 they no longer do.** Both were derived from this run, which
+> the [glide correction](#a-correction-to-the-glide-term-2026-08-01) supersedes.
+> Whether they are re-derived again is settled in
+> [the refit below](#the-refit-on-the-corrected-glide-term-2026-08-01); until that
+> is done, the committed fixture and the shipped preset describe the best bank
+> found under the **previous** objective. They are still a real bank and still
+> audition — nothing about them changed — but the claim "best fit measured under
+> the current metric" is not one they carry any more.
+
 `DefaultPhysicalDrum()` and `DefaultContact()` are **unchanged**, because the fit
 **misses all three gate terms** — partial frequency at 2.28×, partial decay at
 1.66×, spectral envelope at 3.07× their thresholds. The fixture and the preset
@@ -993,9 +1046,11 @@ both runs** at just over 3× its threshold.
 
 It has now survived every intervention tried against it: contact model, head
 damping range (`-loss-scale`, four times the headroom, flat near 13 dB), seeding,
-and a corrected target that changed every other term. A quantity that does not
-move under four independent interventions is behaving less like a hard problem
-than like a badly posed one.
+a corrected target that changed every other term, and — see
+[the refit below](#the-refit-on-the-corrected-glide-term-2026-08-01) — a corrected
+glide term that changed every other term again. A quantity that does not move
+under five independent interventions is behaving less like a hard problem than
+like a badly posed one.
 
 **An open suggestion, not a conclusion:** the term may be ill-posed for this
 model rather than the model failing it. It is mean-removed third-octave band
@@ -1007,6 +1062,261 @@ band-limit the term or to re-derive its threshold, not to keep fitting against i
 Settling that means measuring what the term's value would be over a restricted
 band, which has not been done. Until it is, this is a question and the 4 dB gate
 stands.
+
+## A correction to the glide term (2026-08-01)
+
+The glide is the one observable `NLIN` moves and nothing else does, so it is the
+term that decides the nonlinearity's calibration. It was being read off the wrong
+partial, at a time by which that partial no longer existed, through a filter wide
+enough to admit its neighbour. Three defects, one term, all in
+`internal/physical/match/features.go`, and all found by probing the reference
+rather than by reading the code.
+
+### It tracked the loudest partial, not the fundamental
+
+`Extract` took the bend from whichever partial peaked highest. On this reference
+that is the 212.8 Hz mode, whose T60 is **0.146 s** — it is in the room's noise
+floor long before the late probe at 0.400 s fires. The 118.1 Hz fundamental
+beneath it is 12.1 dB quieter and rings **1.490 s**, ten times longer.
+
+So the measurement was taken on whichever mode happened to peak highest rather
+than on the one that still existed to be measured, and what it actually read was
+the noise floor the loud mode decayed into. The reading was confident and had no
+outward sign of being wrong, which is why it survived three rounds of fitting.
+
+Neither obvious alternative is right either. The lowest partial outright is wrong
+because the lowest peak in the band may be a shell resonance or a room mode 40 dB
+down, and the bend belongs to the mode that carries the note. `glidePartial` now
+takes **the lowest partial standing within `GlidePartialWindowDB` (20 dB) of the
+loudest** — the guard against the 40 dB-down room mode, with a preference for the
+fundamental, which on a drum is both what "the pitch of the note" means and the
+longest-lived thing in the recording.
+
+### The late probe was nailed to a fixed time
+
+An instantaneous-frequency reading is a reading only while the tracked partial
+still dominates its own passband. Once it is gone, what is left inside the probe
+filter is leakage from the neighbours, and the phase slope reports _their_ offset
+from the carrier.
+
+This was not a corner case; it was the normal case, and it hit the candidates as
+well as the reference. On the model's own renders the (0,1) fundamental has a T60
+of 0.21 s, so at 0.400 s it is some 105 dB below its early level and the probe
+read the nearest long-lived neighbour instead. As cavity coupling separates the
+doublet, that neighbour moves further from the carrier and the reported "glide"
+moved with it: **−13 cents at the shipped stiffness, −717 at 0.30, −625 at a rigid
+cavity.** Those are not downglides. They are the offset to a different mode, and
+they made the term a function of the cavity rather than of `NLIN`.
+
+`GlideLateSeconds` is therefore no longer where the late probe sits but the
+_latest_ it may sit. The probe is walked back to the last point at which the
+partial is still within `GlideFloorDB` (20 dB) of its early level, and the reading
+is **refused** if that point is not at least `GlideMinSpanSeconds` (50 ms) after
+the early probe. Both probes must also land inside the filter's own passband: a
+deviation wider than the cutoff cannot belong to this partial, because the filter
+that produced the signal would have removed it.
+
+A short honest span beats a long dishonest one. The bend is an exponential
+settling with a time constant of tens of milliseconds, so a probe at 0.10 s has
+already seen nearly all of it while a probe at 0.400 s on a dead partial has seen
+none.
+
+Refusal has to be scoreable, and `Features.GlideMeasured` is what makes it so. A
+reference with no reading **zeroes** the term — there is nothing to compare
+against, and a fabricated zero would silently assert that the reference does not
+bend. A candidate with no reading against a reference that has one pays
+`unreadableGlideCents` = 40, exactly one "clearly wrong" glide: nonzero, because a
+candidate that cannot be measured must not outscore one that can and is merely
+wrong, or the cheapest way to satisfy the objective is a drum with no sustain; and
+no larger, because a fundamental that dies early is already charged by the decay
+and envelope terms and charging it twice is double-counting.
+
+### The probe filter admitted the neighbour
+
+`glideCutoffHz` sets the baseband width from the measured spacing to the nearest
+partial. Wide enough to follow a bend of a semitone, narrow enough to exclude the
+neighbour: on this reference the coupled (0,1) pair sits **21.6 Hz** apart, and a
+cutoff admitting both reads their beat as a 96-cent bend where the true one is
+about 70.
+
+### What this supersedes
+
+**Every fit total ever recorded in this repository.** The glide is one of nine
+terms and it is weighted at 1/40 cents, so an error in the target it is scored
+against moves the sum by an amount that depends on where each candidate happened
+to sit — it is not an offset, and it cannot be subtracted out. The corrected
+target's bend is **[TBD] cents** against the **[TBD] cents** every earlier fit was
+fitted against, so a run whose glide error looked small was in many cases being
+rewarded for landing near a number the reference never produced.
+
+That includes the [corrected head-to-head](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31)
+immediately above, which was the current result until this date, and it includes
+`testdata/physical-fit-tom.json`. It also reorders the archived runs — see the
+re-score below, where the run that looked best under the old objective is the
+worst of four under this one.
+
+### Re-scoring an archived report under today's objective
+
+An archived report's stored total is a number produced by an objective that no
+longer exists. The report does, however, record its own best point exactly, so the
+bank can be re-measured by **pinning it and asking for a report**:
+
+```bash
+go run ./cmd/fit-physical -reference reference/tom.wav -channel right \
+    -report-only -quality standard -contact prescribed \
+    -velocity 0.575 \
+    -fix physicalTom.diameter=0.28694710263046824 \
+    -fix physicalTom.batterTension=0.11845889401102773 \
+    …one -fix per free parameter, from the report's best.params[].normalized…
+```
+
+Four things have to line up or the answer is about a different drum:
+
+- **One `-fix` per free parameter**, each taking the `normalized` value from the
+  report's `best.params` — not the SI `value`, since the mapping from knob
+  position to SI is what `-fix` is expressed in. Parameters marked `"fixed": true`
+  (QUAL) are already pinned and must not be passed.
+- **`-velocity <best.velocity01>`.** Strike velocity is the eighteenth search
+  dimension but it is not a parameter in the bank, so `-fix` cannot reach it and
+  `-report-only` used to measure every re-scored bank at VEL = 1. That is not a
+  small distortion: `fit-glidefix-interrupted` scores **20.122** at VEL = 1 and
+  **11.296** at its own 0.575, because velocity moves the level, envelope and
+  attack-balance terms together. The flag exists for exactly this.
+- **`-quality` and `-contact` as the run used them**, both recorded in the
+  report's `search` block. A Standard-tier bank re-scored at Draft is a different
+  instrument.
+- **`-channel` as the run used it**, from the report's `reference.channel`.
+
+A run whose invocation used a flag the re-score does not reproduce cannot be
+re-scored this way at all. `-loss-scale` and `-mallet-g` are the two that matter
+here: dropping them re-measures the bank on a drum the run was never fitted to, so
+the `-loss-scale` sweep, the `v5` run and the 5 g Hertzian run have **no
+comparable total under today's objective** and are deliberately not tabulated
+below.
+
+The comparison, each run re-scored at its own quality tier, contact model and
+channel reduction:
+
+| Archived run               | Total as reported then | Under today's objective |
+| -------------------------- | ---------------------- | ----------------------- |
+| `fit-glidefix-interrupted` | 10.577                 | **[TBD]**               |
+| `fit-final-hertzian`       | 11.535                 | [TBD]                   |
+| `fit-v4-hertzian`          | 11.630                 | [TBD]                   |
+| `fit-final-prescribed`     | 11.252                 | [TBD]                   |
+
+Both columns are totals of nine terms; neither is a total the other objective
+would recognize. The left column is kept only so a reader who finds one of these
+numbers elsewhere in the repository can identify which era it came from.
+
+**The ordering changes**, which is the point. `fit-final-prescribed` — the run the
+paper's figures and `testdata/physical-fit-tom.json` come from, and the winner
+under the old objective — is the **worst of the four** under the corrected one,
+because its 17.6-cent glide error was scored against a target [TBD] % too high. A
+re-scored ranking is not a re-fitted ranking either: each of these banks was
+optimized against the old objective and is being marked under the new one, so the
+spread says how much the objective moved, not how well each search worked.
+
+## The refit on the corrected glide term (2026-08-01)
+
+> **Numbers pending.** A full-budget prescribed run on the corrected objective is
+> in flight against the documented `-channel right` target. Every `[TBD]` in this
+> section is waiting on it. The first attempt was run without `-channel` and
+> therefore against the aligned mono downmix — a real fit, but of a different
+> target than any other number on this page, and not quotable beside them. It is
+> the reason [the invocation above](#the-search) now names the flag.
+
+The prescribed contact was refitted from scratch. Only the prescribed model has
+been refitted, so **the contact-model comparison is not re-established** under
+this objective; the [head-to-head above](#the-head-to-head-re-run-on-the-corrected-measurement-2026-07-31)
+is the last word on that question and it is a superseded one.
+
+```
+go run ./cmd/fit-physical -reference reference/tom.wav -channel right \
+    -contact prescribed -quality standard \
+    -restarts 12 -pop 16 -iterations 150 -seeded-restarts 4 \
+    -o fits/s3-right-prescribed.json -checkpoint fits/s3-right-prescribed.checkpoint
+```
+
+Twelve restarts of 150 iterations at population 16, Standard quality, **[TBD]
+evaluations**, [TBD] on twelve cores, all restarts complete and not interrupted.
+
+**Total [TBD], from a baseline of [TBD]** at the shipped bank. Each term with its
+threshold and its contribution to the sum (value × weight; a term sitting exactly
+at its threshold contributes 1.0):
+
+| Term                         | Threshold | Baseline | Fitted | contrib |
+| ---------------------------- | --------- | -------- | ------ | ------- |
+| Partial frequency (gate)     | 25 ¢      | [TBD]    | [TBD]  | [TBD]   |
+| Partial decay (gate)         | 0.25      | [TBD]    | [TBD]  | [TBD]   |
+| **Spectral envelope** (gate) | 4 dB      | [TBD]    | [TBD]  | [TBD]   |
+| Partial level                | 3 dB      | [TBD]    | [TBD]  | [TBD]   |
+| Amplitude envelope           | 3 dB      | [TBD]    | [TBD]  | [TBD]   |
+| Glide                        | 40 ¢      | [TBD]    | [TBD]  | [TBD]   |
+| Attack balance               | 6 dB      | [TBD]    | [TBD]  | [TBD]   |
+| Unmatched share              | 0.5       | [TBD]    | [TBD]  | [TBD]   |
+| Spurious share               | 0.5       | [TBD]    | [TBD]  | [TBD]   |
+| **Total**                    | —         | [TBD]    | [TBD]  | —       |
+
+### What it reaches, and what it still does not
+
+**All three gate terms are missed** — partial frequency [TBD] against 25 ¢,
+partial decay [TBD] against 0.25, spectral envelope [TBD] against 4 dB. That is
+the same verdict the last two rounds reached, on a third objective.
+
+Two things did move, and they are the reason this run is worth recording rather
+than merely filing:
+
+- **Partial frequency** falls from the incumbent's 56.9 ¢ to [TBD] ¢, which was
+  the worst-contributing gate term of the previous winner.
+- **Unmatched coverage** improves from 0.151 to [TBD], so the fit produces more of
+  the reference's audible partials than the incumbent did.
+
+Those two comparisons are the one kind that survives the objective change: both
+terms are per-term measurements against the same corrected partial list, and
+neither is affected by the glide. The **totals** either side of the correction
+still cannot be compared.
+
+Partial alignment is now close across the whole retained band, which is what the
+frequency term is reporting and what the two lists show directly:
+
+| Reference (Hz / dB / T60 s) | Fitted (Hz / dB / T60 s) |
+| --------------------------- | ------------------------ |
+| [TBD]                       | [TBD]                    |
+
+### The seeded restarts, and what the seed error says
+
+Four of the twelve restarts were seeded from the analytic pre-solve, which
+converged at **[TBD] cents** of frequency error — the same order as the 35.9–37.0 ¢
+[recorded against the corrected target](#the-seed-error-is-itself-a-result-about-the-models-reach),
+and far from the 1.0–1.5 ¢ the pre-correction target admitted. By the rule that
+section states — a box around a seed is worth its cost in proportion to how good
+the seed is — a seed that far out is barely a selection at all, and
+`-seeded-restarts` remains off by default.
+
+### An observation at Draft quality
+
+A parallel run at the **Draft** tier (QUAL = 0, 48 oscillators per head against
+Standard's 96), interrupted at [TBD] evaluations, reached **[TBD]** — slightly
+better than the Standard-tier run above on this objective, at roughly half the
+mode count.
+
+It is recorded as an observation and nothing more. Both runs are single samples
+from a multi-modal landscape whose restart spread is wider than the difference
+between them, one of the two was interrupted, and QUAL is pinned during a search
+precisely because mode count is a product decision rather than a property of this
+drum. No conclusion about the mode budget is drawn from it here.
+
+### What moved and what did not
+
+`DefaultPhysicalDrum()` and `DefaultContact()` are **unchanged**, for the third
+time and for the same reason: a candidate that misses every gated term does not
+earn a claim about what the model should sound like out of the box, whatever it
+does to the total.
+
+Whether `testdata/physical-fit-tom.json` and the **Measured tom** preset are
+re-derived from this run is **[TBD]**. They currently hold the
+`fit-final-prescribed` bank, which is the best fit under an objective that no
+longer runs.
 
 ## Reproducing
 

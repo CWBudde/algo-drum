@@ -74,9 +74,17 @@ check-params: gen-params
 # fits/ alongside the report it belongs to:
 #
 #   just fit-physical reference/tom.wav "-o fits/fit-x.json …" 2> fits/fit-x.log
+#
+# -channel right is spelled out rather than left to the tool's `mono` default:
+# reference/tom.wav is a stereo capture, and its right channel is the target
+# every number in docs/physical-measured-fit.md and in
+# testdata/physical-fit-tom.json was fitted to. Averaging the pair instead is a
+# legitimate reduction of a *different* signal, so a run that took the default
+# could not be compared with any of them. A -channel in {{args}} comes later on
+# the command line and still wins, for a reference that is not this one.
 fit-physical reference="reference/tom.wav" *args="":
-    go run ./cmd/fit-physical -reference {{reference}} -o fits/fit-report.json \
-        -checkpoint fits/fit-report.checkpoint {{args}}
+    go run ./cmd/fit-physical -reference {{reference}} -channel right \
+        -o fits/fit-report.json -checkpoint fits/fit-report.checkpoint {{args}}
 
 # Derive the measurement tables from recordings of a real drum.
 #

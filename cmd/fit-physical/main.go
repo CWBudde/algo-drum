@@ -11,6 +11,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -65,6 +66,26 @@ func (a assignmentFlag) Set(text string) error {
 	a[strings.TrimSpace(name)] = value
 
 	return nil
+}
+
+// flagWasSet reports whether the named flag was actually given on the command
+// line, as opposed to sitting at its default.
+//
+// FlagSet.Visit — unlike VisitAll — walks only the flags that were set, which is
+// the standard way to draw that distinction. It matters wherever a default is a
+// legitimate value in its own right: -channel mono typed out is a choice about
+// how a stereo capture is reduced, while an absent -channel is nobody having
+// thought about it, and the two must not be answered the same way.
+func flagWasSet(flags *flag.FlagSet, name string) bool {
+	set := false
+
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			set = true
+		}
+	})
+
+	return set
 }
 
 // Report is what the run writes out.
@@ -144,6 +165,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 	restarts := flags.Int("restarts", 0, "independent seeded runs, best of; 0 picks one per available core")
 	seed := flags.Int64("seed", 1, "base RNG seed; restart n uses seed+n")
 	reportOnly := flags.Bool("report-only", false, "measure the shipped defaults against the reference and stop")
+	velocity := flags.Float64("velocity", defaultVelocity,
+		"strike velocity for -report-only, in the search's own 0-1 units; ignored when searching")
 	progressEvery := flags.Int("progress", 500,
 		"print a progress line every N objective evaluations; 0 silences it")
 	checkpointPath := flags.String("checkpoint", "",
@@ -207,6 +230,20 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("%w: loss scale %v", errInvalidFitOption, *lossScale)
 	}
 
+	// Velocity is the one dimension of the search space -fix cannot reach, and
+	// it is not a gain: it sets the contact duration, the size of the nonlinear
+	// glide and the balance between the modal and stochastic layers. Re-scoring
+	// an archived report's bank at the default 1.0 when the run that produced it
+	// recorded, say, 0.921 therefore measures a different drum, and biases the
+	// level, attack-balance and envelope terms — which is exactly what a
+	// re-score under a changed objective is supposed to hold still. Zero is
+	// rejected rather than clamped for the same reason the other numeric flags
+	// are: it is not a quiet strike but no strike at all, and every measure taken
+	// from the silence that follows is meaningless.
+	if math.IsNaN(*velocity) || *velocity <= 0 || *velocity > 1 {
+		return fmt.Errorf("%w: velocity %v is not inside (0, 1]", errInvalidFitOption, *velocity)
+	}
+
 	if *seededRestarts < 0 {
 		return fmt.Errorf("%w: seeded restarts %d", errInvalidFitOption, *seededRestarts)
 	}
@@ -235,8 +272,21 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	reference, err := match.LoadReference(*referencePath, match.Channel(*channel))
+	// flagWasSet is what separates "-channel mono" — a decision — from a -channel
+	// nobody typed. See match.LoadReferenceExplicit for why that difference is
+	// worth refusing to start a run over: reference/tom.wav is stereo, every
+	// total in docs/physical-measured-fit.md is its right channel, and the
+	// defaulted flag silently fitted the average of the two instead. The
+	// not-chosen case is reported as an invalid option because that is what it
+	// is — a missing flag, not a broken file — while a genuinely unreadable
+	// reference keeps its own error.
+	reference, err := match.LoadReferenceExplicit(*referencePath, match.Channel(*channel),
+		flagWasSet(flags, "channel"))
 	if err != nil {
+		if errors.Is(err, match.ErrChannelNotChosen) {
+			return fmt.Errorf("%w: %w", errInvalidFitOption, err)
+		}
+
 		return err
 	}
 
@@ -292,8 +342,18 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	baseline := newEvaluator(base)
 
-	// The shipped defaults, at the velocity the product's own audition uses.
-	report.Baseline, err = baseline.describe(baseline.position(defaultVelocity))
+	// The shipped defaults, at the velocity the product's own audition uses —
+	// unless -report-only asked for another one. A search keeps quoting its
+	// baseline at the default no matter what -velocity says, because that cost
+	// goes into the checkpoint fingerprint: letting a flag the search itself
+	// ignores move it would make two otherwise identical runs refuse to resume
+	// each other.
+	baselineVelocity := defaultVelocity
+	if *reportOnly {
+		baselineVelocity = *velocity
+	}
+
+	report.Baseline, err = baseline.describe(baseline.position(baselineVelocity))
 	if err != nil {
 		return fmt.Errorf("measure the shipped defaults: %w", err)
 	}

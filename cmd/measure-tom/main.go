@@ -33,6 +33,22 @@ func main() {
 	}
 }
 
+// flagWasSet reports whether the named flag was given on the command line, as
+// opposed to sitting at its default. FlagSet.Visit — unlike VisitAll — walks
+// only the flags that were set, which is the standard way to tell a default
+// apart from the same value typed out deliberately.
+func flagWasSet(flags *flag.FlagSet, name string) bool {
+	set := false
+
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			set = true
+		}
+	})
+
+	return set
+}
+
 func run(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("measure-tom", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -105,8 +121,13 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	report := Report{Options: options, Base: base}
 
+	// FlagSet.Visit walks only the flags that were actually set, which is how a
+	// typed "-channel mono" — a decision about a stereo capture — stays distinct
+	// from a -channel nobody passed.
+	chosenChannel := flagWasSet(flags, "channel")
+
 	for _, path := range paths {
-		take, err := measureTake(path, match.Channel(*channel), options, base)
+		take, err := measureTake(path, match.Channel(*channel), chosenChannel, options, base)
 		if err != nil {
 			return err
 		}

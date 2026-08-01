@@ -184,8 +184,16 @@ const (
 
 // measureTake loads one file and reduces it to the tables the protocol asks
 // for. base selects which partial the ratios are taken against.
-func measureTake(path string, channel match.Channel, options match.Options, base BaseRule) (Take, error) {
-	reference, err := match.LoadReference(path, channel)
+//
+// chosenChannel says whether -channel was typed rather than defaulted; a
+// multi-channel recording measured without it is refused rather than averaged,
+// because the tables written here are the ones a later fit is compared against,
+// and a reduction nobody chose makes them tables of a different signal. See
+// match.LoadReferenceExplicit.
+func measureTake(path string, channel match.Channel, chosenChannel bool,
+	options match.Options, base BaseRule,
+) (Take, error) {
+	reference, err := match.LoadReferenceExplicit(path, channel, chosenChannel)
 	if err != nil {
 		return Take{}, fmt.Errorf("%s: %w", path, err)
 	}

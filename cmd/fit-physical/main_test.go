@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"math"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/cwbudde/algo-drum/internal/drum"
 	"github.com/cwbudde/algo-drum/internal/physical"
+	"github.com/cwbudde/algo-drum/internal/physical/match"
 	"github.com/cwbudde/wav"
 	"github.com/go-audio/audio"
 )
@@ -19,6 +21,17 @@ import (
 // exercised end to end without depending on a recording the repository does not
 // ship.
 func writeSyntheticReference(t *testing.T) string {
+	t.Helper()
+
+	return writeSyntheticReferenceChannels(t, 1)
+}
+
+// writeSyntheticReferenceChannels writes the same hit into the requested number
+// of channels, so the stereo case — the shape of the repository's own
+// reference/tom.wav — can be exercised without shipping a recording. The
+// channels carry identical samples: what is under test is which reduction the
+// command was *told* to take, not what the reduction sounds like.
+func writeSyntheticReferenceChannels(t *testing.T, channels int) string {
 	t.Helper()
 
 	const (
@@ -44,6 +57,13 @@ func writeSyntheticReference(t *testing.T) string {
 		}
 	}
 
+	interleaved := make([]float32, 0, len(data)*channels)
+	for _, sample := range data {
+		for range channels {
+			interleaved = append(interleaved, sample)
+		}
+	}
+
 	path := filepath.Join(t.TempDir(), "reference.wav")
 
 	file, err := os.Create(path)
@@ -52,10 +72,10 @@ func writeSyntheticReference(t *testing.T) string {
 	}
 	defer func() { _ = file.Close() }()
 
-	encoder := wav.NewEncoder(file, sampleRate, 16, 1, 1)
+	encoder := wav.NewEncoder(file, sampleRate, 16, channels, 1)
 	if err := encoder.Write(&audio.Float32Buffer{
-		Format:         &audio.Format{NumChannels: 1, SampleRate: sampleRate},
-		Data:           data,
+		Format:         &audio.Format{NumChannels: channels, SampleRate: sampleRate},
+		Data:           interleaved,
 		SourceBitDepth: 16,
 	}); err != nil {
 		t.Fatal(err)
@@ -90,6 +110,12 @@ func TestRunRejectsInvalidOptions(t *testing.T) {
 		"absurd mallet":     {"-reference", reference, "-mallet-g", "5000"},
 		"zero loss scale":   {"-reference", reference, "-loss-scale", "0"},
 		"absurd loss scale": {"-reference", reference, "-loss-scale", "1000"},
+		"silent velocity":   {"-reference", reference, "-report-only", "-velocity", "0"},
+		"loud velocity":     {"-reference", reference, "-report-only", "-velocity", "1.5"},
+		// A stereo file with no -channel is the trap this guard closes: the
+		// default would have averaged the pair and fitted a signal nobody asked
+		// for, silently. reference/tom.wav is exactly this shape.
+		"undeclared channel": {"-reference", writeSyntheticReferenceChannels(t, 2), "-report-only"},
 	}
 
 	for name, args := range cases {
@@ -98,6 +124,52 @@ func TestRunRejectsInvalidOptions(t *testing.T) {
 
 			if err := run(args, io.Discard, io.Discard); err == nil {
 				t.Error("run() succeeded, want an error")
+			}
+		})
+	}
+}
+
+// TestRunRequiresAStatedChannelForMultiChannelReferences pins the difference
+// between a default and a decision. -channel defaults to mono, which is a real
+// reduction but a different target from either channel of a stereo capture, and
+// reference/tom.wav — everything in docs/physical-measured-fit.md and in
+// testdata/physical-fit-tom.json — is stereo fitted from its right channel. A
+// defaulted flag once cost a full-budget run, so an unstated reduction of a
+// multi-channel file is now an error; the same reduction typed out is a choice
+// and is honoured, and a genuinely mono file still needs no flag at all.
+func TestRunRequiresAStatedChannelForMultiChannelReferences(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		reference string
+		channel   string
+		wantError bool
+	}{
+		"stereo without a channel":     {writeSyntheticReferenceChannels(t, 2), "", true},
+		"stereo with mono stated":      {writeSyntheticReferenceChannels(t, 2), "mono", false},
+		"stereo with right stated":     {writeSyntheticReferenceChannels(t, 2), "right", false},
+		"mono without a channel":       {writeSyntheticReferenceChannels(t, 1), "", false},
+		"mono with the default stated": {writeSyntheticReferenceChannels(t, 1), "mono", false},
+	}
+
+	for name, test := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			args := []string{"-reference", test.reference, "-report-only", "-o", "-"}
+			if test.channel != "" {
+				args = append(args, "-channel", test.channel)
+			}
+
+			err := run(args, io.Discard, io.Discard)
+
+			switch {
+			case test.wantError && !errors.Is(err, errInvalidFitOption):
+				t.Errorf("run() error = %v, want errInvalidFitOption", err)
+			case test.wantError && !errors.Is(err, match.ErrChannelNotChosen):
+				t.Errorf("run() error = %v, want match.ErrChannelNotChosen", err)
+			case !test.wantError && err != nil:
+				t.Errorf("run() error = %v, want nil", err)
 			}
 		})
 	}
@@ -160,6 +232,56 @@ func TestReportOnlyMeasuresTheShippedDefaults(t *testing.T) {
 
 	if info, err := os.Stat(report); err != nil || info.Size() == 0 {
 		t.Errorf("report file: %v (size %v)", err, info)
+	}
+}
+
+// TestReportOnlyHonoursTheStrikeVelocity covers the one dimension of the search
+// space -fix cannot reach. Re-scoring an archived bank is only apples to apples
+// if it is re-scored at the velocity that run recorded, and velocity is not a
+// gain the metric divides out — so a report measured at the wrong one quietly
+// answers a different question.
+func TestReportOnlyHonoursTheStrikeVelocity(t *testing.T) {
+	t.Parallel()
+
+	reference := writeSyntheticReference(t)
+
+	baselineVelocity := func(extra ...string) float64 {
+		t.Helper()
+
+		path := filepath.Join(t.TempDir(), "report.json")
+
+		args := append([]string{"-reference", reference, "-report-only", "-o", path}, extra...)
+		if err := run(args, io.Discard, io.Discard); err != nil {
+			t.Fatalf("run(%v) error = %v", extra, err)
+		}
+
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var decoded struct {
+			Baseline struct {
+				Velocity01 float64 `json:"velocity01"`
+			} `json:"baseline"`
+		}
+
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			t.Fatal(err)
+		}
+
+		return decoded.Baseline.Velocity01
+	}
+
+	if got := baselineVelocity("-velocity", "0.5"); got != 0.5 {
+		t.Errorf("baseline velocity01 = %v, want 0.5", got)
+	}
+
+	// Every invocation written before the flag existed has to keep measuring
+	// what it measured, or the archived reports stop being comparable to new
+	// ones for exactly the reason the flag was added.
+	if got := baselineVelocity(); got != defaultVelocity {
+		t.Errorf("default baseline velocity01 = %v, want %v", got, defaultVelocity)
 	}
 }
 

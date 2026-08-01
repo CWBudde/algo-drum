@@ -20,6 +20,10 @@ import (
 // ErrInvalidReference reports a reference file this package cannot use.
 var ErrInvalidReference = errors.New("invalid reference signal")
 
+// ErrChannelNotChosen reports a multi-channel reference reduced by default
+// rather than by decision. See LoadReferenceExplicit for why that is refused.
+var ErrChannelNotChosen = errors.New("channel reduction not chosen")
+
 // Channel selects how a multi-channel reference is reduced to mono.
 type Channel string
 
@@ -84,6 +88,44 @@ func LoadReference(path string, channel Channel) (Reference, error) {
 	defer func() { _ = file.Close() }()
 
 	return decodeReference(file, channel)
+}
+
+// LoadReferenceExplicit is LoadReference with the default reduction guarded:
+// when the file turns out to carry more than one channel and the caller did not
+// actually choose a reduction (chosen == false), it fails instead of quietly
+// averaging the channels together.
+//
+// The reason is that ChannelMono is a defensible default and a wrong one. It is
+// a real reduction — it aligns the pair before averaging, so it is not the comb
+// filter a bare sum would be — but a stereo room capture reduced that way is a
+// *different signal* from either of its channels, and therefore a different
+// target. This repository's own reference, reference/tom.wav, is stereo, and
+// every number in docs/physical-measured-fit.md and in
+// testdata/physical-fit-tom.json was fitted to its right channel. A run that
+// omitted -channel fitted the average instead, announced nothing, printed a
+// plausible baseline and a plausible best, and left its only trace in a
+// "channel": "mono" field of the report that nobody reads. That cost a
+// full-budget fit run, which is why the ambiguity is now an error rather than a
+// default.
+//
+// "Not chosen" is deliberately not the same as "equals ChannelMono": passing the
+// mono reduction on a stereo file is a decision someone may legitimately make,
+// and it is accepted. A genuinely single-channel file needs no decision at all
+// and loads exactly as before, so mono recordings are unaffected.
+func LoadReferenceExplicit(path string, channel Channel, chosen bool) (Reference, error) {
+	reference, err := LoadReference(path, channel)
+	if err != nil {
+		return Reference{}, err
+	}
+
+	if !chosen && reference.Channels > 1 {
+		return Reference{}, fmt.Errorf(
+			"%w: %s has %d channels; pass -channel %s, %s or %s to say which one is the target",
+			ErrChannelNotChosen, path, reference.Channels, ChannelLeft, ChannelRight, ChannelMono,
+		)
+	}
+
+	return reference, nil
 }
 
 func decodeReference(reader io.ReadSeeker, channel Channel) (Reference, error) {
