@@ -23,7 +23,7 @@
 // gate in the objective would go on being quoted from a copy that no longer
 // matched the thing it was gating. Here the real Distance is called.
 //
-//	go run ./cmd/measure-objective reference/tt08x08-mp-hd-v*.wav
+//	go run ./cmd/measure-objective reference/tt08x08/lp/hd/v*.wav
 package main
 
 import (

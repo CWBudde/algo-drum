@@ -9,7 +9,7 @@ document did not ask for.
 > **Normalisation warning (2026-08-01).** Every dB figure in this document, and
 > in [`physical-nonlinearity.md`](physical-nonlinearity.md), is normalised
 > against `contactReferenceHz` = **118 Hz** — the fundamental of
-> `reference/tom.wav`, which is being retired (`PLAN.md` §"P10" item N8) and
+> `reference/tom.wav`, which was deleted on 2026-08-01 (`PLAN.md` §"P10" item N8) and
 > which was never this bank's fundamental anyway; the model's is 150.08 Hz. The
 > 118 Hz bin therefore reads the leakage skirt of the 150 Hz partial and acts as
 > an overall-level normaliser rather than as a fundamental. That was already
@@ -252,8 +252,8 @@ them reverses the sign of the whole table.
   everywhere.
 - Levels are relative to `contactReferenceHz` = 118 Hz — a retired recording's
   fundamental, not this bank's. See the warning at the top of this document; this
-  is the one thing here that still depends on `reference/tom.wav`, and it wants
-  re-pointing at 150.08 Hz in the code rather than in prose.
+  is the one thing here that still carries anything from the deleted recording,
+  and it wants re-pointing at 150.08 Hz in the code rather than in prose.
 
 ### What the mode coupling changed
 
@@ -324,7 +324,7 @@ single-change result rather than a broken one.
 ### Whether the pass is worth starting — open
 
 It was answered once, by fitting both contact models head-to-head against
-`reference/tom.wav`. Those totals are **deleted**: that recording is retired
+`reference/tom.wav`. Those totals are **deleted**: that recording is gone
 (`PLAN.md` §"P10" item N8), the objective that scored them is now known not to
 resolve most of what it reported (see
 [objective validation](physical-objective-validation.md)), and the run predated
@@ -342,11 +342,12 @@ not against any recording.
 ## Reproducing
 
 Everything above is in `internal/physical/contact_test.go`, which is in
-`just test`. No render here depends on `reference/tom.wav` — the tests run
-against `DefaultPhysicalDrum` at 44.1 kHz — but the **normalisation** does, via
-`contactReferenceHz` = 118 Hz. That constant is the retirement's one remaining
-hook into this document and into the tests that assert its tables; see the
-warning at the top.
+`just test`. No render here ever depended on `reference/tom.wav` — the tests run
+against `DefaultPhysicalDrum` at 44.1 kHz — so deleting the recording broke
+nothing here. The **normalisation** is the exception, via `contactReferenceHz` =
+118 Hz: a number read off the deleted recording and now unverifiable. That
+constant is the retirement's one remaining hook into this document and into the
+tests that assert its tables; see the warning at the top.
 
 Both tables in "What it does buy" are asserted row by row, in both coupling
 states, by `TestHertzianContactReachesPastTheModalCeiling`, to ±1.5 dB. Its

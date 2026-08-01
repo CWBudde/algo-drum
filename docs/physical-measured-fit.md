@@ -5,8 +5,8 @@ and how the search is run — together with what that objective can and cannot
 resolve, and the two model errors that survive the measurement.
 
 It does not report a current fit. Every fitted bank in the repository was
-measured against `reference/tom.wav`, a recording of unknown provenance now
-being retired, and against an objective whose partial terms have since been
+measured against `reference/tom.wav`, a recording of unknown provenance deleted
+from the working tree on 2026-08-01, and against an objective whose partial terms have since been
 shown not to reproduce. Both are covered by
 [PLAN.md § P10](../PLAN.md#open-work-p10),
 which is the authority for the plan; this page is the method and the evidence
@@ -20,9 +20,9 @@ before quoting any partial term from any run, past or future.
 
 ## The reference
 
-The committed reference is the licensed set `reference/tt08x08-mp-hd-v01..v16.wav`
+The committed reference is the licensed set `reference/tt08x08/lp/hd/v01..v16.wav`
 — an 8" × 8" tom, Remo coated Ambassador batter and clear Diplomat resonant
-head, medium tuning, head strikes at sixteen velocities, 48 kHz 24-bit stereo,
+head, low tuning, head strikes at sixteen velocities, 48 kHz 24-bit stereo,
 CC BY 4.0 (Freesound user `quartertone`, pack "Tomtom 08x08inch-multisampled").
 `reference/CREDITS.md` is committed and is the authority on licence, attribution,
 what was verified and what was not, and the measured properties of the files.
@@ -30,19 +30,22 @@ what was verified and what was not, and the measured properties of the files.
 Two properties of it matter for everything below:
 
 - **The stereo pair is coincident.** Peak inter-channel correlation falls at
-  exactly 0 samples of lag, at 0.87–0.97 across the set. Summing to mono is safe
-  — there is no comb filter — and, more importantly, the two channels are two
-  observations of the same acoustic event, which is what makes the
-  reproducibility measurement below possible.
+  0 samples of lag on thirteen of the sixteen and 1 sample on the other three, at
+  0.944–0.990 across the set. One sample at 48 kHz is 21 µs, so summing to mono
+  is safe — the first comb null sits at 24 kHz — and, more importantly, the two
+  channels are two observations of the same acoustic event, which is what makes
+  the reproducibility measurement below possible.
 - **The instrument is stated.** Shell diameter and depth are known, so `SIZE` and
   `DEPTH` are constants rather than fitted parameters, and the head gauges fix
   both surface densities. Strike position and angle and microphone position and
   angle remain fitted.
 
 `reference/tom.wav` — 44.1 kHz, a **spaced** pair 1.56 ms apart correlating 0.36
-at zero lag, no stated instrument, no licence, not committable — is superseded
-and is being retired (P10's N8). It is a timbre-match target and never was an
-acoustic validation recording; no test depends on it.
+at zero lag, no stated instrument, no licence, never committable — was superseded
+and then **deleted on 2026-08-01** (P10's N8). It was a timbre-match target and
+never an acoustic validation recording; no test depended on it, so nothing in
+the suite changed when it went. Every dimension of it quoted in this document is
+a measurement recorded while it existed and cannot now be re-checked.
 
 ## What is measured
 
@@ -80,44 +83,64 @@ of the coincident reference pair, scored channel-against-channel in both
 directions — the floor below which a candidate is indistinguishable from a second
 microphone at the same point:
 
-| Term              | Old gate | Measured p90 | Gate now |
-| ----------------- | -------- | ------------ | -------- |
-| Partial frequency | 25 ¢     | 113.0 ¢      | 115 ¢    |
-| Partial level     | 3 dB     | 17.85 dB     | 18 dB    |
-| Partial decay     | 0.25\*   | 1.262        | 1.25     |
-| Spectral envelope | 4 dB     | 3.65 dB      | **4 dB** |
-| Envelope          | 3 dB     | 3.81 dB      | 4 dB     |
-| Glide             | 40 ¢     | 310.3 ¢      | 310 ¢    |
-| Attack balance    | 6 dB     | 1.12 dB      | 1.2 dB   |
-| Unmatched share   | 0.5      | 0.880        | 0.9      |
-| Spurious share    | 0.5      | 0.346        | 0.9      |
+The measurement has been made three times: twice on the medium-pitch set, before
+and after the estimator repair of P10/N2, and once on the low-pitch set that
+replaced it as the reference on 2026-08-01. The current gates are the last
+column.
+
+| Term              | Asserted | `mp/hd` defective | `mp/hd` repaired | `lp/hd` p90 | Gate now |
+| ----------------- | -------- | ----------------- | ---------------- | ----------- | -------- |
+| Partial frequency | 25 ¢     | 113.0 ¢           | 76.2 ¢           | 65.0 ¢      | 70 ¢     |
+| Partial level     | 3 dB     | 17.85 dB          | 6.81 dB          | 6.76 dB     | 7 dB     |
+| Partial decay     | 0.25\*   | 1.262             | 0.558            | 0.589       | 0.6      |
+| Spectral envelope | 4 dB     | 3.65 dB           | 3.67 dB          | 3.24 dB     | 3.5 dB   |
+| Envelope          | 3 dB     | 3.81 dB           | 3.84 dB          | 1.38 dB     | 1.5 dB   |
+| Glide             | 40 ¢     | 310.3 ¢           | 280.1 ¢          | **2.3 ¢**   | 10 ¢     |
+| Attack balance    | 6 dB     | 1.12 dB           | 1.13 dB          | 0.81 dB     | 0.9 dB   |
+| Unmatched share   | 0.5      | 0.880             | 0.250            | 0.280       | 0.3      |
+| Spurious share    | 0.5      | 0.346             | 0.245            | 0.293       | 0.3      |
 
 \* the old decay _weight_ was `1/0.35` against a gate documented as 0.25 — the one
 place the reciprocal rule was silently broken, so every decay contribution ever
 reported was scaled by a threshold nobody had adopted.
 
-Three things follow, and they are the point of the table:
+What the three columns say, in order:
 
-- **The spectral envelope is the only gate that was ever right.** Its floor is
-  3.65 dB against a gate of 4. Every conclusion drawn from that term stands.
-- **The partial terms were never gateable.** 115 cents is more than a semitone;
-  the number is honest and useless as a quality statement. They are kept at that
-  scale so a candidate cannot be _worse_ than noise, and nothing more is claimed
-  for them until P10/N2 repairs the estimators.
-- **Attack balance was the most reproducible term in the objective and carried the
-  least weight** — 0.26 dB median self-disagreement, better than the spectral
-  envelope's, against a weight of `1/6`. It is now `1/1.2`.
+- **The spectral envelope is the term that was always right.** 3.65 → 3.67 → 3.24
+  dB: neither the estimator defect nor the change of drum moved it. Every
+  conclusion drawn from that term stands.
+- **The estimator repair fixed level, decay and coverage**, which had been
+  measuring three collapsed takes and nothing else, and the trimming fixed
+  frequency. Neither substitutes for the other; both are P10/N2.
+- **The change of drum fixed glide**, by a factor of 120, with the estimator
+  untouched. The glide estimator needs the fundamental to survive to its late
+  probe; the medium-pitch fundamental does not and the low-pitch one does. The
+  standing claim that "glide is broken" was a statement about the target, and is
+  withdrawn. What survives is narrower and still worth carrying: the estimator
+  fails **silently** when the fundamental dies early, so glide is trustworthy
+  only on a reference where it has been checked.
+- **"The partial terms were never gateable" is withdrawn.** 65 cents is a wide
+  tolerance, not an unusable one. The six rounds of intervention aimed at the old
+  25-cent and 0.25 gates were nonetheless aimed at thresholds nothing could
+  reach; that much stands.
 
-The consequence is arithmetic and damning: at the old weights the objective's
-disagreement with itself totalled **12.89**, while the best fit ever recorded
-scored **10.38** — below the noise floor. At the measured weights the floor is
-**4.32 median / 6.46 at p90**, with no term contributing more than 0.79 at its own
-median. Every total recorded before this change is on the old scale and is not
-comparable to anything after it.
+Read totals against the floor, never alone: on this reference the objective's
+disagreement with itself totals **5.92 at the median and 6.68 at p90** under
+these weights, and every term's p90 lands at or under its own gate. Two things
+moved between the last gate set and this one — the weights and the drum — so no
+total recorded before 2026-08-01 is comparable to any recorded after it, in
+either direction.
 
-`Spurious` is the one deliberate departure: its floor of 0.346 would justify
-`1/0.35`, which is 2.6× `Unmatched` — an asymmetry a fit run has already refuted
-(see below). Both keep `Unmatched`'s gate.
+The **glide gate of 10 cents deserves separate warning**. A candidate whose bend
+is 30 cents wrong used to contribute 0.10 to the total and now contributes 3.0.
+Glide has gone from a term the objective could not see to one of the two or three
+most able to dominate a total, and no fit has yet been run under it.
+
+`Spurious` used to be a deliberate departure from the reciprocal rule, because on
+`mp/hd` its floor came out just under `Unmatched`'s and an asymmetry in that
+direction had already been refuted by a fit run (see below). On `lp/hd` the two
+land the other way round and round to the same 0.3, so the equality is now what
+the measurement says rather than an override of it.
 
 Partials are identified greedily by closeness in cents, each candidate claimed at
 most once, with a tolerance that widens with mode index. Real two-headed drums
@@ -288,8 +311,8 @@ A reference with more than one channel and no `-channel` on the command line is
 three choices. A full budget was once spent on a target nobody intended, leaving
 its only trace in a `"channel"` field of a report nobody read. Only an absent flag
 is refused; `-channel mono` typed out is a decision and is honoured — and on the
-coincident licensed pair it is the right one, where on the spaced `tom.wav` it
-notched the spectrum.
+coincident licensed pair it is the right one, where on the retired spaced pair
+it notched the spectrum.
 
 `-progress N` reports every N objective evaluations from inside the objective
 itself — the one place every restart passes through, since mayfly offers no
@@ -497,7 +520,8 @@ Four things must line up or the answer is about a different drum:
   report's `search` block. A Standard-tier bank re-scored at Draft is a different
   instrument.
 - **`-channel` as the run used it**, from `reference.channel`.
-- **Any flag the search itself was run under.** `-loss-scale` and `-mallet-g`
+- **Any flag the search itself was run under.** `-loss-scale`, `-mallet-g` and
+  `-mode-correction`
   describe a drum the product cannot be set to; dropping them re-measures the bank
   on an instrument the run was never fitted to, so such runs have no comparable
   total and must not be tabulated with ordinary ones.

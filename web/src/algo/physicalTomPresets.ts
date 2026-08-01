@@ -33,6 +33,11 @@ export const DEFAULT_PHYSICAL_TOM_PRESET: PhysicalTomPreset = {
 /**
  * The best fit to `reference/tom.wav`, from `cmd/fit-physical`.
  *
+ * **Orphaned as of 2026-08-01**: that recording has been deleted (PLAN.md
+ * P10/N8), so this bank can no longer be reproduced, re-scored or improved
+ * against its own target. It is kept only until the joint fit against the
+ * licensed sixteen-velocity reference replaces it (PLAN.md N5).
+ *
  * A preset rather than the shipped default on purpose: it matches the
  * recording's envelope, glide and attack balance closely and covers most of its
  * partials, but it misses all three adoption-gate terms — partial frequency

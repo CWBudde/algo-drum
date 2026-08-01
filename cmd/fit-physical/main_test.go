@@ -28,8 +28,8 @@ func writeSyntheticReference(t *testing.T) string {
 }
 
 // writeSyntheticReferenceChannels writes the same hit into the requested number
-// of channels, so the stereo case — the shape of the repository's own
-// reference/tom.wav — can be exercised without shipping a recording. The
+// of channels, so the stereo case — the shape of both the licensed reference
+// and the retired one — can be exercised without shipping a recording. The
 // channels carry identical samples: what is under test is which reduction the
 // command was *told* to take, not what the reduction sounds like.
 func writeSyntheticReferenceChannels(t *testing.T, channels int) string {
@@ -115,7 +115,7 @@ func TestRunRejectsInvalidOptions(t *testing.T) {
 		"loud velocity":     {"-reference", reference, "-report-only", "-velocity", "1.5"},
 		// A stereo file with no -channel is the trap this guard closes: the
 		// default would have averaged the pair and fitted a signal nobody asked
-		// for, silently. reference/tom.wav is exactly this shape.
+		// for, silently. Both references are exactly this shape.
 		"undeclared channel": {"-reference", writeSyntheticReferenceChannels(t, 2), "-report-only"},
 	}
 
@@ -133,10 +133,10 @@ func TestRunRejectsInvalidOptions(t *testing.T) {
 // TestRunRequiresAStatedChannelForMultiChannelReferences pins the difference
 // between a default and a decision. -channel defaults to mono, which is a real
 // reduction but a different target from either channel of a stereo capture, and
-// reference/tom.wav — everything in docs/physical-measured-fit.md and in
-// testdata/physical-fit-tom.json — is stereo fitted from its right channel. A
-// defaulted flag once cost a full-budget run, so an unstated reduction of a
-// multi-channel file is now an error; the same reduction typed out is a choice
+// the reference every archived total was fitted against was stereo, reduced to
+// its right channel alone because that pair was spaced and summing it combed
+// the target. A defaulted flag once cost a full-budget run, so an unstated
+// reduction of a multi-channel file is now an error; the same typed out is a choice
 // and is honoured, and a genuinely mono file still needs no flag at all.
 func TestRunRequiresAStatedChannelForMultiChannelReferences(t *testing.T) {
 	t.Parallel()
@@ -493,7 +493,7 @@ func TestSearchBlindPutsThemBack(t *testing.T) {
 func TestAResumeAcrossSearchBlindIsRefused(t *testing.T) {
 	t.Parallel()
 
-	narrow := Fingerprint{Reference: "tom.wav", Quality: "draft"}
+	narrow := Fingerprint{Reference: "tt08x08/lp/hd/v08.wav", Quality: "draft"}
 
 	wide := narrow
 	wide.SearchBlind = true
@@ -557,5 +557,159 @@ func TestABlindParameterIsReportedAsBlindRatherThanMerelyFixed(t *testing.T) {
 	if !sawBlind || !sawFixedNotBlind {
 		t.Fatalf("the report did not carry both cases (blind %v, caller-fixed %v)",
 			sawBlind, sawFixedNotBlind)
+	}
+}
+
+// correctionFor returns a head's correction for one mode, and whether it has
+// one at all.
+func correctionFor(head physical.Head, azimuthal, radial int) (float64, bool) {
+	for _, entry := range head.ModeDecayCorrections {
+		if entry.AzimuthalOrder == azimuthal && entry.RadialOrder == radial {
+			return entry.DecayRatePerSecond, true
+		}
+	}
+
+	return 0, false
+}
+
+func defaultBank(t *testing.T) []float64 {
+	t.Helper()
+
+	specs := drum.PhysicalTomSpecs()
+
+	bank := make([]float64, len(specs))
+	for index, spec := range specs {
+		bank[index] = spec.Default
+	}
+
+	return bank
+}
+
+// TestModeCorrectionAddsAnEntryToBothHeads covers the whole point of the flag:
+// N3 asks what a second correction-table entry at the (1,1) is worth, and the
+// only honest way to answer is to render a drum that has one.
+func TestModeCorrectionAddsAnEntryToBothHeads(t *testing.T) {
+	t.Parallel()
+
+	subject := &evaluator{
+		bank:         defaultBank(t),
+		sampleRateHz: 44100,
+		corrections: []physical.ModeDecayCorrection{
+			{AzimuthalOrder: 1, RadialOrder: 1, DecayRatePerSecond: 12.5},
+		},
+	}
+
+	config, err := subject.config()
+	if err != nil {
+		t.Fatalf("config() error = %v", err)
+	}
+
+	for name, head := range map[string]physical.Head{
+		"batter": config.Batter, "resonant": config.Resonant,
+	} {
+		rate, found := correctionFor(head, 1, 1)
+		if !found {
+			t.Errorf("%s head has no (1,1) correction", name)
+
+			continue
+		}
+
+		if rate != 12.5 {
+			t.Errorf("%s head (1,1) correction = %v, want 12.5", name, rate)
+		}
+	}
+
+	// The shipped (0,1) entry is a separate mode and must survive untouched,
+	// or the flag would be silently replacing the model's one calibrated
+	// correction with the experiment's uncalibrated one.
+	if rate, found := correctionFor(config.Batter, 0, 1); !found || rate == 0 {
+		t.Errorf("the shipped (0,1) correction is gone: %v, %v", rate, found)
+	}
+}
+
+// TestModeCorrectionReplacesRatherThanAppends matters because the configuration
+// rejects two rates for one mode outright — so an append would not produce a
+// differently-damped drum, it would produce no drum at all.
+func TestModeCorrectionReplacesRatherThanAppends(t *testing.T) {
+	t.Parallel()
+
+	subject := &evaluator{
+		bank:         defaultBank(t),
+		sampleRateHz: 44100,
+		corrections: []physical.ModeDecayCorrection{
+			{AzimuthalOrder: 0, RadialOrder: 1, DecayRatePerSecond: 5},
+		},
+	}
+
+	config, err := subject.config()
+	if err != nil {
+		t.Fatalf("config() error = %v", err)
+	}
+
+	if _, err := physical.NewDoubleHead(config); err != nil {
+		t.Fatalf("the overridden config does not build a drum: %v", err)
+	}
+
+	entries := 0
+
+	for _, entry := range config.Batter.ModeDecayCorrections {
+		if entry.AzimuthalOrder == 0 && entry.RadialOrder == 1 {
+			entries++
+
+			if entry.DecayRatePerSecond != 5 {
+				t.Errorf("(0,1) correction = %v, want 5", entry.DecayRatePerSecond)
+			}
+		}
+	}
+
+	if entries != 1 {
+		t.Errorf("batter head holds %d entries for the (0,1), want 1", entries)
+	}
+}
+
+func TestModeCorrectionRejectsWhatIsNotACorrection(t *testing.T) {
+	t.Parallel()
+
+	for _, text := range []string{
+		"1,1",   // no rate
+		"11=4",  // no comma
+		"1,x=4", // radial order is not a number
+		"x,1=4", // azimuthal order is not a number
+		"1,1=fast? ",
+		"1,0=4",  // there is no n = 0 Bessel zero
+		"1,1=-4", // a negative rate is a source, not a loss
+		"-1,1=4",
+	} {
+		flag := &correctionFlag{}
+		if err := flag.Set(text); err == nil {
+			t.Errorf("Set(%q) was accepted", text)
+		}
+	}
+
+	flag := &correctionFlag{}
+	if err := flag.Set(" 1 , 1 = 12.5 "); err != nil {
+		t.Errorf("Set() rejected a spaced-out pair: %v", err)
+	}
+
+	if got, want := flag.String(), "1,1=12.5"; got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+}
+
+// TestAResumeAcrossModeCorrectionsIsRefused guards the quieter of the two
+// checkpoint hazards. Unlike -search-blind this does not change the width of a
+// position vector, so a resume across it would read every stored point
+// correctly and score it against a drum with a different loss law — and nothing
+// in the resulting report would look wrong.
+func TestAResumeAcrossModeCorrectionsIsRefused(t *testing.T) {
+	t.Parallel()
+
+	plain := Fingerprint{Reference: "tt08x08/lp/hd/v08.wav", Quality: "standard"}
+
+	corrected := plain
+	corrected.ModeCorrections = "1,1=12.5"
+
+	if plain.disagreement(corrected) == "" {
+		t.Error("a checkpoint taken with -mode-correction resumes into a run without it")
 	}
 }

@@ -9,6 +9,26 @@ this file holds the **method, the commands to reproduce it, and the raw numbers*
 so that the conclusions elsewhere can be checked rather than believed. Nothing
 here should be restated at length elsewhere — link to it instead.
 
+> **Which drum these numbers are from (2026-08-01).** Everything below Result 1
+> was measured on `reference/tt08x08/mp/hd/`, the medium-pitch head strikes. The
+> project's reference has since moved to the **low-pitch** set,
+> `reference/tt08x08/lp/hd/`, chosen on the sound. Two things follow, and the
+> distinction between them is the whole point of this document:
+>
+> - **The gate measurement has been redone on the new set** and the shipped gates
+>   are the low-pitch ones. The comparison, and the finding that came out of it —
+>   the glide term's floor improves by a factor of 120 on a drum whose fundamental
+>   outlives the estimator's late probe — are in
+>   [`reference/CREDITS.md`](../reference/CREDITS.md) and in
+>   [`physical-measured-fit.md`](physical-measured-fit.md). It refutes this
+>   document's standing assumption that the floor is a property of the estimator
+>   alone; it is a property of estimator *and* target.
+> - **Results 2 onward have not been re-measured.** They are still true statements
+>   about the medium-pitch set and the paths in their reproduction commands are
+>   current, so each can be re-run. Until that is done, do not quote any of them
+>   as a property of the reference the fit now aims at. Re-running them is
+>   `PLAN.md` N15.
+
 ## Why this was needed
 
 Every judgement on the physical path had been made by
@@ -32,9 +52,9 @@ shipped defaults and stops — seconds, not minutes. So the whole experiment is 
 extractions and one distance evaluation:
 
 ```bash
-go run ./cmd/fit-physical -reference reference/tt08x08-mp-hd-v08.wav \
+go run ./cmd/fit-physical -reference reference/tt08x08/mp/hd/v08.wav \
     -channel left  -report-only -o /tmp/target-left.json
-go run ./cmd/fit-physical -reference reference/tt08x08-mp-hd-v08.wav \
+go run ./cmd/fit-physical -reference reference/tt08x08/mp/hd/v08.wav \
     -channel right -report-only -o /tmp/target-right.json
 # then evaluate match.Distance(target_right, target_left)
 ```
@@ -57,9 +77,13 @@ where the real objective reports 58.5. Use the validated path.
 
 ## Result 1 — the objective disagrees with itself
 
-### On a coincident pair (the strong result)
+### On a coincident pair (the strong result), medium pitch
 
-`reference/tt08x08-mp-hd-*.wav` is a **coincident** XY pair: peak inter-channel
+Superseded as a gate source by the low-pitch measurement — see the note at the
+top — but kept in full, because the three-way comparison in
+[`reference/CREDITS.md`](../reference/CREDITS.md) is only readable against it.
+
+`reference/tt08x08/mp/hd/v*.wav` is a **coincident** XY pair: peak inter-channel
 correlation falls at **exactly 0 samples of lag**, at 0.87–0.97. Two microphones
 at the same point in space. There is no room-path or arrival-time explanation
 available for any disagreement between them.
@@ -81,7 +105,7 @@ directions, since the objective is not symmetric:
 | **Total**         |  8.584 | **12.893** |  16.998 |      19.080 |  25.254 |
 
 To reproduce: run the two `-report-only` extractions above for each of
-`reference/tt08x08-mp-hd-v01.wav` … `v16.wav`, then evaluate the validated
+`reference/tt08x08/mp/hd/v01.wav` … `v16.wav`, then evaluate the validated
 `match.Distance` reimplementation both ways round on each pair and take the order
 statistics per term. The reimplementation is a scratch file rather than repository
 code, deliberately — it is only trustworthy while it reproduces `distance.go`
@@ -272,7 +296,7 @@ fundamental predicts every other mode with no free parameter.
 | Source                        | (1,1)/(0,1) |
 | ----------------------------- | ----------- |
 | Ideal circular membrane       | 1.594       |
-| **`tt08x08-mp-hd`, measured** | **1.584**   |
+| **`tt08x08/mp/hd`, measured** | **1.584**   |
 | Air-loaded prediction         | ~1.78       |
 
 An **11-cent** match to the ideal model, ~950 cents from the air-loaded
@@ -297,7 +321,7 @@ two independent runs already agree term for term.
 
 ## Result 4 — the two references, characterised
 
-|                 | `tom.wav` (retired)                             | `tt08x08-mp-hd-*` (current)                          |
+|                 | `tom.wav` (retired)                             | `tt08x08/mp/hd` (superseded)                          |
 | --------------- | ----------------------------------------------- | ---------------------------------------------------- |
 | Provenance      | unknown                                         | Freesound `quartertone`, stated                      |
 | Licence         | none                                            | **CC BY 4.0**                                        |
@@ -329,7 +353,7 @@ refitted against either.
 The second estimator is subband ESPRIT with a stabilisation sweep
 (`internal/physical/match/esprit.go`), run over all sixteen medium-pitch
 head-strike velocities, mono, with
-`go run ./cmd/measure-tom -channel mono -high-resolution reference/tt08x08-mp-hd-v*.wav`.
+`go run ./cmd/measure-tom -channel mono -high-resolution reference/tt08x08/mp/hd/v*.wav`.
 It is measurement equipment: nothing in a fit calls it, and `Distance` does not
 know it exists. Its accuracy is pinned on synthetic signals of known content in
 `esprit_test.go` — 0.1 Hz on frequency, 2 % on ring time.
@@ -749,6 +773,92 @@ as well as `fixed` so that its value cannot be read as a fitted result. It remai
 a user knob — it is audible, and a player setting it is making no claim about a
 recording. `-search-blind` puts it back for the deliberate experiment of
 re-testing this, which is the only way the claim above stays revisable.
+
+## Result 10 — the reference's ring time is flat in frequency, not ∝ 1/f
+
+Results 8 and 9 established a defect in the model's damping _distribution_ and
+that its pairwise part is real. Neither says what shape the reference actually
+wants, and the model's loss law has been calibrated to a stated one since P2:
+"measured membrane behaviour is \(T_{60} \propto 1/f\)", i.e. constant \(\zeta\),
+which is why \(d_1\) dominates and \(d_0\) is held at a small floor
+([`physical-calibration.md`](physical-calibration.md)). That premise is now
+measurable against the committed reference, and it does not survive.
+
+`go run ./cmd/measure-tom -channel mono reference/tt08x08/mp/hd/v*.wav`, 16 takes,
+256 partials, at the shipped 0.05–0.6 s decay window. Third-octave medians:
+
+| band (Hz) |   n | median T60 (s) |
+| --------- | --: | -------------: |
+| 315–397   |  11 |          0.280 |
+| 397–500   |   7 |          0.419 |
+| 500–630   |  11 |          0.807 |
+| 794–1000  |  27 |          0.823 |
+| 1000–1260 |  18 |          0.276 |
+| 1260–1587 |  27 |          0.501 |
+| 1587–2000 |  37 |          0.348 |
+| 2000–2520 |  38 |          0.290 |
+| 2520–3175 |  78 |          0.256 |
+
+**Across a decade of frequency the ring time does not fall.** \(T_{60} \propto
+1/f\) anchored at the 352 Hz measurement predicts 34 ms at 2.9 kHz; the reference
+gives **256 ms**, too long by 7.5×. What the table shows instead is \(T_{60}\)
+roughly constant — which is \(\gamma\) constant, which is the \(d_0\)-dominant law,
+the one the calibration deliberately moved _away_ from.
+
+The mode identification is not in doubt, because the geometry is known. The 304
+and 352 Hz components are the two branches of the \((0,1)\): their ratio is
+**1.157**, against Fischer's measured 1.16 for a two-headed drum. The 482 Hz
+component is the \((1,1)\): 482.37/304.01 = **1.587** against the ideal 1.594, and
+against the 1.584 Result 3 already recorded for this drum.
+
+### The window, checked before the conclusion
+
+A decay estimate can be manufactured by the window it is fitted over, and the
+long values here sit close to the takes' own whole-signal RT60 (0.65–0.97 s), so
+this was checked rather than assumed. Every partial was re-measured at four other
+window ends and matched to its own 0.6 s estimate by frequency, within 0.5 %:
+
+| window end | matched pairs | median ΔT60 | below 1 kHz | above 1 kHz |
+| ---------- | ------------: | ----------: | ----------: | ----------: |
+| 0.20 s     |           112 |      25.3 % |      64.1 % |      19.6 % |
+| 0.30 s     |           148 |      11.7 % |      25.6 % |       7.5 % |
+| 0.45 s     |           199 |       3.8 % |       8.6 % |       2.7 % |
+| 0.90 s     |           196 |       2.2 % |       9.1 % |       1.0 % |
+
+Extending the window by half moves the estimate by 2.2 %, so the shipped window
+is long enough for what it is measuring. The instability at 0.2–0.3 s is the
+window failing to span the decay, not the estimator failing — which is the
+expected direction and is why the guard N2 added is a floor on span rather than
+on sample count.
+
+**One thing this does not establish**, stated because it bounds the conclusion:
+every take has 0 ms of pre-roll and an unmeasurable noise floor, and the
+500–1000 Hz band's 0.81 s sits inside the takes' own RT60. Nothing here can
+separate a mode that rings for 0.8 s from a room that does. The claim above does
+not rest on that band: it is about the ratio between 315 Hz and 3.2 kHz, and if
+the 500–1000 Hz bump is the room then the reference is **flatter** still.
+
+### What it means for N3
+
+The lever is already in the bank and it is not a correction-table entry. `D.TILT`
+scales \(d_1\) and \(d_2\) and leaves \(d_0\) alone, so the \(d_0\):\(d_1\)
+balance — the whole difference between a constant-\(\gamma\) law and a
+constant-\(\zeta\) one — is exactly what it moves, over a 0–3 range that reaches
+\(\gamma = d_0\) exactly at zero. Its own documentation already names that end
+"flat (every mode rings for the same time, which is what the model used to do)" —
+so the shape this reference asks for is one the model shipped before P2's
+calibration replaced it with constant Q on the strength of the premise measured
+above. Result 8's structural finding follows directly
+from which end of that range the model ships at: with \(d_1\) dominant
+\(\gamma \propto k\), so the lowest uncorrected mode necessarily rings longest,
+and the \((1,1)\) is that mode. With \(\gamma\) flat it is not.
+
+This does not make a second correction entry wrong, and it does not make it right;
+it says the entry would be patching one mode of a law whose _slope_ is the thing
+the reference disagrees with. The measurement that settles it is a fit against
+this reference — the first one ever made against it, every archived fit having
+targeted the retired `tom.wav` — read for where `D.TILT` lands and whether it
+pins. That run is what N3 now waits on.
 
 ## What this changes
 

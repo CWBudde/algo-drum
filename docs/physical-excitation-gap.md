@@ -1,8 +1,8 @@
 # The excitation-spectrum gap
 
 This document used to be a study of a band deficit measured against
-`reference/tom.wav`. That recording is being retired — unknown provenance,
-unlicensed, 44.1 kHz, spaced stereo pair; see `PLAN.md` §"P10" item N8 and
+`reference/tom.wav`. That recording was deleted on 2026-08-01 — unknown
+provenance, unlicensed, 44.1 kHz, spaced stereo pair; see `PLAN.md` §"P10" item N8 and
 `reference/CREDITS.md` for the licensed replacement. Everything that counted or
 compared partials in that recording has been **deleted** rather than annotated.
 

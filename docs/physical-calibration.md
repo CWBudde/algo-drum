@@ -45,6 +45,17 @@ whose only frequency-independent contribution is the middle term: choosing
 alone gives \(T_{60}\) independent of frequency and \(d_2\) alone gives
 \(T_{60} \propto 1/f^2\). Measured membrane behaviour is \(T_{60} \propto 1/f\).
 
+> **The committed reference does not show that**, and the whole choice below
+> rests on it. Over 315 Hz–3.2 kHz the licensed tom's \(T_{60}\) is roughly
+> **constant**, not \(\propto 1/f\): 0.28 s at 352 Hz and 0.26 s at 2.9 kHz, where
+> the constant-\(\zeta\) law anchored at the first predicts 34 ms at the second.
+> That is the \(d_0\)-dominant shape — the one this section moved away from. The
+> measurement, its mode identification and the window checks that precede it are
+> [`physical-objective-validation.md` §Result 10](physical-objective-validation.md);
+> what to do about it is [P10/N3](../PLAN.md), which is waiting on a fit against
+> that reference. Nothing below has been changed yet, because a calibration is not
+> re-anchored on one drum without one.
+
 The reference set uses \(\zeta = 0.72\,\%\), so \(d_1 = 0.4303\) m/s on the
 batter (\(c = 59.76\) m/s) and \(0.4644\) m/s on the resonant head
 (\(c = 64.50\) m/s), with \(d_0\) reduced to a small floor. The retained band
@@ -338,7 +349,7 @@ an acoustic validation recording and must not be described as one.
 ## The recorded reference set
 
 The synthetic fixture above is a regression anchor. Acoustic validation uses
-`reference/tt08x08-mp-hd-v01`–`v16.wav`, and that set is the first one on this
+`reference/tt08x08/lp/hd/v01`–`v16.wav`, and that set is the first one on this
 path whose provenance is known:
 
 - **Licence** CC BY 4.0, with the attribution
@@ -358,9 +369,9 @@ fitting objective be scored against itself. What that measurement found — the
 objective's self-disagreement, the residual budget, and four refuted hypotheses —
 is in [`physical-objective-validation.md`](physical-objective-validation.md).
 
-`reference/tom.wav`, which earlier work on this path was fitted against, is
-44.1 kHz, a spaced pair, of unknown provenance and unlicensed. It is being
-retired ([P10/N8](../PLAN.md)) and no number derived from it survives in this
+`reference/tom.wav`, which earlier work on this path was fitted against, was
+44.1 kHz, a spaced pair, of unknown provenance and unlicensed. It was deleted on
+2026-08-01 ([P10/N8](../PLAN.md)) and no number derived from it survives in this
 document.
 
 ## Dependency compatibility

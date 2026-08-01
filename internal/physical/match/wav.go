@@ -109,9 +109,11 @@ func LoadReference(path string, channel Channel) (Reference, error) {
 // default.
 //
 // Note that mono is the *right* reduction for a coincident pair, where there is
-// no arrival-time difference to smear — reference/tt08x08-mp-hd-*.wav peaks at
-// exactly 0 samples of lag. The guard is not an argument against ChannelMono; it
-// is an argument against taking it without deciding. See reference/CREDITS.md.
+// no arrival-time difference to smear — reference/tt08x08/lp/hd/v*.wav peaks at
+// 0 samples of lag on thirteen of the sixteen and 1 sample on the other three,
+// and one sample at 48 kHz is 21 µs, which combs nothing inside the band. The
+// guard is not an argument against ChannelMono; it is an argument against taking
+// it without deciding. See reference/CREDITS.md.
 //
 // "Not chosen" is deliberately not the same as "equals ChannelMono": passing the
 // mono reduction on a stereo file is a decision someone may legitimately make,

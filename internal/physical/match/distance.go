@@ -123,40 +123,60 @@ type Weights struct {
 //
 // The gates are **measured**, not chosen. Each is the 90th percentile of the
 // objective's disagreement with itself, taken over the sixteen velocities of
-// reference/tt08x08-mp-hd-*.wav scored channel-against-channel in both
+// reference/tt08x08/lp/hd/v*.wav scored channel-against-channel in both
 // directions — 32 scorings. That pair is coincident: peak inter-channel
-// correlation at exactly 0 samples of lag on every one of the sixteen, at
-// 0.85-0.93. The two signals are two observations of one acoustic event, so any
-// disagreement between them is the instrument's own noise floor, and a candidate
-// at its gate is indistinguishable from a second microphone at the same point in
-// space. cmd/measure-objective performs the measurement, through this Distance
-// rather than through a copy of it.
+// correlation at 0 samples of lag on thirteen of the sixteen and 1 sample on the
+// other three, at 0.944-0.990. The two signals are two observations of one
+// acoustic event, so any disagreement between them is the instrument's own noise
+// floor, and a candidate at its gate is indistinguishable from a second
+// microphone at the same point in space. cmd/measure-objective performs the
+// measurement, through this Distance rather than through a copy of it.
 //
-// They were measured once before, on 2026-08-01, and that measurement was taken
-// through an estimator with a defect in it: three of the sixteen takes were being
-// collapsed to one- or two-partial tables, and contributed those to the
-// distribution. This is the re-measurement after the repair. It moved five of the
-// nine gates, four of them by more than a factor of two, and every move was in the
-// direction of a *harder* target.
+// They have now been measured three times, and the third measurement is a
+// different *drum*, not a different estimator. The reference set moved from the
+// medium-pitch head strikes to the low-pitch ones on 2026-08-01, because that is
+// the sound the fit is now aiming at; the floor is a property of the estimator
+// **and of what it is pointed at**, so it had to be re-derived rather than
+// carried over. All three columns are the p90 of the same 32 scorings, taken
+// through this Distance:
 //
-//	term               2026-08-01  re-measured  gate now
-//	partial frequency     113.0 ¢       76.2 ¢      80 ¢
-//	partial level          17.85 dB      6.81 dB     7 dB
-//	partial decay           1.262        0.558       0.6
-//	spectral envelope       3.65 dB      3.67 dB     4 dB
-//	envelope                3.81 dB      3.84 dB     4 dB
-//	glide                 310.3 ¢      280.1 ¢     290 ¢
-//	attack balance          1.12 dB      1.13 dB     1.2 dB
-//	unmatched share         0.880        0.250       0.3
-//	spurious share          0.346        0.245       0.3  (see below)
+//	term              mp-hd, defective  mp-hd, repaired  lp-hd (current)  gate now
+//	partial frequency        113.0 ¢           76.2 ¢          65.0 ¢       70 ¢
+//	partial level             17.85 dB          6.81 dB         6.76 dB      7 dB
+//	partial decay              1.262            0.558           0.589        0.6
+//	spectral envelope          3.65 dB          3.67 dB         3.24 dB      3.5 dB
+//	envelope                   3.81 dB          3.84 dB         1.38 dB      1.5 dB
+//	glide                    310.3 ¢          280.1 ¢           2.3 ¢       10 ¢
+//	attack balance             1.12 dB          1.13 dB         0.81 dB      0.9 dB
+//	unmatched share            0.880            0.250           0.280        0.3
+//	spurious share             0.346            0.245           0.293        0.3  (see below)
+//
+// Every term is at least as reproducible on the low-pitch set as on the medium,
+// and two are dramatically more so. **Glide is the headline**: 280.1 ¢ → 2.3 ¢,
+// a factor of 120. That is not an estimator change — the estimator is untouched.
+// The medium-pitch fundamental died before the late probe, so more than half of
+// those pairs were placing two probes on a partial that was no longer there and
+// measuring the noise between them; the low-pitch fundamental rings long enough
+// that both probes land on signal. A term that was documented here as "still
+// broken" turns out to have been broken *by the target*, and on this reference it
+// is the single most reproducible thing the objective measures. The envelope term
+// improves for the same underlying reason — 2.5 s of file against 1.25 s, so the
+// tail being compared is real signal rather than floor.
+//
+// The consequence to keep in view: the glide gate is now 10 cents. A candidate
+// whose pitch bend is 30 cents wrong used to contribute 0.10 and now contributes
+// 3.0. Glide has gone from a term the objective could not see to one of the
+// terms most able to dominate a total, and no fit has yet been run under it.
 //
 // Gates are rounded *up* from the measured p90, because a gate is what a
 // candidate has to beat and rounding a floor down sets a threshold below the
 // floor.
 //
-// Two causes, separated by measurement rather than divided by assertion. Running
-// the same campaign with the trimming in the three partial terms disabled
-// isolates them:
+// The two middle columns are the estimator history, kept because it is the
+// reason the first gate set was wrong and the reason this comment insists the
+// floor be re-derived. Both were measured on mp-hd. Running that campaign with
+// the trimming in the three partial terms disabled separated the two defects by
+// measurement rather than dividing them by assertion:
 //
 //	term               2026-08-01  repaired only  repaired + trimmed
 //	partial frequency     113.0 ¢       112.4 ¢          76.2 ¢
@@ -170,69 +190,79 @@ type Weights struct {
 // trimming is what fixed frequency, which the repair did not touch at all. They
 // are two different defects and neither substitutes for the other.
 //
-// Three findings from the first measurement survive it, and one does not:
+// Where that leaves the standing findings, after the change of reference:
 //
-//   - **The spectral envelope is still the only gate that was ever right.** Its
-//     floor is 3.67 dB against a gate of 4, unmoved by either repair, and every
-//     conclusion drawn from it stands. Note what that means here: it is unmoved
-//     *because* it was never the term the defects were in.
-//   - **AttackBalance is still the most reproducible term in the objective** —
-//     0.245 dB at the median, better than the spectral envelope — and it is still
-//     the one that used to carry the smallest weight, 1/6. It keeps 1/1.2.
-//   - **Glide is still broken.** Its median is 50.0 cents against an
-//     unreadableGlideCents of 40, so more than half the pairs still fail to place
-//     two probes on a surviving fundamental. Fixing the decay estimator did not
-//     fix this, which is evidence that the two are unrelated.
-//   - **"The partial terms were never gateable" is now too strong, and is
-//     withdrawn.** It was true of the collapsed measurement: nothing could beat
-//     113 cents or a 1.26 log-ratio. It is not true of this one. 80 cents is still
-//     not a fine tolerance, and 7 dB of partial balance is still a wide one, but
-//     they are thresholds a model can be held to rather than statements that the
-//     objective cannot see. The six rounds of intervention that were aimed at the
-//     old 25-cent and 0.25 gates were still aimed at thresholds nothing could
-//     reach; that part of the finding stands.
+//   - **The spectral envelope is still the term that was always right.** 3.24 dB
+//     against a gate of 3.5, and it was 3.67 against 4 on the other drum: the one
+//     term neither an estimator defect nor a change of target has moved much.
+//     Every conclusion drawn from it stands.
+//   - **AttackBalance is still the most reproducible term in the objective**,
+//     0.231 dB at the median, and it is still the one that used to carry the
+//     smallest weight, 1/6. It now carries 1/0.9.
+//   - **"Glide is broken" is withdrawn — it was a statement about the target.**
+//     See the headline above. On this reference its median is 0.803 cents, which
+//     is the best-behaved term in the whole objective. What survives of the old
+//     finding is narrower and still useful: the glide estimator fails silently
+//     and completely when the fundamental does not outlive the late probe, so it
+//     is a reliable term only on a reference whose fundamental rings, and it must
+//     be re-checked rather than assumed on any new one.
+//   - **"The partial terms were never gateable" stays withdrawn.** 65 cents and
+//     6.8 dB are wide tolerances but they are thresholds a model can be held to.
+//     The six rounds of intervention aimed at the old 25-cent and 0.25 gates were
+//     still aimed at thresholds nothing could reach; that part stands.
 //
 // Measured consequence: at these weights the objective's disagreement with itself
-// totals **5.73 at the median and 6.38 at p90**. That is a larger number than the
-// 4.32/6.46 the previous gates produced, and it is not a regression — tightening a
-// gate raises the weight, so the same raw disagreement scores higher. Scored
-// under the previous weights this same distribution totals 3.74/4.29, which is the
-// like-for-like comparison and the size of the repair.
+// totals **5.92 at the median and 6.68 at p90** on this reference. Read that as
+// the floor, not as a score: no fit total below 5.92 is distinguishable from the
+// objective's own noise, whatever else it claims. The same distribution scored
+// under the previous, mp-hd-derived weights totals 4.68/5.72, which is the
+// like-for-like number and is not a regression — tightening a gate raises the
+// weight, so identical raw disagreement scores higher.
 //
 // Which is the whole difficulty with reading totals: **no total recorded before
 // this change is comparable to any total after it**, and not even the sign of the
-// change is meaningful. The readable quantity is the per-term contribution, and
-// there the claim the weights make is intact: no term contributes more than 0.81
-// at its own median, against the 1.0 that means "at the gate". cmd/measure-objective
-// writes the floor into its own report so that a total always arrives beside the
-// floor it should be read against.
+// change is meaningful. Two things moved at once here — the weights and the drum
+// — so this boundary is harder than the previous ones, and the pre-2026-08-01
+// fits were already incomparable for their own reasons. The readable quantity is
+// the per-term contribution, and there the claim the weights make is intact:
+// every term's p90 lands at or under its own gate, so nothing contributes more
+// than 1.0 at the floor. cmd/measure-objective writes the floor into its own
+// report so that a total always arrives beside the floor it should be read
+// against.
 //
-// Spurious is the one deliberate departure from the reciprocal rule. Its measured
-// floor is 0.245 against Unmatched's 0.250, which would make it very slightly the
-// heavier of the two — and that direction has already been refuted by a fit run:
-// it abandoned the drum and converged on two partials with a spurious share of
-// 0.000, because the blend's pressure toward completeness is exactly what the
-// spurious weight works against, and outweighing it makes emptiness the cheapest
-// bank on offer. The margin is now small enough that it would probably not
-// reproduce, which is not a reason to find out. Both terms keep Unmatched's gate.
-// The asymmetry the argument wanted is still there — it comes from the blend,
-// where it belongs. TestSpuriousDoesNotOutweighCompleteness pins the inequality;
-// it cannot pin the behaviour, for the reason given there.
+// Spurious used to be a deliberate departure from the reciprocal rule: on mp-hd
+// its floor came out at 0.245 against Unmatched's 0.250, which would have made it
+// very slightly the heavier of the two, and that direction had already been
+// refuted by a fit run — it abandoned the drum and converged on two partials with
+// a spurious share of 0.000, because the blend's pressure toward completeness is
+// exactly what the spurious weight works against, and outweighing it makes
+// emptiness the cheapest bank on offer. So both terms were pinned to Unmatched's
+// gate. On lp-hd the order is the other way round (unmatched 0.280, spurious
+// 0.293) and both round up to the same 0.3, so the departure is no longer doing
+// anything and the equality is now what the measurement says rather than an
+// override of it. The refuted direction is still refuted, and the inequality is
+// still worth pinning in case a future measurement separates them:
+// TestSpuriousDoesNotOutweighCompleteness pins it; it cannot pin the behaviour,
+// for the reason given there.
 //
 // The raw distribution, the method and the commands are in
 // docs/physical-objective-validation.md. Re-derive these whenever the estimators
-// in features.go change: the floor is a property of the estimator, not of the
-// drum, and this repository has now twice been in the position of quoting gates
-// measured through an estimator it had since replaced.
+// in features.go change **or the reference set does**. The first version of this
+// comment asserted the floor was "a property of the estimator, not of the drum".
+// The lp-hd measurement refutes that: same estimator, different drum, and the
+// glide floor moved by a factor of 120. It is a property of the pair. This
+// repository has twice quoted gates measured through an estimator it had since
+// replaced; do not now start quoting gates measured on a drum it no longer aims
+// at.
 func DefaultWeights() Weights {
 	return Weights{
-		PartialFrequency:    1.0 / 80,
+		PartialFrequency:    1.0 / 70,
 		PartialLevel:        1.0 / 7,
 		PartialDecay:        1.0 / 0.6,
-		SpectralEnvelope:    1.0 / 4,
-		Envelope:            1.0 / 4,
-		Glide:               1.0 / 290,
-		AttackBalance:       1.0 / 1.2,
+		SpectralEnvelope:    1.0 / 3.5,
+		Envelope:            1.0 / 1.5,
+		Glide:               1.0 / 10,
+		AttackBalance:       1.0 / 0.9,
 		Unmatched:           1.0 / 0.3,
 		Spurious:            1.0 / 0.3,
 		MatchToleranceCents: 120,

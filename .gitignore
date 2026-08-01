@@ -72,12 +72,26 @@ fit-summary.txt
 fit-progress.txt
 
 # The committed reference subset. These negations must come after *.wav above,
-# because the last matching pattern wins. Only the medium-pitch head strikes are
-# carried: they are the set the fit uses, and the full 336-file pack is 126 MB
-# against 5.5 MB for these sixteen. Licence and provenance in reference/CREDITS.md.
+# because the last matching pattern wins. Only the low-pitch head strikes are
+# carried: they are the set the fit uses, and the full 335-file pack is 126 MB
+# against 9.6 MB for these sixteen. Licence and provenance in reference/CREDITS.md.
+#
+# Every directory on the path has to be re-included one level at a time, and each
+# re-inclusion immediately re-excluded at the next level down. `reference/*`
+# above excludes the directory itself, and git does not look inside an excluded
+# directory at all — a negation for a file underneath one never gets the chance
+# to match. Hence the ladder rather than a single `!reference/tt08x08/lp/hd/*`.
 !reference/CREDITS.md
-!reference/tt08x08-mp-hd-v[0-9][0-9].wav
+!reference/tt08x08/
+reference/tt08x08/*
+!reference/tt08x08/lp/
+reference/tt08x08/lp/*
+!reference/tt08x08/lp/hd/
+!reference/tt08x08/lp/hd/v[0-9][0-9].wav
 
-# Built by `go build ./cmd/fit-physical` and `./cmd/render-physical`
+# Built by `go build ./cmd/fit-physical` and `./cmd/render-physical`, and by
+# `go build ./...` inside tools/paper-figures (its own module, so the binary
+# lands here rather than beside its source).
 /fit-physical
 /render-physical
+/paper-figures

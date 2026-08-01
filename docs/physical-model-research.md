@@ -360,7 +360,7 @@ third-party or newly recorded audio without a clear license and provenance.
 
 That rule is the reason the first recording ever fitted against could not be
 committed, and the reason the current one can:
-`reference/tt08x08-mp-hd-v01..v16.wav` is CC BY 4.0 with a stated instrument, and
+`reference/tt08x08/lp/hd/v01..v16.wav` is CC BY 4.0 with a stated instrument, and
 [`reference/CREDITS.md`](../reference/CREDITS.md) carries the licence, the
 attribution the licence requires, the instrument as described by the recordist,
 what was measured here rather than claimed, and per-file checksums. Anything

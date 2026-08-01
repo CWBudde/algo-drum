@@ -73,25 +73,35 @@ check-params: gen-params
 # The progress log is stderr, which the tool does not open, so redirect it into
 # fits/ alongside the report it belongs to:
 #
-#   just fit-physical reference/tt08x08-mp-hd-v08.wav "-o fits/fit-x.json …" 2> fits/fit-x.log
+#   just fit-physical reference/tt08x08/lp/hd/v08.wav "-o fits/fit-x.json …" 2> fits/fit-x.log
 #
-# The default reference is the committed, CC BY 4.0, 8"x8" tom at medium pitch
+# The default reference is the committed, CC BY 4.0, 8"x8" tom at **low** pitch
 # and mid velocity — see reference/CREDITS.md for licence, provenance and the
 # measured properties. It replaced reference/tom.wav, which had unknown
-# provenance and no licence and is being retired (PLAN.md P10/N8).
+# provenance and no licence and was deleted on 2026-08-01 (PLAN.md P10/N8).
+#
+# Low pitch rather than the medium set this started on, chosen on the sound. It
+# is also the better-behaved target of the two, which was not the reason but is
+# worth knowing: the objective disagrees with itself less on every one of the
+# nine terms, and on glide by a factor of 120, because this drum's fundamental
+# outlives the estimator's late probe and the medium one's does not. The gates in
+# internal/physical/match/distance.go are measured on *this* set and do not
+# transfer to another.
 #
 # -channel mono is spelled out rather than left implicit because the choice is
-# load-bearing and was wrong for the previous reference. This pair is
-# *coincident* (peak inter-channel correlation at exactly 0 samples of lag), so
-# averaging it is a clean reduction. tom.wav's channels are 1.56 ms apart and
-# correlate 0.36 at zero lag, so summing *that* file combs the target, which is
-# why every archived number was fitted to its right channel alone. A -channel in
-# {{args}} comes later on the command line and still wins.
+# load-bearing and was wrong for the reference before last. This pair is
+# *coincident* (peak inter-channel correlation at 0 samples of lag on thirteen of
+# the sixteen and 1 sample on the rest), so averaging it is a clean reduction —
+# a single sample at 48 kHz is 21 µs and combs nothing in band. The pair before
+# it had channels 1.56 ms apart and correlated 0.36 at zero lag, so summing
+# *that* file combed the target, which is why every archived number was fitted to
+# its right channel alone. A -channel in {{args}} comes later on the command line
+# and still wins.
 #
 # One hit does not identify this model's parameters — the fit wants the whole
 # sixteen-velocity series jointly (PLAN.md P10/N5), which this recipe cannot yet
 # express. Until it can, treat a single-file run as a diagnostic, not a fit.
-fit-physical reference="reference/tt08x08-mp-hd-v08.wav" *args="":
+fit-physical reference="reference/tt08x08/lp/hd/v08.wav" *args="":
     go run ./cmd/fit-physical -reference {{reference}} -channel mono \
         -o fits/fit-report.json -checkpoint fits/fit-report.checkpoint {{args}}
 

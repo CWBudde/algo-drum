@@ -5,7 +5,7 @@ because nothing in `internal/physical` had ever been checked against a
 measurement of a known instrument. Most of that is now supplied by a licensed
 sample pack, and the document has been cut down to what the pack cannot answer.
 
-The pack is `reference/tt08x08-mp-hd-v01..v16.wav`: an **8" × 8"** tom, Remo
+The pack is `reference/tt08x08/lp/hd/v01..v16.wav`: an **8" × 8"** tom, Remo
 coated Ambassador batter and clear Diplomat resonant head, 48 kHz 24-bit, sixteen
 velocities, a **coincident** XY pair, CC BY 4.0, committed to the repository with
 its provenance sheet in [`reference/CREDITS.md`](../reference/CREDITS.md). That

@@ -101,7 +101,7 @@ func TestFingerprintNamesWhatChanged(t *testing.T) {
 	t.Parallel()
 
 	base := Fingerprint{
-		Reference: "tom.wav", Channel: "mono", Quality: "draft", Variant: "ma",
+		Reference: "tt08x08/lp/hd/v08.wav", Channel: "mono", Quality: "draft", Variant: "ma",
 		DurationSeconds: 1.2, Iterations: 80, Population: 16, Restarts: 8, Seed: 1,
 		Fixed: map[string]float64{"DAMP": 0.5}, BaselineCost: 33.455,
 	}

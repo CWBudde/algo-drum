@@ -369,9 +369,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	// flagWasSet is what separates "-channel mono" — a decision — from a -channel
 	// nobody typed. See match.LoadReferenceExplicit for why that difference is
-	// worth refusing to start a run over: reference/tom.wav is stereo, every
-	// total in docs/physical-measured-fit.md is its right channel, and the
-	// defaulted flag silently fitted the average of the two instead. The
+	// worth refusing to start a run over: the reference this guard was written
+	// for was stereo, every total archived against it was its right channel,
+	// and the defaulted flag silently fitted the average of the two instead. The
 	// not-chosen case is reported as an invalid option because that is what it
 	// is — a missing flag, not a broken file — while a genuinely unreadable
 	// reference keeps its own error.

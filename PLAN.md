@@ -947,6 +947,41 @@ recording and can be taken at any time.
     own T60s leaves 0.677 and the model already achieves 0.573, so a smooth law
     is not it either. A second correction-table entry is the cheap experiment and
     is honest only if it is labelled as fitted.
+
+    **Re-aimed 2026-08-01, before that experiment was run.** Evidence:
+    [`physical-objective-validation.md`](docs/physical-objective-validation.md)
+    §Result 10. The committed reference's ring time was measured across all
+    sixteen takes and it is **flat in frequency**, not ∝ 1/f: 0.280 s at 352 Hz
+    against 0.256 s at 2.9 kHz, where the constant-ζ law the model is calibrated
+    to predicts 34 ms at the second. The window was checked before the conclusion
+    — extending the decay fit from 0.6 s to 0.9 s moves the matched estimates by
+    2.2 % — and the mode identification is not in doubt, the geometry being known:
+    the (0,1) doublet is 304/352 Hz (ratio 1.157 against Fischer's 1.16) and the
+    (1,1) is 482 Hz (1.587 against the ideal 1.594).
+
+    So Result 8's structure — "the lowest uncorrected mode is forced to ring
+    longest" — is a consequence of the law's **slope**, and the slope is already
+    a product knob: `D.TILT` scales d₁ and d₂ and leaves d₀ alone, over a 0–3
+    range whose zero is exactly the flat law, and whose own documentation calls
+    that end "what the model used to do". A correction entry at the (1,1) would
+    be patching one mode of a law whose slope is the thing the reference
+    disagrees with. **Run the fit before the entry**: the first fit ever made
+    against this reference (every archived one targeted the retired `tom.wav`),
+    read for where `D.TILT` lands and whether it pins at zero. The entry is
+    warranted only if a fitted slope still leaves the (1,1) long.
+
+  - **The instrument for that experiment exists**, so it is not what the next
+    round is spent on: `cmd/fit-physical -mode-correction m,n=perSecond` adds an
+    entry to both heads' correction tables, replacing rather than appending — the
+    configuration rejects two rates for one mode. It is deliberately shaped like
+    `-loss-scale`: not a knob, recorded in the report, and part of the checkpoint
+    fingerprint. It is the quieter of the two fingerprint hazards, because unlike
+    `-search-blind` it does not change the width of a position vector — a resume
+    across it would read every stored point correctly and score it against a
+    different drum, and nothing in the report would look wrong. The rate given is
+    the **effective** one, applied after DAMP and D.TILT, which do scale the
+    table's own entries; a value measured this way has to be divided by that
+    product before it could become a default.
   - **Before fitting any per-mode damping vector**, the standing rule still
     applies and has now been shown to earn its keep: check the structure first.
     It cost one afternoon and it refuted the mechanism this item was going to
@@ -992,7 +1027,7 @@ recording and can be taken at any time.
     caller pinned from one that carries no information about the reference.
     `-search-blind` puts them back for the deliberate experiment of re-testing
     the claim, and is part of the checkpoint fingerprint because it changes the
-    width of the search space. Four tests pin it, including that the list has
+    width of the search space. Five tests pin it, including that the list has
     exactly one member — so a later addition has to be a deliberate edit with a
     measurement behind it.
 
@@ -1069,11 +1104,37 @@ recording and can be taken at any time.
     Blocked on N2 and N5: nothing to report until the objective is trustworthy and
     a fit against the licensed reference exists.
 
-- [ ] **N8: retire `reference/tom.wav`.** Unknown provenance, unlicensed, 44.1 kHz,
-      spaced pair. It cannot be committed and no test may depend on it. Deleting it
-      today orphans `testdata/physical-fit-tom.json`, the paper's figures and much of
-      [`physical-measured-fit.md`](docs/physical-measured-fit.md). Retire it in the
-      same change that re-derives those against the licensed set — after N5.
+- [x] **N8: retire `reference/tom.wav`.** _Done 2026-08-01 — the file is deleted.
+      Not done the way this item asked, and the difference matters._ Unknown
+      provenance, unlicensed, 44.1 kHz, spaced pair; it could not be committed and
+      no test ever depended on it, so the build, `just test` and `just ci` were
+      unaffected by its removal. Every fit and render measured against it —
+      `fits/` and `renders/` in full, 24 reports with their checkpoints, logs and
+      audio — was deleted with it, as was the stale committed `paper-figures`
+      binary. Every remaining mention in code, docs and the justfile now reads as
+      a dated historical note rather than as a live path.
+
+      This item wanted the deletion to land in the same change that re-derived
+      what depended on it. It did not, so those things are **orphaned now** and
+      are tracked where the re-derivation lives:
+
+  - `testdata/physical-fit-tom.json` and the **Measured tom** preset in
+    `web/src/algo/physicalTomPresets.ts` — a bank fitted to a recording nobody
+    can obtain, that missed all three adoption gates even when it was current →
+    N5;
+  - the figures and totals in `docs/paper/` → N7;
+  - `contactReferenceHz` = 118 Hz, this recording's fundamental rather than the
+    model's 150.08 Hz, still normalising every dB figure in
+    [`physical-contact.md`](docs/physical-contact.md) →
+    **N8a** below.
+
+- [ ] **N8a: re-point `contactReferenceHz` at the model's own fundamental.** It is
+      118 Hz, the deleted recording's fundamental, so the normalising bin reads
+      the leakage skirt of the model's 150.08 Hz partial and works as an overall
+      level normaliser by accident. Moving it to 150.08 Hz rewrites every dB
+      table in [`physical-contact.md`](docs/physical-contact.md) and
+      [`physical-nonlinearity.md`](docs/physical-nonlinearity.md) and the tests
+      that assert them. Independent of N5: nothing here needs a recording.
 
 - [ ] **N9: make the nonlinear mode coupling affordable on `js/wasm`.** The
       retrigger worst case at 120 oscillators went 1.40× → **0.70× real time**

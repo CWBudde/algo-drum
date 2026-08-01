@@ -81,7 +81,7 @@ gate is:
 
 This gate was written when no recording in the project could satisfy clause 1 at
 all, so it read as a permanent bar. That is no longer true.
-`reference/tt08x08-mp-hd-v01..v16.wav` is CC BY 4.0, committed, and carries a
+`reference/tt08x08/lp/hd/v01..v16.wav` is CC BY 4.0, committed, and carries a
 stated instrument — 8" × 8", Remo coated Ambassador batter and clear Diplomat
 resonant, 48 kHz 24-bit — with licence, attribution, instrument description and
 per-file checksums in [`reference/CREDITS.md`](../reference/CREDITS.md).
