@@ -70,10 +70,19 @@ check-params: gen-params
 #
 # Reports and checkpoints go to fits/, audio to renders/; both are gitignored
 # and created on demand, so nothing a run produces lands in the project root.
-# The progress log is stderr, which the tool does not open, so redirect it into
-# fits/ alongside the report it belongs to:
 #
-#   just fit-physical reference/tt08x08/lp/hd/v08.wav "-o fits/fit-x.json …" 2> fits/fit-x.log
+# **Every fit file carries the reference it was made against**, so this recipe
+# derives its own names rather than taking them: reference/tt08x08/lp/hd/v08.wav
+# gives fits/fit-tt08x08-lp-hd-v08.{json,checkpoint}. A fit report is only
+# meaningful beside the recording it targeted — the gates, the totals and the
+# whole partial table are properties of that drum at that tuning — and a
+# directory of fit-report.json, fit-v2.json, fit-final.json says nothing about
+# which. Hand-run commands should follow the same rule; see AGENTS.md.
+#
+# The progress log is stderr, which the tool does not open, so redirect it into
+# fits/ under the matching name:
+#
+#   just fit-physical reference/tt08x08/lp/hd/v08.wav 2> fits/fit-tt08x08-lp-hd-v08.log
 #
 # The default reference is the committed, CC BY 4.0, 8"x8" tom at **low** pitch
 # and mid velocity — see reference/CREDITS.md for licence, provenance and the
@@ -102,8 +111,11 @@ check-params: gen-params
 # sixteen-velocity series jointly (PLAN.md P10/N5), which this recipe cannot yet
 # express. Until it can, treat a single-file run as a diagnostic, not a fit.
 fit-physical reference="reference/tt08x08/lp/hd/v08.wav" *args="":
-    go run ./cmd/fit-physical -reference {{reference}} -channel mono \
-        -o fits/fit-report.json -checkpoint fits/fit-report.checkpoint {{args}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    slug="$(printf '%s' '{{reference}}' | sed -e 's|^reference/||' -e 's|\.wav$||' -e 's|/|-|g')"
+    go run ./cmd/fit-physical -reference '{{reference}}' -channel mono \
+        -o "fits/fit-$slug.json" -checkpoint "fits/fit-$slug.checkpoint" {{args}}
 
 # Derive the measurement tables from recordings of a real drum.
 #

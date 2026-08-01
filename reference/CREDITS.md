@@ -4,6 +4,26 @@ This directory is ignored wholesale by `.gitignore` except for the files listed
 below, which are committed so that a fit can be reproduced from the repository
 alone. Everything else here is a local working file and must not be committed.
 
+## The three packs
+
+Three multisampled tom packs are present locally, all by the same recordist and
+all CC BY 4.0. Only sixteen files from the first are committed; the other two are
+local working material, present so that a fit can be checked against a second and
+third drum of known geometry.
+
+| Directory  | Pack                                                                                  | Files | Committed            |
+| ---------- | ------------------------------------------------------------------------------------- | ----: | -------------------- |
+| `tt08x08/` | [Tomtom 08x08inch-multisampled](https://freesound.org/people/quartertone/packs/8767/) |   335 | `lp/hd/v01..v16.wav` |
+| `tt10x08/` | [Tomtom10x08inch-multisampled](https://freesound.org/people/quartertone/packs/8117/)  |   144 | none                 |
+| `tt12x08/` | [Tomtom12x08inch-multisampled](https://freesound.org/people/quartertone/packs/8127/)  |   188 | none                 |
+
+The 10" and 12" packs ship Freesound's own `_readme_and_license.txt`, which lists
+a URL and a licence **per sound**. Those two files are committed, together with a
+generated `SOURCES.tsv` per pack mapping each reorganised path back to the
+Freesound ID it came from — without it the rename below would destroy the only
+link between a file on disk and the upload whose licence governs it. The 8" pack
+was downloaded without such a manifest and has none.
+
 ## Committed set
 
 **Source.** [Tomtom 08x08inch-multisampled](https://freesound.org/people/quartertone/packs/8767/),
@@ -53,26 +73,57 @@ contribution is not accounted for.
 
 ## Layout
 
-    reference/tt08x08/<tuning>/<style>/v<velocity>.wav
+    reference/<kit>/<tuning>/<style>/v<velocity>.wav
 
+- kit: `tt08x08` `tt10x08` `tt12x08` — shell diameter × depth, in inches
 - tuning: `vlp` `lp` `mlp` `mp` `mhp` `hp` `vhp` — very low through very high pitch
-- style: `hd` head strike, `rs` rimshot (head and rim together), `rm` rim strike
+- style: `hd` head strike, `rs` rimshot (head and rim together), `rm` rim strike;
+  the 12" pack additionally distinguishes `hdc` head-centre from `hde` head-edge
+  and has no plain `hd` at those tunings
 - velocity: `v01`–`v16`, soft to hard
 
-The source pack ships one flat directory of `tt08x08-<tuning>-<style>-v<NN>.wav`;
-this tree splits that name into directories and keeps only the velocity in the
-filename, so `reference/tt08x08/lp/hd/v08.wav` is the eighth-hardest low-pitch
-head strike. A file carries no identity outside the tree, which is the cost of
-the shorter paths — this document is where that identity lives.
+Every pack ships one flat directory. The 8" one names files
+`tt08x08-<tuning>-<style>-v<NN>.wav`; the other two carry Freesound's upload
+prefix as well, `<id>__quartertone__tt10x8-<tuning>-<style>-v<NN>.wav`. This tree
+splits that name into directories and keeps only the velocity in the filename, so
+`reference/tt08x08/lp/hd/v08.wav` is the eighth-hardest low-pitch head strike on
+the 8" drum. A file carries no identity outside the tree, which is the cost of the
+shorter paths — this document and the `SOURCES.tsv` files are where that identity
+lives.
 
-Only **`lp` + `hd`** is committed — low pitch, head strikes, all sixteen
-velocities. That is the set the fit uses; the full pack is 335 files and 126 MB
-against 9.6 MB for these. (335, not the 336 the pack advertises: `vlp/rs/v10` is
-absent from the download.)
+Not every tuning was recorded at every strike style, so the grids are ragged: the
+8" pack has all seven tunings, the 10" only four, the 12" four with a different
+style set. Three velocity slots are missing across the three packs, all of them
+the source's doing rather than this repository's — see "Gaps" below.
+
+Only **`tt08x08/lp/hd`** is committed — the 8" drum, low pitch, head strikes, all
+sixteen velocities. That is the set the fit uses; the three packs together are
+~320 MB against 9.6 MB for these sixteen.
 
 Low pitch, not the medium set this project started on: it was chosen on the
 sound. It happens also to be the more measurable of the two — see the note below
 the checksums.
+
+## Gaps
+
+Three velocity slots are missing from the local tree. None of them is in the
+committed set.
+
+- **`tt08x08/vlp/rs/v10`** — never present. The 8" pack advertises 336 files and
+  the download contains 335.
+- **`tt12x08/mp/rs/v09`–`v12`** — never present under those labels. That group
+  ships sixteen files, but the source labels four of them **twice**: two distinct
+  uploads each for `v05`, `v06`, `v07` and `v08`, and nothing for `v09`–`v12`.
+  The duplication is in the pack, not in the reorganisation.
+- **`tt12x08/mp/rs`, four files lost locally (2026-08-01).** Because of the
+  duplicate labels above, the flattening rename mapped two source files onto one
+  destination path four times and the second overwrote the first. Freesound IDs
+  **129973, 129974, 129975 and 129976** were destroyed; 129977–129980 survive and
+  are what now sit at `v05`–`v08`. Nothing committed, generated or tested depended
+  on them. They are CC BY 4.0 and individually downloadable from the URLs in
+  `tt12x08/SOURCES.tsv`, where all eight are listed and the four lost ones are
+  marked `LOST-collision`. Re-fetching them needs a naming decision — the labels
+  they came with collide by construction.
 
 ## Measured properties of the committed files
 
@@ -149,7 +200,7 @@ are 2.083 s rather than 1.250 s, so the tail being compared is signal rather tha
 floor.
 
 The gates in `internal/physical/match/DefaultWeights` are the right-hand column,
-rounded up. They are a property of **this pair** — estimator *and* recording —
+rounded up. They are a property of **this pair** — estimator _and_ recording —
 and do not transfer to another tuning, another strike style or another pack.
 
 ## `tom.wav` — the superseded reference, deleted 2026-08-01

@@ -72,9 +72,10 @@ fit-summary.txt
 fit-progress.txt
 
 # The committed reference subset. These negations must come after *.wav above,
-# because the last matching pattern wins. Only the low-pitch head strikes are
-# carried: they are the set the fit uses, and the full 335-file pack is 126 MB
-# against 9.6 MB for these sixteen. Licence and provenance in reference/CREDITS.md.
+# because the last matching pattern wins. Only the 8"x8" drum's low-pitch head
+# strikes are carried: they are the set the fit uses, and the three packs
+# together are 863 files and ~320 MB against 9.6 MB for these sixteen. Licence
+# and provenance in reference/CREDITS.md.
 #
 # Every directory on the path has to be re-included one level at a time, and each
 # re-inclusion immediately re-excluded at the next level down. `reference/*`
@@ -88,6 +89,19 @@ reference/tt08x08/*
 reference/tt08x08/lp/*
 !reference/tt08x08/lp/hd/
 !reference/tt08x08/lp/hd/v[0-9][0-9].wav
+
+# The two later packs ship a per-sound licence manifest and a generated map from
+# it to the reorganised paths. No audio from them is committed, but those two
+# text files are the only record of which Freesound upload each renamed file came
+# from, and they are small.
+!reference/tt10x08/
+reference/tt10x08/*
+!reference/tt10x08/SOURCES.tsv
+!reference/tt10x08/_readme_and_license.txt
+!reference/tt12x08/
+reference/tt12x08/*
+!reference/tt12x08/SOURCES.tsv
+!reference/tt12x08/_readme_and_license.txt
 
 # Built by `go build ./cmd/fit-physical` and `./cmd/render-physical`, and by
 # `go build ./...` inside tools/paper-figures (its own module, so the binary

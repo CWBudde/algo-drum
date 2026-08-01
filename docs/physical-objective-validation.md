@@ -22,7 +22,7 @@ here should be restated at length elsewhere — link to it instead.
 >   [`reference/CREDITS.md`](../reference/CREDITS.md) and in
 >   [`physical-measured-fit.md`](physical-measured-fit.md). It refutes this
 >   document's standing assumption that the floor is a property of the estimator
->   alone; it is a property of estimator *and* target.
+>   alone; it is a property of estimator _and_ target.
 > - **Results 2 onward have not been re-measured.** They are still true statements
 >   about the medium-pitch set and the paths in their reproduction commands are
 >   current, so each can be re-run. Until that is done, do not quote any of them
@@ -321,7 +321,7 @@ two independent runs already agree term for term.
 
 ## Result 4 — the two references, characterised
 
-|                 | `tom.wav` (retired)                             | `tt08x08/mp/hd` (superseded)                          |
+|                 | `tom.wav` (retired)                             | `tt08x08/mp/hd` (superseded)                         |
 | --------------- | ----------------------------------------------- | ---------------------------------------------------- |
 | Provenance      | unknown                                         | Freesound `quartertone`, stated                      |
 | Licence         | none                                            | **CC BY 4.0**                                        |
