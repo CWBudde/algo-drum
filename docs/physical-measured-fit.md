@@ -1014,8 +1014,9 @@ they should describe the best fit measured under the current metric.
 > supersedes; re-scored under today's objective this bank measures **18.991**, the
 > worst of the four archived runs. `testdata/physical-fit-tom.json` has been
 > re-derived from
-> [the refit below](#the-refit-on-the-corrected-glide-term-2026-08-01);
-> `web/src/algo/physicalTomPresets.ts` has **not**, and still ships this bank.
+> [the refit below](#the-refit-on-the-corrected-glide-term-2026-08-01), and
+> `web/src/algo/physicalTomPresets.ts` has since been re-derived from it too, so
+> neither ships this bank any more.
 
 `DefaultPhysicalDrum()` and `DefaultContact()` are **unchanged**, because the fit
 **misses all three gate terms** — partial frequency at 2.28×, partial decay at
@@ -1217,9 +1218,10 @@ re-scoring it reproduces its reported total to the digit — 10.577 against 10.5
 term for term. That is what licenses the other three rows: the recipe is exact
 when nothing has changed, so where it disagrees, something has.
 
-**The ordering changes**, which is the point. `fit-final-prescribed` — the run the
-paper's figures come from, and the winner under the old objective — is the **worst
-of the four** under the corrected one. The glide column says why: the two runs
+**The ordering changes**, which is the point. `fit-final-prescribed` — the winner
+under the old objective, and the run the paper's `@results` chapter and its four
+committed figures still describe — is the **worst of the four** under the
+corrected one. The glide column says why: the two runs
 whose glide error the old objective scored as near-zero are exactly the two that
 move furthest, because a near-zero error against a fabricated target is a bank
 that has been tuned _onto_ the artefact.
@@ -1417,11 +1419,32 @@ date, why a pre-fix total cannot be compared with a post-fix one, and that the
 bank it replaces was reported as 11.252 and re-measures at 18.991 — so the file
 carries its own provenance and cannot be quoted out of era.
 
-`web/src/algo/physicalTomPresets.ts` still holds the **old** bank. The fixture and
-the shipped **Measured tom** preset therefore disagree, which is a state this
-document should not leave unstated: the preset is the previous winner, a bank
-fitted against an objective that no longer runs. Updating it changes what a user
-hears, so it is left as an outstanding decision rather than made here.
+`web/src/algo/physicalTomPresets.ts` **has been re-derived from the same run**, so
+the fixture and the shipped **Measured tom** preset agree again — every one of the
+seventeen bank knobs matches the fixture's normalized position. Two dimensions of
+the search are deliberately not in the preset: `physicalTom.quality`, because mode
+count is a CPU budget the user owns rather than a property of this drum, and
+strike velocity, which is not a bank knob at all. The fit found velocity 0.575, so
+the preset is what the drum sounds like at a medium hit; struck harder it will
+bend further than the fit's target, which is a property of the model and not of
+the preset.
+
+This does change what a user hears, and it was held back until it was asked for:
+a bank fitted against an objective that no longer runs should not stay on the
+shipped surface, but replacing it is a taste decision and not a measurement one.
+
+`docs/paper/paper.typ` **gained a chapter** for this run rather than having its
+existing one restated — `= The refit under the corrected objective`, carrying the
+re-score table, the term-by-term agreement above, the ceiling argument and the
+seed-diversity caution. Its two figures are drawn from this report under a
+`-refit` suffix (`just paper-figures-refit`, backed by new `-suffix` and `-only`
+flags on `tools/paper-figures`), and the four committed figures of the `@results`
+chapter are untouched. That is deliberate and it is the paper's own rule: a
+figure carries no record of the run that drew it, so redrawing a chapter's
+figures from a run that chapter does not describe is a silent way to make a paper
+wrong. The paper therefore still reports `fit-final-prescribed` where it was
+made, and now says in its front matter that the refit chapter is the only section
+whose total is current.
 
 `DefaultPhysicalDrum()` and `DefaultContact()` are **unchanged**, for the third
 time and for the same reason: a candidate that misses every gated term does not

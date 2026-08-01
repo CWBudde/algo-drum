@@ -118,6 +118,8 @@ paper-data:
 # run the paper's @results reads, total 11.252. It matters: passing a different
 # report silently redraws bands/decay/partials/terms.png from a fit the prose
 # does not describe, and the figures carry no record of which run made them.
+# That is why a later fit gets its own recipe below rather than this one's
+# argument: two runs, two suffixes, neither able to overwrite the other.
 #
 # Fit reports are gitignored (.gitignore: fits/), so this recipe needs a local
 # fit run first. The committed PNGs, not this recipe, are what lets the paper
@@ -127,6 +129,19 @@ paper-figures report="fits/fit-final-prescribed.json":
     cd tools/paper-figures && go run -tags purego . \
         -report "$report" \
         -model-data "{{justfile_directory()}}/docs/paper/model-data.json" \
+        -o "{{justfile_directory()}}/docs/paper/figures"
+
+# Regenerate the two figures of the paper's @refit chapter.
+#
+# The refit under the corrected glide estimator (2026-08-01, total 10.382) is a
+# different run from the one @results describes, so it gets its own figures under
+# a -refit suffix instead of redrawing that chapter's. Only terms and decay are
+# drawn: the chapter argues coverage and spectral envelope in prose, and an
+# uncited PNG in docs/paper/figures is drift waiting to happen.
+paper-figures-refit report="fits/s3-right-prescribed.json":
+    report="$(realpath {{report}})"; \
+    cd tools/paper-figures && go run -tags purego . \
+        -report "$report" -suffix -refit -only terms,decay \
         -o "{{justfile_directory()}}/docs/paper/figures"
 
 # Build the model-matching paper (docs/paper/paper.typ -> PDF).

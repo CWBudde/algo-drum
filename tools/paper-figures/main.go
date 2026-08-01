@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "github.com/cwbudde/matplotlib-go/backends/agg"
 	"github.com/cwbudde/matplotlib-go/render"
@@ -53,6 +54,11 @@ func main() {
 		"model artefact JSON written by cmd/analyze-physical -paper-data",
 	)
 	outDir := flag.String("o", "docs/paper/figures", "directory to write the PNGs into")
+	// A second fit of the same drum is a second set of figures, not a replacement
+	// for the first: the paper reports each run where it was made and does not
+	// re-render a chapter's figures from a run that chapter does not describe.
+	suffix := flag.String("suffix", "", "insert before .png, so terms.png becomes terms<suffix>.png")
+	only := flag.String("only", "", "comma-separated figure basenames to draw (default: all)")
 
 	flag.Parse()
 
@@ -66,15 +72,43 @@ func main() {
 		os.Exit(2)
 	}
 
-	if err := run(*reportPath, *modelPath, *outDir); err != nil {
+	if err := run(*reportPath, *modelPath, *outDir, *suffix, selection(*only)); err != nil {
 		fmt.Fprintln(os.Stderr, "paper-figures:", err)
 		os.Exit(1)
 	}
 }
 
-func run(reportPath, modelPath, outDir string) error {
+// selection turns -only into a membership test. A nil set means everything,
+// which is what an absent flag has to mean for the recipes that predate it.
+func selection(only string) map[string]bool {
+	if only == "" {
+		return nil
+	}
+
+	chosen := map[string]bool{}
+
+	for _, name := range strings.Split(only, ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			chosen[strings.TrimSuffix(name, ".png")] = true
+		}
+	}
+
+	return chosen
+}
+
+func run(reportPath, modelPath, outDir, suffix string, only map[string]bool) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
+	}
+
+	// A figure's basename is its identity — -only names it, -suffix distinguishes
+	// the run it was drawn from — so the two are applied at the same point.
+	path := func(name string) (string, bool) {
+		if only != nil && !only[name] {
+			return "", false
+		}
+
+		return filepath.Join(outDir, name+suffix+".png"), true
 	}
 
 	written := 0
@@ -89,22 +123,31 @@ func run(reportPath, modelPath, outDir string) error {
 			name string
 			draw func(*report, string) error
 		}{
-			{"partials.png", drawPartials},
-			{"terms.png", drawTerms},
-			{"decay.png", drawDecay},
-			{"bands.png", drawBands},
+			{"partials", drawPartials},
+			{"terms", drawTerms},
+			{"decay", drawDecay},
+			{"bands", drawBands},
 		}
+
+		drawn := 0
 
 		for _, figure := range figures {
-			if err := figure.draw(parsed, filepath.Join(outDir, figure.name)); err != nil {
+			out, wanted := path(figure.name)
+			if !wanted {
+				continue
+			}
+
+			if err := figure.draw(parsed, out); err != nil {
 				return fmt.Errorf("%s: %w", figure.name, err)
 			}
+
+			drawn++
 		}
 
-		written += len(figures)
+		written += drawn
 
 		fmt.Printf("wrote %d fit figures from %s (total %.3f)\n",
-			len(figures), reportPath, parsed.Best.Terms.Total)
+			drawn, reportPath, parsed.Best.Terms.Total)
 	}
 
 	if modelPath != "" {
@@ -117,23 +160,32 @@ func run(reportPath, modelPath, outDir string) error {
 			name string
 			draw func(*modelData, string) error
 		}{
-			{"modes.png", drawModes},
-			{"loss.png", drawLoss},
-			{"radiation.png", drawRadiation},
-			{"cavity.png", drawCavity},
-			{"bandwidth.png", drawBandwidth},
+			{"modes", drawModes},
+			{"loss", drawLoss},
+			{"radiation", drawRadiation},
+			{"cavity", drawCavity},
+			{"bandwidth", drawBandwidth},
 		}
+
+		drawn := 0
 
 		for _, figure := range figures {
-			if err := figure.draw(parsed, filepath.Join(outDir, figure.name)); err != nil {
+			out, wanted := path(figure.name)
+			if !wanted {
+				continue
+			}
+
+			if err := figure.draw(parsed, out); err != nil {
 				return fmt.Errorf("%s: %w", figure.name, err)
 			}
+
+			drawn++
 		}
 
-		written += len(figures)
+		written += drawn
 
 		fmt.Printf("wrote %d model figures from %s (%d modes)\n",
-			len(figures), modelPath, len(parsed.Modes))
+			drawn, modelPath, len(parsed.Modes))
 	}
 
 	fmt.Printf("%d figures in %s\n", written, outDir)

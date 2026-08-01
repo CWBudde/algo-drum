@@ -2100,10 +2100,22 @@ success criterion 6 is to mean anything.
       `-channel` defaulted to `mono` on a **stereo**
       reference, silently fitting a different target than every number in the
       repository — it cost a full-budget run here before it was caught, and is
-      now refused outright. Still outstanding:
-      `web/src/algo/physicalTomPresets.ts` holds the superseded bank, and the
-      paper's figures come from `fit-final-prescribed` — both are shipped-surface
-      changes and neither is mine to make.
+      now refused outright.
+
+      **Both shipped-surface items closed 2026-08-01, on request.**
+      `web/src/algo/physicalTomPresets.ts` now holds this run's bank — all
+      seventeen knobs matching `testdata/physical-fit-tom.json` exactly, QUAL and
+      velocity deliberately excluded — so the fixture and the **Measured tom**
+      preset agree again. The paper gained a `@refit` chapter reporting this run
+      (the re-score table, the term-by-term agreement with
+      `fit-glidefix-interrupted`, the ceiling argument, the seed-diversity
+      caution) with its own two figures under a `-refit` suffix; `@results` and
+      its four PNGs are left exactly as they were, because the paper's rule is
+      that a run is reported where it was made and a chapter's figures are never
+      redrawn from a run that chapter does not describe. `tools/paper-figures`
+      grew `-suffix` and `-only` for that, and `just paper-figures-refit` is the
+      recipe. Still outstanding on the paper: nothing establishes the
+      contact-model ordering until hertzian is refitted.
       One reading worth carrying into M1a: three tom sources put the **loud-hit**
       glide at 130–165 cents (F&R §18.4 p. 608 quotes Bork & Meyer at 160; Rose
       ~8 %; Gärder ~8 %) while the corrected reference reads 54.1. Not a

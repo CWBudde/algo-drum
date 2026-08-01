@@ -52,7 +52,10 @@
     already lie on the reference's partials, worth 12% at identical cost against
     a target it reaches to a cent, and worth nothing against one it reaches only
     to thirty-six --- a distinction the pre-solve itself reports before the search
-    begins.
+    begins. A final chapter refits the prescribed model under the corrected glide
+    estimator and reaches 10.382 from a 32.442 baseline; a second, independent
+    search agrees with it on every term the objective can read, which places the
+    residual at the model's ceiling on this recording rather than at the search's.
   ],
   status-body: [
     The fitted numbers in @results come from two complete reports, one per contact
@@ -70,13 +73,20 @@
     bank measures 33.094 with prescribed contact and 33.544 with Hertzian, at the
     Standard tier against the right channel.
 
-    *Every fit in this paper, including those two, predates a second correction:
-    the glide estimator was faulty in both of its probes* (@glidefault,
-    2026-07-31). That term sat inside the objective the search minimised, so the
-    fitted banks are conditioned on it and not merely mis-scored by it. @results
-    and @contact-table are reported as obtained rather than re-run, and
-    @glidefault gives the fault, its size, the corrected reference figure and
-    what specifically it puts back in question.
+    *Every fit up to @glidefault, including those two, predates a second
+    correction: the glide estimator was faulty in both of its probes*
+    (@glidefault, 2026-07-31). That term sat inside the objective the search
+    minimised, so the fitted banks are conditioned on it and not merely mis-scored
+    by it. @results and @contact-table are reported as obtained rather than
+    re-run, and @glidefault gives the fault, its size, the corrected reference
+    figure and what specifically it puts back in question.
+
+    @refit is the one run made *after* that correction (2026-08-01) and the only
+    section whose total is current: the prescribed contact refitted from scratch,
+    32.442 #sym.arrow 10.382. It also re-measures four archived banks under the
+    corrected objective so that they can be read on one axis. The Hertzian
+    contact has not been refitted, so nothing in this paper establishes the
+    contact-model ordering.
   ],
 )
 
@@ -1874,8 +1884,9 @@ Two specific consequences are worth naming rather than leaving to the reader.
 0.283 and the prescribed fit's glide row contributes 0.44 against the Hertzian's
 0.00, both measured against a target of 120.4 cents that should have read 58.9.
 The ordering may well survive --- it is a consistent one across restarts --- but it
-is no longer supported by the numbers printed, and re-deriving it under the
-corrected objective is outstanding.
+is no longer supported by the numbers printed. @refit re-derives the prescribed
+side under the corrected objective; the Hertzian side has not been re-run, so the
+ordering itself is still outstanding.
 
 *The shipped Berger $beta$ is untouched.* It was fitted to the model's own glide
 on an isolated batter fixture --- 96.9 cents between velocity 0.2 and velocity
@@ -1910,6 +1921,185 @@ derives (@provenance-table) and that its value is under independent question fro
 literature. A parameter that cannot be identified from the target is a parameter
 whose value has to be settled by a measurement made for the purpose --- Fischer's
 doublet protocol on a tom --- and not by a better fit.
+
+= The refit under the corrected objective <refit>
+
+@glidefault leaves a debt: the banks of @results are outputs of an objective that
+has since been corrected, and re-deriving them under the corrected one was
+recorded there as outstanding. This chapter pays part of it. The prescribed
+contact model was refitted from scratch, at a budget larger than @results ran at,
+against the corrected estimator. The Hertzian alternative was *not* refitted, so
+@contact-table is not superseded here --- it remains a superseded result, and the
+contact-model ordering remains undetermined.
+
+== Putting two objectives on one axis
+
+An archived report's stored total was produced by an objective that no longer
+exists, but the report records its own best point exactly, so the bank can be
+re-measured: pin every free parameter to its recorded normalised position, pin
+the strike velocity, and ask for a report without a search. Quality tier, contact
+model and channel must be reproduced from the report's own header, or the answer
+is about a different drum.
+
+#figure(
+  table(
+    columns: (auto, auto, auto, auto),
+    align: (left, right, right, right),
+    table.header(
+      [Archived run],
+      [Then],
+      [Today],
+      [Glide (cents)],
+    ),
+    [Control, post-fix], [10.577], [*10.577*], [1.9 #sym.arrow 1.9],
+    [Hertzian, @contact-table], [11.535], [15.146], [0.1 #sym.arrow 59.6],
+    [Hertzian, earlier], [11.630], [15.650], [--- #sym.arrow 49.7],
+    [Prescribed, @results], [11.252], [*18.991*], [17.6 #sym.arrow 107.1],
+  ),
+  caption: [
+    Four archived banks re-measured under the corrected objective, each at its
+    own tier, contact model, channel and velocity, against their totals as
+    reported at the time. The first row is the recipe validating itself: it is
+    the one archived run made after the correction, and re-scoring reproduces its
+    reported total to the digit, term for term.
+  ],
+) <rescore-table>
+
+Two readings of that table are wrong and worth closing off. It is *not* a measure
+of what the glide fault alone cost, because a re-score renders the bank through
+today's synthesis as well as measuring it with today's metric, and the model
+gained its mode-to-mode coupling channels (@coupling) on by default in the same
+interval --- the shipped baseline moved 33.094 #sym.arrow 32.442 on the same bank
+and channel for that reason alone. And it is *not* a ranking of the searches that
+produced those banks, because each was optimised against a different objective
+from the one marking it. What it does say is that the run which won under the old
+objective is the worst of the four under the corrected one, and the glide column
+says why: a near-zero error against a fabricated target is a bank tuned onto the
+artefact.
+
+== The run
+
+Twelve restarts of 150 iterations over a population of 16, four of the twelve
+seeded from the pre-solve of @seeding, seed 1, right channel, Standard tier,
+prescribed contact. All twelve completed; 88,584 evaluations. *The distance falls
+from 32.442 at the shipped default to 10.382.*
+
+#place(top, scope: "parent", float: true)[
+  #figure(
+    image("figures/terms-refit.png", width: 100%),
+    caption: [
+      The refit, every term as a multiple of its own threshold, drawn as
+      @terms-figure is. Glide and attack balance have no visible fitted bar
+      because they fall off the bottom of the axis --- 0.03 cents against a
+      40-cent threshold and 0.02 dB against 6. The three gated terms are
+      highlighted and all three are still missed.
+    ],
+  ) <terms-refit-figure>
+]
+
+Five terms again fall below threshold and the same four remain above, but the
+comparison that matters is not with @results, whose total is not on this axis.
+It is with the one archived run measured the same way --- the control row of
+@rescore-table, an interrupted eight-restart run at a different seed.
+
+#figure(
+  table(
+    columns: 3,
+    align: (left, right, right),
+    table.header([Term], [This run], [Control]),
+    [Partial frequency], [48.936 cents], [48.997 cents],
+    [Partial level], [9.081 dB], [9.172 dB],
+    [Partial decay], [0.573], [0.602],
+    [Spectral envelope], [11.068 dB], [11.034 dB],
+    [Amplitude envelope], [0.724 dB], [0.746 dB],
+    [Unmatched share], [0.047], [0.047],
+    [Spurious share], [0.327], [0.330],
+    [Glide], [*0.029 cents*], [*1.892 cents*],
+    [Attack balance], [*0.019 dB*], [*0.188 dB*],
+    [*Total*], [*10.382*], [10.577],
+  ),
+  caption: [
+    Two independent searches under the same objective --- twelve restarts against
+    eight, different seeds, one complete and one interrupted. Every term the
+    objective can read about the drum agrees; the whole of the 0.195 difference
+    is the two bold rows, which are the cheapest terms in the sum to polish once
+    the rest has settled.
+  ],
+) <convergence-table>
+
+*That agreement, and not the 1.8% better total, is the result.* Two searches
+arriving at the same point from different starts is a statement about the model's
+ceiling on this recording rather than about either search: the remaining 10.4 is
+not search effort left on the table. The winning restart's convergence agrees from
+the inside --- its last three iterations read 10.3829, 10.3823, 10.3821, flat to
+four digits, where the run of @results was still visibly descending when its
+budget ran out. A better total on this reference now needs a different model, not
+a longer run.
+
+== What the ceiling is made of
+
+All three gated terms are missed, for the third round running: partial frequency
+48.9 cents against 25, partial decay 0.573 against 0.25, spectral envelope
+11.07 dB against 4. The spectral envelope is now on its *sixth* independent
+intervention --- contact model, head-damping range (@lossscale), seeding
+(@seeding), the level correction (@levels), the glide correction (@glidefault),
+and a converged full-budget refit --- and it has sat between 11 and 13.6 dB
+throughout. A term that does not move for six unrelated changes is as likely to be
+ill-posed for this model as it is to be a hard target, and nothing measured here
+distinguishes the two.
+
+#place(top, scope: "parent", float: true)[
+  #figure(
+    image("figures/decay-refit.png", width: 100%),
+    caption: [
+      Ring times of the refit against the reference, drawn as @decay-figure is.
+      The residual is the same shape and it has not softened: across 200--750 Hz
+      the model delivers 0.5--1.3 s at all but one of its partials, where the
+      reference scatters from 0.15 to 1.2 s, and at the fundamental it now rings 0.83 s
+      against the reference's 1.49 --- shorter than the run of @results managed
+      there. Its longest-ringing partial, 1.81 s at 186 Hz, has no counterpart in
+      the reference at all.
+    ],
+  ) <decay-refit-figure>
+]
+
+@decay-refit-figure is @decay-figure again, which is the point: the correction
+moved the objective and the fitted bank, and left the residual where @lossscale
+located it. The partial-level term reads the same fact from the other side. The
+model's loudest partial is its fundamental at 118 Hz, while the reference's is at
+213 Hz --- a partial the model does place, to within 43 cents, but sets 4.5 dB
+below its own loudest and rings for 0.25 s where the reference gives it 0.15. A
+loss law that cannot make the reference's
+non-monotone ring times also cannot make its partial balance, because on this
+recording the two are the same statement.
+
+Coverage is where the refit has genuinely closed. Eleven of the fourteen reference
+partials find a counterpart within 5%, the fundamental to within 6 cents,
+which is what an unmatched share of 0.047 means concretely; what is missing is the
+1598 Hz component and the two quiet, long-ringing partials at 140 and 530 Hz. The
+0.327 spurious share is charging for five invented modes. The 476--700 Hz band ---
+the one the reduction of @reference turns on --- holds five fitted partials against
+the reference's seven, exactly what the earlier winner managed. Its density is
+still not reproduced.
+
+== Two notes on the seeding
+
+The four seeded restarts converged at 26.777, 26.777, 26.777 and 26.793 cents of
+frequency error, which is the best seed error yet measured against a corrected
+target --- against the 35.9--37.0 cents of @presolve-table, and within 7% of the
+25-cent gate. The reading offered in @seeding, that no bank the product can
+express places its modes much better than the middle thirties on this target, is
+therefore *too strong as stated* and is narrowed rather than withdrawn. Whether
+the gate is reachable at all remains open.
+
+The second note is a caution about the instrument that produced the first. Four
+seeds from four different starts agreeing to three decimal places is not what four
+diverse optima look like. Either the pre-solve's diversity constraint is not
+producing diverse banks or this is one sharp optimum every start falls into, and
+the report does not distinguish them --- which is worth settling before
+`-seeded-restarts` is used to argue anything. Seeding lost again on the paired
+reading: best 10.970 seeded against 10.382 unseeded, mean 13.05 against 11.68, and
+the winning restart was unseeded for the third run running.
 
 = What to watch for <watch>
 
@@ -1975,9 +2165,10 @@ statement about a target rather than about a method.
 
 *A term that will not move under any intervention is a question about the term.*
 Where the other eight terms of this distance respond to the contact model, to the
-damping range, to seeding and to a corrected reduction, the spectral envelope sat
-at 12.3 dB through all four and is the largest single contributor in both fits of
-@contact-table. That pattern is worth reading as evidence about the measurement
+damping range, to seeding, to two corrected reductions and to a converged
+full-budget refit, the spectral envelope has sat between 11 and 13.6 dB through
+all six --- the largest single contributor in both fits of @contact-table, and
+second only to partial level in @refit. That pattern is worth reading as evidence about the measurement
 as much as about the model: this term is mean-removed band shape out to 12.5 kHz,
 and above roughly 3 kHz the model offers only its stochastic attack layer --- no
 shell, no bearing edge, no hardware. A threshold applied over a
@@ -2037,6 +2228,13 @@ That command reproduces the distance's own greedy partial matching rather than
 approximating it, so @partials-figure shows the pairing the score was actually
 computed over. @comb-figure is measured from the two channels directly and is not
 regenerable without them.
+
+@terms-refit-figure and @decay-refit-figure are the same two renderers over the
+report of @refit --- `just paper-figures-refit` --- written under a distinct
+suffix rather than over the originals. A figure carries no record of the run that
+drew it, so redrawing a chapter's figures from a run that chapter does not
+describe is a silent way to make a paper wrong; each set is therefore named for
+its own run and neither recipe can overwrite the other's output.
 
 The five figures of @instrument come from a second committed artefact, written by
 #code-path("cmd/analyze-physical") --- `just paper-data`, then the same
