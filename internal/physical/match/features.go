@@ -894,10 +894,6 @@ func measureDecays(hit []float64, sampleRateHz float64, options Options, partial
 		// identically, so the root the decibel conversion was undoing never needs
 		// taking. The floor comparison is squared to match, which is exact for
 		// non-negative operands.
-		//
-		// Hypot rather than Sqrt was the right call in probeGlide, where the sum
-		// of magnitudes has no such algebraic escape. Here there is nothing left
-		// for its careful scaling to protect: the squares are formed either way.
 		peakSquared := 0.0
 
 		for sample := start; sample < end; sample++ {
