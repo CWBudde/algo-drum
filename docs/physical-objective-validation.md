@@ -27,7 +27,7 @@ here should be restated at length elsewhere — link to it instead.
 >   about the medium-pitch set and the paths in their reproduction commands are
 >   current, so each can be re-run. Until that is done, do not quote any of them
 >   as a property of the reference the fit now aims at. Re-running them is
->   `PLAN.md` N15.
+>   `PLAN.md` N16.
 
 ## Why this was needed
 
@@ -774,91 +774,132 @@ a user knob — it is audible, and a player setting it is making no claim about 
 recording. `-search-blind` puts it back for the deliberate experiment of
 re-testing this, which is the only way the claim above stays revisable.
 
-## Result 10 — the reference's ring time is flat in frequency, not ∝ 1/f
+## Result 10 — the reference's ring time falls as f^-0.52, not as 1/f
 
 Results 8 and 9 established a defect in the model's damping _distribution_ and
 that its pairwise part is real. Neither says what shape the reference actually
 wants, and the model's loss law has been calibrated to a stated one since P2:
-"measured membrane behaviour is \(T_{60} \propto 1/f\)", i.e. constant \(\zeta\),
-which is why \(d_1\) dominates and \(d_0\) is held at a small floor
-([`physical-calibration.md`](physical-calibration.md)). That premise is now
+"measured membrane behaviour is \(T_{60} \propto 1/f\)", i.e. constant
+\(\zeta\), which is why \(d_1\) dominates and \(d_0\) is held at a small
+floor ([`physical-calibration.md`](physical-calibration.md)). That premise is now
 measurable against the committed reference, and it does not survive.
 
-`go run ./cmd/measure-tom -channel mono reference/tt08x08/mp/hd/v*.wav`, 16 takes,
-256 partials, at the shipped 0.05–0.6 s decay window. Third-octave medians:
+Measured on **`tt08x08/lp/hd`**, the set that became the reference on 2026-08-01:
 
-| band (Hz) |   n | median T60 (s) |
-| --------- | --: | -------------: |
-| 315–397   |  11 |          0.280 |
-| 397–500   |   7 |          0.419 |
-| 500–630   |  11 |          0.807 |
-| 794–1000  |  27 |          0.823 |
-| 1000–1260 |  18 |          0.276 |
-| 1260–1587 |  27 |          0.501 |
-| 1587–2000 |  37 |          0.348 |
-| 2000–2520 |  38 |          0.290 |
-| 2520–3175 |  78 |          0.256 |
+```bash
+go run ./cmd/measure-tom -channel mono -analysis-seconds 2.0 \
+    reference/tt08x08/lp/hd/v*.wav
+```
 
-**Across a decade of frequency the ring time does not fall.** \(T_{60} \propto
-1/f\) anchored at the 352 Hz measurement predicts 34 ms at 2.9 kHz; the reference
-gives **256 ms**, too long by 7.5×. What the table shows instead is \(T_{60}\)
-roughly constant — which is \(\gamma\) constant, which is the \(d_0\)-dominant law,
-the one the calibration deliberately moved _away_ from.
+16 takes, 256 partials, at the shipped 0.05-0.6 s decay window. Third-octave
+medians, with the median fit quality beside each because it is what disqualifies
+one of the bands outright:
 
-The mode identification is not in doubt, because the geometry is known. The 304
-and 352 Hz components are the two branches of the \((0,1)\): their ratio is
-**1.157**, against Fischer's measured 1.16 for a two-headed drum. The 482 Hz
-component is the \((1,1)\): 482.37/304.01 = **1.587** against the ideal 1.594, and
-against the 1.584 Result 3 already recorded for this drum.
+| band (Hz) |   n | median T60 (s) | median R2 |
+| --------- | --: | -------------: | --------: |
+| 227-286   |  34 |          0.686 |      0.92 |
+| 286-360   |  17 |      _(4.688)_ |      0.77 |
+| 360-454   |   8 |          0.348 |      0.86 |
+| 454-571   |  19 |          0.714 |      0.95 |
+| 571-720   |  11 |          0.318 |      0.95 |
+| 720-907   |  15 |          0.764 |      0.94 |
+| 907-1143  |  30 |          0.394 |      0.97 |
+| 1143-1440 |  32 |          0.400 |      0.96 |
+| 1440-1814 |  37 |          0.292 |      0.96 |
+| 1814-2286 |  23 |          0.257 |      0.96 |
+| 2286-2880 |  27 |          0.208 |      0.95 |
 
-### The window, checked before the conclusion
+Fitting a power law to the 209 partials with R2 >= 0.90 and a ring time the file
+could actually contain:
 
-A decay estimate can be manufactured by the window it is fitted over, and the
-long values here sit close to the takes' own whole-signal RT60 (0.65–0.97 s), so
-this was checked rather than assumed. Every partial was re-measured at four other
-window ends and matched to its own 0.6 s estimate by frequency, within 0.5 %:
+\[
+T_{60} \propto f^{-0.52}.
+\]
 
-| window end | matched pairs | median ΔT60 | below 1 kHz | above 1 kHz |
+**Constant \(\zeta\) is \(f^{-1}\) and a flat \(\gamma\) is \(f^{0}\).**
+The reference sits almost exactly halfway between them, in log slope. Anchored at
+the 240 Hz measurement, the constant-\(\zeta\) law the model is calibrated to
+predicts 64 ms at 2.6 kHz where the reference gives **208 ms**, too short by 3.3x.
+The law is not wrong in kind — it is roughly twice too steep.
+
+The mode identification is not in doubt, because the geometry is known: the
+fundamental is 239.9 Hz and the \((1,1)\) is 378.8 Hz, a ratio of **1.579**
+against the ideal 1.594.
+
+### The window, checked before the conclusion, and what it found
+
+A decay estimate can be manufactured by the window it is fitted over, so this was
+checked rather than assumed. Every partial was re-measured at four other window
+ends and matched to its own 0.6 s estimate by frequency, within 0.5 %:
+
+| window end | matched pairs | median dT60 | below 1 kHz | above 1 kHz |
 | ---------- | ------------: | ----------: | ----------: | ----------: |
-| 0.20 s     |           112 |      25.3 % |      64.1 % |      19.6 % |
-| 0.30 s     |           148 |      11.7 % |      25.6 % |       7.5 % |
-| 0.45 s     |           199 |       3.8 % |       8.6 % |       2.7 % |
-| 0.90 s     |           196 |       2.2 % |       9.1 % |       1.0 % |
+| 0.30 s     |           148 |      15.4 % |      29.2 % |       7.5 % |
+| 0.45 s     |           202 |       6.0 % |      11.9 % |       1.8 % |
+| 0.90 s     |           200 |       3.1 % |      18.9 % |       0.9 % |
+| 1.30 s     |           186 |       4.6 % |      25.6 % |       1.0 % |
 
-Extending the window by half moves the estimate by 2.2 %, so the shipped window
-is long enough for what it is measuring. The instability at 0.2–0.3 s is the
-window failing to span the decay, not the estimator failing — which is the
-expected direction and is why the guard N2 added is a floor on span rather than
-on sample count.
+Above 1 kHz the shipped window is settled: extending it to 1.3 s moves the
+estimate by 1 %. **Below 1 kHz it is not** — 19 % at 0.9 s and 26 % at 1.3 s, and
+moving _away_ from the shipped value in both directions. That is the window
+failing to span the decay, and it is a property of the new reference rather than
+of the estimator: this drum's fundamental rings for 0.686 s, so the 0.6 s window
+does not reach \(T_{60}\) at all, where the medium-pitch set it replaced rang for
+0.28 s and comfortably did.
 
-**One thing this does not establish**, stated because it bounds the conclusion:
-every take has 0 ms of pre-roll and an unmeasurable noise floor, and the
-500–1000 Hz band's 0.81 s sits inside the takes' own RT60. Nothing here can
-separate a mode that rings for 0.8 s from a room that does. The claim above does
-not rest on that band: it is about the ratio between 315 Hz and 3.2 kHz, and if
-the 500–1000 Hz bump is the room then the reference is **flatter** still.
+Two numbers size that:
+
+- **70 of 256 partials (27.3 %) are assigned a ring time longer than the 0.6 s
+  window they were fitted in.**
+- **11 (4.3 %) are assigned one longer than the 2.08 s file** — up to 10.4 s. All
+  eleven are the same partial near 358 Hz seen across takes, at R2 0.12-0.66, and
+  they are what makes the 286-360 Hz row above unusable. A ring time longer than
+  the recording is not a measurement, and N2's guard does not catch it: that guard
+  bounds a fit against the _envelope filter's_ fastest pole, which is the opposite
+  failure.
+
+So the low band's numbers are the ones the conclusion leans on and the ones the
+window serves worst. The power-law slope is quoted over partials the file can
+hold, and the direction of the residual error is known: a window that cannot
+reach \(T_{60}\) truncates long decays, so the true low-frequency ring times are
+if anything _longer_ than the table says, and the true slope **steeper** than
+\(-0.52\) — that is, further from constant \(\gamma\) and closer to, but on
+this evidence not at, constant \(\zeta\).
 
 ### What it means for N3
 
 The lever is already in the bank and it is not a correction-table entry. `D.TILT`
-scales \(d_1\) and \(d_2\) and leaves \(d_0\) alone, so the \(d_0\):\(d_1\)
-balance — the whole difference between a constant-\(\gamma\) law and a
-constant-\(\zeta\) one — is exactly what it moves, over a 0–3 range that reaches
-\(\gamma = d_0\) exactly at zero. Its own documentation already names that end
-"flat (every mode rings for the same time, which is what the model used to do)" —
-so the shape this reference asks for is one the model shipped before P2's
-calibration replaced it with constant Q on the strength of the premise measured
-above. Result 8's structural finding follows directly
-from which end of that range the model ships at: with \(d_1\) dominant
-\(\gamma \propto k\), so the lowest uncorrected mode necessarily rings longest,
-and the \((1,1)\) is that mode. With \(\gamma\) flat it is not.
+scales \(d_1\) and \(d_2\) and leaves \(d_0\) alone, so the
+\(d_0\):\(d_1\) balance — the whole difference between a constant-\(\gamma\)
+law and a constant-\(\zeta\) one — is exactly what it moves, over a 0-3 range
+whose zero is the flat law and whose 1 is the calibrated constant-Q one. Result
+8's structural finding follows directly from which end of that range the model
+ships at: with \(d_1\) dominant \(\gamma \propto k\), so the lowest
+uncorrected mode necessarily rings longest, and the \((1,1)\) is that mode.
 
-This does not make a second correction entry wrong, and it does not make it right;
-it says the entry would be patching one mode of a law whose _slope_ is the thing
-the reference disagrees with. The measurement that settles it is a fit against
-this reference — the first one ever made against it, every archived fit having
-targeted the retired `tom.wav` — read for where `D.TILT` lands and whether it
-pins. That run is what N3 now waits on.
+An \(f^{-0.52}\) target puts the answer **between the two ends, not at either**,
+which is the useful part: it says the fit should land `D.TILT` well below 1 and
+not at its stop, and that a bank which pins it at 0 is reporting a measurement
+artefact rather than this drum. A correction entry at the \((1,1)\) would be
+patching one mode of a law whose slope is the thing the reference disagrees with.
+
+The measurement that settles it is a fit against this reference, read for where
+`D.TILT` lands and whether it pins. That run is what N3 now waits on, and it
+should not be started before the decay window is re-sized: 27 % of the target's
+own partials are currently fitted over a window shorter than their ring time, and
+the fit would be matching the model to that.
+
+### Superseded: the same measurement on `tt08x08/mp/hd`
+
+Made first, on the set that was the reference until 2026-08-01, and kept because
+it is what prompted the window checks. There the ring time is **flat** — 0.280 s
+at 352 Hz against 0.256 s at 2.9 kHz, an exponent near zero, against which
+constant \(\zeta\) is wrong by 7.5x. The 0.6 s window is ample for that drum
+(2.2 % on extension to 0.9 s), so the flatness is not a window artefact of the
+kind found above. Two drums from one pack, one tuning apart, give exponents of
+roughly 0.0 and -0.52; **neither supports \(1/f\)**, which is the claim under
+test, and the disagreement between them is itself a caution against
+re-calibrating a shipped law on a single recording.
 
 ## What this changes
 

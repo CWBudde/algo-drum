@@ -951,24 +951,30 @@ recording and can be taken at any time.
     **Re-aimed 2026-08-01, before that experiment was run.** Evidence:
     [`physical-objective-validation.md`](docs/physical-objective-validation.md)
     §Result 10. The committed reference's ring time was measured across all
-    sixteen takes and it is **flat in frequency**, not ∝ 1/f: 0.280 s at 352 Hz
-    against 0.256 s at 2.9 kHz, where the constant-ζ law the model is calibrated
-    to predicts 34 ms at the second. The window was checked before the conclusion
-    — extending the decay fit from 0.6 s to 0.9 s moves the matched estimates by
-    2.2 % — and the mode identification is not in doubt, the geometry being known:
-    the (0,1) doublet is 304/352 Hz (ratio 1.157 against Fischer's 1.16) and the
-    (1,1) is 482 Hz (1.587 against the ideal 1.594).
+    sixteen takes and it falls as **T60 ∝ f^-0.52** — halfway in log slope
+    between the f^-1 the loss law is calibrated to and the f^0 a d0-dominant law
+    gives. Anchored at 240 Hz, constant ζ predicts 64 ms at 2.6 kHz against a
+    measured 208 ms: the law is not wrong in kind, it is about twice too steep.
+    The medium-pitch set that was the reference until this date gives an exponent
+    near **zero** on the same measurement, so two tunings of one drum disagree
+    and neither supports 1/f. That disagreement is a caution, not a result: do
+    not re-calibrate a shipped law on one recording.
 
     So Result 8's structure — "the lowest uncorrected mode is forced to ring
     longest" — is a consequence of the law's **slope**, and the slope is already
     a product knob: `D.TILT` scales d₁ and d₂ and leaves d₀ alone, over a 0–3
-    range whose zero is exactly the flat law, and whose own documentation calls
-    that end "what the model used to do". A correction entry at the (1,1) would
-    be patching one mode of a law whose slope is the thing the reference
-    disagrees with. **Run the fit before the entry**: the first fit ever made
-    against this reference (every archived one targeted the retired `tom.wav`),
-    read for where `D.TILT` lands and whether it pins at zero. The entry is
-    warranted only if a fitted slope still leaves the (1,1) long.
+    range whose zero is the flat law and whose 1 is the calibrated constant-Q
+    one. An f^-0.52 target puts the answer between the ends rather than at
+    either, which is what makes it useful: the fit should land `D.TILT` well
+    below 1 and not at its stop, and a bank that pins it at 0 is reporting an
+    artefact rather than this drum. A correction entry at the (1,1) would be
+    patching one mode of a law whose slope is the thing the reference disagrees
+    with. **Run the fit before the entry** — the first ever made against this
+    reference — and read it for where `D.TILT` lands.
+
+  - **N17 gates that fit**, and is not optional: 27 % of the new reference's
+    partials are assigned a ring time longer than the window they are fitted in.
+    A fit started now would be matching the model to that.
 
   - **The instrument for that experiment exists**, so it is not what the next
     round is spent on: `cmd/fit-physical -mode-correction m,n=perSecond` adds an
@@ -1031,6 +1037,47 @@ recording and can be taken at any time.
     exactly one member — so a later addition has to be a deliberate edit with a
     measurement behind it.
 
+- [ ] **N17: re-size the analysis and decay windows for the new reference.**
+      _Opened 2026-08-01, when the reference became `tt08x08/lp/hd`._ Evidence:
+      [`physical-objective-validation.md`](docs/physical-objective-validation.md)
+      §Result 10. `match.Options` ships `analysisSeconds` 1.2 and
+      `decayFitEndSeconds` 0.6. Those were sized against the medium-pitch set —
+      1.25 s files whose fundamental rang for 0.28 s — and the set that replaced
+      it is 2.08 s files whose fundamental rings for 0.686 s.
+
+      Measured on the new reference, at the shipped window:
+
+  - **70 of 256 partials (27.3 %) are assigned a ring time longer than the 0.6 s
+    window they were fitted in**, and the estimate below 1 kHz moves by 19 % when
+    the window is extended to 0.9 s and 26 % at 1.3 s — in the same direction,
+    so this is the window failing to span the decay rather than noise. Above
+    1 kHz it is settled at 1 %, so this is a low-band problem specifically, which
+    is exactly the band N3 is about.
+  - **11 partials (4.3 %) are assigned a ring time longer than the 2.08 s file**,
+    up to 10.4 s, all of them the same ~358 Hz component across takes at R² 0.12–
+    0.66. A ring time longer than the recording is not a measurement. N2's guard
+    does not catch it: that one bounds a fit against the envelope filter's
+    fastest pole, which is the opposite failure. **A second guard is wanted — no
+    fitted T60 may exceed the analysed span** — and it should report rather than
+    clamp, because a partial that cannot be measured is not the same thing as one
+    that decays slowly.
+
+    Three things follow, and the order matters:
+
+  - The windows are not free parameters to be tuned until a number improves.
+    Widening `analysisSeconds` toward the 2.08 s the files hold is bounded by
+    what the *model* is rendered for (`-duration`, 1.2 s) — both sides must move
+    together or the candidate is scored over a window it was never rendered
+    across.
+  - **Every measured gate is a property of the estimator, and these gates were
+    measured through the current windows.** `cmd/measure-objective` has to be
+    re-run on the new reference after any window change, exactly as N1 and N2
+    each re-ran it. The lp/hd gates now in `DefaultWeights` were measured at the
+    shipped windows and are correct for them and nothing else.
+  - **N3's fit waits on this**, and Result 10's own slope carries the same
+    caveat: truncation shortens long decays, so the true exponent is if anything
+    steeper than −0.52.
+
 - [ ] **N4: recompute the cavity stiffness against a known-geometry drum.**
       `Cavity.StiffnessScale` ships at 0.083, a factor of twelve below its physical
       ceiling of 1 — and there is **no factor of twelve to explain**: all four
@@ -1050,7 +1097,7 @@ recording and can be taken at any time.
           all the way or not at all** — the intermediate values are the worst, and three
           tests encode the snare target and must be re-quoted with it.
 
-- [ ] **N5: refit jointly across all sixteen velocities.** `tt08x08-mp-hd`, mono —
+- [ ] **N5: refit jointly across all sixteen velocities.** `tt08x08/lp/hd`, mono —
       safe here because the pair is coincident. Pin what is now known (diameter,
       depth, both surface densities from the stated Remo gauges) and fit the rest
       against the whole velocity curve rather than one hit.
@@ -1190,6 +1237,41 @@ recording and can be taken at any time.
       the **uncoupled** fundamental or the air spring is baked into the tension.
       Postponed by the user 2026-08-01 for noise reasons; N4 now supplies most of
       what this was for, so it is no longer blocking.
+
+- [ ] **N16: re-measure the objective-validation results on the reference the fit
+      now aims at.** The reference moved from `tt08x08/mp/hd` to `tt08x08/lp/hd` on
+      2026-08-01, chosen on the sound.
+      [`physical-objective-validation.md`](docs/physical-objective-validation.md)
+      Result 1 has been redone on the new set and the shipped gates come from it;
+      **Results 2 onward have not**. They remain true statements about the
+      medium-pitch drum, with working reproduction commands, and each needs
+      re-running before it can be quoted as a property of the current target.
+
+      This is not bookkeeping. The one result already redone refuted a standing
+      assumption of that document — that the reproducibility floor is a property of
+      the estimator rather than of the estimator and the recording together. Same
+      code, different drum, and the glide floor moved from 280.1 ¢ to 2.3 ¢, because
+      the medium-pitch fundamental dies before the glide estimator's late probe and
+      the low-pitch one does not. Anything in Results 2–10 that was read as a
+      statement about the estimator is now suspect in the same way, and the two
+      candidates worth doing first are the residual budget and Result 10's decay-shape
+      finding, which
+      [`physical-calibration.md`](docs/physical-calibration.md) currently cites as
+      the reason to doubt the constant-\(\zeta\) loss law.
+
+      **Result 10 is done**, and it makes the point above twice over. Re-measured on
+      `lp/hd` the ring time falls as f^-0.52; on `mp/hd` the same code gave an
+      exponent near **zero**. The conclusion that survives the move is only the
+      negative one — neither tuning supports the 1/f the loss law is calibrated to —
+      and the positive number is a property of the drum and the tuning together, as
+      the glide floor was. It also exposed a defect the medium-pitch set hid, now
+      **N17**: 27 % of this reference's partials are fitted over a window shorter
+      than their own ring time. Redo the rest of Results 2–10 *after* N17, not
+      before, or they are measured through a window that is about to move.
+
+      A second consequence to watch when the refit happens: the glide gate is now
+      **10 cents** rather than 290, so a term that could previously not influence a
+      total can now dominate one. No fit has been run under these weights.
 
 **Exit.** The objective's gates are traceable to measured reproducibility under
 repaired estimators; a fit exists against the licensed reference with at least one

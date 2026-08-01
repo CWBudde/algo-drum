@@ -45,16 +45,22 @@ whose only frequency-independent contribution is the middle term: choosing
 alone gives \(T_{60}\) independent of frequency and \(d_2\) alone gives
 \(T_{60} \propto 1/f^2\). Measured membrane behaviour is \(T_{60} \propto 1/f\).
 
-> **The committed reference does not show that**, and the whole choice below
-> rests on it. Over 315 Hz–3.2 kHz the licensed tom's \(T_{60}\) is roughly
-> **constant**, not \(\propto 1/f\): 0.28 s at 352 Hz and 0.26 s at 2.9 kHz, where
-> the constant-\(\zeta\) law anchored at the first predicts 34 ms at the second.
-> That is the \(d_0\)-dominant shape — the one this section moved away from. The
-> measurement, its mode identification and the window checks that precede it are
+> **The committed reference does not show that**, and the whole choice below rests
+> on it. The licensed 8" × 8" tom's ring time falls as \(T_{60} \propto f^{-0.52}\)
+> over 227 Hz–2.9 kHz — halfway, in log slope, between the \(f^{-1}\) this
+> paragraph asserts and the \(f^{0}\) a \(d_0\)-dominant law gives. Anchored at
+> 240 Hz, constant \(\zeta\) predicts 64 ms at 2.6 kHz against a measured 208 ms.
+> The law is not wrong in kind; it is about twice too steep. The medium-pitch set
+> that was the reference until 2026-08-01 gives an exponent near **zero** on the
+> same measurement, so the two tunings of one drum disagree, and neither supports
+> \(1/f\).
+>
+> The measurement, its mode identification, the window checks and the two
+> estimator defects they exposed are
 > [`physical-objective-validation.md` §Result 10](physical-objective-validation.md);
 > what to do about it is [P10/N3](../PLAN.md), which is waiting on a fit against
-> that reference. Nothing below has been changed yet, because a calibration is not
-> re-anchored on one drum without one.
+> that reference. Nothing below has been changed yet, and one recording would not
+> be enough to change it.
 
 The reference set uses \(\zeta = 0.72\,\%\), so \(d_1 = 0.4303\) m/s on the
 batter (\(c = 59.76\) m/s) and \(0.4644\) m/s on the resonant head
