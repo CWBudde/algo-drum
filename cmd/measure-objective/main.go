@@ -325,31 +325,31 @@ func quantile(ordered []float64, fraction float64) float64 {
 }
 
 func print(out io.Writer, report *Report) {
-	fmt.Fprintf(out, "%d file(s), %d scorings\n\n", len(report.Files), len(report.Scorings))
+	_, _ = fmt.Fprintf(out, "%d file(s), %d scorings\n\n", len(report.Files), len(report.Scorings))
 
-	fmt.Fprintf(out, "%-24s %8s %8s\n", "file", "delay", "corr")
+	_, _ = fmt.Fprintf(out, "%-24s %8s %8s\n", "file", "delay", "corr")
 
 	for _, file := range report.Files {
-		fmt.Fprintf(out, "%-24s %8d %8.3f\n",
+		_, _ = fmt.Fprintf(out, "%-24s %8d %8.3f\n",
 			trimPath(file.Path), file.ChannelDelaySamples, file.ChannelCorrelation)
 	}
 
-	fmt.Fprintf(out, "\n%-20s %10s %10s %10s %10s %10s %10s\n",
+	_, _ = fmt.Fprintf(out, "\n%-20s %10s %10s %10s %10s %10s %10s\n",
 		"term", "min", "median", "p75", "p90", "max", "gate")
 
 	for _, definition := range terms() {
 		statistics := report.Distribution[definition.name]
 		proposed := report.Proposed
 
-		fmt.Fprintf(out, "%-20s %10.3f %10.3f %10.3f %10.3f %10.3f %10.3f\n",
+		_, _ = fmt.Fprintf(out, "%-20s %10.3f %10.3f %10.3f %10.3f %10.3f %10.3f\n",
 			definition.name, statistics.Min, statistics.Median,
 			statistics.P75, statistics.P90, statistics.Max, *definition.gate(&proposed))
 	}
 
 	total := report.TotalUnderShipped
-	fmt.Fprintf(out, "\ntotal under the shipped weights: min %.3f median %.3f p90 %.3f max %.3f\n",
+	_, _ = fmt.Fprintf(out, "\ntotal under the shipped weights: min %.3f median %.3f p90 %.3f max %.3f\n",
 		total.Min, total.Median, total.P90, total.Max)
-	fmt.Fprint(out, "no fit total below the median is distinguishable from the objective's own noise\n")
+	_, _ = fmt.Fprint(out, "no fit total below the median is distinguishable from the objective's own noise\n")
 }
 
 func trimPath(path string) string {

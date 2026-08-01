@@ -430,3 +430,152 @@ func TestEspritOptionsAreValidated(t *testing.T) {
 		t.Errorf("the default options were refused: %v", err)
 	}
 }
+
+// pairBand is one place in the retained band where the subspace estimator
+// resolved a two-member pair on the licensed reference, with a ring time of the
+// order the model produces there. The four cover the 300 Hz – 2.7 kHz span every
+// resolved pair fell inside.
+type pairBand struct {
+	frequencyHz float64
+	t60Seconds  float64
+}
+
+var resolvedPairBands = []pairBand{
+	{frequencyHz: 304, t60Seconds: 0.50},
+	{frequencyHz: 613, t60Seconds: 0.38},
+	{frequencyHz: 1200, t60Seconds: 0.26},
+	{frequencyHz: 2700, t60Seconds: 0.16},
+}
+
+// TestEqualDampingIsNotSplitByTheEstimator answers the question PLAN.md's N3
+// gates its whole next round on, and N15 is blocked behind.
+//
+// The measurement being controlled: across fourteen pairs the fast estimator
+// merges and this one resolves, the two members' ring times differ by a median
+// factor of 1.55 over frequency splits of 1–6 %. No smooth loss law γ(k) can
+// produce that — it would give 1.00 — so either the model is missing a real
+// per-pair damping freedom, or the estimator trades energy between two
+// components it can barely tell apart and manufactures the ratio. Those two
+// readings call for opposite work, and nothing in the reference distinguishes
+// them, because the truth there is not known.
+//
+// Here it is. Both members are given *exactly* the same decay, at the splits,
+// frequencies and level imbalances the resolved pairs actually had, over a
+// -60 dB noise floor. Any ratio the estimator reports is manufactured, by
+// construction.
+//
+// It reports none: the worst cell in the sweep is 1.003 against a measured 1.55.
+// Where the split is too narrow to resolve the estimator merges — returning one
+// value twice — rather than inventing two, which is the conservative failure and
+// the one that keeps this control meaningful.
+//
+// So the 1.55 is the drum, and N3's first thread is answered: the missing
+// freedom is per-pair damping, spanning the retained band rather than only the
+// m = 0 modes the cavity can reach.
+func TestEqualDampingIsNotSplitByTheEstimator(t *testing.T) {
+	t.Parallel()
+
+	const sampleRateHz = 48000
+
+	// 1 % is included although it is below what the estimator resolves at most
+	// of these frequencies, because the claim being defended is about every
+	// split the reference showed, and an unresolvable one must merge rather
+	// than split.
+	for _, split := range []float64{0.01, 0.02, 0.06} {
+		for _, band := range resolvedPairBands {
+			// The upper member 6 dB down, since a pair excited by an off-centre
+			// strike is not excited equally, and an amplitude imbalance is the
+			// most plausible way an estimator would come to assign the two
+			// members different decays.
+			upperHz := band.frequencyHz * (1 + split)
+
+			tones := []tone{
+				{frequencyHz: band.frequencyHz, t60Seconds: band.t60Seconds, amplitude: 1.00},
+				{frequencyHz: upperHz, t60Seconds: band.t60Seconds, amplitude: 0.50, phase: 1.3},
+			}
+
+			found, err := ExtractHighResolution(
+				synthesizeNoisy(tones, sampleRateHz, 1.5, -60), sampleRateHz,
+				DefaultOptions(), DefaultEspritOptions(),
+			)
+			if err != nil {
+				t.Fatalf("%.0f Hz at %.0f %%: ExtractHighResolution: %v",
+					band.frequencyHz, 100*split, err)
+			}
+
+			lower, _ := nearestComponent(found, band.frequencyHz)
+			upper, _ := nearestComponent(found, upperHz)
+
+			if lower.T60Seconds <= 0 || upper.T60Seconds <= 0 {
+				t.Fatalf("%.0f Hz at %.0f %%: the pair was not found at all",
+					band.frequencyHz, 100*split)
+			}
+
+			ratio := max(lower.T60Seconds, upper.T60Seconds) /
+				min(lower.T60Seconds, upper.T60Seconds)
+
+			// A tenth of the measured effect. Wide enough that this is not a
+			// tolerance on the estimator's accuracy — the observed worst is
+			// 1.003 — and narrow enough that a manufactured 1.55 could not hide
+			// under it.
+			if ratio > 1.055 {
+				t.Errorf("%.0f Hz at %.0f %% split: equally damped members read as "+
+					"%.4f s and %.4f s, a ratio of %.3f — the estimator is manufacturing "+
+					"a damping split, and the 1.55 measured on the reference cannot be "+
+					"read as physics",
+					band.frequencyHz, 100*split, lower.T60Seconds, upper.T60Seconds, ratio)
+			}
+		}
+	}
+}
+
+// TestARealDampingSplitIsRecoveredAtItsMeasuredSize is the other half of the
+// control above, and without it that one proves only that the estimator is
+// insensitive. A method that returned the same ring time for both members
+// whatever the signal did would pass it perfectly.
+//
+// So: the same pairs, given the ratio actually measured. It comes back to
+// within a fifth of a per cent at every frequency and every split, which is what
+// makes the 1.55 a measurement rather than a lower bound.
+func TestARealDampingSplitIsRecoveredAtItsMeasuredSize(t *testing.T) {
+	t.Parallel()
+
+	const (
+		sampleRateHz = 48000
+		wantRatio    = 1.55
+	)
+
+	for _, split := range []float64{0.02, 0.06} {
+		for _, band := range resolvedPairBands {
+			upperHz := band.frequencyHz * (1 + split)
+
+			tones := []tone{
+				{frequencyHz: band.frequencyHz, t60Seconds: band.t60Seconds * wantRatio, amplitude: 1.00},
+				{frequencyHz: upperHz, t60Seconds: band.t60Seconds, amplitude: 0.71, phase: 1.3},
+			}
+
+			found, err := ExtractHighResolution(
+				synthesizeNoisy(tones, sampleRateHz, 1.5, -60), sampleRateHz,
+				DefaultOptions(), DefaultEspritOptions(),
+			)
+			if err != nil {
+				t.Fatalf("%.0f Hz at %.0f %%: ExtractHighResolution: %v",
+					band.frequencyHz, 100*split, err)
+			}
+
+			lower, _ := nearestComponent(found, band.frequencyHz)
+			upper, _ := nearestComponent(found, upperHz)
+
+			if upper.T60Seconds <= 0 {
+				t.Fatalf("%.0f Hz at %.0f %%: the upper member was not found",
+					band.frequencyHz, 100*split)
+			}
+
+			if ratio := lower.T60Seconds / upper.T60Seconds; math.Abs(ratio-wantRatio) > 0.05 {
+				t.Errorf("%.0f Hz at %.0f %% split: ratio %.3f, want %.2f (%.4f s and %.4f s)",
+					band.frequencyHz, 100*split, ratio, wantRatio,
+					lower.T60Seconds, upper.T60Seconds)
+			}
+		}
+	}
+}

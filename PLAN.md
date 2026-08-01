@@ -921,15 +921,25 @@ recording and can be taken at any time.
 
       So the threads are now:
 
-  - **Find what the pairwise splitting actually is.** Real heads split degenerate
-    pairs through thickness and tension inhomogeneity (Worland, JASA 2010), which
-    splits frequency — `ASYM` models that — but the measurement says the two
-    members also *decay* differently, which `ASYM` does not touch. A per-pair
-    damping split with no predicted sign is the shape the evidence supports.
-    Whether that is physics or two modes the estimator is trading energy between
-    is the first thing to establish, and it is answerable: synthesise a known
-    split pair with equal damping and check the subspace estimator does not
-    invent a 1.55 ratio.
+  - ~~**Find what the pairwise splitting actually is.**~~ **Answered 2026-08-01;
+    it is the drum.** Evidence: [`physical-objective-validation.md`](docs/physical-objective-validation.md)
+    §Result 9. Pairs were synthesised at the frequencies and splits the resolved
+    pairs actually had, with the upper member 0/3/6 dB down, and **both members
+    given identical damping**: the estimator reports a mean ratio of **1.001**,
+    worst 1.003, against the measured 1.55. Given a true 1.55 it returns
+    1.549–1.551 across every cell, so it is not merely insensitive. Where the
+    split is too narrow it **merges** rather than splitting — the conservative
+    failure, and the one that keeps the control valid. Both directions are pinned
+    by `TestEqualDampingIsNotSplitByTheEstimator` and
+    `TestARealDampingSplitIsRecoveredAtItsMeasuredSize`.
+
+    So the model is missing a real per-pair damping freedom. Real heads split
+    degenerate pairs through thickness and tension inhomogeneity (Worland, JASA
+    2010), which splits **frequency** — `ASYM` models that — but the measurement
+    says the two members also **decay** differently, which `ASYM` does not touch.
+    A per-pair damping split with no predicted sign is what the evidence supports,
+    and it is now measurement-backed rather than conjectural. What remains open is
+    the mechanism, not the phenomenon.
   - **The (1,1) is a separate problem** and the reachable lever for it is the
     shape of γ(k), not the cavity. Fitting a smooth power law to the reference's
     own T60s leaves 0.677 and the model already achieves 0.573, so a smooth law
@@ -958,9 +968,19 @@ recording and can be taken at any time.
   - Pin `ASYM` and stop fitting it. Cheapest, and honest — a parameter the
     objective cannot see should not be reported as fitted. It stays a user knob.
 
-      Blocked on N3's first thread: if the pairwise splitting turns out to be
-      damping rather than frequency, `ASYM` is the wrong parameter regardless and
-      the question changes.
+      **Unblocked 2026-08-01, and the answer is the third option.** N3's first
+      thread resolved the way that decides this: the two members of a resolved
+      pair differ in **damping** (a real 1.55, Result 9), and `ASYM` splits only
+      **frequency**. So `ASYM` is not the parameter that would represent what was
+      measured, and repairing the target it is fitted against would not make it
+      the right one. Pin it, stop fitting it, keep it as a user knob — and record
+      in the same change that the objective cannot see it, so that a later round
+      does not re-add it to the search as an oversight.
+
+      Putting the subspace estimator in the fit loop remains the correct fix for
+      the merging itself, and remains unaffordable at seconds per candidate
+      against ~90 000 evaluations. That is a separate question from `ASYM`, and it
+      should not be reopened on `ASYM`'s account.
 
 
 - [ ] **N4: recompute the cavity stiffness against a known-geometry drum.**

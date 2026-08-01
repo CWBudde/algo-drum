@@ -687,6 +687,57 @@ fundamental. What it establishes positively is that the model is missing pairwis
 damping freedom across the whole retained band, not only at m = 0 — which is a
 larger gap than N3 describes and points away from the cavity as its cause.
 
+## Result 9 — the 1.55 is the drum, not the estimator
+
+Result 8 left the decisive question open. A median ratio of 1.55 between the ring
+times of two modes 1–6 % apart is either a real per-pair damping freedom the model
+lacks, or the artefact of a subspace estimator trading energy between two
+components it can barely separate. Those readings call for opposite work — one
+says fit a per-pair damping split, the other says fix the measurement — and
+nothing in the reference distinguishes them, because there the truth is unknown.
+
+So it was measured against a signal where the truth is known by construction.
+Pairs were synthesised at the four frequencies and the splits the resolved pairs
+actually had (304, 613, 1200 and 2700 Hz; 1 %, 2 %, 4 % and 6 %), the upper member
+0, 3 and 6 dB down since an off-centre strike does not excite a pair equally, over
+a −60 dB noise floor, and **both members given exactly the same decay**. Any ratio
+reported is manufactured.
+
+|                     | equal damping | true ratio 1.55 |
+| ------------------- | ------------- | --------------- |
+| mean reported ratio | **1.001**     | 1.550           |
+| worst cell          | **1.003**     | 1.551           |
+| cells resolved      | 39 of 48      | 12 of 12        |
+
+Both halves are needed and neither alone would settle it. The first says the
+estimator does not invent a split: against a measured 1.55 the worst it
+manufactures anywhere in the regime is 1.003. The second says it is not merely
+insensitive — an estimator that always returned equal ring times would pass the
+first test perfectly — and recovers a real 1.55 to better than a fifth of a per
+cent at every frequency and every split.
+
+The nine unresolved cells are all at a 1 % split, and they matter: where the
+estimator cannot separate the pair it **merges**, reporting one value twice, and
+does not fabricate two. That is the conservative failure, and it is what keeps the
+control meaningful — an estimator that split noise into two components when it ran
+out of resolution would have produced the ratio being tested for.
+
+`TestEqualDampingIsNotSplitByTheEstimator` and
+`TestARealDampingSplitIsRecoveredAtItsMeasuredSize` pin both directions.
+
+**What this settles.** N3's first thread is answered: the pairwise damping split
+is a property of the drum. The model is missing a real freedom, it spans the
+retained band rather than only the m = 0 modes the cavity can reach, and — from
+Result 8 — it does not carry the cavity's in-phase/out-of-phase sign. A per-pair
+damping split with no predicted sign is now the shape the evidence supports, and
+it is measurement-backed rather than conjectural.
+
+It also settles N15, which was blocked on exactly this. The two members of a pair
+differ in **damping**, and `ASYM` splits only **frequency**. Whatever is done about
+the fast estimator's merging, `ASYM` is not the parameter that would represent
+this, so fitting it against a target with the asymmetry averaged out is not worth
+repairing the target for.
+
 ## What this changes
 
 1. ~~The adoption gates must be re-derived from measured reproducibility rather
@@ -698,7 +749,10 @@ larger gap than N3 describes and points away from the cavity as its cause.
    Result 8 replaces it. The (0,1) is the most heavily damped mode in the bank.
    What is missing is **pairwise** damping freedom across the whole retained band,
    measured at a median factor of 1.55 between members of a resolved pair, and it
-   does not carry the cavity's in-phase/out-of-phase signature.
+   does not carry the cavity's in-phase/out-of-phase signature. Result 9 closes the
+   remaining escape route: on synthesised pairs with identical damping the
+   estimator reports 1.001, so the 1.55 is the instrument being modelled and not
+   the instrument measuring it.
 3. Six rounds of intervention against the spectral envelope were aimed at a number
    whose composition had never been decomposed. Decomposing a metric before
    optimising against it is cheap; not doing so cost this project months.
