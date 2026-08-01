@@ -739,16 +739,16 @@ Research record and primary sources:
 
 ### Where it stands
 
-| Phase                            | What it settled                                                                                                                                              | Record                                                                                       |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| **P0–P2** contracts, modal bank, loss/radiation | Parameter structs, quality tiers, allocation-free `Render`, Fourier–Bessel modes, exact state transitions, the frequency-dependent loss law and the radiation weight. | [`physical-calibration.md`](docs/physical-calibration.md)                                     |
-| **P3** resonant head + cavity    | Passive rank-one pressure coupling, validated against an offline frequency-domain solve.                                                                        | [`physical-cavity.md`](docs/physical-cavity.md)                                                |
-| **P4** nonlinear hit behaviour   | Bounded Berger potential, discrete-gradient passivity, anti-alias bound, measured glide.                                                                        | [`physical-nonlinearity.md`](docs/physical-nonlinearity.md)                                    |
-| **P5** product integration       | Generated control bank, A/B against the procedural path, versioned persistence and share links.                                                                | [`physical-product-integration.md`](docs/physical-product-integration.md)                      |
-| **P6** real-instrument departures | Deterministic degenerate splitting and a rotated tension axis. Shell/edge/vent corrections were **refused** for want of a measurement, and the acceptance gate written down. | [`physical-real-instrument-departures.md`](docs/physical-real-instrument-departures.md)        |
-| **P8** sound correction (S1–S10) | The voice stopped sounding like a ringing sine: the `d₁k` loss term and constant Q, the damped (0,1), the fitted cavity split, the corrected radiated sum, the audible glide, the hybrid attack layer, and the retune that made tuning stop changing sustain. | [`physical-tom-review.md`](docs/physical-tom-review.md), [`physical-hybrid.md`](docs/physical-hybrid.md) |
-| **P9** model-structure gaps (M1–M7) | Nonlinear mode-to-mode coupling (M1) and a modal cavity (M2) — the latter being **the first externally checkable prediction this model made and had come true**, a rigid-cylinder air mode confirmed against sound speed, radius, depth and head tension. | [`physical-nonlinearity.md`](docs/physical-nonlinearity.md), [`physical-cavity.md`](docs/physical-cavity.md) |
-| **P10** the objective itself     | The instrument used to judge P8 and P9 **cannot resolve most of what it reports**. Gates re-derived from measured reproducibility; the reference replaced with a licensed one of known geometry. | [`physical-objective-validation.md`](docs/physical-objective-validation.md)                    |
+| Phase                                           | What it settled                                                                                                                                                                                                                                               | Record                                                                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **P0–P2** contracts, modal bank, loss/radiation | Parameter structs, quality tiers, allocation-free `Render`, Fourier–Bessel modes, exact state transitions, the frequency-dependent loss law and the radiation weight.                                                                                         | [`physical-calibration.md`](docs/physical-calibration.md)                                                    |
+| **P3** resonant head + cavity                   | Passive rank-one pressure coupling, validated against an offline frequency-domain solve.                                                                                                                                                                      | [`physical-cavity.md`](docs/physical-cavity.md)                                                              |
+| **P4** nonlinear hit behaviour                  | Bounded Berger potential, discrete-gradient passivity, anti-alias bound, measured glide.                                                                                                                                                                      | [`physical-nonlinearity.md`](docs/physical-nonlinearity.md)                                                  |
+| **P5** product integration                      | Generated control bank, A/B against the procedural path, versioned persistence and share links.                                                                                                                                                               | [`physical-product-integration.md`](docs/physical-product-integration.md)                                    |
+| **P6** real-instrument departures               | Deterministic degenerate splitting and a rotated tension axis. Shell/edge/vent corrections were **refused** for want of a measurement, and the acceptance gate written down.                                                                                  | [`physical-real-instrument-departures.md`](docs/physical-real-instrument-departures.md)                      |
+| **P8** sound correction (S1–S10)                | The voice stopped sounding like a ringing sine: the `d₁k` loss term and constant Q, the damped (0,1), the fitted cavity split, the corrected radiated sum, the audible glide, the hybrid attack layer, and the retune that made tuning stop changing sustain. | [`physical-tom-review.md`](docs/physical-tom-review.md), [`physical-hybrid.md`](docs/physical-hybrid.md)     |
+| **P9** model-structure gaps (M1–M7)             | Nonlinear mode-to-mode coupling (M1) and a modal cavity (M2) — the latter being **the first externally checkable prediction this model made and had come true**, a rigid-cylinder air mode confirmed against sound speed, radius, depth and head tension.     | [`physical-nonlinearity.md`](docs/physical-nonlinearity.md), [`physical-cavity.md`](docs/physical-cavity.md) |
+| **P10** the objective itself                    | The instrument used to judge P8 and P9 **cannot resolve most of what it reports**. Gates re-derived from measured reproducibility; the reference replaced with a licensed one of known geometry.                                                              | [`physical-objective-validation.md`](docs/physical-objective-validation.md)                                  |
 
 Two things from that history are worth restating because they constrain
 everything after them:
@@ -773,31 +773,31 @@ recording and can be taken at any time.
       `TestWeightsAreReciprocalGates` now make structural rather than aspirational.
 
       Three findings came out of it. The **spectral envelope was the only gate that
-      was ever right** (measured floor 3.65 dB against a gate of 4). The **partial
-      terms were never gateable** — nothing can beat 113 cents or a 1.26 log-ratio
-      — so their gates are now honest and, as quality statements, useless. And
-      **attack balance was the most reproducible term in the objective while
-      carrying the smallest weight**, `1/6` against a 0.26 dB median; it is now
-      `1/1.2`.
+          was ever right** (measured floor 3.65 dB against a gate of 4). The **partial
+          terms were never gateable** — nothing can beat 113 cents or a 1.26 log-ratio
+          — so their gates are now honest and, as quality statements, useless. And
+          **attack balance was the most reproducible term in the objective while
+          carrying the smallest weight**, `1/6` against a 0.26 dB median; it is now
+          `1/1.2`.
 
-      The arithmetic that matters: at the old weights the objective's
-      self-disagreement totalled **12.89** while the best fit ever recorded scored
-      **10.38** — below its own noise floor. At the measured weights the floor is
-      **4.32 median / 6.46 at p90** and no term contributes more than 0.79 at its
-      median. **No total recorded before this change is comparable to any total
-      after it.**
+          The arithmetic that matters: at the old weights the objective's
+          self-disagreement totalled **12.89** while the best fit ever recorded scored
+          **10.38** — below its own noise floor. At the measured weights the floor is
+          **4.32 median / 6.46 at p90** and no term contributes more than 0.79 at its
+          median. **No total recorded before this change is comparable to any total
+          after it.**
 
-      Not done here, and left to N2 because it needs the repaired estimators: RMS
-      aggregation is still used where the terms are outlier- rather than
-      noise-dominated.
+          Not done here, and left to N2 because it needs the repaired estimators: RMS
+          aggregation is still used where the terms are outlier- rather than
+          noise-dominated.
 
-      **Superseded, and the numbers below are stale.** N2 found that the estimator
-      these gates were measured through was silently collapsing three of the
-      sixteen takes to a one-partial table, and re-measured them: five of the nine
-      moved, all tighter. The reciprocal-gate rule and two of the three findings
-      stand; "the partial terms were never gateable" is withdrawn, and the numbers
-      are superseded by N2's. This item is left in place because N2's separation of
-      the two causes is measured against it.
+          **Superseded, and the numbers below are stale.** N2 found that the estimator
+          these gates were measured through was silently collapsing three of the
+          sixteen takes to a one-partial table, and re-measured them: five of the nine
+          moved, all tighter. The reciprocal-gate rule and two of the three findings
+          stand; "the partial terms were never gateable" is withdrawn, and the numbers
+          are superseded by N2's. This item is left in place because N2's separation of
+          the two causes is measured against it.
 
 - [x] **N2: repair the partial and decay estimators.** _Done 2026-08-01._ Evidence
       and every number below:
@@ -805,11 +805,11 @@ recording and can be taken at any time.
       §Result 5 and §Result 7.
 
       Subband ESPRIT with a stabilisation sweep exists beside the fast estimator
-      (`internal/physical/match/esprit.go`, its dense complex linear algebra in
-      `linalg.go`, exposed by `measure-tom -high-resolution`). It is measurement
-      equipment — no fit calls it and `Distance` does not know it exists. The
-      partial-by-partial comparison this item gated everything on was run across
-      all sixteen velocities, and produced:
+          (`internal/physical/match/esprit.go`, its dense complex linear algebra in
+          `linalg.go`, exposed by `measure-tom -high-resolution`). It is measurement
+          equipment — no fit calls it and `Distance` does not know it exists. The
+          partial-by-partial comparison this item gated everything on was run across
+          all sixteen velocities, and produced:
 
   - **A defect worse than either this item named, now fixed.** The decay fit was
     admitted on a sample count with no bound on the time it spans, so a 6.1 ms
@@ -853,8 +853,8 @@ recording and can be taken at any time.
     its argmax picks order 1 for a band holding four partials. Implemented,
     reported, not used.
 
-      Two predictions this item made were **refuted by the measurements it asked
-      for**, and both are load-bearing for what comes next:
+    Two predictions this item made were **refuted by the measurements it asked
+    for**, and both are load-bearing for what comes next:
 
   - The ring-time disagreement between the two estimators (median +27 %, fast
     longer in 63 % of pairs) is **not an estimator defect**. Both recover a known
@@ -868,13 +868,14 @@ recording and can be taken at any time.
     measurement and is **withdrawn**. 80 cents and 7 dB are wide, but they are
     thresholds a model can be held to.
 
-      Left deliberately undone: **the merged pairs are not resolved in the fast
-      estimator**, and `ASYM` is still fitted against a target with the asymmetry
-      averaged out. `MinSeparationHz` is not the whole of it — an FFT peak picker
-      over an 800 ms Hann window cannot separate 4 Hz at 213 Hz whatever the guard
-      is set to — so this is not a threshold change but a second estimator in the
-      fit loop, at seconds per candidate against milliseconds. It is carried to
-      **N15**, with the option of pinning `ASYM` instead.
+    Left deliberately undone: **the merged pairs are not resolved in the fast
+    estimator**, and `ASYM` was still being fitted against a target with the
+    asymmetry averaged out (it no longer is — N15 pinned it). `MinSeparationHz` is not the whole of it — an FFT peak picker
+    over an 800 ms Hann window cannot separate 4 Hz at 213 Hz whatever the guard
+    is set to — so this is not a threshold change but a second estimator in the
+    fit loop, at seconds per candidate against milliseconds. It was carried to
+    **N15**, which closed it by pinning `ASYM`; the merging itself is still
+    unfixed, and is now the only part of this that remains open.
 
 - [ ] **N3: fix the damping distribution — the one real model defect.**
       _Re-scoped 2026-08-01; the item as previously written named the wrong mode
@@ -883,25 +884,25 @@ recording and can be taken at any time.
       §Result 8.
 
       What was wrong with it. The instance — "a mode at 186 Hz with T60 1.81 s,
-      the longest-ringing thing the model produces" — is the **batter head's
-      (1,1)**, seen at the fitted config where DAMP and D.TILT scale the k¹ term
-      down by ~2.6×. It is not a doublet member and not axisymmetric: every m > 0
-      mode has a swept area of exactly zero, so it has no path to the cavity
-      compliance at all, only to a transverse mode at 907 Hz. The prescribed fix,
-      "damp the coupled (0,1) doublet specifically", therefore moves it by
-      nothing — and the (0,1) is already the most heavily damped mode in the bank,
-      its correction more than twice its structural rate.
+          the longest-ringing thing the model produces" — is the **batter head's
+          (1,1)**, seen at the fitted config where DAMP and D.TILT scale the k¹ term
+          down by ~2.6×. It is not a doublet member and not axisymmetric: every m > 0
+          mode has a swept area of exactly zero, so it has no path to the cavity
+          compliance at all, only to a transverse mode at 907 Hz. The prescribed fix,
+          "damp the coupled (0,1) doublet specifically", therefore moves it by
+          nothing — and the (0,1) is already the most heavily damped mode in the bank,
+          its correction more than twice its structural rate.
 
-      Nor is 186 Hz an accident of the fit. γ is monotone in k with exactly one
-      exception, the (0,1) correction, so **the longest-ringing mode is forced to
-      be the lowest-wavenumber mode the correction table does not name** — the
-      (1,1), at every tuning and every value of DAMP and D.TILT, both of which
-      scale the whole law. `TestTheLongestRingingModeIsTheLowestUncorrectedOne`
-      pins this so the next round cannot re-derive it from scratch.
+          Nor is 186 Hz an accident of the fit. γ is monotone in k with exactly one
+          exception, the (0,1) correction, so **the longest-ringing mode is forced to
+          be the lowest-wavenumber mode the correction table does not name** — the
+          (1,1), at every tuning and every value of DAMP and D.TILT, both of which
+          scale the whole law. `TestTheLongestRingingModeIsTheLowestUncorrectedOne`
+          pins this so the next round cannot re-derive it from scratch.
 
-      **The sign-pattern check this item demanded has been run**, using the
-      subspace estimator to resolve the pairs the fast one merges. Fourteen
-      two-member pairs:
+          **The sign-pattern check this item demanded has been run**, using the
+          subspace estimator to resolve the pairs the fast one merges. Fourteen
+          two-member pairs:
 
   - **The pairwise structure is real and large.** Within a resolved pair the ring
     times differ by a median factor of **1.55** (min 1.11, max 7.25) across a
@@ -919,7 +920,7 @@ recording and can be taken at any time.
     retained band rather than only m = 0, which is a **larger** gap than this item
     described and points away from the cavity as its cause.
 
-      So the threads are now:
+    So the threads are now:
 
   - ~~**Find what the pairwise splitting actually is.**~~ **Answered 2026-08-01;
     it is the drum.** Evidence: [`physical-objective-validation.md`](docs/physical-objective-validation.md)
@@ -940,6 +941,7 @@ recording and can be taken at any time.
     A per-pair damping split with no predicted sign is what the evidence supports,
     and it is now measurement-backed rather than conjectural. What remains open is
     the mechanism, not the phenomenon.
+
   - **The (1,1) is a separate problem** and the reachable lever for it is the
     shape of γ(k), not the cavity. Fitting a smooth power law to the reference's
     own T60s leaves 0.677 and the model already achieves 0.573, so a smooth law
@@ -950,8 +952,8 @@ recording and can be taken at any time.
     It cost one afternoon and it refuted the mechanism this item was going to
     spend a round implementing.
 
-- [ ] **N15: decide what to do about `ASYM` and the merged pairs.** _Split out of
-      N2, 2026-08-01._ The fast estimator merges 15–24 of ~160 matched partials
+- [x] **N15: decide what to do about `ASYM` and the merged pairs.** _Split out of
+      N2 and closed the same day, 2026-08-01._ The fast estimator merges 15–24 of ~160 matched partials
       into single peaks, recurring at 304, 351, 586–613 and 851 Hz, so `ASYM` is
       fitted against a target with the asymmetry averaged out of it. This is not a
       guard setting: an FFT peak picker over an 800 ms Hann window cannot separate
@@ -968,20 +970,31 @@ recording and can be taken at any time.
   - Pin `ASYM` and stop fitting it. Cheapest, and honest — a parameter the
     objective cannot see should not be reported as fitted. It stays a user knob.
 
-      **Unblocked 2026-08-01, and the answer is the third option.** N3's first
-      thread resolved the way that decides this: the two members of a resolved
-      pair differ in **damping** (a real 1.55, Result 9), and `ASYM` splits only
-      **frequency**. So `ASYM` is not the parameter that would represent what was
-      measured, and repairing the target it is fitted against would not make it
-      the right one. Pin it, stop fitting it, keep it as a user knob — and record
-      in the same change that the objective cannot see it, so that a later round
-      does not re-add it to the search as an oversight.
+    **Unblocked 2026-08-01, and the answer is the third option.** N3's first
+    thread resolved the way that decides this: the two members of a resolved
+    pair differ in **damping** (a real 1.55, Result 9), and `ASYM` splits only
+    **frequency**. So `ASYM` is not the parameter that would represent what was
+    measured, and repairing the target it is fitted against would not make it
+    the right one. Pin it, stop fitting it, keep it as a user knob — and record
+    in the same change that the objective cannot see it, so that a later round
+    does not re-add it to the search as an oversight.
 
-      Putting the subspace estimator in the fit loop remains the correct fix for
-      the merging itself, and remains unaffordable at seconds per candidate
-      against ~90 000 evaluations. That is a separate question from `ASYM`, and it
-      should not be reopened on `ASYM`'s account.
+    Putting the subspace estimator in the fit loop remains the correct fix for
+    the merging itself, and remains unaffordable at seconds per candidate
+    against ~90 000 evaluations. That is a separate question from `ASYM`, and it
+    should not be reopened on `ASYM`'s account.
 
+    **Implemented.** `cmd/fit-physical` now holds a named list of parameters the
+    objective is measured to be blind to (`blindParameters`) out of the search,
+    at their defaults; `ASYM` is its only member, and the list carries both
+    measurements rather than the conclusion alone. A report marks such a
+    parameter `blind` as well as `fixed`, so a reader can tell a value the
+    caller pinned from one that carries no information about the reference.
+    `-search-blind` puts them back for the deliberate experiment of re-testing
+    the claim, and is part of the checkpoint fingerprint because it changes the
+    width of the search space. Four tests pin it, including that the list has
+    exactly one member — so a later addition has to be a deliberate edit with a
+    measurement behind it.
 
 - [ ] **N4: recompute the cavity stiffness against a known-geometry drum.**
       `Cavity.StiffnessScale` ships at 0.083, a factor of twelve below its physical
@@ -992,15 +1005,15 @@ recording and can be taken at any time.
       than a tom. The ceiling was right and the target was wrong.
 
       The licensed 8" × 8" reference unblocks this: known geometry, stated head
-      gauges, so the split is computable rather than fitted. Four costs are known
-      and none is small — the parameter **saturates rather than lands** (s = 1 gives
-      1.841 exact / 1.830 rendered, re-measured 2026-08-01, still 2.7 % below Bork &
-      Meyer's 1.891, so shipping it ships a pinned parameter); the **interleaving
-      constraint is unmet and is the stronger one**; the **glide gets diluted**, so
-      retarget it and the Berger coefficients together or neither; and M2's
-      confirmation is a weak-coupling result that degrades as s rises. **Retarget
-      all the way or not at all** — the intermediate values are the worst, and three
-      tests encode the snare target and must be re-quoted with it.
+          gauges, so the split is computable rather than fitted. Four costs are known
+          and none is small — the parameter **saturates rather than lands** (s = 1 gives
+          1.841 exact / 1.830 rendered, re-measured 2026-08-01, still 2.7 % below Bork &
+          Meyer's 1.891, so shipping it ships a pinned parameter); the **interleaving
+          constraint is unmet and is the stronger one**; the **glide gets diluted**, so
+          retarget it and the Berger coefficients together or neither; and M2's
+          confirmation is a weak-coupling result that degrades as s rises. **Retarget
+          all the way or not at all** — the intermediate values are the worst, and three
+          tests encode the snare target and must be re-quoted with it.
 
 - [ ] **N5: refit jointly across all sixteen velocities.** `tt08x08-mp-hd`, mono —
       safe here because the pair is coincident. Pin what is now known (diameter,
@@ -1008,19 +1021,19 @@ recording and can be taken at any time.
       against the whole velocity curve rather than one hit.
 
       This is what finally constrains the Berger nonlinearity, including
-      `CoefficientNPerM` — which ships at the same coefficient the uniform channel
-      already carries, so it is not a new free parameter but not a fitted one
-      either. The measured glide rises monotonically with strike velocity (−130 ¢ at
-      v04, −174 at v08, −353 at v12), which is the cleanest identification signal on
-      the path. Expect little from the mode-coupling term itself: its measured reach
-      into the target band is ~2 dB and already at its useful maximum.
+          `CoefficientNPerM` — which ships at the same coefficient the uniform channel
+          already carries, so it is not a new free parameter but not a fitted one
+          either. The measured glide rises monotonically with strike velocity (−130 ¢ at
+          v04, −174 at v08, −353 at v12), which is the cleanest identification signal on
+          the path. Expect little from the mode-coupling term itself: its measured reach
+          into the target band is ~2 dB and already at its useful maximum.
 
-      This also closes P6's one unmet clause — a documented preset fitted *with
-      provenance*, which was impossible while the recording had none.
+          This also closes P6's one unmet clause — a documented preset fitted *with
+          provenance*, which was impossible while the recording had none.
 
-      Practical constraint: the analysis window is 1.2 s and the MP files are
-      1.25 s; the higher tunings are shorter and need the tail window shortened
-      before they can be used.
+          Practical constraint: the analysis window is 1.2 s and the MP files are
+          1.25 s; the higher tunings are shorter and need the tail window shortened
+          before they can be used.
 
 - [ ] **N6: measure identifiability before trusting any fitted bank.** The
       converged fits show the textbook sloppy-model signature (Gutenkunst et al.,
@@ -1032,11 +1045,11 @@ recording and can be taken at any time.
       structurally from practically non-identifiable.
 
       **One flat direction is provable without running anything**: each mode's
-      observed amplitude goes as Φ(r_strike)·Φ(r_mic), symmetric under exchange, and
-      for axisymmetric modes the angles enter only as a difference. So (HIT.R,
-      MIC.R) is identifiable at best up to a swap and (HIT.A, MIC.A) only through
-      Δθ — four parameters carrying at least two exactly flat directions, by
-      construction.
+          observed amplitude goes as Φ(r_strike)·Φ(r_mic), symmetric under exchange, and
+          for axisymmetric modes the angles enter only as a difference. So (HIT.R,
+          MIC.R) is identifiable at best up to a swap and (HIT.A, MIC.A) only through
+          Δθ — four parameters carrying at least two exactly flat directions, by
+          construction.
 
 - [ ] **N7: rewrite the paper against the new reference.** _Deferred
       deliberately._ `docs/paper/` describes a fit to a recording of unknown
@@ -1053,8 +1066,8 @@ recording and can be taken at any time.
   - re-derive `<comb-eq>` and the channel table against a coincident pair, where
     the comb argument no longer applies.
 
-      Blocked on N2 and N5: nothing to report until the objective is trustworthy and
-      a fit against the licensed reference exists.
+    Blocked on N2 and N5: nothing to report until the objective is trustworthy and
+    a fit against the licensed reference exists.
 
 - [ ] **N8: retire `reference/tom.wav`.** Unknown provenance, unlicensed, 44.1 kHz,
       spaced pair. It cannot be committed and no test may depend on it. Deleting it
@@ -1151,7 +1164,7 @@ detail and citations in
   waveguide meshes, the Functional Transformation Method, FEM/BEM, port-Hamiltonian
   formulations, mass-interaction and differentiable/learned synthesis found **none
   that targets the defect surviving measurement**. FDTD is dead on cost and on
-  fittability; FTM *is* this model's modal expansion for a separable circular
+  fittability; FTM _is_ this model's modal expansion for a separable circular
   membrane; a 3-D air field changes nothing about the coupling stiffness, because
   non-uniform cavity modes have zero net volume; and differentiable modal synthesis
   upgrades the **search**, which is not the ceiling — two independent runs already

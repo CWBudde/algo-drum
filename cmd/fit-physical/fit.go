@@ -174,6 +174,12 @@ type ParamValue struct {
 	// something the product range cannot express, which is a finding about the
 	// range rather than a result.
 	Pinned bool `json:"pinned,omitempty"`
+	// Blind marks a parameter held out of the search because the objective
+	// cannot see it, as opposed to one the caller fixed. Both report Fixed, and
+	// the distinction matters when reading a report: a blind parameter's value
+	// is the shipped default and carries no information about the reference.
+	// See blindParameters.
+	Blind bool `json:"blind,omitempty"`
 }
 
 // Candidate is one evaluated point in the search space.
@@ -221,6 +227,7 @@ func (e *evaluator) describe(position []float64) (Candidate, error) {
 			Fixed:      !free,
 			Pinned: free &&
 				(normalized <= pinnedTolerance || normalized >= 1-pinnedTolerance),
+			Blind: !free && isBlind(spec),
 		}
 	}
 
@@ -245,14 +252,63 @@ func (e *evaluator) position(velocity01 float64) []float64 {
 	return position
 }
 
-// resolveFixed parses -fix ID=value pairs against the parameter table.
+// blindParameters are bank parameters the objective provably cannot see, and
+// which are therefore held at their defaults instead of being searched.
+//
+// This list is not a tuning decision and nothing should be added to it on a
+// hunch. A parameter belongs here only when there is a measurement showing the
+// distance cannot respond to it, and the entry must say which one.
+//
+// `physicalTom.asymmetry` (ASYM) splits a degenerate pair's two members apart in
+// frequency, over a 0–2 % range. Two measurements put it here, and the second is
+// the one that makes the decision final:
+//
+//   - The objective cannot resolve the split. The fast estimator merges 15–24 of
+//     ~160 matched partials into single peaks, recurring at 304, 351, 586–613 and
+//     851 Hz — a 2 % split at 213 Hz is 4.3 Hz, inside one main lobe of an 800 ms
+//     Hann window, and no value of MinSeparationHz changes that. So ASYM was being
+//     fitted against a target with the asymmetry averaged out of it, and whatever
+//     value came back was reported as fitted while resting on nothing.
+//   - The split it models is the wrong one anyway. Subband ESPRIT resolves the
+//     pairs the fast estimator merges, and their two members differ in **ring
+//     time** by a median factor of 1.55 — real, and not an artefact of the
+//     estimator: on synthesised pairs with identical damping it reports 1.001.
+//     ASYM does not touch damping. So even a target that resolved the pairs would
+//     not make ASYM the parameter representing what was measured.
+//
+// A third measurement, taken for another purpose, agrees: the excitation-gap
+// sweep drives ASYM from its default to 1 and the spectral envelope moves from
+// 13.02 to 13.12 dB, against 13.02 → 16.18 for the loss-law tilt in the same
+// table. The objective is not merely mismeasuring ASYM, it barely responds to it.
+//
+// Evidence: docs/physical-objective-validation.md §5b and §Result 9,
+// docs/physical-excitation-gap.md; the decision is PLAN.md's N15.
+//
+// ASYM remains a user knob — it is audible, and a player setting it is not making
+// a claim about a recording. What it stops being is a fitted result.
+var blindParameters = []string{"physicalTom.asymmetry"}
+
+// isBlind reports whether a spec is one the objective cannot see. Both the ID
+// and the label are matched, for the same reason -fix accepts either.
+func isBlind(spec drum.ParamSpec) bool {
+	return slices.Contains(blindParameters, spec.ID) ||
+		slices.Contains(blindParameters, spec.Label)
+}
+
+// resolveFixed parses -fix ID=value pairs against the parameter table, and
+// removes the parameters the objective is blind to from the search.
 //
 // searching says whether a search will follow. It only gates the "nothing left
 // to search" error: fixing the whole bank is meaningless for a search but is
 // exactly how -report-only measures one specific drum, which is the only way to
 // score a candidate the search already produced — re-measuring a fitted bank at
 // a different quality tier, say.
-func resolveFixed(assignments map[string]float64, searching bool) ([]float64, []int, error) {
+//
+// searchBlind puts blindParameters back into the search. It exists so the
+// measurement behind that list can be repeated rather than taken on trust — a
+// run with it set is evidence about whether the objective has become able to see
+// them, not a bank to ship, exactly as -loss-scale is.
+func resolveFixed(assignments map[string]float64, searching, searchBlind bool) ([]float64, []int, error) {
 	specs := drum.PhysicalTomSpecs()
 
 	bank := make([]float64, len(specs))
@@ -281,10 +337,12 @@ func resolveFixed(assignments map[string]float64, searching bool) ([]float64, []
 
 	var free []int
 
-	for index := range specs {
-		if !pinned[index] {
-			free = append(free, index)
+	for index, spec := range specs {
+		if pinned[index] || (!searchBlind && isBlind(spec)) {
+			continue
 		}
+
+		free = append(free, index)
 	}
 
 	if searching && len(free) == 0 {

@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -404,5 +405,157 @@ func TestSearchIsDeterministic(t *testing.T) {
 
 	if first, second := fit(), fit(); first != second {
 		t.Errorf("two runs at the same seed differed:\n%s\n---\n%s", first, second)
+	}
+}
+
+// TestTheObjectivesBlindParametersAreNotSearched pins PLAN.md's N15 decision.
+//
+// ASYM was being reported as a fitted value while resting on nothing: the fast
+// estimator merges the pairs it splits, so the target it was scored against had
+// the asymmetry averaged out of it. Holding it at its default is the honest
+// state — the report then says the value is the shipped one, rather than
+// implying the recording chose it.
+func TestTheObjectivesBlindParametersAreNotSearched(t *testing.T) {
+	t.Parallel()
+
+	specs := drum.PhysicalTomSpecs()
+
+	bank, free, err := resolveFixed(assignmentFlag{}, true, false)
+	if err != nil {
+		t.Fatalf("resolveFixed() error = %v", err)
+	}
+
+	if len(free) == 0 || len(free) >= len(specs) {
+		t.Fatalf("free = %d of %d parameters; the blind ones were not removed",
+			len(free), len(specs))
+	}
+
+	for index, spec := range specs {
+		searched := slices.Contains(free, index)
+
+		if isBlind(spec) && searched {
+			t.Errorf("%s is blind to the objective but is being searched", spec.ID)
+		}
+
+		if !isBlind(spec) && !searched {
+			t.Errorf("%s is not blind but was removed from the search", spec.ID)
+		}
+	}
+
+	// Held at its default, not at zero. Zero would be a different drum, and a
+	// silent one to fit against.
+	for index, spec := range specs {
+		if isBlind(spec) && bank[index] != spec.Default {
+			t.Errorf("%s = %v, want its default %v", spec.ID, bank[index], spec.Default)
+		}
+	}
+}
+
+// TestAsymmetryIsTheBlindParameter states the membership rather than leaving it
+// to the list. If something is added to blindParameters without a measurement
+// behind it, this is where it shows up as a deliberate edit.
+func TestAsymmetryIsTheBlindParameter(t *testing.T) {
+	t.Parallel()
+
+	var blind []string
+
+	for _, spec := range drum.PhysicalTomSpecs() {
+		if isBlind(spec) {
+			blind = append(blind, spec.Label)
+		}
+	}
+
+	if len(blind) != 1 || blind[0] != "ASYM" {
+		t.Errorf("blind parameters = %v, want exactly [ASYM] — see blindParameters "+
+			"for what a new entry has to be justified by", blind)
+	}
+}
+
+// TestSearchBlindPutsThemBack covers the escape hatch. The list is a claim about
+// the objective, and a claim that cannot be re-tested is one nobody can revise.
+func TestSearchBlindPutsThemBack(t *testing.T) {
+	t.Parallel()
+
+	_, free, err := resolveFixed(assignmentFlag{}, true, true)
+	if err != nil {
+		t.Fatalf("resolveFixed() error = %v", err)
+	}
+
+	if got, want := len(free), len(drum.PhysicalTomSpecs()); got != want {
+		t.Errorf("free = %d parameters with -search-blind, want all %d", got, want)
+	}
+}
+
+// TestAResumeAcrossSearchBlindIsRefused is the guard the flag needs. It changes
+// the width of the search space, so every position stored in a checkpoint means
+// something different on the other side of it — a mismatch that would not
+// announce itself in any result.
+func TestAResumeAcrossSearchBlindIsRefused(t *testing.T) {
+	t.Parallel()
+
+	narrow := Fingerprint{Reference: "tom.wav", Quality: "draft"}
+
+	wide := narrow
+	wide.SearchBlind = true
+
+	if narrow.disagreement(wide) == "" {
+		t.Error("a checkpoint taken with -search-blind resumes into a run without it")
+	}
+}
+
+// TestABlindParameterIsReportedAsBlindRatherThanMerelyFixed keeps the two apart
+// in the report. Both are held still; only one of them is held still because the
+// measurement cannot see it, and a reader deciding what a fitted bank means
+// needs to know which.
+func TestABlindParameterIsReportedAsBlindRatherThanMerelyFixed(t *testing.T) {
+	t.Parallel()
+
+	specs := drum.PhysicalTomSpecs()
+
+	// Fix something that is not blind, so the two cases appear side by side.
+	fixed := assignmentFlag{}
+	if err := fixed.Set("DAMP=0.4"); err != nil {
+		t.Fatalf("Set() error = %v", err)
+	}
+
+	bank, free, err := resolveFixed(fixed, true, false)
+	if err != nil {
+		t.Fatalf("resolveFixed() error = %v", err)
+	}
+
+	subject := &evaluator{
+		bank: bank, free: free, sampleRateHz: 44100,
+		durationSeconds: 0.2, lossScale: 1,
+		options: match.DefaultOptions(), weights: match.DefaultWeights(),
+	}
+	subject.buffer = make([]float64, int(subject.durationSeconds*subject.sampleRateHz))
+
+	candidate, err := subject.describe(subject.position(defaultVelocity))
+	if err != nil {
+		t.Fatalf("describe() error = %v", err)
+	}
+
+	var sawBlind, sawFixedNotBlind bool
+
+	for index, param := range candidate.Params {
+		switch {
+		case isBlind(specs[index]):
+			sawBlind = true
+
+			if !param.Fixed || !param.Blind {
+				t.Errorf("%s: Fixed=%v Blind=%v, want both", param.ID, param.Fixed, param.Blind)
+			}
+		case param.Fixed:
+			sawFixedNotBlind = true
+
+			if param.Blind {
+				t.Errorf("%s was fixed by the caller but is reported as blind", param.ID)
+			}
+		}
+	}
+
+	if !sawBlind || !sawFixedNotBlind {
+		t.Fatalf("the report did not carry both cases (blind %v, caller-fixed %v)",
+			sawBlind, sawFixedNotBlind)
 	}
 }

@@ -69,11 +69,15 @@ type Snapshot struct {
 // A performance change that is genuinely bit-exact leaves it alone and resumes
 // cleanly, so the guard also doubles as the test of that claim.
 type Fingerprint struct {
-	Reference       string             `json:"reference"`
-	Channel         string             `json:"channel"`
-	Contact         string             `json:"contact,omitempty"`
-	MalletGrams     float64            `json:"malletGrams,omitempty"`
-	LossScale       float64            `json:"lossScale,omitempty"`
+	Reference   string  `json:"reference"`
+	Channel     string  `json:"channel"`
+	Contact     string  `json:"contact,omitempty"`
+	MalletGrams float64 `json:"malletGrams,omitempty"`
+	LossScale   float64 `json:"lossScale,omitempty"`
+	// SearchBlind widens the search space itself, so a checkpoint taken with it
+	// set has positions of a different length. Resuming across it would not
+	// merely mix two searches, it would misread every stored vector.
+	SearchBlind     bool               `json:"searchBlind,omitempty"`
 	SeededRestarts  int                `json:"seededRestarts,omitempty"`
 	SeedWidth       float64            `json:"seedWidth,omitempty"`
 	Quality         string             `json:"quality"`
@@ -100,6 +104,10 @@ func (f Fingerprint) disagreement(other Fingerprint) string {
 		{"contact", f.Contact == other.Contact},
 		{"mallet mass", f.MalletGrams == other.MalletGrams},
 		{"loss scale", f.LossScale == other.LossScale},
+		{
+			"search-blind, so the search space is a different width",
+			f.SearchBlind == other.SearchBlind,
+		},
 		{"seeded restarts", f.SeededRestarts == other.SeededRestarts},
 		{"seed width", f.SeedWidth == other.SeedWidth},
 		{"quality", f.Quality == other.Quality},

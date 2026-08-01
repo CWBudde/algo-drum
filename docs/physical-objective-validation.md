@@ -738,6 +738,18 @@ the fast estimator's merging, `ASYM` is not the parameter that would represent
 this, so fitting it against a target with the asymmetry averaged out is not worth
 repairing the target for.
 
+A third measurement, taken for another purpose, agrees. The excitation-gap sweep
+([`physical-excitation-gap.md`](physical-excitation-gap.md)) drives `ASYM` from its
+default to 1 and the spectral envelope moves 13.02 → **13.12** dB, against
+13.02 → 16.18 for the loss-law tilt in the same table. The objective is not merely
+mismeasuring `ASYM`; it barely responds to it at all.
+
+`ASYM` is now held out of the search at its default, and a report marks it `blind`
+as well as `fixed` so that its value cannot be read as a fitted result. It remains
+a user knob — it is audible, and a player setting it is making no claim about a
+recording. `-search-blind` puts it back for the deliberate experiment of
+re-testing this, which is the only way the claim above stays revisable.
+
 ## What this changes
 
 1. ~~The adoption gates must be re-derived from measured reproducibility rather

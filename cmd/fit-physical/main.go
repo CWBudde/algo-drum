@@ -125,6 +125,11 @@ type SearchInfo struct {
 	// LossScale is 1 for every run that stays inside the shipped ranges, and
 	// anything else marks a report whose bank the product cannot express.
 	LossScale float64 `json:"lossScale,omitempty"`
+	// SearchBlind marks a report whose search included the parameters the
+	// objective is measured to be blind to. Such a run is evidence about the
+	// objective and not a bank to ship, so a report carrying it should not be
+	// read as a fit result. See blindParameters.
+	SearchBlind bool `json:"searchBlind,omitempty"`
 	// SeedErrorCents records what the analytic pre-solve achieved for each
 	// seeded restart, best first. It is the honest caption for a seeded run: a
 	// low number here says the starting point matched the reference's partial
@@ -180,6 +185,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	fixed := assignmentFlag{}
 	flags.Var(fixed, "fix", "freeze one parameter at a normalized position, as ID=value (repeatable)")
+
+	searchBlind := flags.Bool("search-blind", false,
+		"also search the parameters the objective is measured to be blind to; "+
+			"a run with this set is evidence about the objective, not a bank to ship")
 
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -267,7 +276,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	bank, free, err := resolveFixed(fixed, !*reportOnly)
+	bank, free, err := resolveFixed(fixed, !*reportOnly, *searchBlind)
 	if err != nil {
 		return err
 	}
@@ -336,6 +345,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 			Contact:         *contact,
 			MalletGrams:     *malletGrams,
 			LossScale:       *lossScale,
+			SearchBlind:     *searchBlind,
 			FixedParams:     fixed,
 		},
 	}
@@ -417,6 +427,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 			Contact:         *contact,
 			MalletGrams:     *malletGrams,
 			LossScale:       *lossScale,
+			SearchBlind:     *searchBlind,
 			Quality:         *quality,
 			Variant:         *variant,
 			DurationSeconds: *duration,

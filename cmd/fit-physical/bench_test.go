@@ -16,7 +16,7 @@ func benchEvaluator(tb testing.TB, durationSeconds float64) *evaluator {
 
 	const sampleRateHz = 44100
 
-	bank, free, err := resolveFixed(assignmentFlag{}, true)
+	bank, free, err := resolveFixed(assignmentFlag{}, true, false)
 	if err != nil {
 		tb.Fatalf("resolveFixed: %v", err)
 	}
