@@ -40,9 +40,14 @@ Thumbs.db
 
 # Fitting inputs and outputs (cmd/fit-physical, cmd/render-physical).
 #
-# reference/ holds recordings used as timbre-match targets. They are not the
+# reference/ holds recordings used as timbre-match targets. Most are not the
 # repository's to redistribute and nothing in the test suite may depend on
-# them — see docs/physical-measured-fit.md.
+# them — see docs/physical-measured-fit.md. The exception is the CC BY 4.0
+# subset re-included at the bottom of this file, which is committed precisely
+# so a fit can be reproduced from the repository alone; reference/CREDITS.md
+# carries its licence and provenance. The pattern is reference/* rather than
+# reference/ because git cannot re-include a file whose parent directory is
+# itself excluded.
 #
 # fits/ holds everything a run leaves in writing — its report, its checkpoint
 # and its progress log — and renders/ holds the audio. Both are ignored
@@ -54,7 +59,7 @@ Thumbs.db
 # justfile documents and nothing enforces. A report is derived from a recording
 # the repository does not contain, so it cannot be committed as evidence
 # anyway — quote its numbers in docs/ and commit the figures.
-reference/
+reference/*
 fits/
 renders/
 # Belt and braces for a run pointed somewhere else by hand: a checkpoint is
@@ -65,6 +70,13 @@ renders/
 fit-*.log
 fit-summary.txt
 fit-progress.txt
+
+# The committed reference subset. These negations must come after *.wav above,
+# because the last matching pattern wins. Only the medium-pitch head strikes are
+# carried: they are the set the fit uses, and the full 336-file pack is 126 MB
+# against 5.5 MB for these sixteen. Licence and provenance in reference/CREDITS.md.
+!reference/CREDITS.md
+!reference/tt08x08-mp-hd-v[0-9][0-9].wav
 
 # Built by `go build ./cmd/fit-physical` and `./cmd/render-physical`
 /fit-physical
