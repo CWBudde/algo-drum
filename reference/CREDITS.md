@@ -182,22 +182,33 @@ the objective's own noise floor, and no fit can be asked to beat it:
 
 | Term              | `mp/hd` p90 | `lp/hd` p90 | Gate now |
 | ----------------- | ----------- | ----------- | -------- |
-| Partial frequency | 76.2 ¢      | 65.0 ¢      | 70 ¢     |
-| Partial level     | 6.81 dB     | 6.76 dB     | 7 dB     |
-| Partial decay     | 0.558       | 0.589       | 0.6      |
+| Partial frequency | 76.2 ¢      | 65.5 ¢      | 70 ¢     |
+| Partial level     | 6.81 dB     | 6.42 dB     | 7 dB     |
+| Partial decay     | 0.558       | 0.535       | 0.55     |
 | Spectral envelope | 3.67 dB     | 3.24 dB     | 3.5 dB   |
 | Envelope          | 3.84 dB     | 1.38 dB     | 1.5 dB   |
-| Glide             | 280.1 ¢     | **2.3 ¢**   | 10 ¢     |
+| Glide             | 280.1 ¢     | **23.4 ¢**  | 30 ¢     |
 | Attack balance    | 1.13 dB     | 0.81 dB     | 0.9 dB   |
-| Unmatched share   | 0.250       | 0.280       | 0.3      |
-| Spurious share    | 0.245       | 0.293       | 0.3      |
+| Unmatched share   | 0.250       | 0.223       | 0.25     |
+| Spurious share    | 0.245       | 0.239       | 0.25     |
 
-Same estimator, same code, different drum. Glide improves by a factor of 120
-because the glide estimator needs the fundamental to survive to its late probe:
-on the medium-pitch takes it does not, so more than half of those measurements
-were noise between two dead probes. The envelope term improves because the files
-are 2.083 s rather than 1.250 s, so the tail being compared is signal rather than
-floor.
+Same estimator, same code, different drum — except in the `lp/hd` column, which
+was re-measured on 2026-08-01 after `PLAN.md` N17 re-sized the analysis and decay
+windows, so the two columns are one estimator revision apart. Glide improves by a
+factor of 12 because the glide estimator needs the fundamental to survive to its
+late probe: on the medium-pitch takes it does not, so more than half of those
+measurements were noise between two dead probes. (It read 2.3 ¢ — a factor of 120
+— through the pre-N17 estimator, and that number is withdrawn.) The envelope term
+improves because the files are 2.083 s rather than 1.250 s, so the tail being
+compared is signal rather than floor.
+
+One property of the low-pitch set that is _not_ an advantage, recorded here
+because the pack's velocity series is the reason it was licensed: its glide
+carries **no velocity trend** — all sixteen takes positive, median +18 ¢, three
+unmeasurable — where the medium-pitch set's rises monotonically from −130 ¢ to
+−353 ¢. A fit against `lp/hd` does not constrain the tension nonlinearity. See
+[`docs/physical-objective-validation.md`](../docs/physical-objective-validation.md)
+§Result 11e.
 
 The gates in `internal/physical/match/DefaultWeights` are the right-hand column,
 rounded up. They are a property of **this pair** — estimator _and_ recording —

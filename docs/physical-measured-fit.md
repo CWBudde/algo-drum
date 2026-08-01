@@ -83,64 +83,70 @@ of the coincident reference pair, scored channel-against-channel in both
 directions — the floor below which a candidate is indistinguishable from a second
 microphone at the same point:
 
-The measurement has been made three times: twice on the medium-pitch set, before
-and after the estimator repair of P10/N2, and once on the low-pitch set that
-replaced it as the reference on 2026-08-01. The current gates are the last
-column.
+The measurement has been made four times: twice on the medium-pitch set, before
+and after the estimator repair of P10/N2; once on the low-pitch set that replaced
+it as the reference on 2026-08-01; and once more on that set after P10/N17
+re-sized the analysis and decay windows. The current gates are the last column.
 
-| Term              | Asserted | `mp/hd` defective | `mp/hd` repaired | `lp/hd` p90 | Gate now |
-| ----------------- | -------- | ----------------- | ---------------- | ----------- | -------- |
-| Partial frequency | 25 ¢     | 113.0 ¢           | 76.2 ¢           | 65.0 ¢      | 70 ¢     |
-| Partial level     | 3 dB     | 17.85 dB          | 6.81 dB          | 6.76 dB     | 7 dB     |
-| Partial decay     | 0.25\*   | 1.262             | 0.558            | 0.589       | 0.6      |
-| Spectral envelope | 4 dB     | 3.65 dB           | 3.67 dB          | 3.24 dB     | 3.5 dB   |
-| Envelope          | 3 dB     | 3.81 dB           | 3.84 dB          | 1.38 dB     | 1.5 dB   |
-| Glide             | 40 ¢     | 310.3 ¢           | 280.1 ¢          | **2.3 ¢**   | 10 ¢     |
-| Attack balance    | 6 dB     | 1.12 dB           | 1.13 dB          | 0.81 dB     | 0.9 dB   |
-| Unmatched share   | 0.5      | 0.880             | 0.250            | 0.280       | 0.3      |
-| Spurious share    | 0.5      | 0.346             | 0.245            | 0.293       | 0.3      |
+| Term              | Asserted | `mp/hd` defective | `mp/hd` repaired | `lp/hd` pre-N17 | `lp/hd` current | Gate now |
+| ----------------- | -------- | ----------------- | ---------------- | --------------- | --------------- | -------- |
+| Partial frequency | 25 ¢     | 113.0 ¢           | 76.2 ¢           | 65.0 ¢          | 65.5 ¢          | 70 ¢     |
+| Partial level     | 3 dB     | 17.85 dB          | 6.81 dB          | 6.76 dB         | 6.42 dB         | 7 dB     |
+| Partial decay     | 0.25\*   | 1.262             | 0.558            | 0.589           | 0.535           | **0.55** |
+| Spectral envelope | 4 dB     | 3.65 dB           | 3.67 dB          | 3.24 dB         | 3.24 dB         | 3.5 dB   |
+| Envelope          | 3 dB     | 3.81 dB           | 3.84 dB          | 1.38 dB         | 1.38 dB         | 1.5 dB   |
+| Glide             | 40 ¢     | 310.3 ¢           | 280.1 ¢          | **2.3 ¢**       | 23.4 ¢          | **30 ¢** |
+| Attack balance    | 6 dB     | 1.12 dB           | 1.13 dB          | 0.81 dB         | 0.81 dB         | 0.9 dB   |
+| Unmatched share   | 0.5      | 0.880             | 0.250            | 0.280           | 0.223           | **0.25** |
+| Spurious share    | 0.5      | 0.346             | 0.245            | 0.293           | 0.239           | **0.25** |
 
 \* the old decay _weight_ was `1/0.35` against a gate documented as 0.25 — the one
 place the reciprocal rule was silently broken, so every decay contribution ever
 reported was scaled by a threshold nobody had adopted.
 
-What the three columns say, in order:
+What the columns say, in order:
 
 - **The spectral envelope is the term that was always right.** 3.65 → 3.67 → 3.24
-  dB: neither the estimator defect nor the change of drum moved it. Every
-  conclusion drawn from that term stands.
+  → 3.24 dB: neither estimator defect, nor the change of drum, nor the change of
+  window moved it. Every conclusion drawn from that term stands. Spectral envelope
+  and attack balance are bit-unmoved by N17 for a reason worth keeping: they are
+  the only two terms that do not read the partial table.
 - **The estimator repair fixed level, decay and coverage**, which had been
   measuring three collapsed takes and nothing else, and the trimming fixed
   frequency. Neither substitutes for the other; both are P10/N2.
-- **The change of drum fixed glide**, by a factor of 120, with the estimator
-  untouched. The glide estimator needs the fundamental to survive to its late
-  probe; the medium-pitch fundamental does not and the low-pitch one does. The
-  standing claim that "glide is broken" was a statement about the target, and is
-  withdrawn. What survives is narrower and still worth carrying: the estimator
-  fails **silently** when the fundamental dies early, so glide is trustworthy
-  only on a reference where it has been checked.
+- **"The change of drum fixed glide by 120×" is half withdrawn.** The
+  medium-pitch fundamental dies before the glide estimator's late probe and the
+  low-pitch one does not — that part holds, and glide is no longer a term the
+  objective cannot see. But the 2.3 ¢ was measured through a level table the
+  pre-N17 estimator produced, and through the current one the same recordings give
+  **23.4 ¢**. The improvement is a factor of 12, not 120. The standing claim that
+  "glide is broken" stays withdrawn; what replaces it is "glide is usable and
+  fragile", and Result 11e of
+  [`physical-objective-validation.md`](physical-objective-validation.md) adds the
+  sharper caution — on this drum the entire glide measurement spans about one gate,
+  so the term is reproducible mostly because there is very little there.
 - **"The partial terms were never gateable" is withdrawn.** 65 cents is a wide
   tolerance, not an unusable one. The six rounds of intervention aimed at the old
   25-cent and 0.25 gates were nonetheless aimed at thresholds nothing could
   reach; that much stands.
 
 Read totals against the floor, never alone: on this reference the objective's
-disagreement with itself totals **5.92 at the median and 6.68 at p90** under
-these weights, and every term's p90 lands at or under its own gate. Two things
-moved between the last gate set and this one — the weights and the drum — so no
-total recorded before 2026-08-01 is comparable to any recorded after it, in
-either direction.
+disagreement with itself totals **6.54 at the median and 7.86 at p90** under
+these weights, so **no fit total below 6.54 is distinguishable from the
+objective's own noise**. Three things have moved across the four measurements —
+the estimator, the drum and the windows — so no total recorded before 2026-08-01
+is comparable to any recorded after it, in either direction.
 
-The **glide gate of 10 cents deserves separate warning**. A candidate whose bend
-is 30 cents wrong used to contribute 0.10 to the total and now contributes 3.0.
-Glide has gone from a term the objective could not see to one of the two or three
-most able to dominate a total, and no fit has yet been run under it.
+The **glide gate of 30 cents deserves separate warning**. A candidate whose bend
+is 30 cents wrong used to contribute 0.10 to the total and now contributes 1.0.
+Glide has gone from a term the objective could not see to one that can carry real
+weight, and no fit has yet been run under it.
 
 `Spurious` used to be a deliberate departure from the reciprocal rule, because on
 `mp/hd` its floor came out just under `Unmatched`'s and an asymmetry in that
 direction had already been refuted by a fit run (see below). On `lp/hd` the two
-land the other way round and round to the same 0.3, so the equality is now what
-the measurement says rather than an override of it.
+land within 0.02 of each other — 0.223 and 0.239 — and round to the same 0.25, so
+the equality is now what the measurement says rather than an override of it.
 
 Partials are identified greedily by closeness in cents, each candidate claimed at
 most once, with a tolerance that widens with mode index. Real two-headed drums

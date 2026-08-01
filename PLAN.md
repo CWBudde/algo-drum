@@ -919,6 +919,12 @@ recording and can be taken at any time.
     specifically. What it establishes is that the missing freedom spans the whole
     retained band rather than only m = 0, which is a **larger** gap than this item
     described and points away from the cavity as its cause.
+  - **Re-measured on the low-pitch reference, 2026-08-01** (§Result 11d): 29 clean
+    pairs, median ratio **1.39** (1.04–4.86), upper member faster in 18 of 29.
+    Both halves survive the change of drum — the split is large, the sign is not
+    there. Pairs are now resolved near the fundamental as well, but §Result 11c
+    disqualifies the subspace estimator there, so they are excluded rather than
+    read as the doublet appearing.
 
     So the threads are now:
 
@@ -950,11 +956,12 @@ recording and can be taken at any time.
 
     **Re-aimed 2026-08-01, before that experiment was run.** Evidence:
     [`physical-objective-validation.md`](docs/physical-objective-validation.md)
-    §Result 10. The committed reference's ring time was measured across all
-    sixteen takes and it falls as **T60 ∝ f^-0.52** — halfway in log slope
-    between the f^-1 the loss law is calibrated to and the f^0 a d0-dominant law
-    gives. Anchored at 240 Hz, constant ζ predicts 64 ms at 2.6 kHz against a
-    measured 208 ms: the law is not wrong in kind, it is about twice too steep.
+    §Result 10, and **re-measured post-N17 as §Result 11a — use that one**. The
+    committed reference's ring time was measured across all sixteen takes and it
+    falls as **T60 ∝ f^-0.70** (f^-0.52 through the old truncating window), between
+    the f^-1 the loss law is calibrated to and the f^0 a d0-dominant law gives.
+    Anchored at 240 Hz, constant ζ predicts 102 ms at 2.6 kHz against a measured
+    207 ms: the law is not wrong in kind, it is about twice too steep.
     The medium-pitch set that was the reference until this date gives an exponent
     near **zero** on the same measurement, so two tunings of one drum disagree
     and neither supports 1/f. That disagreement is a caution, not a result: do
@@ -964,7 +971,7 @@ recording and can be taken at any time.
     longest" — is a consequence of the law's **slope**, and the slope is already
     a product knob: `D.TILT` scales d₁ and d₂ and leaves d₀ alone, over a 0–3
     range whose zero is the flat law and whose 1 is the calibrated constant-Q
-    one. An f^-0.52 target puts the answer between the ends rather than at
+    one. An f^-0.70 target puts the answer between the ends rather than at
     either, which is what makes it useful: the fit should land `D.TILT` well
     below 1 and not at its stop, and a bank that pins it at 0 is reporting an
     artefact rather than this drum. A correction entry at the (1,1) would be
@@ -974,12 +981,15 @@ recording and can be taken at any time.
 
   - **N17 gated that fit and is now done** (2026-08-01): the windows are 2.0 s /
     1.60 s and a partial can no longer be credited with a ring time its window
-    did not show. What still gates the fit is the *consequence* — every gate in
-    `DefaultWeights` was measured through the old windows, so `measure-objective`
-    has to be re-run and the gates re-edited before a total from this objective
-    means anything. Result 10's −0.52 was measured at the old windows too, and
-    truncation shortens long decays, so re-measuring it should if anything make
-    the slope steeper, not flatter.
+    did not show. Its consequence is also discharged — `measure-objective` was
+    re-run through the repaired estimator and the gates re-edited from it (see
+    N17), so a total from this objective can now be read against a measured floor
+    of 6.54 / 7.86. Result 10's −0.52 has been re-measured too, and the guess was
+    right in direction and larger than expected in size: **−0.70**, Result 11a.
+
+    **Nothing further gates the fit.** N3's remaining content is: run
+    `just fit-physical-series reference/tt08x08/lp/hd`, read where `D.TILT`
+    lands, and only then decide about a correction entry.
 
   - **The instrument for that experiment exists**, so it is not what the next
     round is spent on: `cmd/fit-physical -mode-correction m,n=perSecond` adds an
@@ -1141,6 +1151,7 @@ recording and can be taken at any time.
     regression large enough to break a different term entirely.
 
     **Next:** N16's Results 2–10 re-measured against these gates, then N3's fit.
+    Results 5, 8 and 10 are now done — objective-validation Result 11.
 
 <details><summary>The item as originally written</summary>
 
@@ -1210,6 +1221,17 @@ recording and can be taken at any time.
       safe here because the pair is coincident. Pin what is now known (diameter,
       depth, both surface densities from the stated Remo gauges) and fit the rest
       against the whole velocity curve rather than one hit.
+
+      **The Berger justification below is withdrawn for this set, 2026-08-01.**
+      Objective-validation Result 11e: on `lp/hd` the glide is +18 ¢ median, all
+      sixteen takes positive, three unmeasurable, fifteen of sixteen at or below
+      the 40 ¢ readability threshold, and with no trend against velocity. The
+      curve quoted below is `mp/hd`'s. What is left of the case for a joint fit is
+      the narrower one — one bank against sixteen takes so that contact stiffness
+      and nonlinearity cannot trade against a single assumed strike, and sixteen
+      independent measurements of the file-order claim — which is worth having but
+      is not an identification signal for `BERGER`. Do not read whatever `BERGER`
+      lands on as a measurement of tension nonlinearity.
 
       This is what finally constrains the Berger nonlinearity, including
           `CoefficientNPerM` — which ships at the same coefficient the uniform channel
@@ -1465,7 +1487,49 @@ recording and can be taken at any time.
       [`physical-calibration.md`](docs/physical-calibration.md) currently cites as
       the reason to doubt the constant-\(\zeta\) loss law.
 
-      **Result 10 is done**, and it makes the point above twice over. Re-measured on
+      **Results 5, 8 and 10 are now done**, on 2026-08-01, as objective-validation
+      **Result 11** — one `cmd/measure-tom -channel mono -high-resolution` run over
+      `reference/tt08x08/lp/hd/v*.wav` at the post-N17 defaults. What it changes:
+
+      - The decay exponent is **f^-0.70**, not the f^-0.52 the truncating window
+        gave. Constant \(\zeta\) is now too steep by 2.0x rather than 3.3x. The
+        fundamental reads 1.076 s (SD 3.1 %) against 0.686 s — the old window was
+        cutting 36 % off the partial the whole fit is anchored to. `D.TILT` should
+        land clearly below 1 and clearly above 0, which is what N3 waits to read.
+      - Result 8 holds on this set: **29 clean pairs, median ring-time ratio 1.39**
+        between members 0.1–6 % apart, and the cavity's predicted sign still absent
+        (upper member faster in 18 of 29). The missing pairwise damping freedom is
+        confirmed on the drum the fit aims at.
+      - Result 5's fast-versus-subspace disagreement **widened** (median 41 % →
+        63 %), against the prediction that it would narrow — but the drum changed
+        too, so the prediction is untested rather than refuted. §5c did not merely
+        fail again, it **inverted**: the partials the fast estimator is most
+        confident about are the ones it agrees with the subspace one about least.
+      - New, and it bounds the estimator work N2 opens: at this drum's fundamental
+        the **subspace estimator is not ground truth**. Its ring time moves by 9x
+        across nominally identical strikes where the fast one moves by 6 %, because
+        the low band is a cluster and it resolves a different member each take.
+      - New, and it costs something: **the glide is gone on this set** — all
+        sixteen takes positive, median +18 ¢, three unmeasurable, no velocity
+        trend, fifteen of sixteen at or below the 40 ¢ readability threshold.
+        Result 4's velocity-glide curve is a property of `mp/hd`. A fit against
+        `lp/hd` does not constrain `BERGER` in either direction, and **N5's joint
+        velocity-series fit loses its stated justification** — still worth doing,
+        no longer worth doing for that reason.
+      - Two partials-per-take facts worth carrying: 4.7 % of partials are assigned
+        a ring time longer than the 2.08 s file, and **all of them are the same
+        357–360 Hz component** in twelve of sixteen takes, now at R² 0.95–0.99. It
+        is not a failed fit; it is something in that room that outlives the take.
+        The 286–360 Hz band stays excluded, on a stated ground rather than on poor
+        fit quality.
+
+      **Results 2, 3 and 6 remain open**, and 2 and 3 cannot be re-run without
+      rewriting tooling that was never committed (the four-window residual budget,
+      the band-limiting sweep, the static-EQ fits). Result 6 is N6 and was never
+      measured on any set.
+
+      **Result 10's original write-up follows**, kept because its window study is
+      what established N17. Re-measured on
       `lp/hd` the ring time falls as f^-0.52; on `mp/hd` the same code gave an
       exponent near **zero**. The conclusion that survives the move is only the
       negative one — neither tuning supports the 1/f the loss law is calibrated to —
@@ -1476,8 +1540,10 @@ recording and can be taken at any time.
       before, or they are measured through a window that is about to move.
 
       A second consequence to watch when the refit happens: the glide gate is now
-      **10 cents** rather than 290, so a term that could previously not influence a
-      total can now dominate one. No fit has been run under these weights.
+      **30 cents** rather than 290, so a term that could previously not influence a
+      total can now dominate one. Result 11e is the caution against reading much
+      into it either way — on this set the whole glide measurement spans about one
+      gate. No fit has been run under these weights.
 
 **Exit.** The objective's gates are traceable to measured reproducibility under
 repaired estimators; a fit exists against the licensed reference with at least one

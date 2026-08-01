@@ -23,11 +23,12 @@ here should be restated at length elsewhere — link to it instead.
 >   [`physical-measured-fit.md`](physical-measured-fit.md). It refutes this
 >   document's standing assumption that the floor is a property of the estimator
 >   alone; it is a property of estimator _and_ target.
-> - **Results 2 onward have not been re-measured.** They are still true statements
->   about the medium-pitch set and the paths in their reproduction commands are
->   current, so each can be re-run. Until that is done, do not quote any of them
->   as a property of the reference the fit now aims at. Re-running them is
->   `PLAN.md` N16.
+> - **Results 5, 8 and 10 have now been re-measured** on the low-pitch set through
+>   the post-N17 estimator — **Result 11**, which supersedes them and is what
+>   should be quoted. **Results 2, 3 and 6 have not**, and cannot be without
+>   rewriting tooling that was never committed; Result 11's last subsection says
+>   which and why. Results 2 onward remain true statements about the medium-pitch
+>   set with working reproduction commands. Re-running them is `PLAN.md` N16.
 > - **Every result below, Result 10 included, was measured through the analysis
 >   and decay windows that shipped before `PLAN.md` N17** — `analysisSeconds` 1.2
 >   and `decayFitEndSeconds` 0.60. Those are now 2.0 and 1.60, and the estimator
@@ -53,10 +54,10 @@ here should be restated at length elsewhere — link to it instead.
 >   reproducibility one**, because the two can move in opposite directions and
 >   this one did.
 >
->   Direction is known where it can be reasoned about. Truncation shortens long
->   decays, so Result 10's `f^-0.52` should if anything steepen. Result 5's
->   fast-versus-ESPRIT disagreement should narrow, since part of it was the fast
->   estimator fitting past the end of its partials.
+>   Direction was reasoned about before it was measured, and Result 11 settles
+>   both guesses: `f^-0.52` steepened to **`f^-0.70`**, as predicted; the
+>   fast-versus-ESPRIT disagreement **widened** rather than narrowing, though on a
+>   different drum, so the prediction is untested rather than refuted.
 
 ## Why this was needed
 
@@ -366,7 +367,9 @@ Provenance and checksums are in [`reference/CREDITS.md`](../reference/CREDITS.md
 The velocity series is the most valuable property: measured glide rises
 monotonically with strike velocity (**−130 ¢** at v04, **−174 ¢** at v08,
 **−353 ¢** at v12), so the Berger nonlinearity is finally constrained by a curve
-rather than by a single scalar.
+rather than by a single scalar. **That last sentence is withdrawn for the set the
+project ships** — see Result 11e, where the low-pitch takes show a small positive
+glide with no velocity trend.
 
 Two practical constraints: the analysis window is 1.2 s and the medium-pitch files
 are 1.25 s, so the higher tunings (down to 0.52 s) need the tail window shortened
@@ -374,6 +377,10 @@ before they are usable; and `v05`/`v06` are near-duplicate takes, agreeing to
 seven decimal places through the analysis chain.
 
 ## Result 5 — the estimator, measured against a second one
+
+> Superseded by **Result 11b/11c** on the low-pitch reference. 5a's defect and its
+> fix are unaffected; 5b–5g's numbers are medium-pitch, and 5c's finding is not
+> merely reproduced there but inverted.
 
 Added 2026-08-01 for `PLAN.md` §N2, which required the fast estimator to be
 compared partial by partial against a high-resolution one **before** anything is
@@ -677,6 +684,11 @@ contribution, and there the weights' claim holds: no term contributes more than
 true of the previous change too. `cmd/measure-objective` writes the floor into its
 own report so a total always arrives beside the floor it should be read against.
 
+> Superseded in its measured numbers by **Result 11d**, which confirms both halves
+> of the sign-pattern check on the low-pitch set. The structural argument below —
+> that the longest-ringing mode is forced to be the lowest uncorrected one — is a
+> property of the model and does not depend on either reference.
+
 ## Result 8 — N3's damping defect is at a different mode than N3 says
 
 PLAN item N3 names one instance: "the model synthesizes a mode at 186 Hz with
@@ -805,6 +817,11 @@ re-testing this, which is the only way the claim above stays revisable.
 
 ## Result 10 — the reference's ring time falls as f^-0.52, not as 1/f
 
+> Measured through the pre-N17 windows and superseded by **Result 11a**, which
+> re-reads the same set at `f^-0.70`. Kept because its window study is what
+> established N17 and because the size of the correction is only legible against
+> it.
+
 Results 8 and 9 established a defect in the model's damping _distribution_ and
 that its pairwise part is real. Neither says what shape the reference actually
 wants, and the model's loss law has been calibrated to a stated one since P2:
@@ -930,6 +947,217 @@ roughly 0.0 and -0.52; **neither supports \(1/f\)**, which is the claim under
 test, and the disagreement between them is itself a caution against
 re-calibrating a shipped law on a single recording.
 
+## Result 11 — Results 5, 8 and 10 re-measured on the low-pitch reference
+
+Added **2026-08-01** for `PLAN.md` N16, and it is the first pass that measures
+the current target through the current estimator. One command produces all of it:
+
+```bash
+go run ./cmd/measure-tom -channel mono -high-resolution \
+    -o lp-hd-hires.json reference/tt08x08/lp/hd/v*.wav
+```
+
+at the shipped defaults — analysis window 2.0 s, decay fit 0.05–1.6 s,
+`minimumRefinementSpanSeconds` in force. 16 takes, 256 fast partials, 111 of them
+paired against the subspace estimator. Every number below Result 10 in this
+document is superseded by the corresponding number here, except where it is
+explicitly about the medium-pitch set.
+
+### 11a — the ring time falls as f^-0.70, and the window was the reason it read -0.52
+
+| band (Hz) |   n | median T60 (s) | median R2 |
+| --------- | --: | -------------: | --------: |
+| 227-286   |  22 |      **1.094** |      0.97 |
+| 286-360   |  15 |      _(2.449)_ |      0.97 |
+| 360-454   |   5 |          0.445 |      0.86 |
+| 454-571   |  18 |          0.703 |      0.96 |
+| 571-720   |   4 |          0.654 |      0.97 |
+| 720-907   |  15 |          0.830 |      0.95 |
+| 907-1143  |  34 |          0.436 |      0.96 |
+| 1143-1440 |  43 |          0.415 |      0.96 |
+| 1440-1814 |  50 |          0.307 |      0.96 |
+| 1814-2286 |  24 |          0.258 |      0.95 |
+| 2286-2880 |  24 |          0.207 |      0.93 |
+
+Fitting the same power law as Result 10 — the 221 partials with R2 >= 0.90 and a
+ring time the file could hold — gives
+
+\[
+T_{60} \propto f^{-0.70},
+\]
+
+against the \(f^{-0.52}\) the 0.6 s window produced. **The direction predicted
+in this document's header is confirmed and the size of it was not guessable**:
+truncation was costing 0.18 in the exponent, a third of the distance between the
+measured law and the constant-\(\zeta\) one the model is calibrated to. Anchored
+at the 240 Hz band the fitted law predicts 0.207 s at 2.58 kHz where the
+measurement gives 0.207 s; constant \(\zeta\) predicts 0.102 s, **too short by
+2.0x** rather than Result 10's 3.3x.
+
+So the conclusion survives in kind and shrinks in size. \(1/f\) is still not what
+this drum does, but it is half as wrong as the truncating window made it look, and
+the useful consequence for N3 is unchanged and now better sized: `D.TILT` should
+land clearly below 1 and clearly above 0.
+
+The fundamental is where the truncation was worst. Its ring time reads **1.076 s
+mean, SD 3.1 %** across the sixteen takes, against the 0.686 s Result 10 recorded
+— the 0.6 s window was cutting 36 % off the single partial the whole fit is
+anchored to.
+
+**The 286-360 Hz row is still unusable, and for the opposite reason to before.**
+Twelve of 256 partials (4.7 %) are assigned a ring time longer than the 2.08 s
+file, and all twelve are the same component at **357-360 Hz**, one per take, in
+twelve of the sixteen takes. Result 10 recorded it at R2 0.12-0.66 and read it as
+a failed fit. Through the wider window and the floor model it comes back at
+**R2 0.95-0.99 with T60 2.3-2.6 s** — an excellently fitted component that
+outlives the recording. That is a statement about the recording, not about the
+estimator: something in that room rings for longer than the take is long, close to
+but not at the \((1,1)\) at 378.8 Hz. It cannot be measured from this material and
+it should not be matched against; the band stays excluded, now on a stated ground.
+
+### 11b — the fast-versus-subspace disagreement got wider, not narrower
+
+The header predicted this would narrow, since part of it was the fast estimator
+fitting past the end of its partials. **It did not.**
+
+|                       | `mp/hd`, pre-N17 | `lp/hd`, current |
+| --------------------- | ---------------: | ---------------: |
+| paired partials       |              108 |          **111** |
+| frequency, median     |            3.7 ¢ |        **8.9 ¢** |
+| frequency, p90        |           21.5 ¢ |       **48.8 ¢** |
+| ring time, median     |           41.4 % |       **62.6 %** |
+| ring time, p90        |          176.3 % |      **317.7 %** |
+| fast reads longer, in |             63 % |         **80 %** |
+
+Both the estimator and the target changed, so this is not a controlled comparison
+and the prediction is not cleanly refuted — it is untested, by a move that made a
+controlled test impossible. What can be said is that the disagreement is not small
+on the drum the fit now aims at, and that frequency agreement, while four times
+worse than on the medium-pitch set, is still far inside the 120 ¢ match tolerance.
+
+§5c re-run on this set does more than fail again — it **inverts**:
+
+| fast R2 | median \|ΔT60\| vs the subspace estimator |   n |
+| ------- | ----------------------------------------- | --: |
+| ≥ 0.95  | **85 %**                                  |  70 |
+| < 0.95  | **50 %**                                  |  41 |
+
+The partials the fast estimator is most confident about are the ones it agrees
+with the subspace estimator about least. §5f removed that weighting on the
+evidence that it did not discriminate; on this set keeping it would have been
+actively harmful.
+
+### 11c — the fundamental is a cluster, and the subspace estimator is not ground truth there
+
+The single most consequential disagreement is at the partial everything else is
+normalised to. Matching each take's base partial to its subspace counterpart
+within 15 Hz:
+
+|                       | fast          | subspace          |
+| --------------------- | ------------- | ----------------- |
+| median T60            | **1.078 s**   | **0.413 s**       |
+| range across 15 takes | 1.001–1.128 s | **0.174–1.589 s** |
+| spread                | **±6 %**      | **9.1x**          |
+
+Fifteen nominally identical strikes on one drum, and the high-resolution
+estimator's answer for the fundamental's ring time moves by a factor of nine while
+the fast one moves by six per cent. The matched subspace component is also often
+not at 239.7 Hz but at 232, 243 or 246 Hz — the low band holds several components
+inside 15 Hz and the subspace estimator resolves a different member of the cluster
+on each take, where the fast one reads the composite.
+
+This does not say the fast estimator is right. It says the presumption running
+through Result 5 — that where the two disagree, the high-resolution one is the
+measurement and the fast one the approximation — **does not hold at this drum's
+fundamental**, which is where it would matter most. Result 9's control does not
+cover this case either: it synthesised _two_-component cells, and what is here is
+three or more inside the resolution limit.
+
+Both readings stay open. Either the low cluster's energy really does redistribute
+drastically strike to strike, or the subspace estimator is not identifying the
+same component twice. The one thing that is settled is that no repair to the fast
+estimator can be justified by a disagreement with a reference that is itself
+unrepeatable at the mode in question.
+
+### 11d — the pairwise damping split is confirmed on this drum, at 1.39
+
+Result 8's pairing was done by hand on the medium-pitch set. Re-run on the
+low-pitch subspace tables with a stated criterion — adjacent components 1–25 Hz
+apart, split ≤ 7 %, above 200 Hz, with no third component within 25 Hz on either
+side, so that only clean two-member pairs are counted:
+
+|                        | `mp/hd`, Result 8 | `lp/hd`, current |
+| ---------------------- | ----------------: | ---------------: |
+| pairs                  |                14 |           **29** |
+| median ring-time ratio |          **1.55** |         **1.39** |
+| range                  |         1.11–7.25 |        1.04–4.86 |
+| upper member faster in |    6 of 13 (46 %) |  18 of 29 (62 %) |
+
+**Both halves of Result 8 hold on the new reference.** The split is large — a
+median factor of 1.39 between members 0.1–6 % apart in frequency, across which any
+smooth \(\gamma(k)\) gives essentially 1.00 — and the cavity's predicted sign is
+still not there. 62 % is closer to a preference than 46 % was, but with 29 pairs
+it is two pairs away from a coin flip and is not evidence of the alternation.
+
+Result 8 was explicitly silent about the fundamental, no pair having been resolved
+there. Pairs now are — 232/239 Hz at ratio 4.39, 239/243 Hz at 2.18, 304/322 Hz at
+2.90 — but by 11c those are exactly the components the subspace estimator does not
+resolve repeatably, so they are excluded from the summary above rather than read as
+the doublet finally appearing. The conclusion is still the one Result 8 reached
+from the modes between 300 Hz and 2.7 kHz.
+
+### 11e — the glide is gone, and with it Result 4's velocity-series argument
+
+Result 4's most valuable claimed property of the reference pack was that measured
+glide rises monotonically with strike velocity — −130 ¢ at `v04`, −174 ¢ at `v08`,
+−353 ¢ at `v12` — "so the Berger nonlinearity is finally constrained by a curve
+rather than by a single scalar". That is a property of `tt08x08/mp/hd`. **On
+`lp/hd` it is not there:**
+
+| take  |  v01 |   v04 |   v08 | v12 |    v15 |   v16 |
+| ----- | ---: | ----: | ----: | --: | -----: | ----: |
+| glide | +2 ¢ | +16 ¢ | +30 ¢ | n/a | +133 ¢ | +40 ¢ |
+
+All sixteen readings are **positive** — the pitch rises slightly rather than
+falling — three (`v10`, `v11`, `v12`) are not measurable at all, the median is
+**+18 ¢**, and there is no monotone trend with the file order. Fifteen of the
+sixteen sit at or below `unreadableGlideCents` = 40, which is to say at or below
+the level this estimator declines to interpret.
+
+Three consequences, and the third is the one that costs something:
+
+- The measured glide gate of **30 ¢** (`DefaultWeights`) is the same size as the
+  entire spread of the measurement. The term is reproducible on this drum because
+  there is almost nothing there to reproduce.
+- A fit against this reference cannot be read as constraining the Berger
+  nonlinearity in either direction. `BERGER` is fitted against a target whose
+  glide is at the noise, so whatever it lands on is not a measurement of tension
+  nonlinearity.
+- **N5's velocity-series joint fit loses its stated justification.** Its argument
+  was the glide curve. On the set the project actually ships that curve does not
+  exist, and the remaining case for a series fit — one bank against many takes,
+  contact and nonlinearity not trading against a single assumed strike — is a
+  weaker and different one. It is still worth doing; it is no longer worth doing
+  _for this reason_.
+
+The medium-pitch set does have the curve, and it is the same drum one tuning
+apart. Nothing here says the nonlinearity is unmeasurable — it says it is not
+measurable from the recording the fit is aimed at.
+
+### What Results 2, 3 and 6 still need
+
+Not re-run, and the reason is recorded rather than deferred silently:
+
+- **Results 2 and 3** rest on experiments — the four-window residual budget, the
+  band-limiting sweep, the static-EQ fits at 2/3/5/7/24 free parameters — whose
+  code was never committed. Re-running them means writing that tooling again.
+  Their qualitative claims (the residual is time-varying; a static post-filter
+  cannot reach it) are about the model rather than the target and are more likely
+  to transfer than their numbers, but neither has been checked here.
+- **Result 6** was never a measurement on any set: no Jacobian, Hessian or Fisher
+  information exists in the repository. It is `PLAN.md` N6 and is untouched by the
+  change of reference.
+
 ## What this changes
 
 1. ~~The adoption gates must be re-derived from measured reproducibility rather
@@ -954,3 +1182,14 @@ re-calibrating a shipped law on a single recording.
    the measurement behind them supported. The pattern is worth naming, because
    this path's recurring failure is not measuring too little but concluding too
    much from what was measured.
+5. **A number is a property of the estimator, the target and the window
+   together.** Result 11 is the third demonstration in this file: the same code on
+   two tunings of one drum gives decay exponents of 0.0 and −0.70, glide floors of
+   280 ¢ and 2 ¢, and a velocity-glide curve that exists on one and not the other;
+   and the same code on one tuning through two windows gives −0.52 and −0.70.
+   Nothing here transfers by default, including the parts of it that read like
+   statements about physics.
+6. The subspace estimator is measurement equipment with a measured limit of its
+   own (Result 11c): at this drum's fundamental its ring time moves by 9x across
+   nominally identical strikes where the fast estimator's moves by 6 %. It cannot
+   be used as the reference against which the fast one is corrected there.

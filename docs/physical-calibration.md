@@ -46,10 +46,10 @@ alone gives \(T_{60}\) independent of frequency and \(d_2\) alone gives
 \(T_{60} \propto 1/f^2\). Measured membrane behaviour is \(T_{60} \propto 1/f\).
 
 > **The committed reference does not show that**, and the whole choice below rests
-> on it. The licensed 8" × 8" tom's ring time falls as \(T_{60} \propto f^{-0.52}\)
-> over 227 Hz–2.9 kHz — halfway, in log slope, between the \(f^{-1}\) this
+> on it. The licensed 8" × 8" tom's ring time falls as \(T_{60} \propto f^{-0.70}\)
+> over 227 Hz–2.9 kHz — between the \(f^{-1}\) this
 > paragraph asserts and the \(f^{0}\) a \(d_0\)-dominant law gives. Anchored at
-> 240 Hz, constant \(\zeta\) predicts 64 ms at 2.6 kHz against a measured 208 ms.
+> 240 Hz, constant \(\zeta\) predicts 102 ms at 2.6 kHz against a measured 207 ms.
 > The law is not wrong in kind; it is about twice too steep. The medium-pitch set
 > that was the reference until 2026-08-01 gives an exponent near **zero** on the
 > same measurement, so the two tunings of one drum disagree, and neither supports
@@ -57,7 +57,9 @@ alone gives \(T_{60}\) independent of frequency and \(d_2\) alone gives
 >
 > The measurement, its mode identification, the window checks and the two
 > estimator defects they exposed are
-> [`physical-objective-validation.md` §Result 10](physical-objective-validation.md);
+> [`physical-objective-validation.md` §Result 11a](physical-objective-validation.md),
+> which supersedes §Result 10's \(f^{-0.52}\) — that was measured through the
+> pre-N17 window, which truncated the low partials and flattened the slope;
 > what to do about it is [P10/N3](../PLAN.md), which is waiting on a fit against
 > that reference. Nothing below has been changed yet, and one recording would not
 > be enough to change it.
