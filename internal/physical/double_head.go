@@ -121,6 +121,7 @@ type DoubleHead struct {
 	resonantNonlinear          nonlinearHead
 	nonlinearSolveIterations   int
 	energy                     float64
+	release                    releaseBound
 
 	// The nonlinear mode coupling: the channels of the local quartic potential
 	// the Berger law projects away. coupling is empty unless the coupling is
@@ -203,6 +204,7 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 		strainWeight:     make([]float64, modeCount),
 		couplingFirst:    make([]int32, modeCount),
 		couplingCount:    make([]int32, modeCount),
+		release:          newReleaseBound(config.SampleRateHz),
 
 		modeWavenumberPerM:  make([]float64, modeCount),
 		modeOmegaSquared:    make([]float64, modeCount),
@@ -538,6 +540,11 @@ func (d *DoubleHead) Trigger(velocity01 float64) error {
 
 	strikePointM, _ := d.strikePointState()
 	d.contact.trigger(velocity01, strikePointM)
+	// Re-arms rather than extends: a strike buys the voice another
+	// ReleaseBoundSeconds, so a roll never trips the bound and the bound only
+	// bites once the player stops. Existing modal motion is retained here, so
+	// this is the one piece of state a Trigger clears.
+	d.release.restart()
 
 	return nil
 }
@@ -566,13 +573,22 @@ func (d *DoubleHead) Reset() {
 	d.resonantRadiatedM3PerS2 = 0
 	d.attack.reset()
 	d.energy = 0
+	d.release.restart()
 	d.radiationHP.Reset()
 	d.radiationLP.Reset()
 }
 
 // IsActive reports whether contact is pending or stored energy exceeds either
-// enabled head's inactivity threshold.
+// enabled head's inactivity threshold, and the release bound has not expired.
+//
+// The bound is checked first and it is unconditional: the loss law is reachable
+// from the product's own knobs, so the energy test alone does not terminate.
+// See ReleaseBoundSeconds.
 func (d *DoubleHead) IsActive() bool {
+	if d.release.expired() {
+		return false
+	}
+
 	threshold := d.config.Batter.InactiveEnergyThresholdJ
 	if d.config.Resonant.Enabled {
 		threshold = min(threshold, d.config.Resonant.InactiveEnergyThresholdJ)
@@ -598,6 +614,11 @@ func (d *DoubleHead) Tick() DoubleHeadOutput {
 	}
 
 	output.ContactForceN = forceN
+	// The release fade, applied to the microphone signal and to nothing else.
+	// The state update above already ran in full, so d.energy and every raw
+	// component are what they always were — which is what keeps the
+	// conservation and passivity tests measuring the model rather than this.
+	output.Radiated *= d.release.advance()
 
 	return output
 }

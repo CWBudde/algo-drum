@@ -35,6 +35,7 @@ type SingleHead struct {
 	matrix21     []float64
 	matrix22     []float64
 	strikeWeight []float64
+	release      releaseBound
 	radiationHP  biquad.Section
 	radiationLP  biquad.Section
 
@@ -61,6 +62,7 @@ func NewSingleHead(config PhysicalDrum) (*SingleHead, error) {
 		matrix12:     make([]float64, modeCount),
 		matrix21:     make([]float64, modeCount),
 		matrix22:     make([]float64, modeCount),
+		release:      newReleaseBound(config.SampleRateHz),
 		radiationHP: biquad.Section{Coefficients: design.Highpass(
 			min(config.Pickup.HighpassHz, config.SampleRateHz*0.45),
 			1/math.Sqrt2,
@@ -139,6 +141,9 @@ func (s *SingleHead) Trigger(velocity01 float64) error {
 
 	strikePointM, _ := s.strikePointState()
 	s.contact.trigger(velocity01, strikePointM)
+	// Re-arms the release deadline; see DoubleHead.Trigger and
+	// ReleaseBoundSeconds.
+	s.release.restart()
 
 	return nil
 }
@@ -149,13 +154,22 @@ func (s *SingleHead) Reset() {
 	clear(s.velocity)
 	s.contact.reset()
 	s.energy = 0
+	s.release.restart()
 	s.radiationHP.Reset()
 	s.radiationLP.Reset()
 }
 
 // IsActive reports whether contact is pending or mechanical energy is above
-// the configured threshold.
+// the configured threshold, and the release bound has not expired.
+//
+// SingleHead is an offline reference rather than a product voice, so the bound
+// cannot be reached from a knob here. It carries it anyway so that the two
+// models answer the same question the same way; see ReleaseBoundSeconds.
 func (s *SingleHead) IsActive() bool {
+	if s.release.expired() {
+		return false
+	}
+
 	return s.contact.isActive() ||
 		s.energy > s.config.Batter.InactiveEnergyThresholdJ
 }
@@ -209,6 +223,8 @@ func (s *SingleHead) Tick() Output {
 	radiated := s.radiationHP.ProcessSample(output.RawRadiated)
 	radiated = s.radiationLP.ProcessSample(radiated)
 	output.Radiated = s.config.Pickup.OutputGain * radiated
+	// The release fade, on the microphone signal only; see DoubleHead.Tick.
+	output.Radiated *= s.release.advance()
 	s.energy = output.MechanicalEnergyJ
 
 	return output
