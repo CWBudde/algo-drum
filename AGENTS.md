@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to ai agents (Claude Code, Codex etc.) when working with code in this repository.
 
 ## Project Overview
 
@@ -95,17 +95,17 @@ internal/drum/validate.go — Engine.Validate(): every invariant Render relies o
 internal/drum/assert.go   — assertValid(): a no-op in shipped builds; `-tags drumassert` (assert_debug.go) makes Render panic on a broken invariant (`just test-assert`)
 cmd/gen-voiceparams/      — Generates web/src/engine/voiceParams.generated.ts from params.go (`just gen-params`; CI diffs it)
 internal/drum/*_test.go   — Go unit tests: sequencing, clamping, bit-exact render determinism, per-voice envelopes
-internal/physical/        — The experimental double-headed physical Tom, selectable per Tom track and independent of the procedural voices. Modal banks per head (modes.go), the two-head + lumped-cavity + Berger-tension real-time model (double_head.go), the P2 linear single-head reference (single_head.go), the three-band stochastic attack layer that covers what modal synthesis cannot reach, decaying at rates read off the head's own loss law (attack.go), a versioned SI-valued config with a migration chain (config.go), and an offline continuous-time reference solve (frequency_response.go). The elementwise half of the midpoint solve is factored into midpoint.go with an AVX2 kernel beside it (midpoint_amd64.{go,s}, `!purego`) and a portable fallback (midpoint_noasm.go) — the shipped voice is js/wasm and always takes the fallback, so the assembly only runs in the offline tools. The kernel is bit-exact against the Go reference, which is a requirement and not a courtesy: the calibration fixture and the rendered-WAV digest both compare exactly, so no FMA and no reassociation (midpoint_exact_test.go pins it)
+internal/physical/        — The experimental double-headed physical Tom, selectable per Tom track and independent of the procedural voices → "The physical drum model"
 internal/physical/analysis/ — Offline report/suite generation for `cmd/analyze-physical`; backs testdata/physical-reference-v2.json
-internal/physical/match/  — What a fit is scored with, and the instrument that judges that instrument. `features.go` is the fast estimator cmd/fit-physical runs per candidate (FFT peak picking, heterodyned envelopes) with `decay.go` beside it fitting each partial's ring time as an exponential standing on a stationary noise floor (Karjalainen et al., JAES 50(11), 2002) rather than a straight line through a truncated trace, and `distance.go` the nine-term perceptual distance over it, aggregated as a trimmed RMS and weighted by reciprocals of measured reproducibility gates (`AdoptionGates`). Beside it, and deliberately not in any fit loop, `esprit.go` is subband ESPRIT with a stabilisation sweep — high resolution, seconds per extraction — used to establish what the fast estimator is getting wrong; `linalg.go` holds the dense complex eigen/least-squares routines it needs, which exist because no linear-algebra dependency belongs in a module compiled for js/wasm
-cmd/measure-objective/    — Measures the objective's own reproducibility floor and proposes the gates `DefaultWeights` inverts: it scores each channel of a coincident stereo pair against the other through `match.Distance` itself, so the floor is measured by the shipped code rather than a reimplementation of it. It refuses a spaced pair, because there the disagreement is two arrival times
-cmd/fit-physical/         — Searches the product's own parameter bank for the drum that comes closest to a recording, with the Mayfly Optimization Algorithm. `-reference` is repeatable and every take given is fitted by **one shared bank** with **one free strike velocity each**, scored as the mean of the per-take distances (`just fit-physical-series <directory>`); a single-file run is a diagnostic, since with one recording the contact parameters and the Berger nonlinearity trade freely against an assumed strike. **The file order is never read as evidence** — the v01…v16 labelling was played by hand and is a claim, so reversing the take list leaves the cost bit-identical, and the fitted velocities are printed against the file order as an independent measurement of it. `-set` pins a parameter in its own unit (metres, N/m) where `-fix` takes a normalized position; the geometry of a committed pack is pinned this way, read off `reference/<WxH>/`
-cmd/measure-tom/          — Turns recordings into the committable tables docs/physical-measurement-protocol.md asks for, through the same code a fit scores with. `-high-resolution` adds the ESPRIT table and the partial-by-partial agreement between the two estimators (PLAN.md §N2)
+internal/physical/match/  — Feature extraction and the nine-term perceptual distance a fit is scored with → "The physical drum model"
+cmd/measure-objective/    — Measures the objective's own reproducibility floor and proposes the gates `match.DefaultWeights` inverts
+cmd/fit-physical/         — Fits the model's parameter bank to one or more recordings, with the Mayfly Optimization Algorithm
+cmd/measure-tom/          — Turns recordings into the committable tables docs/physical-measurement-protocol.md asks for
 cmd/analyze-physical/     — Emits the analysis report and regenerates the reference fixture (`just gen-physical-reference`; CI diffs it)
 cmd/render-physical/      — Renders the physical Tom to a WAV for offline auditioning
 internal/wavio/           — Mono 16-bit PCM WAV export, shared by cmd/render-physical and cmd/fit-physical's `-wav` (reading WAVs lives in internal/physical/match, which drags in the whole FFT stack)
-docs/physical-*.md        — The physical model's design record: calibration and the microphone model, the cavity, nonlinear tension, the hybrid architecture, product integration, and the measured review the P8 work came from. `physical-objective-validation.md` is the evidence record for how far the fitting objective can be trusted — read it before quoting any fit number or adoption gate
-reference/CREDITS.md      — Licence and provenance for the committed reference recordings (CC BY 4.0). Recordings are laid out `reference/<drum>/<tuning>/<style>/v<NN>.wav`; `reference/` is otherwise gitignored, and only the 8"x8" drum's low-pitch head-strike subset (`tt08x08/lp/hd`) is tracked. **Anything a fit produces is named after the reference it was made against** — `just fit-physical` derives `fits/fit-tt08x08-lp-hd-v08.{json,checkpoint}` from the path and `just fit-physical-series` derives `fits/fit-tt08x08-lp-hd-series.{json,checkpoint}` from the directory, and a hand-run `-o` must carry at least the drum/tuning/style class. A fit report is only meaningful beside the recording it targeted: the gates, the totals and the whole partial table are properties of that drum at that tuning, and they do not transfer between sets
+docs/physical-*.md        — The physical model's design and evidence record → "The physical drum model"
+reference/CREDITS.md      — Licence and provenance for the committed reference recordings (CC BY 4.0)
 docs/paper/               — Typst working paper on the matching method (`just paper` → physical-tom-matching.pdf); figures/ holds the committed PNGs
 tools/paper-figures/      — Draws the paper's figures from a `cmd/fit-physical -o` report (`just paper-figures`). Its own Go module, and deliberately: matplotlib-go's graphics tree and its FreeType-linking raster backend have no business in the engine's go.mod, and `go mod tidy` ignores the `purego` build tag the pure-Go rasteriser needs
 web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands, exposes onPattern (engine-owned pattern snapshots) and dispose() (tears the worker + audio graph down)
@@ -152,25 +152,158 @@ UI displays tracks in **reverse order** (Cymbal on top, Bass on bottom).
 
 ### WASM JS API (`AlgoDrum` on the worker's global scope)
 
-| Method                          | Description                                                                       |
-| ------------------------------- | --------------------------------------------------------------------------------- |
-| `init(sampleRate)`              | Initialize engine (called once at WASM load)                                       |
-| `setRunning(bool)`              | Play / stop (stop resets to step 0)                                                |
-| `setTempo(bpm)`                 | Set tempo in BPM (clamped to 30–300)                                               |
-| `setSwing(0–0.5)`               | Set swing amount (0.5 = full shuffle)                                              |
-| `setStepCount(n)`               | Set active pattern length (clamped to 1–16); steps are 16th notes                  |
-| `setCell(track, step, 0–1)`     | Set cell velocity (0 = off; UI uses 0.7 = normal, 1.0 = accent)                    |
-| `setPattern(Float32Array)`      | Replace pattern from a flat track-major array of 5×16 velocities (`track*16+step`) |
-| `getPattern()`                  | Returns the pattern in the same flat Float32Array layout                           |
-| `setVolume(track, 0–1)`         | Set track volume (ramped over ~8 ms to avoid zipper noise)                         |
-| `setDecay(track, 0–1)`          | Trim the track's base decay time by 0.5×–1.5×                                      |
-| `setVoiceParam(track, i, 0–1)`  | Set one per-voice synthesis parameter (tables in `docs/voices.md`)                 |
-| `triggerVoice(track, 0–1)`      | Fire one voice immediately, independent of the sequencer (audition)                |
-| `setReverb(0–1)`                | Set global reverb amount                                                           |
-| `setProbability(0–1)`           | Per-hit trigger chance (1 = every hit fires, default; 0 = silence)                 |
-| `setHumanize(0–1)`              | Timing/velocity randomization (delay ≤ h·15 ms, velocity ±h·20%; 0 = mechanical)   |
-| `render(n)`                     | Render n samples → Float32Array                                                    |
-| `currentStep()`                 | Returns active step index (-1 if stopped)                                          |
+| Method                         | Description                                                                        |
+| ------------------------------ | ---------------------------------------------------------------------------------- |
+| `init(sampleRate)`             | Initialize engine (called once at WASM load)                                       |
+| `setRunning(bool)`             | Play / stop (stop resets to step 0)                                                |
+| `setTempo(bpm)`                | Set tempo in BPM (clamped to 30–300)                                               |
+| `setSwing(0–0.5)`              | Set swing amount (0.5 = full shuffle)                                              |
+| `setStepCount(n)`              | Set active pattern length (clamped to 1–16); steps are 16th notes                  |
+| `setCell(track, step, 0–1)`    | Set cell velocity (0 = off; UI uses 0.7 = normal, 1.0 = accent)                    |
+| `setPattern(Float32Array)`     | Replace pattern from a flat track-major array of 5×16 velocities (`track*16+step`) |
+| `getPattern()`                 | Returns the pattern in the same flat Float32Array layout                           |
+| `setVolume(track, 0–1)`        | Set track volume (ramped over ~8 ms to avoid zipper noise)                         |
+| `setDecay(track, 0–1)`         | Trim the track's base decay time by 0.5×–1.5×                                      |
+| `setVoiceParam(track, i, 0–1)` | Set one per-voice synthesis parameter (tables in `docs/voices.md`)                 |
+| `triggerVoice(track, 0–1)`     | Fire one voice immediately, independent of the sequencer (audition)                |
+| `setReverb(0–1)`               | Set global reverb amount                                                           |
+| `setProbability(0–1)`          | Per-hit trigger chance (1 = every hit fires, default; 0 = silence)                 |
+| `setHumanize(0–1)`             | Timing/velocity randomization (delay ≤ h·15 ms, velocity ±h·20%; 0 = mechanical)   |
+| `render(n)`                    | Render n samples → Float32Array                                                    |
+| `currentStep()`                | Returns active step index (-1 if stopped)                                          |
+
+## The physical drum model
+
+An experimental double-headed physical Tom, selectable per Tom track and independent of
+the procedural voices in `internal/drum`. It is a research line with its own tooling,
+its own measurement discipline, and its own evidence record; the sections below are the
+parts a change to it has to respect.
+
+### The model (`internal/physical/`)
+
+Modal banks per head (`modes.go`), the two-head + lumped-cavity + Berger-tension
+real-time model (`double_head.go`), the P2 linear single-head reference
+(`single_head.go`), the three-band stochastic attack layer that covers what modal
+synthesis cannot reach, decaying at rates read off the head's own loss law
+(`attack.go`), a versioned SI-valued config with a migration chain (`config.go`), and an
+offline continuous-time reference solve (`frequency_response.go`).
+
+The elementwise half of the midpoint solve is factored into `midpoint.go` with an AVX2
+kernel beside it (`midpoint_amd64.{go,s}`, `!purego`) and a portable fallback
+(`midpoint_noasm.go`). The shipped voice is js/wasm and always takes the fallback, so
+the assembly only runs in the offline tools. **The kernel is bit-exact against the Go
+reference, and that is a requirement rather than a courtesy:** the calibration fixture
+and the rendered-WAV digest both compare exactly, so no FMA and no reassociation
+(`midpoint_exact_test.go` pins it).
+
+### The objective (`internal/physical/match/`)
+
+What a fit is scored with, and the instrument that judges that instrument.
+
+- `features.go` — the fast estimator `cmd/fit-physical` runs per candidate (FFT peak
+  picking, heterodyned envelopes).
+- `decay.go` — fits each partial's ring time as an exponential standing on a stationary
+  noise floor (Karjalainen et al., JAES 50(11), 2002) rather than a straight line
+  through a truncated trace. `slowestSupportedT60` carries the admissibility criterion:
+  **evidence is the fall, not the duration** — ISO 3382's ≥20 dB inside the fit window.
+- `distance.go` — the nine-term perceptual distance, aggregated as a trimmed RMS and
+  weighted by reciprocals of measured reproducibility gates (`AdoptionGates`). A term at
+  its gate contributes exactly 1.0, so **a total is a property of a weight set** and
+  totals from different gate sets are not comparable.
+- `esprit.go` / `linalg.go` — subband ESPRIT with a stabilisation sweep, deliberately
+  **not** in any fit loop: high resolution, seconds per extraction, used to establish
+  what the fast estimator is getting wrong. `linalg.go` holds the dense complex
+  eigen/least-squares routines it needs, which exist because no linear-algebra
+  dependency belongs in a module compiled for js/wasm.
+
+### The tools
+
+| Tool | What it is for |
+| ---- | -------------- |
+| `cmd/measure-tom/` | Turns recordings into the committable tables [docs/physical-measurement-protocol.md](docs/physical-measurement-protocol.md) asks for, through the same code a fit scores with. `-high-resolution` adds the ESPRIT table and the partial-by-partial agreement between the two estimators (PLAN.md §N2) |
+| `cmd/measure-objective/` | Measures the objective's reproducibility floor and proposes the gates `DefaultWeights` inverts. It scores each channel of a **coincident** stereo pair against the other through `match.Distance` itself, so the floor is measured by the shipped code rather than a reimplementation of it, and it refuses a spaced pair, where the disagreement would be two arrival times |
+| `cmd/fit-physical/` | Searches the parameter bank for the drum closest to a recording. `-inspect` reads a running checkpoint and stops, emitting the full report — per-term breakdown, per-take terms and velocities, parameter table — without disturbing the run |
+| `cmd/analyze-physical/` | The analysis report and the reference fixture (`just gen-physical-reference`; CI diffs it) |
+| `cmd/render-physical/` | Renders the voice to a WAV for offline auditioning |
+
+**Gates are hand-edited.** `measure-objective` proposes; a human applies. There is
+deliberately no generated or CI-diffed gate fixture — a gate is a judgement about what
+counts as agreement, and it should cost a person a decision.
+
+### Fitting discipline
+
+`-reference` is repeatable, and every take given is fitted by **one shared bank** with
+**one free strike velocity each**, scored as the mean of the per-take distances
+(`just fit-physical-series <directory>`). A single-file run is a diagnostic, since with
+one recording the contact parameters and the Berger nonlinearity trade freely against an
+assumed strike. `-set` pins a parameter in its own unit (metres, N/m) where `-fix` takes
+a normalized position; the geometry of a committed pack is pinned this way, read off
+`reference/<WxH>/`.
+
+**Anything a fit produces is named after the reference it was made against.**
+`just fit-physical` derives `fits/fit-tt08x08-lp-hd-v08.{json,checkpoint}` from the path
+and `just fit-physical-series` derives `fits/fit-tt08x08-lp-hd-series.{json,checkpoint}`
+from the directory; a hand-run `-o` must carry at least the drum/tuning/style class. A
+fit report is only meaningful beside the recording it targeted — the gates, the totals
+and the whole partial table are properties of that drum at that tuning, and they do not
+transfer between sets.
+
+Parallelism is one goroutine per restart and nothing below it: the takes, the feature
+extraction and the FFTs inside one evaluation are sequential, so `-restarts N` occupies
+N cores and no more. Throughput is memory-bandwidth bound rather than core bound — on a
+12-core machine 1/4/11 restarts measured 1.0×/1.8×/2.9× aggregate.
+
+### What the takes do and do not tell you
+
+The reference series was played by hand with velocity in mind, which means **velocity is
+not the only thing that varied between strikes** — position, mallet angle and contact
+obliquity moved too, and the fit has nowhere to put them.
+
+- **The file order is never read as evidence.** The v01…v16 labelling is a claim, so
+  reversing the take list leaves the cost bit-identical.
+- **The fitted per-take velocities are not a measurement of anything**, and were once
+  described here as an independent measurement of the file order. Two searches over the
+  same sixteen takes (5,002 and 8,976 evaluations, totals 15.835 and 15.186) returned
+  velocity vectors correlating **ρ = +0.15 with each other**, −0.07 and −0.05 with the
+  file index, and −0.22 and −0.18 with the takes' own attack brightness. Velocity is a
+  nuisance parameter this objective does not identify, so the search fills those sixteen
+  dimensions with noise.
+- **What does measure the order is the recordings alone.** Crest factor over the first
+  50 ms runs **ρ = +0.92** against the file index and attack balance **ρ = +0.85**, both
+  gain-invariant and so unharmed by the per-file peak normalisation that leaves absolute
+  level at ρ = +0.16. Read a velocity ramp off these, never off a fit.
+- **One shared bank is structurally wrong across the series.** On `tt08x08/lp/hd` the
+  358 Hz partial's level relative to the fundamental scatters over 14.8 dB (sd 3.5 dB),
+  and a partial at 255.7 Hz is absent from all nine of v01–v09 and present in six of the
+  seven of v10–v16 at a consistent height (sd 0.7 dB). A mode that switches on above a
+  strike level is a nonlinear signature, not a positional one — so the loud takes are
+  not the quiet takes scaled up, and a single linear bank fitted to both must compromise
+  in exactly the spectrum and level terms that dominate the residual.
+
+### The design record
+
+Read [docs/physical-objective-validation.md](docs/physical-objective-validation.md)
+before quoting any fit number or adoption gate — it is the evidence record for how far
+the objective can be trusted, and it carries the results that have been superseded as
+well as the ones that stand.
+
+| Document | Subject |
+| -------- | ------- |
+| [physical-model-research.md](docs/physical-model-research.md) | The literature the model is built from |
+| [physical-calibration.md](docs/physical-calibration.md) | Calibration and the microphone model |
+| [physical-cavity.md](docs/physical-cavity.md) | The lumped cavity and the two-head coupling |
+| [physical-nonlinearity.md](docs/physical-nonlinearity.md) | Berger tension, the tanh cap, discrete-gradient passivity |
+| [physical-contact.md](docs/physical-contact.md) | The strike: prescribed half-sine and Hunt–Crossley |
+| [physical-excitation-gap.md](docs/physical-excitation-gap.md) | What the excitation could not reach |
+| [physical-hybrid.md](docs/physical-hybrid.md) | Why the attack layer exists; quality tiers |
+| [physical-product-integration.md](docs/physical-product-integration.md) | How the voice reaches the product |
+| [physical-measurement-protocol.md](docs/physical-measurement-protocol.md) | How a recording becomes a committable table |
+| [physical-objective-validation.md](docs/physical-objective-validation.md) | How far the fitting objective can be trusted |
+| [physical-measured-fit.md](docs/physical-measured-fit.md) | The measured fit results and their gates |
+| [physical-tom-review.md](docs/physical-tom-review.md) | The measured review the P8 work came from |
+| [physical-sound-audit.md](docs/physical-sound-audit.md) | Listening audit of the rendered voice |
+| [physical-real-instrument-departures.md](docs/physical-real-instrument-departures.md) | What the model is not, and the gate for adding it |
+| [reference/CREDITS.md](reference/CREDITS.md) | Licence and provenance (CC BY 4.0). Recordings are laid out `reference/<drum>/<tuning>/<style>/v<NN>.wav`; `reference/` is otherwise gitignored, and only the 8"x8" low-pitch head-strike subset (`tt08x08/lp/hd`) is tracked |
 
 ## Key Dependencies
 

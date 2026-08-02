@@ -297,8 +297,17 @@ type ParamValue struct {
 	// Pinned marks a free parameter the search pressed against a bound. It is
 	// the report's most useful field: a pinned parameter means the fit wanted
 	// something the product range cannot express, which is a finding about the
-	// range rather than a result.
+	// range rather than a result — the shipped range is wrong, and the search
+	// did not converge on anything.
+	//
+	// Only ever set for a free parameter. A fixed one sits wherever -fix or -set
+	// put it, and QUAL sits at exactly 0 in every draft run; calling those pinned
+	// would bury the one case worth reading in noise the caller created.
 	Pinned bool `json:"pinned,omitempty"`
+	// PinnedAt names which stop, "lower" or "upper", because the two ask for
+	// opposite repairs and the normalized position alone makes the reader work
+	// it out.
+	PinnedAt string `json:"pinnedAt,omitempty"`
 	// Blind marks a parameter held out of the search because the objective
 	// cannot see it, as opposed to one the caller fixed. Both report Fixed, and
 	// the distinction matters when reading a report: a blind parameter's value
@@ -314,8 +323,14 @@ type Candidate struct {
 	// that field over Takes, which for Total is the mean of the per-take totals
 	// because Distance composes its total linearly. With one take it is that
 	// take's terms exactly.
-	Terms  match.Terms           `json:"terms"`
-	Params []ParamValue          `json:"params"`
+	Terms match.Terms `json:"terms"`
+	// TermsVsGate is Terms divided term by term by match.AdoptionGates, which is
+	// the form every reading of a report actually wants: the nine raw terms are
+	// in nine different units and cannot be compared with each other, and these
+	// can. It is stored rather than left to the reader because it was being
+	// re-derived by hand outside this tool every time.
+	TermsVsGate GateRatios   `json:"termsVsGate"`
+	Params      []ParamValue `json:"params"`
 	Config physical.PhysicalDrum `json:"config"`
 	Takes  []TakeResult          `json:"takes"`
 	// Convergence is the winning restart's best cost after each iteration.
@@ -329,10 +344,11 @@ type Candidate struct {
 // reference to the file's position in the series, so comparing it against the
 // file order tests the labelling instead of trusting it.
 type TakeResult struct {
-	Path       string         `json:"path"`
-	Velocity01 float64        `json:"velocity01"`
-	Terms      match.Terms    `json:"terms"`
-	Features   match.Features `json:"features"`
+	Path        string         `json:"path"`
+	Velocity01  float64        `json:"velocity01"`
+	Terms       match.Terms    `json:"terms"`
+	TermsVsGate GateRatios     `json:"termsVsGate"`
+	Features    match.Features `json:"features"`
 }
 
 // meanTerms averages a candidate's per-take terms field by field.
@@ -370,11 +386,23 @@ func meanTerms(takes []TakeResult) match.Terms {
 	return mean
 }
 
-// pinnedTolerance is how close to a bound counts as pressed against it. One
-// part in two hundred is finer than the persistence byte the value has to
-// survive anyway, so anything inside it is at the bound for practical
-// purposes.
-const pinnedTolerance = 0.005
+// pinnedTolerance is how close to a bound counts as pressed against it.
+//
+// One percent, widened from the half percent this was first written at, and the
+// widening is a measured repair rather than a loosening. On the deep series fit
+// of reference/tt08x08/lp/hd, DAMP came back at normalized 0.0084 — hard against
+// its lower stop, in two independent runs, the most actionable single result
+// either produced — and 0.0084 > 0.005, so the report said nothing at all. A
+// threshold that misses the case it exists to catch is worse than no threshold,
+// because its silence reads as a clean bill.
+//
+// One percent is still far coarser than the search's own resolution and about
+// two and a half steps of the byte the value has to survive persistence in, so
+// nothing inside it is distinguishable from the bound. It is deliberately not
+// tighter: the cost of a false positive is one printed line a reader dismisses,
+// and the cost of a false negative is a fit shipped against a range nobody
+// discovered was wrong.
+const pinnedTolerance = 0.01
 
 func (e *evaluator) describe(position []float64) (Candidate, error) {
 	rendered, err := e.measure(position)
@@ -394,6 +422,16 @@ func (e *evaluator) describe(position []float64) (Candidate, error) {
 		free := slices.Contains(e.free, index)
 		normalized := e.bank[index]
 
+		stop := ""
+
+		switch {
+		case !free:
+		case normalized <= pinnedTolerance:
+			stop = "lower"
+		case normalized >= 1-pinnedTolerance:
+			stop = "upper"
+		}
+
 		params[index] = ParamValue{
 			Index:      index,
 			ID:         spec.ID,
@@ -402,9 +440,9 @@ func (e *evaluator) describe(position []float64) (Candidate, error) {
 			Normalized: normalized,
 			Value:      spec.Map(normalized),
 			Fixed:      !free,
-			Pinned: free &&
-				(normalized <= pinnedTolerance || normalized >= 1-pinnedTolerance),
-			Blind: !free && isBlind(spec),
+			Pinned:     stop != "",
+			PinnedAt:   stop,
+			Blind:      !free && isBlind(spec),
 		}
 	}
 
@@ -414,19 +452,28 @@ func (e *evaluator) describe(position []float64) (Candidate, error) {
 	takes := make([]TakeResult, len(rendered))
 
 	for index, features := range rendered {
+		terms := match.Distance(e.references[index], features, e.weights)
+
 		takes[index] = TakeResult{
-			Path:       e.referencePaths[index],
-			Velocity01: velocities[index],
-			Terms:      match.Distance(e.references[index], features, e.weights),
-			Features:   features,
+			Path:        e.referencePaths[index],
+			Velocity01:  velocities[index],
+			Terms:       terms,
+			TermsVsGate: gateRatios(terms),
+			Features:    features,
 		}
 	}
 
+	// The mean of the ratios and the ratios of the mean are the same numbers,
+	// since a gate is a constant, so this is taken over the aggregate rather
+	// than averaged a second way.
+	mean := meanTerms(takes)
+
 	return Candidate{
-		Terms:  meanTerms(takes),
-		Params: params,
-		Config: config,
-		Takes:  takes,
+		Terms:       mean,
+		TermsVsGate: gateRatios(mean),
+		Params:      params,
+		Config:      config,
+		Takes:       takes,
 	}, nil
 }
 

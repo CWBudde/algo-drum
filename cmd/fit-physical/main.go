@@ -282,13 +282,30 @@ func flagWasSet(flags *flag.FlagSet, name string) bool {
 // reference and sometimes a list would need every reader to handle both, and the
 // list of one is the same thing said once.
 type Report struct {
-	References []ReferenceInfo  `json:"references"`
-	Options    match.Options    `json:"options"`
-	Weights    match.Weights    `json:"weights"`
-	Search     SearchInfo       `json:"search"`
-	Baseline   Candidate        `json:"baseline"`
-	Best       *Candidate       `json:"best,omitempty"`
-	Targets    []match.Features `json:"targets"`
+	References []ReferenceInfo `json:"references"`
+	Options    match.Options   `json:"options"`
+	Weights    match.Weights   `json:"weights"`
+	// Gates is Weights stated the other way round — the value of each term at
+	// which a candidate stops being distinguishable from a second recording of
+	// the reference. Recorded beside the weights it is the reciprocal of so that
+	// a report can be read without the matching build of the code beside it, and
+	// so that every termsVsGate number in it can be checked.
+	Gates match.Weights `json:"gates"`
+	// WeightsFingerprint identifies that weight set, so two reports can be
+	// checked comparable before their totals are compared. A total means nothing
+	// across a gate edit; see weightsFingerprint for the incident this is here
+	// to prevent repeating.
+	WeightsFingerprint string `json:"weightsFingerprint"`
+	// ObjectiveFloor is what -floor was told, and zero when it was told nothing.
+	// It is the objective's own disagreement with itself on *this* reference set,
+	// below which a total is not distinguishable from noise — a measurement
+	// cmd/measure-objective makes, a property of one drum at one tuning, and
+	// deliberately not a constant anywhere in this tool.
+	ObjectiveFloor float64          `json:"objectiveFloor,omitempty"`
+	Search         SearchInfo       `json:"search"`
+	Baseline       Candidate        `json:"baseline"`
+	Best           *Candidate       `json:"best,omitempty"`
+	Targets        []match.Features `json:"targets"`
 }
 
 // ReferenceInfo records what was measured, so a report can be read a year
@@ -409,8 +426,35 @@ func run(args []string, stdout, stderr io.Writer) error {
 		"also search the parameters the objective is measured to be blind to; "+
 			"a run with this set is evidence about the objective, not a bank to ship")
 
+	// No default, and there will never be one. The floor is a property of a
+	// reference set — 6.32 median on reference/tt08x08/lp/hd is that drum at that
+	// tuning through this estimator, and it does not transfer to another set — so
+	// baking any number in would hand every future run a threshold measured on a
+	// drum it is not aiming at. That is the exact mistake this repository has made
+	// twice with gates; see match.DefaultWeights.
+	floor := flags.Float64("floor", 0,
+		"the objective's own disagreement with itself on this reference set, from "+
+			"cmd/measure-objective; printed and recorded beside the totals, since a "+
+			"total below it is not distinguishable from the objective's noise")
+
+	schema := flags.Bool("schema", false,
+		"print the shape of the JSON report and exit")
+
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+
+	// Before every other check, because -schema answers a question about the
+	// report format rather than about a run: requiring a -reference to be told
+	// where a field lives would make the flag useless exactly when it is wanted.
+	if *schema {
+		writeSchema(stdout)
+
+		return nil
+	}
+
+	if math.IsNaN(*floor) || *floor < 0 {
+		return fmt.Errorf("%w: floor %v", errInvalidFitOption, *floor)
 	}
 
 	if err := resolveEngineering(fixed, engineering); err != nil {
@@ -600,10 +644,13 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 
 	report := Report{
-		References: info,
-		Options:    options,
-		Weights:    base.weights,
-		Targets:    targets,
+		References:         info,
+		Options:            options,
+		Weights:            base.weights,
+		Gates:              match.AdoptionGates(),
+		WeightsFingerprint: weightsFingerprint(base.weights),
+		ObjectiveFloor:     *floor,
+		Targets:            targets,
 		Search: SearchInfo{
 			Variant:         *variant,
 			Iterations:      *iterations,
@@ -1121,14 +1168,24 @@ func fundamentalHz(features match.Features) float64 {
 	return features.Partials[0].FrequencyHz
 }
 
+// summarize is the one-line form of a score, and every term carries its ×gate
+// beside its raw value.
+//
+// The raw value alone is close to unreadable: nine numbers in seven units, of
+// which "spectrum 14.3 dB" is a catastrophe and "glide 25.2¢" is comfortably
+// inside tolerance, and nothing on the line said so. The multiplier is the same
+// number in every term, it is that term's whole contribution to the total, and
+// the nine of them add up to the total printed at the front — so a reader can
+// see at a glance which term is paying for the fit.
 func summarize(terms match.Terms) string {
-	return fmt.Sprintf(
-		"total %.3f (freq %.1f¢, level %.1f dB, decay %.3f, spectrum %.1f dB, "+
-			"envelope %.1f dB, glide %.1f¢, attack %.1f dB, unmatched %.3f, spurious %.3f)",
-		terms.Total, terms.PartialFrequency, terms.PartialLevel, terms.PartialDecay,
-		terms.SpectralEnvelope, terms.Envelope, terms.Glide, terms.AttackBalance,
-		terms.Unmatched, terms.Spurious,
-	)
+	fields := termFields(terms)
+	parts := make([]string, 0, len(fields))
+
+	for _, field := range fields {
+		parts = append(parts, field.String())
+	}
+
+	return fmt.Sprintf("total %.3f (%s)", terms.Total, strings.Join(parts, ", "))
 }
 
 // writeSummary prints the table a person actually reads.
@@ -1149,7 +1206,7 @@ func writeSummary(stdout io.Writer, report Report) {
 		case fitted.Fixed:
 			note = " (fixed)"
 		case fitted.Pinned:
-			note = " (pinned at a bound)"
+			note = " (PINNED at the " + fitted.PinnedAt + " stop)"
 		}
 
 		_, _ = fmt.Fprintf(stdout, "%-8d %-10s %12.4g %12.4g%s\n",
@@ -1159,6 +1216,7 @@ func writeSummary(stdout io.Writer, report Report) {
 	_, _ = fmt.Fprintf(stdout, "%-8s %-10s %12.4g %12.4g\n",
 		"-", "VEL", report.Baseline.Takes[0].Velocity01, best.Takes[0].Velocity01)
 
+	writePinned(stdout, *best)
 	writeTakes(stdout, *best)
 
 	// The first take's partials, and only the first. A joint fit measures the
@@ -1179,10 +1237,125 @@ func writeSummary(stdout io.Writer, report Report) {
 			partial.FrequencyHz, partial.LevelDB, partial.T60Seconds)
 	}
 
+	writeTerms(stdout, report)
+
 	_, _ = fmt.Fprintf(stdout, "\nbaseline %s\n", summarize(report.Baseline.Terms))
+
 	if report.Best != nil {
 		_, _ = fmt.Fprintf(stdout, "fitted   %s\n", summarize(report.Best.Terms))
 	}
+}
+
+// writeTerms prints the nine terms against the gates they are read against.
+//
+// The ×gate column is the point of the table and the raw column is the caption.
+// A term at its gate is at the level where a candidate stops being
+// distinguishable from a second microphone on the same drum, so 1.00 is the
+// target for every row and the reader needs no memory of what a decibel of
+// spectral envelope error means. The column sums to the total printed on its
+// last row, which is the identity GateRatios documents, and printing both makes
+// that checkable rather than asserted.
+func writeTerms(stdout io.Writer, report Report) {
+	best := report.Best
+	if best == nil {
+		best = &report.Baseline
+	}
+
+	_, _ = fmt.Fprintf(stdout,
+		"\nterms against their adoption gates (×gate = value / gate; the total is their plain sum):\n")
+	_, _ = fmt.Fprintf(stdout, "%-12s %8s %10s %8s %10s %8s\n",
+		"TERM", "GATE", "BASELINE", "xGATE", "FITTED", "xGATE")
+
+	baseline, fitted := termFields(report.Baseline.Terms), termFields(best.Terms)
+
+	for index, field := range fitted {
+		digits := 1
+		if field.Unit == "" {
+			digits = 3
+		}
+
+		_, _ = fmt.Fprintf(stdout, "%s %8.4g %10.*f %8.2f %10.*f %8.2f\n",
+			padRunes(field.Name+" "+field.Unit, 12), field.Gate,
+			digits, baseline[index].Value, baseline[index].Ratio(),
+			digits, field.Value, field.Ratio())
+	}
+
+	_, _ = fmt.Fprintf(stdout, "%-12s %8s %10.3f %8.2f %10.3f %8.2f\n",
+		"total", "-",
+		report.Baseline.Terms.Total, report.Baseline.TermsVsGate.Total,
+		best.Terms.Total, best.TermsVsGate.Total)
+
+	// The fingerprint travels with every total this tool prints, not only with
+	// the JSON, because the comparison that goes wrong is the one made between
+	// two terminal scrollbacks.
+	_, _ = fmt.Fprintf(stdout, "\nweight set %s — totals from any other weight set are not comparable with these.\n",
+		report.WeightsFingerprint)
+
+	if report.ObjectiveFloor > 0 {
+		_, _ = fmt.Fprintf(stdout,
+			"objective floor on this reference set: %.3f (given by -floor). "+
+				"A total below it is not distinguishable from the objective's own noise.\n",
+			report.ObjectiveFloor)
+
+		return
+	}
+
+	_, _ = fmt.Fprintf(stdout,
+		"no -floor given, so these totals have nothing to be read against: "+
+			"run cmd/measure-objective on this reference set and pass what it measures.\n")
+}
+
+// padRunes left-aligns to a width counted in runes.
+//
+// fmt's %-*s counts bytes, and the unit column holds ¢ — two bytes, one column
+// — so the table would step left by one on exactly the two rows that use it.
+func padRunes(text string, width int) string {
+	if count := len([]rune(text)); count < width {
+		return text + strings.Repeat(" ", width-count)
+	}
+
+	return text
+}
+
+// writePinned says, in words, that the search wanted something outside the
+// shipped range.
+//
+// The flag is on every pinned parameter in the report already and that was not
+// enough: a fit prints eighteen parameter rows and the one that matters is a
+// parenthetical on one of them. The motivating case is DAMP landing at
+// normalized 0.0084 on the tt08x08/lp/hd series, in two independent runs, which
+// was the most actionable result either produced and which the tool did not
+// mention — it was inside the stop and outside the tolerance the flag then used.
+//
+// A pinned parameter is not a converged one. The search stopped there because it
+// ran out of range, so the number is a bound rather than a fit, and the finding
+// is about the range: either the model's mapping is wrong, or the product's
+// limits exclude the drum being fitted.
+func writePinned(stdout io.Writer, best Candidate) {
+	var pinned []ParamValue
+
+	for _, param := range best.Params {
+		if param.Pinned {
+			pinned = append(pinned, param)
+		}
+	}
+
+	if len(pinned) == 0 {
+		return
+	}
+
+	_, _ = fmt.Fprintf(stdout,
+		"\nWARNING: %d free parameter(s) pinned against a stop — a bound, not a fit:\n",
+		len(pinned))
+
+	for _, param := range pinned {
+		_, _ = fmt.Fprintf(stdout, "  %-10s %s stop, normalized %.4f = %.4g %s\n",
+			param.Label, param.PinnedAt, param.Normalized, param.Value, param.Unit)
+	}
+
+	_, _ = fmt.Fprintf(stdout,
+		"  The search wanted to go further and the range would not let it. "+
+			"Read this as evidence the shipped range is wrong, not as convergence.\n")
 }
 
 // writeTakes prints one line per take, and then says what the fitted velocities
