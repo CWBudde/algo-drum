@@ -103,10 +103,23 @@ reference/tt12x08/*
 !reference/tt12x08/SOURCES.tsv
 !reference/tt12x08/_readme_and_license.txt
 
-# Built by `go build ./cmd/fit-physical` and `./cmd/render-physical`, and by
-# `go build ./...` inside tools/paper-figures (its own module, so the binary
-# lands here rather than beside its source).
+# Compiled binaries land in the project root whenever someone runs a bare
+# `go build ./cmd/<name>` (and `go build ./...` inside tools/paper-figures, its
+# own module, drops its binary here rather than beside its source).
+#
+# This list is every directory under cmd/ plus the figure tool, enumerated
+# rather than globbed, because a glob wide enough to catch an extensionless
+# binary also catches directories and stray scripts. Enumerating has one failure
+# mode and it has already fired twice: a *new* command is not on the list, so
+# its binary is committable, and a 13 MB `paper-figures` and a 6 MB
+# `compare-fits` duly reached published history and had to be rewritten out of
+# it on 2026-08-02. **Add the entry in the same change that adds the command.**
+/algo_drum.wasm
+/analyze-physical
 /compare-fits
 /fit-physical
-/render-physical
+/gen-voiceparams
+/measure-objective
+/measure-tom
 /paper-figures
+/render-physical
