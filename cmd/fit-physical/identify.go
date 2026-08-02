@@ -272,11 +272,20 @@ type DirectionProbe struct {
 	Direction []VectorComponent `json:"direction"`
 	Available bool              `json:"available"`
 	Reason    string            `json:"reason,omitempty"`
-	// Curvature is the Rayleigh quotient dᵀHd — the second derivative of the
-	// objective along the direction itself, which is the quantity the prediction
-	// is about and does not depend on how the eigenvectors happened to rotate
-	// among near-degenerate eigenvalues.
+	// Curvature is the second difference measured *along the direction itself*,
+	// with its own three-point stencil at the report's step. Two extra
+	// evaluations, and it is the headline number because it is the only one that
+	// survives this objective: the model's angle symmetry is exact, so a stencil
+	// that moves along it lands on bit-identical renders and returns a zero that
+	// means something.
 	Curvature float64 `json:"curvature"`
+	// RayleighQuotient is dᵀHd read off the assembled matrix. For a quadratic
+	// the two are the same number. They are not the same number here, and the
+	// gap is a measurement rather than an error: the objective is piecewise, so
+	// each coordinate stencil carries its own jumps and the sum of nine of them
+	// does not cancel the way the function itself does. Reported beside the
+	// direct measurement so the size of that gap is on the record.
+	RayleighQuotient float64 `json:"rayleighQuotient"`
 	// RelativeToLargest is |Curvature| / max|λ|; DecadesBelowLargest is its
 	// log10, which is the unit the sloppy-model literature reads spectra in.
 	RelativeToLargest   float64 `json:"relativeToLargest"`
@@ -592,9 +601,81 @@ func measureHessian(
 	report.Eigenvalues = values
 	report.Eigenvectors = describeEigenvectors(values, vectors, report.ReducedLabels)
 	report.ConstrainedCounts = countDecades(values)
-	report.Predictions = scorePredictions(report.Reduced, values, vectors, report.ReducedLabels)
+	report.Predictions = scorePredictions(report.Reduced, values, vectors, report.ReducedLabels,
+		directionalProbe(counted, position, cost, scope, keep, report.ReducedLabels, step))
 
 	return nil
+}
+
+// directionalProbe returns the measurement a predicted direction is judged on:
+// the second difference of the objective along that direction, taken with its
+// own three-point stencil.
+//
+// This is not the same thing as reading dᵀHd off the assembled matrix, and the
+// difference is the whole reason it exists. A coordinate stencil crosses this
+// objective's jumps — a partial entering or leaving the matched set moves the
+// cost by ~5e-3 on a total of ~8.5, which at h = 1e-3 is a second difference of
+// 5000 out of nothing — and nine such stencils summed do not cancel. A stencil
+// that walks *along* an exact symmetry lands on renders that are identical to
+// rounding, jumps included, because a jump surface of an invariant function
+// contains the invariant direction. Measured on the synthetic probe: the common
+// angle rotation returns 4e-5 to 2e-2 where the assembled dᵀHd returns hundreds.
+func directionalProbe(
+	counted *counter,
+	position []float64,
+	cost float64,
+	scope []int,
+	keep []bool,
+	labels []string,
+	step float64,
+) func(map[string]float64) (float64, bool) {
+	// Only the components that survived into the reduced matrix. A component
+	// dropped for sitting on a bound cannot be stepped both ways here either,
+	// and one whose stencil was undefined is no more defined along a diagonal.
+	index := make(map[string]int, len(labels))
+	slot := 0
+
+	for position := range scope {
+		if !keep[position] {
+			continue
+		}
+
+		index[labels[slot]] = scope[position]
+		slot++
+	}
+
+	return func(weights map[string]float64) (float64, bool) {
+		direction := make(map[int]float64, len(weights))
+		norm := 0.0
+
+		for label, weight := range weights {
+			component, ok := index[label]
+			if !ok {
+				return 0, false
+			}
+
+			direction[component] = weight
+			norm += weight * weight
+		}
+
+		norm = math.Sqrt(norm)
+
+		for _, attempt := range []float64{step, step / 3} {
+			plus, minus := slices.Clone(position), slices.Clone(position)
+
+			for component, weight := range direction {
+				plus[component] += attempt * weight / norm
+				minus[component] -= attempt * weight / norm
+			}
+
+			high, low := counted.at(plus), counted.at(minus)
+			if isUsable(high) && isUsable(low) {
+				return (high - 2*cost + low) / (attempt * attempt), true
+			}
+		}
+
+		return 0, false
+	}
 }
 
 // sweepSteps measures every component's diagonal second difference at every h.
@@ -626,11 +707,18 @@ func sweepSteps(
 				sample.Note = "the stencil would cross a [0,1] bound and be clamped"
 			default:
 				value, ok := secondDifference(counted, position, cost, index, index, step)
-				if ok {
+
+				switch {
+				case !ok:
+					sample.Note = "a stencil point was not a drum, at h and at h/3"
+				case value == 0:
 					curvature := value
 					sample.Curvature = &curvature
-				} else {
-					sample.Note = "a stencil point was not a drum, at h and at h/3"
+					sample.Note = "the cost did not move at all: at or inside Map's ±0.2 % " +
+						"default detent, or below the render's own resolution"
+				default:
+					curvature := value
+					sample.Curvature = &curvature
 				}
 			}
 
@@ -687,13 +775,24 @@ func findPlateau(samples []StepSample) (from, to float64, available bool, note s
 }
 
 // agree is the plateau test for one neighbouring pair.
+//
+// An exactly-zero second difference never agrees with anything, including
+// another zero. It is not a small curvature, it is the objective not having
+// moved at all — every stencil point returned a bit-identical cost — and there
+// are two ways that happens here, neither of which is a measurement:
+// drum.ParamSpec.Map returns Shipped verbatim within half a persistence byte of
+// Default (±0.2 % normalized, the detent the search's own multi-start comment
+// names), so a component sitting on its default is genuinely constant over the
+// first ~2e-3 of any step; and below that the render can be bit-identical anyway.
+// Admitting a run of zeros as a plateau would pick a step inside the detent and
+// report a flat spectrum for every parameter, which is the most confident wrong
+// answer this tool could give.
 func agree(left, right float64) bool {
-	scale := max(math.Abs(left), math.Abs(right))
-	if scale == 0 {
-		// Two exact zeros are a plateau in the only sense available: the
-		// objective did not move at all over that pair of displacements.
-		return true
+	if left == 0 || right == 0 {
+		return false
 	}
+
+	scale := max(math.Abs(left), math.Abs(right))
 
 	return math.Abs(left-right)/scale <= plateauTolerance
 }
@@ -901,11 +1000,15 @@ func dropNulls(matrix [][]*float64, labels []string, keep []bool) []DroppedCompo
 	var dropped []DroppedComponent
 
 	for row := range matrix {
-		if !keep[row] {
-			continue
-		}
-
 		for column := range matrix[row] {
+			// keep[row] is re-read inside the loop rather than only at the top:
+			// once a row is dropped its remaining nulls say nothing about any
+			// other component, and letting them cascade would take the whole
+			// matrix out over one bad parameter.
+			if !keep[row] {
+				break
+			}
+
 			if !keep[column] || matrix[row][column] != nil {
 				continue
 			}
@@ -913,12 +1016,10 @@ func dropNulls(matrix [][]*float64, labels []string, keep []bool) []DroppedCompo
 			reason := fmt.Sprintf("the (%s, %s) stencil could not be evaluated",
 				labels[row], labels[column])
 
-			if keep[row] {
-				dropped = append(dropped, DroppedComponent{Label: labels[row], Reason: reason})
-				keep[row] = false
-			}
+			dropped = append(dropped, DroppedComponent{Label: labels[row], Reason: reason})
+			keep[row] = false
 
-			if keep[column] && column != row {
+			if column != row {
 				dropped = append(dropped, DroppedComponent{Label: labels[column], Reason: reason})
 				keep[column] = false
 			}
@@ -1161,6 +1262,7 @@ func scorePredictions(
 	values []float64,
 	vectors [][]float64,
 	labels []string,
+	directional func(map[string]float64) (float64, bool),
 ) Predictions {
 	// (1,1,2)/√6 and not (1,1,1)/√3. The model is invariant under a common
 	// rotation of the strike angle, the pickup angle and the asymmetry axis; in
@@ -1172,20 +1274,20 @@ func scorePredictions(
 	swap := map[string]float64{"HIT.R": 1, "MIC.R": -1}
 	together := map[string]float64{"HIT.R": 1, "MIC.R": 1}
 
+	probe := func(name string, weights map[string]float64) DirectionProbe {
+		return probeDirection(name, weights, reduced, values, vectors, labels, directional)
+	}
+
 	predictions := Predictions{
-		AngleRotation: probeDirection(
+		AngleRotation: probe(
 			"common rotation of HIT.A, MIC.A and AXIS — an exact symmetry of the model",
-			rotation, reduced, values, vectors, labels),
-		AngleRotationAxisPinned: probeDirection(
+			rotation),
+		AngleRotationAxisPinned: probe(
 			"the same rotation with AXIS held — broken only through the 0.4 % split, so soft, not flat",
-			pinned, reduced, values, vectors, labels),
+			pinned),
 		RadiusPair: []DirectionProbe{
-			probeDirection(
-				"exchange of HIT.R and MIC.R — a discrete near-symmetry, so soft and never flat",
-				swap, reduced, values, vectors, labels),
-			probeDirection(
-				"HIT.R and MIC.R moved together — the stiff direction of the same pair",
-				together, reduced, values, vectors, labels),
+			probe("exchange of HIT.R and MIC.R — a discrete near-symmetry, so soft and never flat", swap),
+			probe("HIT.R and MIC.R moved together — the stiff direction of the same pair", together),
 		},
 	}
 
@@ -1199,14 +1301,18 @@ func scorePredictions(
 //
 // A hundredfold, and the contrast rather than an absolute threshold is the test
 // on purpose. The rotation's true curvature is exactly zero, so what comes back
-// is a floor rather than a measurement: central differences carry an O(h²)
-// truncation error, the three angles reach the render through two floating-point
-// subtractions, and the objective on top of that is piecewise in bins, peaks and
-// admissibility. Any absolute cutoff would therefore be a claim about the
-// tool's own noise, which changes with h. The contrast is scale-free and is
-// exactly the two-condition test PLAN.md N6 asks for: flat with AXIS free, soft
-// with AXIS pinned. A tool reporting zero for both has measured nothing, and
-// this ratio is what catches that.
+// is a floor rather than a measurement: the three angles reach the render
+// through two floating-point subtractions and the objective on top of that is
+// piecewise in bins, peaks and admissibility. Any absolute cutoff would be a
+// claim about the tool's own noise, which changes with h. The contrast is
+// scale-free and is exactly the two-condition test PLAN.md N6 asks for: flat
+// with AXIS free, soft with AXIS pinned. A tool reporting zero for both has
+// measured nothing, and this ratio is what catches that.
+//
+// A hundred is conservative by two decades. On the synthetic probe the measured
+// contrast runs 9.6e4 (h = 3e-4) to 3.9e7 (h = 1e-2), so nothing near the
+// threshold has ever been seen; it is set where it is so that a genuine
+// weakening of the symmetry would be caught rather than absorbed.
 const symmetryContrast = 100
 
 // flatDecades is the corroborating absolute reading: how many decades below the
@@ -1267,12 +1373,13 @@ func softVerdict(probe DirectionProbe, subject, flatMeans string) string {
 
 // probeDirection scores one predicted direction against the measured spectrum.
 //
-// The Rayleigh quotient is the headline rather than an overlap, because an
-// overlap is only meaningful when the eigenvalue it belongs to is isolated: two
-// near-degenerate soft directions rotate freely into each other and their
-// individual eigenvectors carry no information, while dᵀHd is the curvature
-// along the predicted direction whatever the eigenvectors do. The overlaps are
-// reported beside it as corroboration.
+// A curvature along the direction is the headline rather than an overlap,
+// because an overlap is only meaningful when the eigenvalue it belongs to is
+// isolated: two near-degenerate soft directions rotate freely into each other
+// and their individual eigenvectors carry no information, while the curvature
+// along the predicted direction is defined whatever the eigenvectors do. The
+// overlaps are reported beside it as corroboration, and on a piecewise objective
+// they are weak corroboration — see directionalProbe.
 //
 // The verdict is deliberately not written here; see judge.
 func probeDirection(
@@ -1282,6 +1389,7 @@ func probeDirection(
 	values []float64,
 	vectors [][]float64,
 	labels []string,
+	directional func(map[string]float64) (float64, bool),
 ) DirectionProbe {
 	probe := DirectionProbe{Name: name}
 
@@ -1313,9 +1421,18 @@ func probeDirection(
 		direction[slot] /= norm
 	}
 
+	probe.RayleighQuotient = rayleigh(reduced, direction)
+
+	measured, ok := directional(weights)
+	if !ok {
+		probe.Reason = "the stencil along this direction could not be evaluated, at h and at h/3"
+
+		return probe
+	}
+
 	probe.Available = true
 	probe.Direction = labelled(direction, labels)
-	probe.Curvature = rayleigh(reduced, direction)
+	probe.Curvature = measured
 
 	largest := 0.0
 	for _, value := range values {
@@ -1492,9 +1609,11 @@ func writeIdentifiability(stdout io.Writer, report IdentifiabilityReport) {
 			continue
 		}
 
-		_, _ = fmt.Fprintf(stdout, "  %s\n    dᵀHd = %.6g, %.1f decades below the largest; "+
-			"overlap with the softest eigenvector %.4f\n    %s\n",
-			probe.Name, probe.Curvature, probe.DecadesBelowLargest, probe.OverlapWithSmallest, probe.Verdict)
+		_, _ = fmt.Fprintf(stdout, "  %s\n    curvature along it %.6g (%.1f decades below the "+
+			"largest eigenvalue); dᵀHd off the matrix %.6g; overlap with the softest "+
+			"eigenvector %.4f\n    %s\n",
+			probe.Name, probe.Curvature, probe.DecadesBelowLargest, probe.RayleighQuotient,
+			probe.OverlapWithSmallest, probe.Verdict)
 	}
 
 	_, _ = fmt.Fprintf(stdout,
