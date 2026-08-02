@@ -40,6 +40,23 @@ test:
 test-assert:
     go test -tags drumassert ./...
 
+# Physical-model benchmarks on the host architecture.
+#
+# Deliberately not part of `ci`: there is no measured run-to-run floor for these
+# numbers on a CI runner, and this repository does not ship gates it has not
+# measured.
+bench-physical:
+    go test -run '^$' -bench . ./internal/physical/
+
+# The same benchmarks on js/wasm — the target the voice actually ships to.
+#
+# Needs the wrapper script because wasm_exec.js caps argv+environ at 4096 bytes;
+# see scripts/bench-wasm.sh. Extra arguments are forwarded to `go test`, e.g.
+# `just bench-physical-wasm -run '^$' -bench . -benchtime 20x ./internal/physical/`.
+# Not part of `ci`, for the same unmeasured-floor reason as `bench-physical`.
+bench-physical-wasm *ARGS:
+    bash scripts/bench-wasm.sh {{ ARGS }}
+
 # Ensure go.mod / go.sum are tidy
 check-tidy:
     GOARCH=wasm GOOS=js go mod tidy
