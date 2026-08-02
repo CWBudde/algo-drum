@@ -92,6 +92,60 @@ func BenchmarkDoubleHeadRender48k(b *testing.B) {
 	)
 }
 
+// BenchmarkDoubleHeadUncoupledRender48k covers tickUncoupled, which nothing else
+// here reaches: DefaultPhysicalDrum enables the cavity and the nonlinearity, so
+// every other DoubleHead benchmark in this file — including the one directly
+// above — renders through tickCoupled. That gap was found the expensive way,
+// when a layout change to tickUncoupled had to be measured with a throwaway
+// benchmark because the repository had none.
+//
+// The couplingActive check is the point of the benchmark as much as the timing
+// is. It is what stops a future default, or a change to how the coupling table
+// decides it is empty, from quietly moving this back onto the coupled path and
+// leaving tickUncoupled uncovered again while the numbers still look plausible.
+//
+// Its x_realtime carries the same -benchtime dependence as the coupled case
+// above and may not be quoted either; see the note there. Instructions and L1
+// loads under a pinned perf stat are what this is for.
+func BenchmarkDoubleHeadUncoupledRender48k(b *testing.B) {
+	config := DefaultPhysicalDrum()
+	config.Nonlinearity.Coupling = NonlinearCoupling{}
+
+	model, err := NewDoubleHead(config)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	if model.couplingActive {
+		b.Fatal("uncoupled benchmark built a coupled model")
+	}
+
+	const chunkSamples = 512
+	buffer := make([]float64, chunkSamples)
+	b.ReportAllocs()
+	b.SetBytes(chunkSamples * 8)
+	b.ResetTimer()
+	for index := range b.N {
+		if index%retriggerEvery == 0 {
+			if err := model.Trigger(1); err != nil {
+				b.Fatal(err)
+			}
+		}
+
+		model.Render(buffer)
+	}
+	b.StopTimer()
+
+	samples := float64(b.N * chunkSamples)
+	samplesPerSecond := samples / b.Elapsed().Seconds()
+	b.ReportMetric(samplesPerSecond, "samples/s")
+	b.ReportMetric(samplesPerSecond/config.SampleRateHz, "x_realtime")
+	b.ReportMetric(
+		float64(model.BatterModeCount()+model.ResonantModeCount()),
+		"modes",
+	)
+}
+
 // The three nonlinear cases below differ only in how often the strike lands, so
 // each is one call to benchmarkNonlinearHits with a hit period:
 //
