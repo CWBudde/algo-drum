@@ -42,6 +42,18 @@ func t60Milliseconds(decayRatePerSecond float64) float64 {
 	return 1000 * math.Log(1000) / decayRatePerSecond
 }
 
+// The constant-Q window the shipped loss law is calibrated to hold.
+//
+// Package-level rather than local to the test below, because
+// damping_band_test.go derives its own tolerance from this window: the shape
+// budget the mode table is allowed is exactly the shape budget the rendered
+// measurement must be read against, and two copies of it would drift.
+const (
+	targetZeta           = 0.0072
+	targetZetaLowFactor  = 0.9
+	targetZetaHighFactor = 1.35
+)
+
 // TestDefaultDampingHoldsConstantQ pins the *shape* of the decay law, not only
 // its scale. A bank damped at one uniform rate satisfies every other assertion
 // in this package while sounding like a struck sine bank rather than a drum,
@@ -63,21 +75,22 @@ func TestDefaultDampingHoldsConstantQ(t *testing.T) {
 	// range, which is the tuning that sounded right. RetuneTension now keeps this
 	// number fixed across the knob's whole travel, where it used to run from
 	// 2.20 % to 0.72 %.
-	const targetZeta = 0.0072
 	for _, mode := range modes {
 		if mode.AzimuthalOrder == 0 && mode.RadialOrder == 1 {
 			continue
 		}
 
 		zeta := mode.DecayRatePerSecond / mode.AngularFrequency
-		if zeta < targetZeta*0.9 || zeta > targetZeta*1.35 {
+		if zeta < targetZeta*targetZetaLowFactor || zeta > targetZeta*targetZetaHighFactor {
 			t.Errorf(
-				"mode (%d,%d) at %.1f Hz: zeta = %.4f, want %.3f within [0.9,1.35]x",
+				"mode (%d,%d) at %.1f Hz: zeta = %.4f, want %.3f within [%g,%g]x",
 				mode.AzimuthalOrder,
 				mode.RadialOrder,
 				mode.FrequencyHz,
 				zeta,
 				targetZeta,
+				targetZetaLowFactor,
+				targetZetaHighFactor,
 			)
 		}
 	}
