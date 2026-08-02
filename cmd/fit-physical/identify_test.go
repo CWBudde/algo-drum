@@ -2,18 +2,21 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/cwbudde/algo-drum/internal/drum"
 	"github.com/cwbudde/algo-drum/internal/physical"
 	"github.com/cwbudde/algo-drum/internal/physical/match"
 )
 
-// identifyProbe builds an evaluator over a synthetic reference, following
+// standaloneProbe builds an evaluator over a synthetic reference, following
 // benchEvaluator: the reference is this model's own render of the shipped bank,
 // so none of these tests needs a recording and none of them depends on
 // reference/ being present.
@@ -21,9 +24,10 @@ import (
 // QUAL is pinned to draft for the reason a fit pins it — it buys mode count with
 // CPU and nothing here is about mode count — which also keeps the finite
 // difference away from a quantized choice parameter.
-func identifyProbe(tb testing.TB) *evaluator {
-	tb.Helper()
-
+//
+// It returns an error rather than taking a testing.TB because the 5x5 block
+// below is built once through sync.OnceValues and shared by two parallel tests.
+func standaloneProbe() (*evaluator, error) {
 	const (
 		sampleRateHz    = 44100
 		durationSeconds = 1.2
@@ -31,12 +35,12 @@ func identifyProbe(tb testing.TB) *evaluator {
 
 	fixed := assignmentFlag{}
 	if err := pinQuality(fixed, string(physical.QualityDraft)); err != nil {
-		tb.Fatalf("pinQuality: %v", err)
+		return nil, err
 	}
 
 	bank, free, err := resolveFixed(fixed, true, false)
 	if err != nil {
-		tb.Fatalf("resolveFixed: %v", err)
+		return nil, err
 	}
 
 	options := match.DefaultOptions()
@@ -53,18 +57,29 @@ func identifyProbe(tb testing.TB) *evaluator {
 
 	samples, err := probe.render(1)
 	if err != nil {
-		tb.Fatalf("render: %v", err)
+		return nil, err
 	}
 
 	target, err := match.Extract(samples, sampleRateHz, options)
 	if err != nil {
-		tb.Fatalf("extract: %v", err)
+		return nil, err
 	}
 
 	probe.references = []match.Features{target}
 	probe.referencePaths = []string{"synthetic"}
 	probe.velocities = make([]float64, 1)
 	probe.rendered = make([]match.Features, 1)
+
+	return probe, nil
+}
+
+func identifyProbe(tb testing.TB) *evaluator {
+	tb.Helper()
+
+	probe, err := standaloneProbe()
+	if err != nil {
+		tb.Fatalf("build the synthetic probe: %v", err)
+	}
 
 	return probe
 }
@@ -81,41 +96,100 @@ func componentOf(tb testing.TB, probe *evaluator, label string) int {
 	return scope[0]
 }
 
-// interiorPoint is a bank a little away from the reference's own, for two
-// reasons that both matter to a second difference.
+// offsetPoint is a bank a little away from the reference's own, for two reasons
+// that both matter to a second difference.
 //
 // At an exact match every term of the distance is zero and the aggregate has a
-// cone tip there: the second difference measures the kink in |·| and scales as
+// cone tip there: the second difference measures the kink in |.| and scales as
 // 1/h, which is a property of the aggregation and not of the drum.
 //
 // And every component here is moved off its own *default*, because
 // drum.ParamSpec.Map returns Shipped verbatim within half a persistence byte of
-// Default. That detent is ±0.2 % of the normalized range, so a parameter left at
-// its default is exactly constant over any step below ~2e-3 and its curvature
-// there is an artefact of the knob mapping. Measured, not assumed: at the
-// shipped HIT.A the cost is bit-identical at h = 1e-5, 1e-4, 3e-4 and 1e-3 and
-// only starts moving at 2e-3.
-func interiorPoint(tb testing.TB, probe *evaluator) []float64 {
-	tb.Helper()
-
+// Default. That detent is +/-0.2 % of the normalized range, so a parameter left
+// at its default is exactly constant over any step below ~2e-3 and its curvature
+// there is an artefact of the knob mapping. Measured, not assumed: at the shipped
+// HIT.A the cost is bit-identical at h = 1e-5, 1e-4, 3e-4 and 1e-3 and only
+// starts moving at 2e-3.
+func offsetPoint(probe *evaluator) []float64 {
 	position := probe.position(1)
-	for _, shift := range []struct {
-		label string
-		delta float64
-	}{
-		{"B.TUNE", 0.06},
-		{"R.TUNE", -0.05},
-		{"DAMP", 0.07},
-		{"HIT.A", 0.04},
-		{"MIC.A", -0.05},
-		{"AXIS", 0.06},
-		{"HIT.R", 0.05},
-		{"MIC.R", -0.04},
+	specs := drum.PhysicalTomSpecs()
+
+	for label, delta := range map[string]float64{
+		"B.TUNE": 0.06, "R.TUNE": -0.05, "DAMP": 0.07,
+		"HIT.A": 0.04, "MIC.A": -0.05, "AXIS": 0.06,
+		"HIT.R": 0.05, "MIC.R": -0.04,
 	} {
-		position[componentOf(tb, probe, shift.label)] += shift.delta
+		for slot, index := range probe.free {
+			if specs[index].Label == label {
+				position[slot] += delta
+			}
+		}
 	}
 
 	return position
+}
+
+func interiorPoint(tb testing.TB, probe *evaluator) []float64 {
+	tb.Helper()
+
+	return offsetPoint(probe)
+}
+
+// measureBlock builds the Hessian of the real objective over the named labels at
+// a fixed step, sweeps the predicted directions, and returns the report with its
+// spectrum.
+//
+// The Hessian's step is fixed rather than swept here on purpose. The sweep is a
+// measurement of *a reference set's* piecewise structure and belongs to the real
+// run; what these tests are about is whether the machinery recovers a symmetry
+// the model provably has.
+func measureBlock(
+	probe *evaluator,
+	position []float64,
+	step float64,
+	labels ...string,
+) (IdentifiabilityReport, []float64, [][]float64, error) {
+	scope, err := resolveScope(probe, strings.Join(labels, ","))
+	if err != nil {
+		return IdentifiabilityReport{}, nil, nil, err
+	}
+
+	counted := &counter{cost: probe.cost}
+
+	cost := counted.at(position)
+	if !isUsable(cost) {
+		return IdentifiabilityReport{}, nil, nil, fmt.Errorf("the probe point scores %v", cost)
+	}
+
+	report := IdentifiabilityReport{Cost: cost, Scope: describeScope(probe, scope, position)}
+	names := make([]string, len(scope))
+
+	for slot := range scope {
+		names[slot] = report.Scope[slot].Label
+	}
+
+	keep := admissible(&report, position, scope, step)
+	report.Hessian = fillHessian(counted, position, scope, cost, step, keep)
+	report.Dropped = append(report.Dropped, dropNulls(report.Hessian, names, keep)...)
+	report.ReducedLabels, report.Reduced = reduce(report.Hessian, names, keep)
+	report.ReducedDimension = len(report.ReducedLabels)
+
+	if report.ReducedDimension != len(labels) {
+		return report, nil, nil, fmt.Errorf("only %d of %d components survived: %v",
+			report.ReducedDimension, len(labels), report.Dropped)
+	}
+
+	report.Predictions = scorePredictions(
+		sweepDirections(counted, position, scope, names, cost, io.Discard),
+	)
+
+	values, vectors := jacobiEigen(report.Reduced)
+	report.Eigenvalues = values
+	report.Eigenvectors = describeEigenvectors(values, vectors, report.ReducedLabels)
+	report.ConstrainedCounts = countDecades(values)
+	relateToSpectrum(&report.Predictions, report.Reduced, values, vectors, report.ReducedLabels, step)
+
+	return report, values, vectors, nil
 }
 
 // TestObjectiveIsInvariantUnderCommonAngleRotation asserts the model symmetry
@@ -227,27 +301,58 @@ func hessianOver(
 		tb.Fatalf("only %d of %d components survived: %v", report.ReducedDimension, len(labels), report.Dropped)
 	}
 
+	report.Predictions = scorePredictions(
+		sweepDirections(counted, position, scope, names, cost, io.Discard),
+	)
+
 	values, vectors := jacobiEigen(report.Reduced)
 	report.Eigenvalues = values
 	report.Eigenvectors = describeEigenvectors(values, vectors, report.ReducedLabels)
 	report.ConstrainedCounts = countDecades(values)
-	report.Predictions = scorePredictions(report.Reduced, values, vectors, report.ReducedLabels,
-		directionalProbe(counted, position, cost, scope, keep, report.ReducedLabels, step))
+	relateToSpectrum(&report.Predictions, report.Reduced, values, vectors, report.ReducedLabels, step)
 
 	return report, values, vectors
 }
 
+// blockFixture is the default 5x5 block measured once and shared, because it is
+// a minute of synthesis and both prediction tests read the same run. The tool's
+// own scope, so the tests exercise what an actual invocation does.
+//
+// One run and not two also makes the pair of tests below mean what they say: the
+// radius prediction is read against the floor the *angle* symmetry establishes,
+// and a floor measured in a different run at a different point would not be the
+// same floor.
+var blockFixture = sync.OnceValues(func() (IdentifiabilityReport, error) {
+	probe, err := standaloneProbe()
+	if err != nil {
+		return IdentifiabilityReport{}, err
+	}
+
+	report, _, _, err := measureBlock(probe, offsetPoint(probe), 3e-3,
+		"HIT.A", "MIC.A", "AXIS", "HIT.R", "MIC.R")
+
+	return report, err
+})
+
+func block(tb testing.TB) IdentifiabilityReport {
+	tb.Helper()
+
+	report, err := blockFixture()
+	if err != nil {
+		tb.Fatalf("block fixture: %v", err)
+	}
+
+	return report
+}
+
 // TestHessianRecoversTheFlatAngleDirection is the tool checked against the
-// symmetry the test above establishes: the measured 3×3 over HIT.A, MIC.A and
-// AXIS must be near-singular along (1,1,2)/√6, and must not be along the same
-// rotation with AXIS held.
+// symmetry TestObjectiveIsInvariantUnderCommonAngleRotation establishes: the
+// curvature along (1,1,2)/sqrt(6) must sit at the tool's floor, and the same
+// rotation with AXIS held must not.
 func TestHessianRecoversTheFlatAngleDirection(t *testing.T) {
 	t.Parallel()
 
-	probe := identifyProbe(t)
-	report, values, _ := hessianOver(t, probe, interiorPoint(t, probe), 3e-3,
-		"HIT.A", "MIC.A", "AXIS")
-
+	report := block(t)
 	rotation := report.Predictions.AngleRotation
 	pinned := report.Predictions.AngleRotationAxisPinned
 
@@ -256,55 +361,51 @@ func TestHessianRecoversTheFlatAngleDirection(t *testing.T) {
 	}
 
 	// The two-condition test PLAN.md N6 asks for. Zero in both would mean the
-	// probe is dead rather than that the model is symmetric, so the control has
-	// to be checked as hard as the symmetry.
-	if pinned.RelativeToLargest < 1e-3 {
-		t.Errorf("the AXIS-pinned rotation came back at %g of the largest eigenvalue, "+
-			"which is not a break: the probe is measuring nothing", pinned.RelativeToLargest)
+	// probe is dead rather than that the model is symmetric, so the control is
+	// checked as hard as the symmetry.
+	if math.Abs(pinned.Curvature) < 1 {
+		t.Errorf("the AXIS-pinned rotation came back at %g, which is not a break: "+
+			"the probe is measuring nothing", pinned.Curvature)
 	}
 
-	contrast := math.Abs(pinned.Curvature / rotation.Curvature)
-	if contrast < symmetryContrast {
-		t.Errorf("the free rotation is only %.1f× flatter than the AXIS-pinned one "+
-			"(curvature %g against %g); an exact symmetry should sit at the tool's floor",
-			contrast, rotation.Curvature, pinned.Curvature)
+	low, high, steps := contrastRange(rotation.Samples, pinned.Samples)
+	if steps < 2 || low < symmetryContrast {
+		t.Errorf("the free rotation is only %.3g times flatter than the AXIS-pinned one at its "+
+			"worst of %d steps (best %.3g); an exact symmetry should sit at the tool's floor",
+			low, steps, high)
 	}
 
 	if !strings.HasPrefix(rotation.Verdict, "borne out") {
 		t.Errorf("verdict: %s", rotation.Verdict)
 	}
 
-	// Deliberately no assertion on OverlapWithSmallest. It is reported, and on
-	// this objective it is weak: each coordinate stencil crosses the jumps a
-	// partial entering or leaving the matched set puts in the cost, so the
-	// assembled matrix does not resolve a direction the function itself is exactly
-	// invariant along. Asserting an overlap here would be asserting that the
-	// assembled Hessian is better conditioned than it measurably is — which is
-	// the finding, not a test failure. eigenvalues %v is logged so a regression
-	// in the spectrum is still visible in the transcript.
-	t.Logf("eigenvalues %v; the smallest eigenvector overlaps (1,1,2)/√6 by %.4f, "+
-		"and dᵀHd along it is %g against a directly measured %g",
-		values, rotation.OverlapWithSmallest, rotation.RayleighQuotient, rotation.Curvature)
+	// Deliberately no assertion on OverlapWithSmallest, and none on the Rayleigh
+	// quotient. Both are reported and on this objective both are weak: each
+	// coordinate stencil crosses the jumps a partial entering or leaving the
+	// matched set puts in the cost, so the assembled matrix does not resolve a
+	// direction the function itself is exactly invariant along. Asserting an
+	// overlap would be asserting that the assembled Hessian is better conditioned
+	// than it measurably is — which is the finding, not a test failure.
+	t.Logf("eigenvalues %v; the smallest eigenvector overlaps (1,1,2)/sqrt(6) by %.4f, "+
+		"and dTHd along it is %g against a directly measured %g",
+		report.Eigenvalues, rotation.OverlapWithSmallest, rotation.RayleighQuotient, rotation.Curvature)
 }
 
 // TestHessianReportsSoftRadiusPairWithoutClaimingFlatness checks the prediction
 // N6 originally got wrong.
 //
-// The Φ(r_s)·Φ(r_m) exchange argument is about an idealised amplitude, and this
-// model departs from it on both sides: the strike side carries a contact
+// The Phi(r_s).Phi(r_m) exchange argument is about an idealised amplitude, and
+// this model departs from it on both sides: the strike side carries a contact
 // footprint the pickup side has not, and the pickup side carries azimuthal
 // directivity, a radiating moment, a distance gain and a near-field term the
 // strike side has not. What the near-product structure predicts is a soft
 // direction, and what an exchange symmetry would give is a second minimum rather
-// than a flat direction — a discrete symmetry produces no zero eigenvalue even
-// when it is exact. So the test asserts softness *and* asserts the tool does not
-// claim flatness.
+// than a flat one — a discrete symmetry produces no zero eigenvalue even when it
+// is exact. So the test asserts the tool does not claim flatness.
 func TestHessianReportsSoftRadiusPairWithoutClaimingFlatness(t *testing.T) {
 	t.Parallel()
 
-	probe := identifyProbe(t)
-	report, values, _ := hessianOver(t, probe, interiorPoint(t, probe), 3e-3, "HIT.R", "MIC.R")
-
+	report := block(t)
 	swap := report.Predictions.RadiusPair[0]
 	together := report.Predictions.RadiusPair[1]
 
@@ -312,37 +413,27 @@ func TestHessianReportsSoftRadiusPairWithoutClaimingFlatness(t *testing.T) {
 		t.Fatalf("both radius probes should be available, got %+v and %+v", swap, together)
 	}
 
-	if swap.DecadesBelowLargest >= flatDecades {
-		t.Errorf("the exchange direction came back %.1f decades below the largest eigenvalue, "+
-			"i.e. flat; the exchange is discrete and predicts no zero eigenvalue",
-			swap.DecadesBelowLargest)
+	// Read against the floor an exact symmetry reaches in the same run, at the
+	// same steps — which is the only calibrated zero this measurement has.
+	low, _, steps := contrastRange(report.Predictions.AngleRotation.Samples, swap.Samples)
+	if steps < 2 || low < symmetryContrast {
+		t.Errorf("the exchange direction comes within %.3g of the floor an exact symmetry "+
+			"reaches over %d steps; the exchange is discrete and has no flat direction to sit on",
+			low, steps)
 	}
 
 	if !strings.HasPrefix(swap.Verdict, "borne out") {
 		t.Errorf("verdict: %s", swap.Verdict)
 	}
 
-	// The exchange direction must be nowhere near the floor an exact symmetry
-	// reaches. TestHessianRecoversTheFlatAngleDirection measures that floor
-	// through the same stencil at the same step: 1.3e-4 against a spectrum of
-	// order 1e3, i.e. seven decades down. Anything within a couple of decades of
-	// that would mean the tool had found an exact symmetry here, and there is not
-	// one to find.
-	if math.Abs(swap.Curvature) < 1 {
-		t.Errorf("the exchange direction's curvature is %g, which is at the floor an exact "+
-			"symmetry reaches; the exchange is discrete and has no flat direction to sit on",
-			swap.Curvature)
-	}
-
-	// Which of the pair's two directions is softer is *not* asserted. At this
-	// point both are dominated by the jumps the objective has in the radii, and
-	// the ordering moves with h — measured at h = 3e-4/1e-3/3e-3/1e-2 the
-	// exchange direction came back -2179/+237/-3668/-96 against -1874/-239/+38/
-	// +1275 for the common one. Asserting an ordering the measurement does not
-	// support would be the tool claiming more than it knows, which is the thing
-	// this whole file is against.
-	t.Logf("eigenvalues %v; exchange curvature %g, common curvature %g",
-		values, swap.Curvature, together.Curvature)
+	// Which of the pair's two directions is softer is *not* asserted. Both are
+	// dominated by the jumps the objective has in the radii and the ordering moves
+	// with h — measured over the swept steps the exchange direction came back
+	// -2179/+237/-3668/-96 against -1874/-239/+38/+1275 for the common one.
+	// Asserting an ordering the measurement does not support would be the tool
+	// claiming more than it knows, which is what this whole file is against.
+	t.Logf("exchange samples %s; common samples %s",
+		formatSamples(swap.Samples), formatSamples(together.Samples))
 }
 
 // TestHessianRefusesInfiniteAndBoundedEntries covers the two ways a stencil can

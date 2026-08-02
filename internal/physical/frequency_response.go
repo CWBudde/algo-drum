@@ -88,9 +88,9 @@ func (d *DoubleHead) ReferenceFrequencyResponse(
 			complex(forceShape, 0) / dynamicStiffness
 		inverseStiffness[index] = 1 / dynamicStiffness
 
-		first := int(d.couplingFirst[index])
+		first := int(d.couplingRange[index].first)
 
-		last := first + int(d.couplingCount[index])
+		last := first + int(d.couplingRange[index].count)
 		for slot := first; slot < last; slot++ {
 			area := complex(d.couplingAreaM2[slot], 0)
 			row := int(d.couplingCavity[slot])
@@ -127,9 +127,9 @@ func (d *DoubleHead) ReferenceFrequencyResponse(
 	for index, mode := range d.modes {
 		displacement := uncoupledDisplacement[index]
 
-		first := int(d.couplingFirst[index])
+		first := int(d.couplingRange[index].first)
 
-		last := first + int(d.couplingCount[index])
+		last := first + int(d.couplingRange[index].count)
 		for slot := first; slot < last; slot++ {
 			displacement -= complex(d.couplingAreaM2[slot], 0) *
 				inverseStiffness[index] *

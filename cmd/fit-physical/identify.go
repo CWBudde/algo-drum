@@ -287,20 +287,25 @@ type DirectionProbe struct {
 	Direction []VectorComponent `json:"direction"`
 	Available bool              `json:"available"`
 	Reason    string            `json:"reason,omitempty"`
-	// Curvature is the second difference measured *along the direction itself*,
-	// with its own three-point stencil at the report's step. Two extra
-	// evaluations, and it is the headline number because it is the only one that
-	// survives this objective: the model's angle symmetry is exact, so a stencil
-	// that moves along it lands on bit-identical renders and returns a zero that
-	// means something.
-	Curvature float64 `json:"curvature"`
-	// RayleighQuotient is dᵀHd read off the assembled matrix. For a quadratic
-	// the two are the same number. They are not the same number here, and the
+	// Samples is the second difference measured *along the direction itself*,
+	// with its own three-point stencil, at every swept step. Two evaluations per
+	// step, and it is the headline because it is the only thing that survives
+	// this objective: the model's angle symmetry is exact, so a stencil that
+	// moves along it lands on bit-identical renders and returns a zero that means
+	// something, at every scale and whether or not a Hessian could be taken.
+	Samples []StepSample `json:"samples"`
+	// Curvature is the sample the probe is quoted at and CurvatureStep is which
+	// step that was; see coarsest.
+	Curvature     float64 `json:"curvature"`
+	CurvatureStep float64 `json:"curvatureStep"`
+	// RayleighQuotient is dᵀHd read off the assembled matrix, at RayleighStep,
+	// and is present only when a Hessian was taken. For a quadratic it and
+	// Curvature are the same number. They are not the same number here, and the
 	// gap is a measurement rather than an error: the objective is piecewise, so
-	// each coordinate stencil carries its own jumps and the sum of nine of them
-	// does not cancel the way the function itself does. Reported beside the
-	// direct measurement so the size of that gap is on the record.
-	RayleighQuotient float64 `json:"rayleighQuotient"`
+	// each coordinate stencil carries its own jumps and their sum does not cancel
+	// the way the function itself does.
+	RayleighQuotient float64 `json:"rayleighQuotient,omitempty"`
+	RayleighStep     float64 `json:"rayleighStep,omitempty"`
 	// RelativeToLargest is |Curvature| / max|λ|; DecadesBelowLargest is its
 	// log10, which is the unit the sloppy-model literature reads spectra in.
 	RelativeToLargest   float64 `json:"relativeToLargest"`
@@ -746,6 +751,8 @@ func writeIdentifiability(stdout io.Writer, report IdentifiabilityReport) {
 		writeSpectrum(stdout, report)
 	}
 
+	writePredictions(stdout, report)
+
 	_, _ = fmt.Fprintf(stdout,
 		"\n%d evaluations in %.1f s (%.2f s each). Projected serial cost of the same "+
 			"measurement over the %d free parameters: %.0f s; over the whole %d-wide space: %.0f s.\n",
@@ -782,29 +789,76 @@ func writeSpectrum(stdout io.Writer, report IdentifiabilityReport) {
 			count.Decade, count.Threshold, count.Count, report.ReducedDimension)
 	}
 
-	_, _ = fmt.Fprintf(stdout, "\npredictions:\n")
+	_, _ = fmt.Fprintf(stdout, "\nthe predicted directions against the spectrum:\n")
 
-	// Printed in the order the two predictions are argued in — the exact
-	// symmetry, its AXIS-pinned control, then the radius pair — rather than in
-	// struct field order, because the control is only readable beside the
-	// symmetry it controls for.
-	probes := append([]DirectionProbe{
+	for _, probe := range orderedProbes(report) {
+		if !probe.Available {
+			continue
+		}
+
+		_, _ = fmt.Fprintf(stdout,
+			"  %-8s %.1f decades below the largest eigenvalue; dᵀHd off the matrix %12.6g; "+
+				"overlap with eigenvector 0 %.4f, best %.4f at %d\n",
+			probeKey(probe), probe.DecadesBelowLargest, probe.RayleighQuotient,
+			probe.OverlapWithSmallest, probe.BestOverlap, probe.BestOverlapIndex)
+	}
+}
+
+// orderedProbes lists the direction probes the way the predictions are argued —
+// the exact symmetry, its AXIS-pinned control, then the radius pair — rather
+// than in struct field order, because the control is only readable beside the
+// symmetry it controls for.
+func orderedProbes(report IdentifiabilityReport) []DirectionProbe {
+	return append([]DirectionProbe{
 		report.Predictions.AngleRotation,
 		report.Predictions.AngleRotationAxisPinned,
 	}, report.Predictions.RadiusPair...)
+}
 
-	for _, probe := range probes {
+// probeKey is the short name a probe's sweep row is printed under.
+func probeKey(probe DirectionProbe) string {
+	for _, predicted := range predictedDirections {
+		if predicted.name == probe.Name {
+			return predicted.key
+		}
+	}
+
+	return "?"
+}
+
+// writePredictions prints the half of the answer that does not need a Hessian.
+//
+// It is printed whether or not one was taken, and on this reference set that is
+// the point: the step sweep found no plateau, so there is no spectrum, and these
+// four rows are the whole result.
+func writePredictions(stdout io.Writer, report IdentifiabilityReport) {
+	_, _ = fmt.Fprintf(stdout,
+		"\ncurvature along each predicted direction, by step — its own three-point stencil:\n%-8s", "DIR")
+
+	for _, step := range hessianSteps {
+		_, _ = fmt.Fprintf(stdout, "%12g", step)
+	}
+
+	_, _ = fmt.Fprintln(stdout)
+
+	for _, probe := range orderedProbes(report) {
 		if !probe.Available {
-			_, _ = fmt.Fprintf(stdout, "  %s\n    unavailable: %s\n", probe.Name, probe.Reason)
+			_, _ = fmt.Fprintf(stdout, "%-8s unavailable: %s\n", probeKey(probe), probe.Reason)
 
 			continue
 		}
 
-		_, _ = fmt.Fprintf(stdout, "  %s\n    curvature along it %.6g (%.1f decades below the "+
-			"largest eigenvalue); dᵀHd off the matrix %.6g; overlap with the softest "+
-			"eigenvector %.4f\n    %s\n",
-			probe.Name, probe.Curvature, probe.DecadesBelowLargest, probe.RayleighQuotient,
-			probe.OverlapWithSmallest, probe.Verdict)
+		_, _ = fmt.Fprintf(stdout, "%-8s%s\n", probeKey(probe), formatSamples(probe.Samples))
+	}
+
+	_, _ = fmt.Fprintf(stdout, "\npredictions:\n")
+
+	for _, probe := range orderedProbes(report) {
+		if probe.Verdict == "" {
+			continue
+		}
+
+		_, _ = fmt.Fprintf(stdout, "  %s\n    %s\n", probe.Name, probe.Verdict)
 	}
 }
 

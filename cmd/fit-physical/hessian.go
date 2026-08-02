@@ -37,10 +37,18 @@ func measureHessian(
 	step, rationale := chooseStep(report.StepSweep)
 	report.Step, report.StepRationale = step, rationale
 
+	// The predictions are scored whether or not a step size was justified, and
+	// deliberately so. They need no matrix: each is a *direction*, and the second
+	// difference along a direction is its own three-point stencil. That makes
+	// them the part of this measurement that survives an objective too rough to
+	// differentiate coordinate-wise — which is the case the sweep above has just
+	// found this one to be — and they are the two things N6 is validated against.
+	report.Predictions = scorePredictions(sweepDirections(counted, position, scope, labels, cost, stderr))
+
 	if step == 0 {
 		return fmt.Errorf("%w: the step sweep found no h on a plateau for any component, "+
 			"so there is no step size this Hessian could honestly be taken at; the sweep "+
-			"is in the report, which is the evidence for that",
+			"and the direction probes are in the report, which is the evidence for that",
 			errInvalidFitOption)
 	}
 
@@ -63,83 +71,128 @@ func measureHessian(
 	report.Eigenvalues = values
 	report.Eigenvectors = describeEigenvectors(values, vectors, report.ReducedLabels)
 	report.ConstrainedCounts = countDecades(values)
-	report.Predictions = scorePredictions(report.Reduced, values, vectors, report.ReducedLabels,
-		directionalProbe(counted, position, cost, scope, keep, report.ReducedLabels, step))
+	relateToSpectrum(&report.Predictions, report.Reduced, values, vectors, report.ReducedLabels, step)
 
 	return nil
 }
 
-// directionalProbe returns the measurement a predicted direction is judged on:
-// the second difference of the objective along that direction, taken with its
-// own three-point stencil.
+// directionIndex maps each differentiated component's label to its place in the
+// search vector. Every component in scope, not only the ones a Hessian kept: a
+// direction probe is a single stencil that never touches the matrix, so a
+// component the matrix had to drop can still be walked along.
+func directionIndex(scope []int, labels []string) map[string]int {
+	index := make(map[string]int, len(scope))
+	for slot, component := range scope {
+		index[labels[slot]] = component
+	}
+
+	return index
+}
+
+// sweepDirections measures the curvature along each predicted direction at every
+// swept step.
 //
-// This is not the same thing as reading dᵀHd off the assembled matrix, and the
-// difference is the whole reason it exists. A coordinate stencil crosses this
-// objective's jumps — a partial entering or leaving the matched set moves the
-// cost by ~5e-3 on a total of ~8.5, which at h = 1e-3 is a second difference of
-// 5000 out of nothing — and nine such stencils summed do not cancel. A stencil
-// that walks *along* an exact symmetry lands on renders that are identical to
-// rounding, jumps included, because a jump surface of an invariant function
-// contains the invariant direction. Measured on the synthetic probe: the common
-// angle rotation returns 4e-5 to 2e-2 where the assembled dᵀHd returns hundreds.
-func directionalProbe(
+// A direction probe is not the same thing as reading dᵀHd off the assembled
+// matrix, and the difference is the whole reason it exists. A coordinate stencil
+// crosses this objective's jumps — on reference/tt08x08/lp/hd the diagonal second
+// difference in HIT.A runs 4.9e6 at h = 1e-4 down to 1.2e3 at h = 3e-2, which is
+// a numerator that barely moves while h² moves by 1e5, i.e. a staircase and not a
+// curvature — and a sum of nine such stencils does not cancel. A stencil that
+// walks *along* an exact symmetry lands on renders identical to rounding, jumps
+// included, because a jump surface of an invariant function contains the
+// invariant direction.
+//
+// Swept over the same steps as the diagonals rather than taken at one, because
+// without a plateau there is no privileged h, and the prediction being tested is
+// scale-free: an exact symmetry reads at the tool's floor at *every* step.
+func sweepDirections(
 	counted *counter,
 	position []float64,
-	cost float64,
 	scope []int,
-	keep []bool,
 	labels []string,
-	step float64,
-) func(map[string]float64) (float64, bool) {
-	// Only the components that survived into the reduced matrix. A component
-	// dropped for sitting on a bound cannot be stepped both ways here either,
-	// and one whose stencil was undefined is no more defined along a diagonal.
-	index := make(map[string]int, len(labels))
-	slot := 0
+	cost float64,
+	stderr io.Writer,
+) map[string][]StepSample {
+	index := directionIndex(scope, labels)
+	samples := make(map[string][]StepSample, len(predictedDirections))
 
-	for entry := range scope {
-		if !keep[entry] {
+	for _, predicted := range predictedDirections {
+		row, ok := sweepDirection(counted, position, cost, index, predicted.weights)
+		if !ok {
 			continue
 		}
 
-		// labels is the *reduced* label list, so it advances only over the kept
-		// entries — the same walk reduce makes, and it has to stay the same walk.
-		index[labels[slot]] = scope[entry]
-		slot++
+		samples[predicted.key] = row
+
+		_, _ = fmt.Fprintf(stderr, "  probe %-8s %s\n", predicted.key, formatSamples(row))
 	}
 
-	return func(weights map[string]float64) (float64, bool) {
-		direction := make(map[int]float64, len(weights))
-		norm := 0.0
+	return samples
+}
 
-		for label, weight := range weights {
-			component, ok := index[label]
-			if !ok {
-				return 0, false
-			}
+// sweepDirection is one direction's row, or false when the scope does not carry
+// every component the direction is made of.
+func sweepDirection(
+	counted *counter,
+	position []float64,
+	cost float64,
+	index map[string]int,
+	weights map[string]float64,
+) ([]StepSample, bool) {
+	direction := make(map[int]float64, len(weights))
+	norm := 0.0
 
-			direction[component] = weight
-			norm += weight * weight
+	for label, weight := range weights {
+		component, ok := index[label]
+		if !ok {
+			return nil, false
 		}
 
-		norm = math.Sqrt(norm)
-
-		for _, attempt := range []float64{step, step / 3} {
-			plus, minus := slices.Clone(position), slices.Clone(position)
-
-			for component, weight := range direction {
-				plus[component] += attempt * weight / norm
-				minus[component] -= attempt * weight / norm
-			}
-
-			high, low := counted.at(plus), counted.at(minus)
-			if isUsable(high) && isUsable(low) {
-				return (high - 2*cost + low) / (attempt * attempt), true
-			}
-		}
-
-		return 0, false
+		direction[component] = weight
+		norm += weight * weight
 	}
+
+	norm = math.Sqrt(norm)
+	row := make([]StepSample, 0, len(hessianSteps))
+
+	for _, step := range hessianSteps {
+		sample := StepSample{Step: step}
+		plus, minus := slices.Clone(position), slices.Clone(position)
+		bounded := false
+
+		for component, weight := range direction {
+			offset := step * weight / norm
+			plus[component] += offset
+			minus[component] -= offset
+
+			if min(plus[component], minus[component]) < 0 || max(plus[component], minus[component]) > 1 {
+				bounded = true
+			}
+		}
+
+		// Checked before evaluating rather than after, so a bounded step costs
+		// nothing: on a sixteen-take joint fit two evaluations are half a minute.
+		if bounded {
+			sample.Note = "the stencil would cross a [0,1] bound and be clamped"
+			row = append(row, sample)
+
+			continue
+		}
+
+		high, low := counted.at(plus), counted.at(minus)
+		if !isUsable(high) || !isUsable(low) {
+			sample.Note = "a stencil point was not a drum"
+			row = append(row, sample)
+
+			continue
+		}
+
+		curvature := (high - 2*cost + low) / (step * step)
+		sample.Curvature = &curvature
+		row = append(row, sample)
+	}
+
+	return row, true
 }
 
 // sweepSteps measures every component's diagonal second difference at every h.
@@ -745,46 +798,205 @@ func countDecades(values []float64) []DecadeCount {
 	return counts
 }
 
-// scorePredictions scores the two directions N6 is validated against.
-func scorePredictions(
-	reduced [][]float64,
-	values []float64,
-	vectors [][]float64,
-	labels []string,
-	directional func(map[string]float64) (float64, bool),
-) Predictions {
-	// (1,1,2)/√6 and not (1,1,1)/√3. The model is invariant under a common
-	// rotation of the strike angle, the pickup angle and the asymmetry axis; in
-	// *normalized* coordinates the axis moves twice as fast per unit because
-	// AXIS spans ±90° where HIT.A and MIC.A span ±180°. Testing (1,1,1) here
-	// would report a failed prediction that was the tool's own arithmetic.
-	rotation := map[string]float64{"HIT.A": 1, "MIC.A": 1, "AXIS": 2}
-	pinned := map[string]float64{"HIT.A": 1, "MIC.A": 1}
-	swap := map[string]float64{"HIT.R": 1, "MIC.R": -1}
-	together := map[string]float64{"HIT.R": 1, "MIC.R": 1}
+// predictedDirections are the two things PLAN.md N6 says this measurement must
+// be checked against, with the AXIS-pinned control that makes the first one a
+// test rather than an assertion. Both were corrected against the code before the
+// tool was written and neither is what the item originally claimed.
+//
+// The rotation is (1,1,2)/sqrt(6) and not (1,1,1)/sqrt(3). Every angle in the
+// model enters only as Strike.AngleRad - PrincipalAxisAngleRad or
+// Pickup.AngleRad - PrincipalAxisAngleRad (three sites in
+// internal/physical/modes.go, and no others) and AXIS is a free fit parameter,
+// so rotating the three together is an exact symmetry — but in *normalized*
+// coordinates the axis moves twice as fast per unit, because AXIS spans +/-90
+// degrees where HIT.A and MIC.A span +/-180. A tool testing (1,1,1) would report
+// a failed prediction that was its own arithmetic.
+var predictedDirections = []struct {
+	key     string
+	name    string
+	weights map[string]float64
+}{
+	{
+		"ROT", "common rotation of HIT.A, MIC.A and AXIS — an exact symmetry of the model",
+		map[string]float64{"HIT.A": 1, "MIC.A": 1, "AXIS": 2},
+	},
+	{
+		"ROT.PIN", "the same rotation with AXIS held — broken only through the 0.4 % split, so soft, not flat",
+		map[string]float64{"HIT.A": 1, "MIC.A": 1},
+	},
+	{
+		"R.SWAP", "exchange of HIT.R and MIC.R — a discrete near-symmetry, so soft and never flat",
+		map[string]float64{"HIT.R": 1, "MIC.R": -1},
+	},
+	{
+		"R.BOTH", "HIT.R and MIC.R moved together — the stiff direction of the same pair",
+		map[string]float64{"HIT.R": 1, "MIC.R": 1},
+	},
+}
 
-	probe := func(name string, weights map[string]float64) DirectionProbe {
-		return probeDirection(name, weights, reduced, values, vectors, labels, directional)
+// scorePredictions turns the swept direction rows into the report's predictions
+// block. No matrix is involved: this is what survives an objective too rough to
+// differentiate coordinate-wise, which is what the shipped reference set is.
+func scorePredictions(samples map[string][]StepSample) Predictions {
+	probes := make(map[string]DirectionProbe, len(predictedDirections))
+
+	for _, predicted := range predictedDirections {
+		probe := DirectionProbe{Name: predicted.name}
+
+		row, ok := samples[predicted.key]
+		if !ok {
+			probe.Reason = fmt.Sprintf("the scope does not carry all of %s",
+				strings.Join(sortedKeys(predicted.weights), ", "))
+			probes[predicted.key] = probe
+
+			continue
+		}
+
+		probe.Samples = row
+		probe.Direction = unitDirection(predicted.weights)
+		probe.Curvature, probe.CurvatureStep, probe.Available = coarsest(row)
+
+		if !probe.Available {
+			probe.Reason = "no step in the sweep produced a usable stencil along this direction"
+		}
+
+		probes[predicted.key] = probe
 	}
 
 	predictions := Predictions{
-		AngleRotation: probe(
-			"common rotation of HIT.A, MIC.A and AXIS — an exact symmetry of the model",
-			rotation,
-		),
-		AngleRotationAxisPinned: probe(
-			"the same rotation with AXIS held — broken only through the 0.4 % split, so soft, not flat",
-			pinned,
-		),
-		RadiusPair: []DirectionProbe{
-			probe("exchange of HIT.R and MIC.R — a discrete near-symmetry, so soft and never flat", swap),
-			probe("HIT.R and MIC.R moved together — the stiff direction of the same pair", together),
-		},
+		AngleRotation:           probes["ROT"],
+		AngleRotationAxisPinned: probes["ROT.PIN"],
+		RadiusPair:              []DirectionProbe{probes["R.SWAP"], probes["R.BOTH"]},
 	}
 
 	judge(&predictions)
 
 	return predictions
+}
+
+// coarsest picks the sample a probe is quoted at: the largest step that produced
+// a usable stencil.
+//
+// The largest rather than the smallest, and it is the one place this file
+// prefers a coarse step. A direction probe is not estimating a derivative — the
+// prediction is that an exactly invariant direction reads at the tool's floor at
+// every scale — and the coarse end is where the objective's staircase contributes
+// least, so it is where a genuinely non-flat direction is least likely to be
+// mistaken for a flat one. The whole row is reported beside it, so a reader who
+// disagrees can take another.
+func coarsest(row []StepSample) (float64, float64, bool) {
+	for index := len(row) - 1; index >= 0; index-- {
+		if row[index].Curvature != nil {
+			return *row[index].Curvature, row[index].Step, true
+		}
+	}
+
+	return 0, 0, false
+}
+
+// unitDirection is a labelled unit vector, for the report.
+func unitDirection(weights map[string]float64) []VectorComponent {
+	norm := 0.0
+	for _, weight := range weights {
+		norm += weight * weight
+	}
+
+	norm = math.Sqrt(norm)
+
+	components := make([]VectorComponent, 0, len(weights))
+	for _, label := range sortedKeys(weights) {
+		components = append(components, VectorComponent{Label: label, Weight: weights[label] / norm})
+	}
+
+	return components
+}
+
+// relateToSpectrum adds the quantities that only exist when a Hessian was taken:
+// each direction's Rayleigh quotient off the assembled matrix and its overlap
+// with the eigenvectors.
+//
+// These are corroboration and not the headline. An overlap is only meaningful
+// when the eigenvalue it belongs to is isolated — two near-degenerate soft
+// directions rotate freely into each other and their individual eigenvectors
+// carry no information — while the curvature along the direction is defined
+// whatever the eigenvectors do. On a piecewise objective the corroboration is
+// weak: the coordinate stencils carry the jumps and their sum does not cancel
+// the way the function itself does, so dTHd along an exact symmetry comes back
+// hundreds where the direct stencil comes back at 1e-4. Both are printed, and
+// the gap between them is a measurement of how far from quadratic this objective
+// is at the step it was taken at.
+func relateToSpectrum(
+	predictions *Predictions,
+	reduced [][]float64,
+	values []float64,
+	vectors [][]float64,
+	labels []string,
+	step float64,
+) {
+	largest := 0.0
+	for _, value := range values {
+		largest = max(largest, math.Abs(value))
+	}
+
+	for index, predicted := range predictedDirections {
+		probe := pick(predictions, index)
+		if probe == nil || !probe.Available {
+			continue
+		}
+
+		direction := make([]float64, len(labels))
+		found := 0
+
+		for slot, label := range labels {
+			if weight, ok := predicted.weights[label]; ok {
+				direction[slot] = weight
+				found++
+			}
+		}
+
+		if found != len(predicted.weights) {
+			continue
+		}
+
+		norm := math.Sqrt(dot(direction, direction))
+		for slot := range direction {
+			direction[slot] /= norm
+		}
+
+		probe.RayleighQuotient = rayleigh(reduced, direction)
+		probe.RayleighStep = step
+		probe.OverlapWithSmallest = math.Abs(dot(direction, vectors[0]))
+
+		for slot, vector := range vectors {
+			if overlap := math.Abs(dot(direction, vector)); overlap > probe.BestOverlap {
+				probe.BestOverlap = overlap
+				probe.BestOverlapIndex = slot
+				probe.BestOverlapEigenvalue = values[slot]
+			}
+		}
+
+		if largest > 0 {
+			probe.RelativeToLargest = math.Abs(probe.Curvature) / largest
+			probe.DecadesBelowLargest = -math.Log10(probe.RelativeToLargest)
+		}
+	}
+}
+
+// pick addresses one probe of the predictions block by its position in
+// predictedDirections, so the two lists cannot drift apart silently.
+func pick(predictions *Predictions, index int) *DirectionProbe {
+	switch index {
+	case 0:
+		return &predictions.AngleRotation
+	case 1:
+		return &predictions.AngleRotationAxisPinned
+	case 2, 3:
+		if slot := index - 2; slot < len(predictions.RadiusPair) {
+			return &predictions.RadiusPair[slot]
+		}
+	}
+
+	return nil
 }
 
 // symmetryContrast is how much flatter the free rotation has to be than the
@@ -806,149 +1018,104 @@ func scorePredictions(
 // weakening of the symmetry would be caught rather than absorbed.
 const symmetryContrast = 100
 
-// flatDecades is the corroborating absolute reading: how many decades below the
-// largest eigenvalue a direction has to sit before the spectrum alone would call
-// it flat. Four, which is where the O(h²) truncation floor sits at the steps
-// this sweep admits (h ≈ 1e-3…1e-2 against a curvature scale of order 0.1).
-const flatDecades = 4
-
-// judge writes the verdicts, which is done here rather than inside
-// probeDirection because the only trustworthy statement about the exact symmetry
-// is a comparison between two of the probes.
+// judge writes the verdicts. It is done here rather than inside scorePredictions
+// because no statement about any of these directions is trustworthy on its own:
+// the exact symmetry is read against the AXIS-pinned control, and the radius pair
+// is read against the floor the exact symmetry establishes. The floor is a
+// property of the tool at a given step, so every comparison below is made at the
+// same step and never across two.
 func judge(predictions *Predictions) {
 	rotation, pinned := &predictions.AngleRotation, &predictions.AngleRotationAxisPinned
 
-	if rotation.Available && pinned.Available {
-		contrast := math.Inf(1)
-		if rotation.Curvature != 0 {
-			contrast = math.Abs(pinned.Curvature / rotation.Curvature)
-		}
-
-		switch {
-		case contrast >= symmetryContrast:
-			rotation.Verdict = fmt.Sprintf(
-				"borne out: %.1f decades below the largest eigenvalue and %.0f× flatter than "+
-					"the same rotation with AXIS held, which is the discriminating pair",
-				rotation.DecadesBelowLargest, contrast,
-			)
-		default:
-			rotation.Verdict = fmt.Sprintf(
-				"REFUTED: only %.0f× flatter than the AXIS-pinned rotation (%.1f decades below "+
-					"the largest), where an exact symmetry should be at the tool's own floor",
-				contrast, rotation.DecadesBelowLargest,
-			)
-		}
-
-		pinned.Verdict = softVerdict(*pinned,
-			"the split-broken rotation", "flat, which would mean AXIS does nothing here")
+	if !rotation.Available || !pinned.Available {
+		return
 	}
+
+	low, high, steps := contrastRange(rotation.Samples, pinned.Samples)
+
+	switch {
+	case steps == 0:
+		rotation.Verdict = "unavailable: no step produced both this direction and its AXIS-pinned control"
+	case low >= symmetryContrast:
+		rotation.Verdict = fmt.Sprintf(
+			"borne out: %.3g to %.3g times flatter than the same rotation with AXIS held, "+
+				"at every one of the %d steps both were measured at",
+			low, high, steps,
+		)
+	default:
+		rotation.Verdict = fmt.Sprintf(
+			"REFUTED: only %.3g times flatter than the AXIS-pinned rotation at its worst step "+
+				"(best %.3g over %d steps), where an exact symmetry should sit at the tool's own floor",
+			low, high, steps,
+		)
+	}
+
+	pinned.Verdict = againstFloor(pinned.Samples, rotation.Samples,
+		"the split-broken rotation", "AXIS would then do nothing at this drum's asymmetry")
 
 	for index := range predictions.RadiusPair {
 		probe := &predictions.RadiusPair[index]
 		if probe.Available {
-			probe.Verdict = softVerdict(*probe, "this direction",
-				"flat, which the exchange argument does not predict — it is discrete, "+
+			probe.Verdict = againstFloor(probe.Samples, rotation.Samples, "this direction",
+				"the exchange argument does not predict a flat direction — it is discrete, "+
 					"and a discrete symmetry produces no zero eigenvalue even when it is exact")
 		}
 	}
 }
 
-// softVerdict reads a direction that was predicted to be soft rather than flat.
-func softVerdict(probe DirectionProbe, subject, flatMeans string) string {
-	if probe.DecadesBelowLargest >= flatDecades {
-		return fmt.Sprintf("REFUTED: %s is %.1f decades below the largest eigenvalue — %s",
-			subject, probe.DecadesBelowLargest, flatMeans)
+// contrastRange is the smallest and largest ratio between two directions'
+// curvatures over the steps both were measured at, and how many steps that was.
+func contrastRange(numerator, denominator []StepSample) (low, high float64, steps int) {
+	low, high = math.Inf(1), 0
+
+	for index := range numerator {
+		if numerator[index].Curvature == nil || denominator[index].Curvature == nil {
+			continue
+		}
+
+		if *numerator[index].Curvature == 0 {
+			continue
+		}
+
+		ratio := math.Abs(*denominator[index].Curvature / *numerator[index].Curvature)
+		low, high = math.Min(low, ratio), math.Max(high, ratio)
+		steps++
 	}
 
-	return fmt.Sprintf("borne out: %s is %.1f decades below the largest eigenvalue — soft, and not flat",
-		subject, probe.DecadesBelowLargest)
+	if steps == 0 {
+		return 0, 0, 0
+	}
+
+	return low, high, steps
 }
 
-// probeDirection scores one predicted direction against the measured spectrum.
+// againstFloor reads a direction predicted to be soft rather than flat, against
+// the floor an exactly flat direction reaches at the same steps.
 //
-// A curvature along the direction is the headline rather than an overlap,
-// because an overlap is only meaningful when the eigenvalue it belongs to is
-// isolated: two near-degenerate soft directions rotate freely into each other
-// and their individual eigenvectors carry no information, while the curvature
-// along the predicted direction is defined whatever the eigenvectors do. The
-// overlaps are reported beside it as corroboration, and on a piecewise objective
-// they are weak corroboration — see directionalProbe.
-//
-// The verdict is deliberately not written here; see judge.
-func probeDirection(
-	name string,
-	weights map[string]float64,
-	reduced [][]float64,
-	values []float64,
-	vectors [][]float64,
-	labels []string,
-	directional func(map[string]float64) (float64, bool),
-) DirectionProbe {
-	probe := DirectionProbe{Name: name}
-
-	direction := make([]float64, len(labels))
-	found := 0
-
-	for slot, label := range labels {
-		if weight, ok := weights[label]; ok {
-			direction[slot] = weight
-			found++
-		}
+// The floor is measured rather than assumed, which is what makes this a test at
+// all. The common angle rotation is an exact symmetry of the model, so whatever
+// it returns is what this tool reports for zero — and a direction is flat only if
+// it is down at that level.
+func againstFloor(samples, floor []StepSample, subject, flatMeans string) string {
+	low, high, steps := contrastRange(floor, samples)
+	if steps == 0 {
+		return "unavailable: no step measured both this direction and the exact symmetry"
 	}
 
-	if found != len(weights) {
-		probe.Reason = fmt.Sprintf(
-			"needs all of %s, and only %d of them survived into the reduced matrix",
-			strings.Join(sortedKeys(weights), ", "), found,
+	// contrastRange(floor, samples) is |samples| / |floor|, so a large number is
+	// far above the floor, which is what "not flat" means here.
+	if low < symmetryContrast {
+		return fmt.Sprintf(
+			"REFUTED: %s comes within %.3g of the floor an exact symmetry reaches (over %d steps) — %s",
+			subject, low, steps, flatMeans,
 		)
-
-		return probe
 	}
 
-	norm := 0.0
-	for _, weight := range direction {
-		norm += weight * weight
-	}
-
-	norm = math.Sqrt(norm)
-	for slot := range direction {
-		direction[slot] /= norm
-	}
-
-	probe.RayleighQuotient = rayleigh(reduced, direction)
-
-	measured, ok := directional(weights)
-	if !ok {
-		probe.Reason = "the stencil along this direction could not be evaluated, at h and at h/3"
-
-		return probe
-	}
-
-	probe.Available = true
-	probe.Direction = labelled(direction, labels)
-	probe.Curvature = measured
-
-	largest := 0.0
-	for _, value := range values {
-		largest = max(largest, math.Abs(value))
-	}
-
-	if largest > 0 {
-		probe.RelativeToLargest = math.Abs(probe.Curvature) / largest
-		probe.DecadesBelowLargest = -math.Log10(probe.RelativeToLargest)
-	}
-
-	probe.OverlapWithSmallest = math.Abs(dot(direction, vectors[0]))
-
-	for index, vector := range vectors {
-		if overlap := math.Abs(dot(direction, vector)); overlap > probe.BestOverlap {
-			probe.BestOverlap = overlap
-			probe.BestOverlapIndex = index
-			probe.BestOverlapEigenvalue = values[index]
-		}
-	}
-
-	return probe
+	return fmt.Sprintf(
+		"borne out: %s stands %.3g to %.3g times above the floor an exact symmetry reaches, "+
+			"over %d steps — soft, and not flat",
+		subject, low, high, steps,
+	)
 }
 
 func sortedKeys(weights map[string]float64) []string {

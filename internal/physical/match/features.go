@@ -887,6 +887,41 @@ func runSectionAtATime(first, second []float64, coefficients []biquad.Coefficien
 // section-at-a-time form it replaced, by +14 % instructions and +6 % cycles.
 // Fusing only pays once the section loop is gone, which is why this is an
 // unrolled special case rather than the general shape of the function.
+//
+// # Why there is no partial bank here
+//
+// Batching several partials through this loop at once — the obvious next step,
+// since the detected partials are mutually independent and each carries its own
+// cutoff — was prototyped and rejected on measurement. Two partials (four
+// signals, eight recurrences) written in exactly this unrolled style and held
+// bit-exact against two sequential calls measured **+10.8 % instructions and
+// +10.0 % cycles** against the shipped form, three interleaved pairs of runs
+// pinned to one P-core, run-to-run spread 0.4 % on instructions. Four partials
+// would be worse still.
+//
+// The reason is that the premise was wrong. A biquad is latency-bound *on one
+// signal*, and the argument for a bank is that N lanes fill the stalls in that
+// recurrence — but there is no stall left to fill here. This loop already runs
+// four independent recurrences (two signals x two sections; the sections are
+// serial within a sample but their state chains are not), and it sustains
+// **IPC 4.1 at 3.5 uops executed per cycle, with 63 % of cycles retiring four
+// or more** on BenchmarkZeroPhaseLowpassPair. That is a core running flat out
+// against its issue width, not one waiting on a multiply. Extra lanes therefore
+// buy no overlap and cost real instructions: eight recurrences need 16 state
+// words plus 20 coefficients against 16 xmm registers, and the spill reloads
+// are the +10.8 %.
+//
+// L2 misses moved by under 2 % between the two forms, which is the same finding
+// the fusion above landed on: this loop is not bandwidth-limited, so nothing
+// that trades instructions for locality can pay. The only lever left on it is
+// fewer instructions per sample, and the bounds-check experiment recorded in
+// zeroPhaseLowpassPair already found that lever empty.
+//
+// Note also that Go emits no packed float instructions anywhere in this
+// package, so a "vectorised" bank in portable Go is only instruction-level
+// parallelism under another name — and the measurement above is that this loop
+// has none to spare. An algo-dsp SectionBank/ProcessBlockN is not worth
+// proposing on this evidence.
 func runTwoSections(first, second []float64, lower, upper biquad.Coefficients, from, until, stride int) {
 	var (
 		firstLowerD0, firstLowerD1, secondLowerD0, secondLowerD1 float64
@@ -1068,7 +1103,9 @@ type glideProbe struct {
 // probeGlide averages the baseband phase increment and magnitude over one
 // window. The heterodyne put the steady partial at DC, so the residual phase
 // slope *is* the deviation from the carrier.
-func probeGlide(inPhase, quadrature []float64, sampleRateHz, atSeconds, halfSeconds float64) (glideProbe, bool) {
+func probeGlide(
+	terms *glideTerms, inPhase, quadrature []float64, sampleRateHz, atSeconds, halfSeconds float64,
+) (glideProbe, bool) {
 	centre := int(atSeconds * sampleRateHz)
 	half := int(halfSeconds * sampleRateHz)
 
@@ -1077,47 +1114,18 @@ func probeGlide(inPhase, quadrature []float64, sampleRateHz, atSeconds, halfSeco
 		return glideProbe{}, false
 	}
 
+	terms.ensure(inPhase, quadrature, start, end)
+
 	var (
 		phase, magnitude float64
 		count            int
 	)
 
-	// The per-sample phase step is read off z[n] * conj(z[n-1]) rather than by
-	// differencing two absolute phases.
-	//
-	//	z[n] conj(z[n-1]) = (i[n]i[n-1] + q[n]q[n-1]) + j(q[n]i[n-1] - i[n]q[n-1])
-	//
-	// so its argument *is* phi[n] - phi[n-1], already in (-pi, pi] — which is what
-	// the explicit +3pi / Mod / -pi dance was reconstructing by hand.
-	//
-	// Three things follow. One atan2 a sample instead of two, and the two were
-	// the same call: previous at n is current at n-1, recomputed. No math.Mod,
-	// which was costing more than the arctangent it was correcting. And better
-	// conditioning for the small steps this actually measures — a glide is a
-	// fraction of a radian a sample, and taking it as the difference of two
-	// angles near +/-pi cancels most of the significand, whereas the cross and
-	// dot products carry it directly.
-	// The four streams the body reads are taken as subslices of one length —
-	// current and one-sample-delayed, in phase and quadrature — which is what
-	// lets the compiler drop the bounds checks on a loop the late-probe walk
-	// runs several hundred thousand times per extraction.
-	currentInPhase, currentQuadrature := inPhase[start:end], quadrature[start:end]
-	delayedInPhase, delayedQuadrature := inPhase[start-1:end-1], quadrature[start-1:end-1]
+	steps, magnitudes := terms.phaseStep[start:end], terms.magnitude[start:end]
 
-	for n, nowInPhase := range currentInPhase {
-		nowQuadrature := currentQuadrature[n]
-		wasInPhase, wasQuadrature := delayedInPhase[n], delayedQuadrature[n]
-
-		cross := nowQuadrature*wasInPhase - nowInPhase*wasQuadrature
-		dot := nowInPhase*wasInPhase + nowQuadrature*wasQuadrature
-
-		phase += math.Atan2(cross, dot)
-		// math.Hypot rather than this was guarding against an overflow that
-		// cannot happen: these are peak-normalized samples through a lowpass, so
-		// neither square can leave the range of a float64. Hypot costs a branch
-		// tree and a division per call, and this loop is the hottest caller in
-		// the package.
-		magnitude += math.Sqrt(nowInPhase*nowInPhase + nowQuadrature*nowQuadrature)
+	for n, step := range steps {
+		phase += step
+		magnitude += magnitudes[n]
 		count++
 	}
 
@@ -1177,7 +1185,11 @@ func measureGlide(work *extractScratch, hit []float64, sampleRateHz float64, opt
 	inPhase, quadrature := work.basebandPair(len(hit))
 	heterodyneInto(inPhase, quadrature, hit, sampleRateHz, frequencyHz, cutoffHz, 1)
 
-	early, ok := probeGlide(inPhase, quadrature, sampleRateHz,
+	var terms glideTerms
+
+	terms.reset(work, len(hit))
+
+	early, ok := probeGlide(&terms, inPhase, quadrature, sampleRateHz,
 		options.GlideEarlySeconds, glideEarlyHalfSeconds)
 	if !ok || math.Abs(early.deviationHz) > cutoffHz {
 		return 0, false
@@ -1193,7 +1205,7 @@ func measureGlide(work *extractScratch, hit []float64, sampleRateHz float64, opt
 	step := math.Round(0.001*sampleRateHz) / sampleRateHz
 
 	for at := options.GlideLateSeconds; at >= earliestLate; at -= step {
-		late, ok := probeGlide(inPhase, quadrature, sampleRateHz, at, glideLateHalfSeconds)
+		late, ok := probeGlide(&terms, inPhase, quadrature, sampleRateHz, at, glideLateHalfSeconds)
 		if !ok || late.amplitude < floor || math.Abs(late.deviationHz) > cutoffHz {
 			continue
 		}

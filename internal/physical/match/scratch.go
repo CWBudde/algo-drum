@@ -95,6 +95,9 @@ type extractScratch struct {
 	fftImaginary []float64
 	magnitude    []float64
 
+	glidePhaseStep []float64
+	glideMagnitude []float64
+
 	envelope  []float64
 	times     []float64
 	trace     []float64
