@@ -1405,7 +1405,99 @@ measurement to re-scope it.
       tools ask the same question the same way; anything quoting the old spread
       figure is quoting an artefact.
 
-- [ ] **N6: measure identifiability before trusting any fitted bank.** The
+- [x] **N6: measure identifiability before trusting any fitted bank.** _Done
+      2026-08-02 — and the answer is a refusal, which is the result rather than a
+      failure to obtain one._ `-hessian <scope>` / `-hessian-o <path>` on
+      `cmd/fit-physical` (`identify.go` for the mode, `hessian.go` for the
+      numerics — one file would have been 1768 lines against the 1500-line
+      `revive` limit). Scope takes parameter labels, `block` (the 5×5), `free`
+      (14) or `all` (30), and reuses `-inspect`'s flags, bank, takes, evaluator
+      and reconstructed `Fingerprint` exactly.
+
+      **The objective is not twice-differentiable at the resolution its
+      parameters live at, so there is no Hessian to take.** All five components
+      of the {HIT.A, MIC.A, AXIS, HIT.R, MIC.R} block report `unavailable`
+      against `fits/fit-tt08x08-lp-hd-series-deep.checkpoint` (total 15.186413),
+      reproduced bit-identically across three runs:
+
+      | | 1e-4 | 3e-4 | 1e-3 | 3e-3 | 1e-2 | 3e-2 |
+      | --- | --- | --- | --- | --- | --- | --- |
+      | HIT.A | 4.881e+06 | 5.430e+05 | 1.355e+05 | 5.692e+04 | 1.050e+04 | 1197 |
+      | MIC.A | 3.184e+06 | 9.401e+05 | 2.267e+05 | 2.619e+04 | 4949 | 1295 |
+      | AXIS | 1.697e+06 | 5.858e+05 | 2.168e+05 | 2.927e+04 | 6427 | 1205 |
+      | HIT.R | 2695 | 1013 | 2.142e+04 | 1.174e+04 | 2729 | 819.3 |
+      | MIC.R | −75.29 | 3.538e+05 | 8.100e+04 | 1.306e+04 | 2996 | 874.1 |
+
+      No consecutive pair agrees within a factor of 2.4, so this is not the 33 %
+      plateau threshold being strict — nothing below ~60 % would admit a plateau.
+      The diagnostic is `value × h²`, which runs 0.049 → 1.08 while `h²` moves by
+      10⁵: for curvature the numerator would scale as `h²`, and it does not. The
+      second difference is measuring **finite jumps in the cost** — a partial
+      entering or leaving the matched set — at every scale down to 1e-4 of a
+      normalized parameter. `hessian`, `eigenvalues` and `eigenvectors` are
+      `null` in the artifact and `reducedDimension` is 0. **Any sloppy-spectrum
+      claim taken from a Hessian of this objective would be an artefact of `h`**,
+      which retires the Gutenkunst framing this item opened with.
+
+      **Both predictions were still answered, by directional second differences
+      that never touch a matrix** — a direction needs one stencil, not a matrix:
+
+      | | 1e-4 | 3e-4 | 1e-3 | 3e-3 | 1e-2 | 3e-2 |
+      | --- | --- | --- | --- | --- | --- | --- |
+      | ROT | −2.799e-3 | 9.542e-4 | 4.059e-05 | −5.802e-06 | 7.458e-07 | 1.871e-09 |
+      | ROT.PIN | 1.698e+06 | 1.228e+06 | 2.065e+05 | 5.129e+04 | 8582 | 1333 |
+      | R.SWAP | 2224 | 3.521e+05 | 1.021e+05 | 1.756e+04 | 3729 | 564.2 |
+      | R.BOTH | 1910 | 3.520e+05 | 1.018e+05 | 1.755e+04 | 3899 | 917 |
+
+      - **The angle correction is borne out decisively.** (1,1,2)/√6 is flat to
+        6.07e8–7.13e11 below the AXIS-pinned control at *every* step; the
+        numerator is ~1e-11 on a cost of 15.186413, i.e. pure rounding. Both
+        halves of the discriminating test hold — exactly flat with AXIS free,
+        soft with AXIS pinned. Testing against (1,1,1) would have reported a
+        self-inflicted failure, exactly as this item warned.
+      - **The radius correction is half borne out and half not measurable.**
+        R.SWAP stands 7.95e5–3.02e11 above the floor, so it is definitively **not
+        flat** — the correction's claim. But R.SWAP and R.BOTH agree to three
+        significant figures at three of six steps (3.521e5/3.520e5,
+        1.021e5/1.018e5, 1.756e4/1.755e4): both rows are the same staircase, and
+        nothing here shows the exchange direction is *softer* than its partner.
+        The verdict string says so rather than claiming the soft half.
+      - **"Overlap of the smallest eigenvector with (1,1,2)/√6" is not a usable
+        test**, and was this item's own proposed check. Unavailable here; on the
+        synthetic probe where a Hessian *can* be assembled it returns 0.13 with
+        dᵀHd = 1671, because each coordinate stencil carries its own jumps and
+        nine of them do not cancel. The direct stencil gives 8.6e-7 there and
+        1.9e-9 at the real optimum. Verdicts use the direct measurement.
+
+      **A fourth silent-garbage route, sharper than the three below.**
+      `drum.ParamSpec.Map` returns `Shipped` verbatim within half a persistence
+      byte of `Default` — a ±0.196 % detent. A parameter sitting on its default
+      gives a **bit-identical** cost over any step below ~2e-3 (measured
+      identical at 1e-5, 1e-4, 3e-4, 1e-3; first movement at 2e-3). A plateau
+      detector treating a run of zeros as agreement picks a step inside the
+      detent and reports a flat spectrum for everything — the most confident
+      wrong answer available. `agree` now refuses exact zeros.
+
+      **Two corrections to this item's own numbers.** A joint evaluation
+      measures **11.75 s** (109 evaluations in 1281 s), not ~2.1 s: the 5×5 took
+      21 minutes, not "under two minutes", and 14×14 / 30×30 become ~77 min and
+      ~5.9 h rather than 14 min and 63 min. Neither was run, and on this evidence
+      neither would yield a differentiable spectrum. And `-inspect`'s path could
+      not be reused as-is: `loadStore` refuses the deep checkpoint because
+      `b276eb8`'s `powerDecibels` refactor moved the baseline from
+      39.882034409395786 to 39.882034409620715 (relative 5.64e-12,
+      deterministic). `-hessian` alone tolerates drift below 1e-9 relative — it
+      re-measures everything at a stored *position* and mixes nothing, unlike a
+      resume — and records a `baselineDrift` block. **Side effect worth its own
+      line: that checkpoint can no longer be resumed by any build.**
+
+      Profile likelihood does not follow from here. It was the successor item on
+      the assumption that a spectrum would separate structural from practical
+      non-identifiability; with no differentiable spectrum, the open question is
+      instead whether the objective's staircase can be smoothed at all → **N20**.
+
+      _Original item, kept because its corrections are what made the measurement
+      checkable:_ The
       converged fits show the textbook sloppy-model signature (Gutenkunst et al.,
       PLoS Comput. Biol. 3(10):e189, 2007) and there is no Jacobian, Hessian or
       Fisher-information code in the repository. A central-difference Hessian at the
@@ -1677,6 +1769,30 @@ measurement to re-scope it.
     about the sound, not an optimization. N9a's digest is what makes it visible
     that it is one. The case for 128 still rests on the weaker of the two
     truncation measurements — see N9c.
+
+    **Decided 2026-08-02 in favour of N9d.** The sound does not change; the
+    coefficient count stays at 256. N9e closes here and the work moves to N9d.
+
+    **Two conditions N9d inherits, neither of them optional.** First, *the
+    baseline in this table is stale and must be retaken* — `b276eb8` landed a
+    `logCosh` memoization and `9028068`/`476807a` restructured the coupling
+    walk and split `double_head_solve.go` out, all after these numbers. Second,
+    *no N9d number may be taken on a loaded machine*. A re-run at load average
+    23 (an unrelated `qemu-aarch64-static` workload at 577 % CPU beside a
+    `fit-physical` run) reported 0.2653× at 256 — a 3.5× error, on a benchmark
+    this repository already documents as memory-bandwidth rather than core
+    bound. One ratio does survive contention, because it is internal to a single
+    run: `solve_iters/sample` is 2.923 with coupling off against 3.045 at 256,
+    while time rises 62 %. **The solve is not getting harder; the table walk is
+    the cost**, which is where N9d has to bite, and it confirms §Cost's claim
+    from a second direction.
+
+    One candidate is already disqualified on paper: folding `inverseMass[column]`
+    into a precomputed per-slot value would kill the gather in
+    `accumulateCouplingForces`, but it regroups the multiply from
+    `(tension·value)·barRow·inverseMass` to `tension·barRow·(value·inverseMass)`
+    and so fails `TestCoupledRenderIsBitExact` by construction. Under N9d's
+    order-preserving constraint that is not a trade to make.
 
     Note also that N9's own headline is now stale on the host side: it says
     2.06× host / 0.70× wasm at 256, where §Cost measures **2.66× / 0.69×**. The
@@ -1959,6 +2075,34 @@ than the item described. The number is kept because things point at it.
       would have to come from. Do not tune the number to flatten the band: the
       band is evidence, and N11's tolerance does not move to accommodate a fix.
 
+- [ ] **N20: can the objective's staircase be smoothed?** _Opened by N6, which
+      measured it rather than assuming it._ The fitting objective is deterministic
+      but piecewise-constant at the scale its own parameters live at: a
+      second difference at `h = 1e-4` of a normalized parameter is measuring a
+      partial entering or leaving the matched set, not curvature. That is why N6
+      has no eigenspectrum, and it is a property of the objective, not of the
+      differentiation.
+
+      It also bears on the search, which is the reason this is worth an item.
+      `cmd/fit-physical` runs a derivative-free optimizer, so it does not
+      *fail* on a staircase — but every claim about how well-determined a fitted
+      bank is currently rests on the two independent runs of `compare-fits`
+      rather than on anything local, and a staircase is a sufficient explanation
+      for why those two runs agree so poorly on the velocities (ρ = +0.15).
+
+      What would have to be established, in order. **Which term steps**: the nine
+      distance terms do not all quantize alike, and `unmatched`/`spurious` are
+      integer-valued by construction while `freq`/`level` are not. A per-term
+      version of N6's sweep would say whether the staircase is one term or all of
+      them. **Whether it is removable**: partial matching is a discrete
+      assignment and `slowestSupportedT60` is an admissibility test, so some of
+      it is structural — a soft-assignment or a continuous admissibility weight
+      would be a change to what the objective *means*, and would invalidate every
+      committed total under the current weights. **Whether it should be**: a
+      smoothed objective is a different objective, and this repository's own rule
+      is that a total is a property of a weight set. Do not smooth anything
+      before N6's sweep has been re-run per term.
+
 - [ ] **N14: the doublet pair, by physical capture.** The one measurement the
       sample pack cannot supply. Ten centre hits with the resonant head removed, ten
       with it refitted, batter tuning untouched; Fischer's protocol on a tom.
@@ -2033,8 +2177,10 @@ than the item described. The number is kept because things point at it.
 
       **Results 2, 3 and 6 remain open**, and 2 and 3 cannot be re-run without
       rewriting tooling that was never committed (the four-window residual budget,
-      the band-limiting sweep, the static-EQ fits). Result 6 is N6 and was never
-      measured on any set.
+      the band-limiting sweep, the static-EQ fits). Result 6 is N6, which has now
+      been measured on `tt08x08/lp/hd` — and the answer is that no Hessian exists
+      to take on this objective, so a sloppy-spectrum reading of Result 6 is not
+      available and never was.
 
       **Result 10's original write-up follows**, kept because its window study is
       what established N17. Re-measured on
@@ -2060,11 +2206,10 @@ fixed with a measured improvement or closed by the measurement that rejected the
 fix; and the paper reports that state rather than the previous one.
 
 **Status, 2026-08-02, second pass.** Done: N1, N2, N8, N8a, N9a, N9b, N9c, N11,
-N12a, N12b, N13, N15, N17, N18. Open and unblocked by any recording: **N9e**,
-which is now a decision rather than a measurement — the shipped configuration
-misses the musical-rate contract by 7 % and the two ways to close it are N9d's
-order-preserving work or a labelled 256 → 128 product decision — plus **N6**
-(tool and the 5×5 run) and **N19**. Open and waiting on a reading of a fit that
+N6, N12a, N12b, N13, N15, N17, N18. Open and unblocked by any recording:
+**N9d** — N9e was decided in its favour on 2026-08-02, so the musical-rate
+shortfall closes with order-preserving work rather than a labelled 256 → 128
+product decision — plus **N19** and **N20**. Open and waiting on a reading of a fit that
 already exists: N3, N5. Open and blocked: N7 (on N5), N10 and N14 (on captures
 that do not exist), N16 §2–§3 (on tooling that was never committed). N4 is a
 decision rather than a measurement, and the one thing it wanted the licensed
