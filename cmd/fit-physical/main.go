@@ -403,10 +403,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	// -hessian is the identifiability measurement (PLAN.md N6); the whole mode
 	// lives in identify.go and only its two flags are here.
 	hessian := flags.String("hessian", "",
-		"measure a central-difference Hessian of the objective at the -checkpoint "+
-			"file's best point and stop: a comma-separated list of parameter labels, "+
-			"'free' for every free parameter, 'all' to add the per-take velocities, "+
-			"or 'block' for the "+defaultHessianScope+" block")
+		"measure a central-difference Hessian at the -checkpoint file's best point "+
+			"and stop: parameter labels separated by commas, 'free' for every free "+
+			"parameter, 'all' to add the velocities, 'block' for "+defaultHessianScope)
 	hessianOut := flags.String("hessian-o", "-",
 		"JSON path for the -hessian report, or - for stdout; name it after the "+
 			"reference it was measured against, as every other fit artifact is")
@@ -763,7 +762,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if !*reportOnly {
 		// The baseline goes into the fingerprint, so it has to be measured
 		// before the checkpoint is opened — which it is, just above.
-		checkpoint, err := loadStore(*checkpointPath, Fingerprint{
+		fingerprint := Fingerprint{
 			SeededRestarts:  len(seeds),
 			SeedWidth:       fingerprintSeedWidth,
 			Reference:       strings.Join(references.paths, "\n"),
@@ -782,7 +781,18 @@ func run(args []string, stdout, stderr io.Writer) error {
 			Seed:            *seed,
 			Fixed:           fixed,
 			BaselineCost:    report.Baseline.Terms.Total,
-		})
+		}
+
+		// -hessian re-measures everything at a stored position instead of mixing
+		// two builds' measurements, so it is the one mode that may proceed across
+		// a baseline that has drifted in its last bits — and it records the drift.
+		// See reconcileBaseline; every other mode keeps the bit-exact check.
+		rebased, err := reconcileBaseline(&fingerprint, *hessian != "", *checkpointPath)
+		if err != nil {
+			return err
+		}
+
+		checkpoint, err := loadStore(*checkpointPath, fingerprint)
 		if err != nil {
 			return err
 		}
@@ -833,10 +843,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		// — or differentiated — against a different drum. See identify.go.
 		if *hessian != "" {
 			return runIdentifiability(stdout, stderr, base, checkpoint, identifyOptions{
-				scope:              *hessian,
-				outputPath:         *hessianOut,
-				checkpointPath:     *checkpointPath,
-				baselineCost:       report.Baseline.Terms.Total,
+				scope: *hessian, outputPath: *hessianOut, checkpointPath: *checkpointPath,
+				baselineCost: report.Baseline.Terms.Total, rebased: rebased,
 				weightsFingerprint: report.WeightsFingerprint,
 			})
 		}

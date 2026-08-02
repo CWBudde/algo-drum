@@ -600,12 +600,35 @@ func TestIdentifiabilityRefusesAFingerprintMismatch(t *testing.T) {
 		t.Fatalf("flush: %v", err)
 	}
 
-	// The primary check, on the way in.
-	moved := stored
-	moved.BaselineCost = 12.500000000000002
+	// The primary check, on the way in, and it is bit-exact: a resume forms a
+	// best-of across two builds' measurements, so the last bit matters there.
+	drifted := stored
+	drifted.BaselineCost = 12.500000000000002
 
-	if _, err := loadStore(path, moved); !errors.Is(err, errCheckpointMismatch) {
-		t.Errorf("loadStore across a moved baseline: %v", err)
+	if _, err := loadStore(path, drifted); !errors.Is(err, errCheckpointMismatch) {
+		t.Errorf("loadStore across a drifted baseline: %v", err)
+	}
+
+	// -hessian mixes nothing, so reconcileBaseline lets that same drift through
+	// and the report records it. This is the case the repository is actually in:
+	// the deep series checkpoint's baseline moved by a relative 5.6e-12 under a
+	// performance refactor.
+	tolerated := drifted
+	if rebased, err := reconcileBaseline(&tolerated, true, path); err != nil || !rebased {
+		t.Errorf("reconcileBaseline(%v) = %v, %v; want the drift accepted and recorded",
+			drifted.BaselineCost, rebased, err)
+	}
+
+	if _, err := loadStore(path, tolerated); err != nil {
+		t.Errorf("loadStore after reconciling: %v", err)
+	}
+
+	// A change large enough to be a different measurement is refused by both.
+	moved := stored
+	moved.BaselineCost = 12.6
+
+	if rebased, err := reconcileBaseline(&moved, true, path); err != nil || rebased {
+		t.Errorf("reconcileBaseline(12.6) = %v, %v; want it refused", rebased, err)
 	}
 
 	// And restated at the point of use, which is where the hundred evaluations
