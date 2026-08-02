@@ -2075,6 +2075,33 @@ than the item described. The number is kept because things point at it.
       would have to come from. Do not tune the number to flatten the band: the
       band is evidence, and N11's tolerance does not move to accommodate a fix.
 
+      **First half done 2026-08-02, and the mechanism is named.**
+      `TestTheCavityIsUnderdampedAgainstTheHeadLossLaw` pins it. The carrier is
+      the cavity's **(1,1) transverse pair at 659.52 Hz**, inside the 630 Hz
+      band (562.2–707.2 Hz). The cavity's second-order sections are
+      `(s² + γs + ω²)` — `frequency_response.go`, and the matching
+      `2/dt + γ + …` diagonal in `solveCavityMidpoint` — so `LossPerSecond = 5`
+      is the coefficient of `s` and the envelope decays at **2.5 /s**: T60
+      **2.763 s**, equivalent ζ **6.03e-4**.
+
+      Against that, all **15** head modes sharing the band ring between 0.180 and
+      0.254 s, at the calibrated `targetZeta = 0.0072`. So the cavity is out by
+      **10.9×** on T60 against the slowest head in the band, and **11.9×** in ζ
+      against the law itself — two ratios of different quantities, both logged,
+      neither a correction of the other. That also explains the ablation
+      arithmetic N11 recorded without accounting for: 0.225 s without the air,
+      2.763 s for the air alone, 0.743 s coupled.
+
+      The test asserts the *disagreement* and deliberately not a target — ζ below
+      the head window's own lower edge, and a T60 ratio of at least 4× rather
+      than the measured 10.9, since the claim worth pinning is the order of
+      magnitude. **Nothing here says what the cavity's loss should be.** That is
+      the open half, and it is the one that needs `physical-cavity.md` and a real
+      drum: a factor of eleven is large enough that the candidate explanations
+      are different in kind — an unmodelled radiation path out of the shell, a
+      vent, or simply a field nobody ever calibrated because nothing audible
+      depended on it until the band measurement existed.
+
 - [ ] **N20: can the objective's staircase be smoothed?** _Opened by N6, which
       measured it rather than assuming it._ The fitting objective is deterministic
       but piecewise-constant at the scale its own parameters live at: a
