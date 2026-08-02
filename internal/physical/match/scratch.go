@@ -129,6 +129,16 @@ func growFloats(buffer []float64, length int) []float64 {
 
 // basebandPair returns the two heterodyne buffers, sized to the hit. Their
 // contents are stale; heterodyneInto overwrites both in full.
+//
+// Two separate buffers rather than one interleaved buffer of pairs, although
+// all three consumers — the zero-phase cascade, the squared envelope and
+// probeGlide — read the two at the same index and would take both from one
+// cache line if they were interleaved. It was measured on the cascade, which is
+// where most of the reading happens: interleaving costs +10.6 % instructions
+// for the doubled index arithmetic, returns −15 % L2 misses, and leaves cycles
+// unchanged inside the run-to-run spread. It also costs probeGlide the
+// bounds-check elimination it gets from taking four equal-length subslices at
+// `start` and `start-1`, in the hottest loop in the package. No win, real cost.
 func (work *extractScratch) basebandPair(length int) (inPhase, quadrature []float64) {
 	work.inPhase = growFloats(work.inPhase, length)
 	work.quadrature = growFloats(work.quadrature, length)

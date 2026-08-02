@@ -416,15 +416,23 @@ func runIdentifiability(
 	_, _ = fmt.Fprintf(stderr, "identifiability: %d component(s) at total %.6f, sweeping %d step sizes\n",
 		len(scope), report.Cost, len(hessianSteps))
 
-	if err := measureHessian(&report, counted, position, scope, report.Cost, stderr); err != nil {
-		return err
-	}
+	// The report is written whatever measureHessian concludes, including when it
+	// concludes that no Hessian can honestly be taken here. The step sweep *is*
+	// the evidence for that conclusion — it costs 2 evaluations per component per
+	// step, which on the sixteen-take series is the larger half of the run — and
+	// throwing it away to return an error message would leave the refusal
+	// unauditable. So: artifact first, then the non-zero exit.
+	measured := measureHessian(&report, counted, position, scope, report.Cost, stderr)
 
 	report.Timing = sizeFollowUp(counted, started, local)
 
 	writeIdentifiability(stdout, report)
 
-	return writeIdentifiabilityReport(options.outputPath, report)
+	if err := writeIdentifiabilityReport(options.outputPath, report); err != nil {
+		return err
+	}
+
+	return measured
 }
 
 // baselineDriftTolerance is how far the checkpoint's recorded baseline may sit
@@ -715,17 +723,7 @@ func writeIdentifiability(stdout io.Writer, report IdentifiabilityReport) {
 	_, _ = fmt.Fprintf(stdout, "   PLATEAU\n")
 
 	for _, sweep := range report.StepSweep {
-		_, _ = fmt.Fprintf(stdout, "%-8s", sweep.Label)
-
-		for _, sample := range sweep.Samples {
-			if sample.Curvature == nil {
-				_, _ = fmt.Fprintf(stdout, "%12s", "-")
-
-				continue
-			}
-
-			_, _ = fmt.Fprintf(stdout, "%12.4g", *sample.Curvature)
-		}
+		_, _ = fmt.Fprintf(stdout, "%-8s%s", sweep.Label, formatSamples(sweep.Samples))
 
 		if sweep.Available {
 			_, _ = fmt.Fprintf(stdout, "   %g-%g\n", sweep.PlateauFrom, sweep.PlateauTo)
@@ -736,6 +734,29 @@ func writeIdentifiability(stdout io.Writer, report IdentifiabilityReport) {
 		_, _ = fmt.Fprintf(stdout, "   none (unavailable)\n")
 	}
 
+	// A refused measurement stops here, and the sweep above is the whole point of
+	// the report it stops in: it is the evidence that no step size would have
+	// been honest, and it costs the larger half of the run to gather.
+	if report.Step == 0 {
+		_, _ = fmt.Fprintf(stdout,
+			"\nno Hessian: %s. Every component's second difference above still depends on h, "+
+				"so any curvature quoted here would be a property of the step rather than of "+
+				"the drum.\n", report.StepRationale)
+	} else {
+		writeSpectrum(stdout, report)
+	}
+
+	_, _ = fmt.Fprintf(stdout,
+		"\n%d evaluations in %.1f s (%.2f s each). Projected serial cost of the same "+
+			"measurement over the %d free parameters: %.0f s; over the whole %d-wide space: %.0f s.\n",
+		report.Timing.Evaluations, report.Timing.ElapsedSeconds, report.Timing.SecondsPerEvaluation,
+		report.Timing.ProjectedFreeBlockDim, report.Timing.ProjectedFreeBlock,
+		report.Timing.ProjectedFullSpaceDim, report.Timing.ProjectedFullSpace)
+}
+
+// writeSpectrum prints the half of the summary that only exists when a step
+// size was justified.
+func writeSpectrum(stdout io.Writer, report IdentifiabilityReport) {
 	_, _ = fmt.Fprintf(stdout, "\nh = %g: %s\n", report.Step, report.StepRationale)
 
 	for _, dropped := range report.Dropped {
@@ -785,13 +806,6 @@ func writeIdentifiability(stdout io.Writer, report IdentifiabilityReport) {
 			probe.Name, probe.Curvature, probe.DecadesBelowLargest, probe.RayleighQuotient,
 			probe.OverlapWithSmallest, probe.Verdict)
 	}
-
-	_, _ = fmt.Fprintf(stdout,
-		"\n%d evaluations in %.1f s (%.2f s each). Projected serial cost of the same "+
-			"measurement over the %d free parameters: %.0f s; over the whole %d-wide space: %.0f s.\n",
-		report.Timing.Evaluations, report.Timing.ElapsedSeconds, report.Timing.SecondsPerEvaluation,
-		report.Timing.ProjectedFreeBlockDim, report.Timing.ProjectedFreeBlock,
-		report.Timing.ProjectedFullSpaceDim, report.Timing.ProjectedFullSpace)
 }
 
 func writeIdentifiabilityReport(path string, report IdentifiabilityReport) error {

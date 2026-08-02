@@ -1199,5 +1199,59 @@ func TestModeArraysMirrorTheBank(t *testing.T) {
 		if got := model.modeStrikeAccelPerN[index]; got != mode.StrikeAccelerationPerN {
 			t.Fatalf("mode %d strike mirror %g, bank %g", index, got, mode.StrikeAccelerationPerN)
 		}
+
+		if got := model.modeRadiationWeight[index]; got != mode.RadiationWeight {
+			t.Fatalf("mode %d radiation mirror %g, bank %g", index, got, mode.RadiationWeight)
+		}
+
+		if got := model.modePickupShape[index]; got != mode.PickupShape {
+			t.Fatalf("mode %d pickup mirror %g, bank %g", index, got, mode.PickupShape)
+		}
+
+		if got := model.modeSweptAreaM2[index]; got != mode.SweptAreaM2 {
+			t.Fatalf("mode %d swept-area mirror %g, bank %g", index, got, mode.SweptAreaM2)
+		}
+
+		if got := model.modeModalMassKg[index]; got != mode.ModalMassKg {
+			t.Fatalf("mode %d modal-mass mirror %g, bank %g", index, got, mode.ModalMassKg)
+		}
+	}
+}
+
+// TestSingleHeadModeArraysMirrorTheBank is TestModeArraysMirrorTheBank for the
+// P2 reference, whose Tick reads the same five quantities out of mirrors rather
+// than out of the 144-byte bank. Same contract, same reason: s.modes is the
+// source of truth and these are copies of it.
+func TestSingleHeadModeArraysMirrorTheBank(t *testing.T) {
+	t.Parallel()
+
+	model, err := NewSingleHead(DefaultPhysicalDrum())
+	if err != nil {
+		t.Fatalf("NewSingleHead: %v", err)
+	}
+
+	for index := range model.modes {
+		mode := &model.modes[index]
+
+		if got := model.modePickupShape[index]; got != mode.PickupShape {
+			t.Fatalf("mode %d pickup mirror %g, bank %g", index, got, mode.PickupShape)
+		}
+
+		if got := model.modeRadiationWeight[index]; got != mode.RadiationWeight {
+			t.Fatalf("mode %d radiation mirror %g, bank %g", index, got, mode.RadiationWeight)
+		}
+
+		if got := model.modeModalMassKg[index]; got != mode.ModalMassKg {
+			t.Fatalf("mode %d modal-mass mirror %g, bank %g", index, got, mode.ModalMassKg)
+		}
+
+		if got := model.modeStrikeAccelPerN[index]; got != mode.StrikeAccelerationPerN {
+			t.Fatalf("mode %d strike mirror %g, bank %g", index, got, mode.StrikeAccelerationPerN)
+		}
+
+		want := mode.AngularFrequency * mode.AngularFrequency
+		if got := model.modeOmegaSquared[index]; got != want {
+			t.Fatalf("mode %d omega-squared mirror %g, bank %g", index, got, want)
+		}
 	}
 }

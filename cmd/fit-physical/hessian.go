@@ -32,14 +32,15 @@ func measureHessian(
 		labels[slot] = report.Scope[slot].Label
 	}
 
-	report.StepSweep = sweepSteps(counted, position, scope, labels, cost)
+	report.StepSweep = sweepSteps(counted, position, scope, labels, cost, stderr)
 
 	step, rationale := chooseStep(report.StepSweep)
 	report.Step, report.StepRationale = step, rationale
 
 	if step == 0 {
 		return fmt.Errorf("%w: the step sweep found no h on a plateau for any component, "+
-			"so there is no step size this Hessian could honestly be taken at",
+			"so there is no step size this Hessian could honestly be taken at; the sweep "+
+			"is in the report, which is the evidence for that",
 			errInvalidFitOption)
 	}
 
@@ -145,13 +146,16 @@ func directionalProbe(
 //
 // The diagonal alone, because it is the cheapest thing that shows the plateau
 // and because the off-diagonals inherit whichever h it justifies. 2 evaluations
-// per (component, h) pair.
+// per (component, h) pair — which on the sixteen-take series is a good half of
+// the whole run, so each component's row is printed to stderr as it finishes:
+// an interrupt an hour in should not cost the evidence gathered so far.
 func sweepSteps(
 	counted *counter,
 	position []float64,
 	scope []int,
 	labels []string,
 	cost float64,
+	stderr io.Writer,
 ) []StepSweep {
 	sweeps := make([]StepSweep, len(scope))
 
@@ -190,9 +194,29 @@ func sweepSteps(
 
 		sweep.PlateauFrom, sweep.PlateauTo, sweep.Available, sweep.Note = findPlateau(sweep.Samples)
 		sweeps[slot] = sweep
+
+		_, _ = fmt.Fprintf(stderr, "  sweep %-8s %s | %s\n",
+			sweep.Label, formatSamples(sweep.Samples), sweep.Note)
 	}
 
 	return sweeps
+}
+
+// formatSamples is one sweep row, for the progress line and the summary table.
+func formatSamples(samples []StepSample) string {
+	parts := make([]string, 0, len(samples))
+
+	for _, sample := range samples {
+		if sample.Curvature == nil {
+			parts = append(parts, fmt.Sprintf("%12s", "-"))
+
+			continue
+		}
+
+		parts = append(parts, fmt.Sprintf("%12.4g", *sample.Curvature))
+	}
+
+	return strings.Join(parts, "")
 }
 
 // findPlateau reports the widest run of consecutive steps whose curvatures agree

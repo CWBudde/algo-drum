@@ -74,6 +74,16 @@ type DoubleHead struct {
 	// from the bank, so walking []Mode for it touched 144 bytes to consume 8. This
 	// one is exactly the cache-friendliness argument the block above disclaims.
 	modeRadiationWeight []float64
+	// The three observe reads, mirrored for the same reason as
+	// modeRadiationWeight. observe runs every sample over the whole bank and
+	// consumed four fields — these three plus omega squared, which
+	// modeOmegaSquared already carries — spanning offsets +88 to +136 of a
+	// 144-byte Mode, so it dragged 17.3 KB of bank through L1 to use 3.8 KB of it.
+	// Read together at the same index, the four mirrors are four unit-stride
+	// streams instead.
+	modePickupShape []float64
+	modeSweptAreaM2 []float64
+	modeModalMassKg []float64
 	// stepDenominator carries D_i — midpointDenom plus this iteration's nonlinear
 	// tension term — from the two update loops to the cavity fill, which used to
 	// run inside them and now runs as its own pass. Written before it is read on
@@ -210,6 +220,9 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 		modeOmegaSquared:    make([]float64, modeCount),
 		modeStrikeAccelPerN: make([]float64, modeCount),
 		modeRadiationWeight: make([]float64, modeCount),
+		modePickupShape:     make([]float64, modeCount),
+		modeSweptAreaM2:     make([]float64, modeCount),
+		modeModalMassKg:     make([]float64, modeCount),
 		stepDenominator:     make([]float64, modeCount),
 		radiationHP: biquad.Section{Coefficients: design.Highpass(
 			min(config.Pickup.HighpassHz, config.SampleRateHz*0.45),
@@ -317,6 +330,9 @@ func (d *DoubleHead) syncModeArrays() {
 		d.modeOmegaSquared[index] = mode.AngularFrequency * mode.AngularFrequency
 		d.modeStrikeAccelPerN[index] = mode.StrikeAccelerationPerN
 		d.modeRadiationWeight[index] = mode.RadiationWeight
+		d.modePickupShape[index] = mode.PickupShape
+		d.modeSweptAreaM2[index] = mode.SweptAreaM2
+		d.modeModalMassKg[index] = mode.ModalMassKg
 	}
 }
 
@@ -641,21 +657,33 @@ func (d *DoubleHead) Render(dst []float64) {
 // the strike-force predicate out of the body, since it is loop-invariant per
 // half exactly as it is in solveMidpoint.
 //
+// Each half takes its own sub-slices cut to one common length, for the reason
+// observe and SingleHead.Tick document: eight independent slices indexed by one
+// counter cannot be proven in range from the counter's bound alone, so the
+// half-open index form emits a bounds check per slice per mode. Cut to a common
+// length and ranged over, every check leaves the body — `go build
+// -gcflags=-d=ssa/check_bce/debug=1` reports none inside either loop.
+//
 // The arithmetic is untouched, operand order included; see the note on radiated
 // below and TestZeroCouplingMatchesShipped.
 func (d *DoubleHead) tickUncoupled(forceN float64) DoubleHeadOutput {
 	sampleRate := d.config.SampleRateHz
 	inverseSampleRate := 1 / sampleRate
 
-	velocity := d.velocity
-	displacement := d.displacement
-	matrix11, matrix12 := d.matrix11, d.matrix12
-	matrix21, matrix22 := d.matrix21, d.matrix22
-	strikeAccel := d.modeStrikeAccelPerN
-	radiationWeight := d.modeRadiationWeight
-
-	batterModeCount := d.batterModeCount
+	// min is a no-op on any bank NewDoubleHead builds — batterModeCount is a
+	// prefix length of modes — and is written anyway so the slice expressions
+	// below are provably in range rather than provably in range by argument.
 	modeCount := len(d.modes)
+	batterModeCount := min(d.batterModeCount, modeCount)
+
+	batterVelocity := d.velocity[:batterModeCount]
+	batterDisplacement := d.displacement[:batterModeCount]
+	batterMatrix11 := d.matrix11[:batterModeCount]
+	batterMatrix12 := d.matrix12[:batterModeCount]
+	batterMatrix21 := d.matrix21[:batterModeCount]
+	batterMatrix22 := d.matrix22[:batterModeCount]
+	batterStrikeAccel := d.modeStrikeAccelPerN[:batterModeCount]
+	batterRadiationWeight := d.modeRadiationWeight[:batterModeCount]
 
 	batterRadiated := 0.0
 	resonantRadiated := 0.0
@@ -667,36 +695,43 @@ func (d *DoubleHead) tickUncoupled(forceN float64) DoubleHeadOutput {
 	//
 	// previousVelocity is captured before the contact impulse, so the
 	// acceleration includes it. Taking it afterwards would leave only
-	// (matrix22 - 1)*F*a*dt of the strike, which is very nearly nothing.
-	for index := range batterModeCount {
-		previousVelocity := velocity[index]
+	// (matrix22 - 1)*F*a*dt of the strike, which is very nearly nothing. Ranging
+	// over batterVelocity reads it at the head of each iteration, before the
+	// store below, so it is the same value the indexed form captured.
+	for index, previousVelocity := range batterVelocity {
 		oldVelocity := previousVelocity +
-			forceN*strikeAccel[index]*inverseSampleRate
+			forceN*batterStrikeAccel[index]*inverseSampleRate
 
-		oldDisplacement := displacement[index]
-		displacement[index] = matrix11[index]*oldDisplacement +
-			matrix12[index]*oldVelocity
-		newVelocity := matrix21[index]*oldDisplacement +
-			matrix22[index]*oldVelocity
-		velocity[index] = newVelocity
+		oldDisplacement := batterDisplacement[index]
+		batterDisplacement[index] = batterMatrix11[index]*oldDisplacement +
+			batterMatrix12[index]*oldVelocity
+		newVelocity := batterMatrix21[index]*oldDisplacement +
+			batterMatrix22[index]*oldVelocity
+		batterVelocity[index] = newVelocity
 
 		// Written identically in SingleHead.Tick. The zero-coupling equivalence
 		// test compares the two to the last bit, so the operand order matters.
-		batterRadiated += radiationWeight[index] *
+		batterRadiated += batterRadiationWeight[index] *
 			(newVelocity - previousVelocity) * sampleRate
 	}
 
-	for index := batterModeCount; index < modeCount; index++ {
-		oldVelocity := velocity[index]
+	resonantVelocity := d.velocity[batterModeCount:modeCount]
+	resonantDisplacement := d.displacement[batterModeCount:modeCount]
+	resonantMatrix11 := d.matrix11[batterModeCount:modeCount]
+	resonantMatrix12 := d.matrix12[batterModeCount:modeCount]
+	resonantMatrix21 := d.matrix21[batterModeCount:modeCount]
+	resonantMatrix22 := d.matrix22[batterModeCount:modeCount]
+	resonantRadiationWeight := d.modeRadiationWeight[batterModeCount:modeCount]
 
-		oldDisplacement := displacement[index]
-		displacement[index] = matrix11[index]*oldDisplacement +
-			matrix12[index]*oldVelocity
-		newVelocity := matrix21[index]*oldDisplacement +
-			matrix22[index]*oldVelocity
-		velocity[index] = newVelocity
+	for index, oldVelocity := range resonantVelocity {
+		oldDisplacement := resonantDisplacement[index]
+		resonantDisplacement[index] = resonantMatrix11[index]*oldDisplacement +
+			resonantMatrix12[index]*oldVelocity
+		newVelocity := resonantMatrix21[index]*oldDisplacement +
+			resonantMatrix22[index]*oldVelocity
+		resonantVelocity[index] = newVelocity
 
-		resonantRadiated += radiationWeight[index] *
+		resonantRadiated += resonantRadiationWeight[index] *
 			(newVelocity - oldVelocity) * sampleRate
 	}
 
@@ -731,37 +766,42 @@ func (d *DoubleHead) tickCoupled(forceN float64) DoubleHeadOutput {
 	// Same hoisting as tickUncoupled, and for the same aliasing reason: the
 	// stores into displacement and velocity force a reload of every header —
 	// and of config.SampleRateHz, which is 1/timeStep already in scope — on
-	// each mode otherwise.
+	// each mode otherwise. Sliced to a common length per half for the
+	// bounds-check reason tickUncoupled documents.
 	sampleRate := d.config.SampleRateHz
-	velocity := d.velocity
-	displacement := d.displacement
-	midpointVelocities := d.midpointVelocity
-	radiationWeight := d.modeRadiationWeight
-	batterModeCount := d.batterModeCount
 	modeCount := len(d.modes)
+	batterModeCount := min(d.batterModeCount, modeCount)
+
+	batterVelocity := d.velocity[:batterModeCount]
+	batterDisplacement := d.displacement[:batterModeCount]
+	batterMidpointVelocity := d.midpointVelocity[:batterModeCount]
+	batterRadiationWeight := d.modeRadiationWeight[:batterModeCount]
 
 	// For the midpoint rule v_new - v_old = 2*(v_new - v_mid), so this is the
 	// same discrete acceleration the uncoupled path forms directly. The contact
 	// force is included even though it never appears as a velocity increment
 	// here: it enters solveMidpoint as an acceleration, v_mid gains F*a*dt/2
 	// from it, and the reflection below doubles that.
-	for index := range batterModeCount {
-		midpointVelocity := midpointVelocities[index]
-		displacement[index] += timeStep * midpointVelocity
-		newVelocity := 2*midpointVelocity - velocity[index]
-		velocity[index] = newVelocity
+	for index, midpointVelocity := range batterMidpointVelocity {
+		batterDisplacement[index] += timeStep * midpointVelocity
+		newVelocity := 2*midpointVelocity - batterVelocity[index]
+		batterVelocity[index] = newVelocity
 
-		batterRadiated += radiationWeight[index] *
+		batterRadiated += batterRadiationWeight[index] *
 			2 * (newVelocity - midpointVelocity) * sampleRate
 	}
 
-	for index := batterModeCount; index < modeCount; index++ {
-		midpointVelocity := midpointVelocities[index]
-		displacement[index] += timeStep * midpointVelocity
-		newVelocity := 2*midpointVelocity - velocity[index]
-		velocity[index] = newVelocity
+	resonantVelocity := d.velocity[batterModeCount:modeCount]
+	resonantDisplacement := d.displacement[batterModeCount:modeCount]
+	resonantMidpointVelocity := d.midpointVelocity[batterModeCount:modeCount]
+	resonantRadiationWeight := d.modeRadiationWeight[batterModeCount:modeCount]
 
-		resonantRadiated += radiationWeight[index] *
+	for index, midpointVelocity := range resonantMidpointVelocity {
+		resonantDisplacement[index] += timeStep * midpointVelocity
+		newVelocity := 2*midpointVelocity - resonantVelocity[index]
+		resonantVelocity[index] = newVelocity
+
+		resonantRadiated += resonantRadiationWeight[index] *
 			2 * (newVelocity - midpointVelocity) * sampleRate
 	}
 
@@ -769,14 +809,22 @@ func (d *DoubleHead) tickCoupled(forceN float64) DoubleHeadOutput {
 	d.resonantRadiatedM3PerS2 = resonantRadiated
 
 	if d.config.Cavity.Enabled {
-		for index := range d.cavityModes {
-			midpoint := d.cavityMidpointPa[index]
-			d.cavityPressurePa[index] = 2*midpoint - d.cavityPressurePa[index]
+		cavityCount := len(d.cavityModes)
+		cavityMidpointPa := d.cavityMidpointPa[:cavityCount]
+		cavityPressurePa := d.cavityPressurePa[:cavityCount]
+		cavityFlowPa := d.cavityFlowPa[:cavityCount]
+
+		// Index-only: CavityMode is 64 bytes and the value form would copy one
+		// per iteration to read a single field.
+		cavityModes := d.cavityModes
+		for index := range cavityModes {
+			midpoint := cavityMidpointPa[index]
+			cavityPressurePa[index] = 2*midpoint - cavityPressurePa[index]
 			// Hdot = -omega*P integrated by the same midpoint rule, so
 			// H_new = H_old - omega*dt*P_mid. The uniform mode has omega = 0 and
 			// its H therefore never leaves zero, which is what collapses this
 			// pair back onto the lumped compliance.
-			d.cavityFlowPa[index] -= d.cavityModes[index].AngularFrequency *
+			cavityFlowPa[index] -= cavityModes[index].AngularFrequency *
 				timeStep * midpoint
 		}
 	}
@@ -1151,57 +1199,69 @@ func (d *DoubleHead) solveMidpoint(
 	// reason: the stores into couplingEnd, couplingBar and midpointVelocities may
 	// alias d, so read as d.field these six are reloaded from the struct on every
 	// mode and again on every coupling slot.
-	couplingFirst := d.couplingFirst
-	couplingCount := d.couplingCount
+	//
+	// Each half's per-mode arrays are additionally cut to one common length, for
+	// the bounds-check reason observe documents. The coupling table is not: its
+	// slots are addressed by an opaque offset, so those checks stay.
 	couplingGain := d.couplingGain
 	couplingCavity := d.couplingCavity
 	cavityMidpointPa := d.cavityMidpointPa
-	strainWeight := d.strainWeight
-	couplingEnd := d.couplingEnd
-	couplingBar := d.couplingBar
+
+	modeCount := len(modes)
+	batterModeCount = min(batterModeCount, modeCount)
+
+	batterCouplingFirst := d.couplingFirst[:batterModeCount]
+	batterCouplingCount := d.couplingCount[:batterModeCount]
+	batterStrainWeight := d.strainWeight[:batterModeCount]
+	batterDisplacement := displacement[:batterModeCount]
+	batterMidpointVelocity := midpointVelocities[:batterModeCount]
+	couplingEnd := d.couplingEnd[:batterModeCount]
+	couplingBar := d.couplingBar[:batterModeCount]
 
 	halfTimeStep := 0.5 * timeStep
 
 	// Split for the same reason the update loops are: which head a mode belongs to
 	// decides which strain it feeds and whether it has a coupling endpoint to
 	// record, and neither question changes within a run of indices.
-	for index := range batterModeCount {
-		midpointVelocity := midpointVelocities[index]
-
-		first := int(couplingFirst[index])
-		for slot, last := first, first+int(couplingCount[index]); slot < last; slot++ {
+	for index, midpointVelocity := range batterMidpointVelocity {
+		first := int(batterCouplingFirst[index])
+		for slot, last := first, first+int(batterCouplingCount[index]); slot < last; slot++ {
 			midpointVelocity -= couplingGain[slot] *
 				cavityMidpointPa[int(couplingCavity[slot])]
 		}
 
-		midpointVelocities[index] = midpointVelocity
-		newDisplacement := displacement[index] +
+		batterMidpointVelocity[index] = midpointVelocity
+		newDisplacement := batterDisplacement[index] +
 			timeStep*midpointVelocity
 
-		batterStrain += strainWeight[index] *
+		batterStrain += batterStrainWeight[index] *
 			newDisplacement * newDisplacement
 
 		if couplingActive {
 			couplingEnd[index] = newDisplacement
-			couplingBar[index] = displacement[index] +
+			couplingBar[index] = batterDisplacement[index] +
 				halfTimeStep*midpointVelocity
 		}
 	}
 
-	for index := batterModeCount; index < len(modes); index++ {
-		midpointVelocity := midpointVelocities[index]
+	resonantCouplingFirst := d.couplingFirst[batterModeCount:modeCount]
+	resonantCouplingCount := d.couplingCount[batterModeCount:modeCount]
+	resonantStrainWeight := d.strainWeight[batterModeCount:modeCount]
+	resonantDisplacement := displacement[batterModeCount:modeCount]
+	resonantMidpointVelocity := midpointVelocities[batterModeCount:modeCount]
 
-		first := int(couplingFirst[index])
-		for slot, last := first, first+int(couplingCount[index]); slot < last; slot++ {
+	for index, midpointVelocity := range resonantMidpointVelocity {
+		first := int(resonantCouplingFirst[index])
+		for slot, last := first, first+int(resonantCouplingCount[index]); slot < last; slot++ {
 			midpointVelocity -= couplingGain[slot] *
 				cavityMidpointPa[int(couplingCavity[slot])]
 		}
 
-		midpointVelocities[index] = midpointVelocity
-		newDisplacement := displacement[index] +
+		resonantMidpointVelocity[index] = midpointVelocity
+		newDisplacement := resonantDisplacement[index] +
 			timeStep*midpointVelocity
 
-		resonantStrain += strainWeight[index] *
+		resonantStrain += resonantStrainWeight[index] *
 			newDisplacement * newDisplacement
 	}
 
@@ -1308,37 +1368,79 @@ func (d *DoubleHead) observe(channelTrialCurrent bool) DoubleHeadOutput {
 
 	// Hoisted for the reason perf annotate exposed in the solve: read as d.field
 	// inside the mode loop, each slice header is reloaded from the struct per mode.
-	modes := d.modes
-	displacements := d.displacement
-	velocities := d.velocity
-	strainWeight := d.strainWeight
-	batterModeCount := d.batterModeCount
+	//
+	// The four per-mode quantities come from the struct-of-arrays mirrors rather
+	// than from d.modes: this loop used to walk the 144-byte bank for 32 useful
+	// bytes per mode. modeOmegaSquared is the same product the energy term formed
+	// inline — omega*omega rounded once, then multiplied by the displacement twice
+	// exactly as before — so the substitution is bit-identical, not merely equal to
+	// within rounding.
+	//
+	// Split at batterModeCount rather than testing it per mode. The branch this
+	// replaces already partitioned the bank at exactly this index, and the two
+	// shared accumulators below keep running across both halves, so every
+	// accumulation order is the one that shipped.
+	//
+	// Each half takes its own sub-slices, and that is not decoration. Seven
+	// independent slices indexed by one counter cannot be proven in range from the
+	// counter's bound alone, so the naive form emits seven bounds checks per mode
+	// and measured *slower* than the array-of-structs loop it replaced — the
+	// single-pointer form got five fields for one check. Sliced to a common length
+	// and ranged over, the check moves out of the loop entirely; `go build
+	// -gcflags=-d=ssa/check_bce/debug=1` reports none inside either body.
+	// min is a no-op on any bank NewDoubleHead builds — batterModeCount is a
+	// prefix length of modes — and is written anyway so the two slice expressions
+	// below are provably in range rather than provably in range by argument.
+	modeCount := len(d.modes)
+	batterModeCount := min(d.batterModeCount, modeCount)
 
-	for index := range modes {
-		mode := &modes[index]
+	batterDisplacement := d.displacement[:batterModeCount]
+	batterVelocity := d.velocity[:batterModeCount]
+	batterStrainWeight := d.strainWeight[:batterModeCount]
+	batterPickup := d.modePickupShape[:batterModeCount]
+	batterSweptArea := d.modeSweptAreaM2[:batterModeCount]
+	batterModalMass := d.modeModalMassKg[:batterModeCount]
+	batterOmegaSquared := d.modeOmegaSquared[:batterModeCount]
 
-		displacement := displacements[index]
-		velocity := velocities[index]
-		pickupDisplacement := mode.PickupShape * displacement
-		pickupVelocity := mode.PickupShape * velocity
+	for index, displacement := range batterDisplacement {
+		velocity := batterVelocity[index]
+		shape := batterPickup[index]
 
-		if index < batterModeCount {
-			output.BatterDisplacementM += pickupDisplacement
-			output.BatterVelocityMPerS += pickupVelocity
-			batterStrain += strainWeight[index] *
-				displacement * displacement
-		} else {
-			output.ResonantDisplacementM += pickupDisplacement
-			output.ResonantVelocityMPerS += pickupVelocity
-			resonantStrain += strainWeight[index] *
-				displacement * displacement
-		}
+		output.BatterDisplacementM += shape * displacement
+		output.BatterVelocityMPerS += shape * velocity
+		batterStrain += batterStrainWeight[index] *
+			displacement * displacement
 
 		output.SweptVolumeM3 += coupling *
-			mode.SweptAreaM2 * displacement
-		output.LinearHeadMechanicalEnergyJ += 0.5 * mode.ModalMassKg *
+			batterSweptArea[index] * displacement
+		output.LinearHeadMechanicalEnergyJ += 0.5 * batterModalMass[index] *
 			(velocity*velocity +
-				mode.AngularFrequency*mode.AngularFrequency*
+				batterOmegaSquared[index]*
+					displacement*displacement)
+	}
+
+	resonantDisplacement := d.displacement[batterModeCount:modeCount]
+	resonantVelocity := d.velocity[batterModeCount:modeCount]
+	resonantStrainWeight := d.strainWeight[batterModeCount:modeCount]
+	resonantPickup := d.modePickupShape[batterModeCount:modeCount]
+	resonantSweptArea := d.modeSweptAreaM2[batterModeCount:modeCount]
+	resonantModalMass := d.modeModalMassKg[batterModeCount:modeCount]
+	resonantOmegaSquared := d.modeOmegaSquared[batterModeCount:modeCount]
+
+	for index, displacement := range resonantDisplacement {
+		velocity := resonantVelocity[index]
+		shape := resonantPickup[index]
+
+		output.ResonantDisplacementM += shape * displacement
+		output.ResonantVelocityMPerS += shape * velocity
+		resonantStrain += resonantStrainWeight[index] *
+			displacement * displacement
+
+		output.SweptVolumeM3 += coupling *
+			resonantSweptArea[index] * displacement
+		output.LinearHeadMechanicalEnergyJ += 0.5 * resonantModalMass[index] *
+			(velocity*velocity +
+				resonantOmegaSquared[index]*
 					displacement*displacement)
 	}
 

@@ -196,6 +196,48 @@ reference, and that is a requirement rather than a courtesy:** the calibration f
 and the rendered-WAV digest both compare exactly, so no FMA and no reassociation
 (`midpoint_exact_test.go` pins it).
 
+### The portable path is what ships
+
+`midpoint_amd64.{go,s}` is the only architecture-specific code in the repository, and the
+rule it establishes applies to whatever joins it.
+
+**Every `!purego`/arch-gated file needs a portable twin, and the twin is the one that
+ships.** The browser gets js/wasm, which is not amd64, so it takes `midpoint_noasm.go`
+every time; the assembly runs only in the offline tools. The asymmetry that follows is
+the trap: a developer machine and the CI runner are both amd64, so `go test ./...`
+compiles the assembly tier and **never compiles the portable file at all**. Left alone,
+a new `_amd64.s` could land beside a broken twin and every gate would stay green.
+
+**So CI gates both.** `just test-purego` and the `purego` job in `ci-go.yml` run
+`go build -tags purego ./...` and `go test -tags purego ./internal/physical/...`. `./...`
+for the build because the tag is a repo-wide convention and a future gated file anywhere
+must compile under it; only `internal/physical/...` for the test because that is the one
+tree where the tag selects different code, and a wider run would recompile an identical
+program. Both digests, `TestMidpointKernelMatchesReferenceExactly` and
+`TestAxisymmetricResonantHeadIsBitExact` currently pass unchanged under the tag, so the
+portable kernel and the AVX2 kernel agree bit-for-bit on the amd64 host.
+
+**`purego` on amd64 is a stand-in, not the shipped target**, and the distance is
+measured rather than assumed: on a clean checkout of `a28b36a`, under
+`GOOS=js GOARCH=wasm`, the render digests `TestCouplingDisabledMatchesTheShippedEngine`
+and `TestCoupledRenderIsBitExact` **do not reproduce** — the coupled render hashes
+`9a5800d0…` against the committed `3c83580f…`, the uncoupled one `e982d32c…` against
+`9090a197…`. The same two tests pass on amd64 under `-tags purego`, so this is the
+*target*, not the fallback.
+
+**And it is not this repository's code — it is `math.Exp`.** Go ships an FMA-accelerated
+`exp_amd64.s`, selected at run time on any CPU with AVX+FMA, and `-tags purego` does not
+reach into the standard library to turn it off. Probed directly, `math.Exp(1.7)` is
+`4015e552770df8a7` on amd64 and `…a6` on js/wasm — one ULP — and `math.Pow(55.5, 1.37)`
+differs by two, `math.Pow` being built on `Exp`/`Log`. The loss laws call `Exp` per mode
+per sample, so one ULP is all it takes. **No repository-level build tag can close this**,
+which is why the `purego` job is the gate and js/wasm is not: a js/wasm test job would
+need its own digests and its own fixture, a second set of committed facts to keep in step
+with the first. `scripts/bench-wasm.sh` (`just bench-physical-wasm`) is how you run the
+js/wasm test binary under Node when you want to look. **The consequence is worth stating
+plainly: the committed digests and `testdata/physical-reference-v2.json` are amd64 facts,
+and the audio the browser makes is not bit-identical to them.**
+
 ### The objective (`internal/physical/match/`)
 
 What a fit is scored with, and the instrument that judges that instrument.

@@ -796,65 +796,126 @@ func zeroPhaseLowpassPair(first, second, resonances []float64, cutoffHz, sampleR
 		coefficients = append(coefficients, design.Lowpass(cutoffHz, resonance, sampleRateHz))
 	}
 
-	// One section over the whole signal before the next, rather than one sample
-	// through the whole cascade before the next: a section is a pure function of
-	// its input stream, so the two orders produce the same numbers sample for
-	// sample, but this one lets the coefficients and the two-word state live in
-	// registers for the length of a pass instead of being reloaded per sample.
-	//
 	// The backward pass walks from the end rather than reversing the signal,
 	// filtering, and reversing it back — four sweeps of the pair that bought
 	// nothing.
 	//
 	// The recurrence is spelled out rather than calling biquad.Section because
 	// neither of those two things is expressible through it: it processes one
-	// signal, forwards. The form below is its ProcessSample, unchanged.
-	// One section over the whole signal before the next, rather than one sample
-	// through the whole cascade before the next: a section is a pure function of
-	// its input stream, so the two orders produce the same numbers sample for
-	// sample, but this one lets the coefficients and the two-word state live in
-	// registers for the length of a pass instead of being reloaded per sample.
-	//
-	// The backward pass walks from the end rather than reversing the signal,
-	// filtering, and reversing it back — four sweeps of the pair that bought
-	// nothing.
-	//
-	// The recurrence is spelled out rather than calling biquad.Section because
-	// neither of those two things is expressible through it: it processes one
-	// signal, forwards. The form below is its ProcessSample, unchanged.
+	// signal, forwards. The forms below are its ProcessSample, unchanged.
 	//
 	// The strided `index != to` form costs four bounds checks a sample, because
 	// nothing can be proved about an index moving by a variable stride, and
-	// splitting it into separate forward and backward loops removes all four —
-	// confirmed in the SSA. It was tried, and it is not written that way,
-	// because it does not measure faster: 25 interleaved pairs of runs put the
-	// split form at +3.3 % on the minimum and -7.8 % on the median, which is
-	// noise on either side of nothing. A biquad is a serial recurrence and every
-	// sample stalls on the multiply the previous one has not finished; the
-	// bounds checks were being issued into that stall and cost nothing to
-	// remove. Two copies of the body for no measured gain is a worse file.
-	run := func(from, to, stride int) {
-		for _, section := range coefficients {
-			var firstD0, firstD1, secondD0, secondD1 float64
+	// splitting each of the loops below into separate forward and backward
+	// bodies removes all four — confirmed in the SSA. It was tried, and it is
+	// not written that way, because it does not measure faster: 25 interleaved
+	// pairs of runs put the split form at +3.3 % on the minimum and -7.8 % on
+	// the median, which is noise on either side of nothing. A biquad is a serial
+	// recurrence and every sample stalls on the multiply the previous one has
+	// not finished; the bounds checks were being issued into that stall and cost
+	// nothing to remove. Another copy of each body for no measured gain is a
+	// worse file — which is the same test the two bodies that *are* here had to
+	// pass, and did.
+	if len(coefficients) == 2 {
+		runTwoSections(first, second, coefficients[0], coefficients[1], 0, len(first), 1)
+		runTwoSections(first, second, coefficients[0], coefficients[1], len(first)-1, -1, -1)
 
-			for index := from; index != to; index += stride {
-				sample := first[index]
-				filtered := section.B0*sample + firstD0
-				firstD0 = section.B1*sample - section.A1*filtered + firstD1
-				firstD1 = section.B2*sample - section.A2*filtered
-				first[index] = filtered
-
-				sample = second[index]
-				filtered = section.B0*sample + secondD0
-				secondD0 = section.B1*sample - section.A1*filtered + secondD1
-				secondD1 = section.B2*sample - section.A2*filtered
-				second[index] = filtered
-			}
-		}
+		return
 	}
 
-	run(0, len(first), 1)
-	run(len(first)-1, -1, -1)
+	runSectionAtATime(first, second, coefficients, 0, len(first), 1)
+	runSectionAtATime(first, second, coefficients, len(first)-1, -1, -1)
+}
+
+// runSectionAtATime filters the pair through the cascade one section over the
+// whole signal at a time. A section is a pure function of its input stream, so
+// the section order and the sample order commute exactly; this order lets one
+// section's coefficients and its two state words stay in registers for a whole
+// pass, and it is what every cascade length other than two takes.
+func runSectionAtATime(first, second []float64, coefficients []biquad.Coefficients, from, until, stride int) {
+	for _, section := range coefficients {
+		var firstD0, firstD1, secondD0, secondD1 float64
+
+		for index := from; index != until; index += stride {
+			sample := first[index]
+			filtered := section.B0*sample + firstD0
+			firstD0 = section.B1*sample - section.A1*filtered + firstD1
+			firstD1 = section.B2*sample - section.A2*filtered
+			first[index] = filtered
+
+			sample = second[index]
+			filtered = section.B0*sample + secondD0
+			secondD0 = section.B1*sample - section.A1*filtered + secondD1
+			secondD1 = section.B2*sample - section.A2*filtered
+			second[index] = filtered
+		}
+	}
+}
+
+// runTwoSections is runSectionAtATime with the two-section cascade fused: one
+// sample through both sections before the next, rather than each section over
+// the whole signal in turn. Two sections is the fourth-order Butterworth the
+// decay envelopes are measured through, which is where nearly all of this
+// function's time goes.
+//
+// It is bit-exact against the section-at-a-time form, and the reason is worth
+// stating because TestZeroPhaseLowpassPairMatchesPerSignalReference demands
+// equality on every sample: the upper section at sample i consumes the lower
+// section's output at sample i, and its own state holds its outputs at i-1 and
+// i-2. Fusing changes which of those values sits in a register rather than in
+// memory. It changes neither the value nor the order, and each section's own
+// recurrence is untouched.
+//
+// The whole function used to be section-at-a-time, deliberately, for exactly
+// the register residency described above. That reasoning was right about the
+// registers and incomplete about the memory: with two sections it is four full
+// sweeps of a 1.4 MB buffer pair per partial against a 1.25 MB L2, so the lower
+// section's entire output leaves L2 before the upper section reads it. Fused
+// the live set is 8 state words plus 10 coefficients against 16 xmm registers,
+// so the coefficients do spill — to L1, in the shadow of a recurrence that is
+// stalled on its own previous multiply anyway.
+//
+// Measured interleaved against the old form, three runs each, pinned to one
+// P-core: BenchmarkZeroPhaseLowpassPair −7.3 % instructions, −6.4 % cycles,
+// −29 % L2 misses; BenchmarkExtract −5.0 % instructions, −5.7 % cycles, −17 %
+// L2 misses. That is a fifth of what a doubled sweep count predicts, and the
+// reason is that the evicted half never reached DRAM: LLC loads barely move, so
+// the pair was living in L3, not in memory.
+//
+// The generic version of this fusion — an inner loop over the section slice
+// with the state in an indexed array — was tried first and is *slower* than the
+// section-at-a-time form it replaced, by +14 % instructions and +6 % cycles.
+// Fusing only pays once the section loop is gone, which is why this is an
+// unrolled special case rather than the general shape of the function.
+func runTwoSections(first, second []float64, lower, upper biquad.Coefficients, from, until, stride int) {
+	var (
+		firstLowerD0, firstLowerD1, secondLowerD0, secondLowerD1 float64
+		firstUpperD0, firstUpperD1, secondUpperD0, secondUpperD1 float64
+	)
+
+	for index := from; index != until; index += stride {
+		sample := first[index]
+		filtered := lower.B0*sample + firstLowerD0
+		firstLowerD0 = lower.B1*sample - lower.A1*filtered + firstLowerD1
+		firstLowerD1 = lower.B2*sample - lower.A2*filtered
+
+		sample = filtered
+		filtered = upper.B0*sample + firstUpperD0
+		firstUpperD0 = upper.B1*sample - upper.A1*filtered + firstUpperD1
+		firstUpperD1 = upper.B2*sample - upper.A2*filtered
+		first[index] = filtered
+
+		sample = second[index]
+		filtered = lower.B0*sample + secondLowerD0
+		secondLowerD0 = lower.B1*sample - lower.A1*filtered + secondLowerD1
+		secondLowerD1 = lower.B2*sample - lower.A2*filtered
+
+		sample = filtered
+		filtered = upper.B0*sample + secondUpperD0
+		secondUpperD0 = upper.B1*sample - upper.A1*filtered + secondUpperD1
+		secondUpperD1 = upper.B2*sample - upper.A2*filtered
+		second[index] = filtered
+	}
 }
 
 // neighbourSpacing is the distance to the closest other detected partial, which

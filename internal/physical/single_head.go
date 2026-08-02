@@ -35,9 +35,26 @@ type SingleHead struct {
 	matrix21     []float64
 	matrix22     []float64
 	strikeWeight []float64
-	release      releaseBound
-	radiationHP  biquad.Section
-	radiationLP  biquad.Section
+
+	// Struct-of-arrays mirrors of the five Mode fields Tick reads, for the reason
+	// DoubleHead.modeRadiationWeight documents: walking the 144-byte bank to
+	// consume 40 bytes per mode drags 13.8 KB through L1 to use 3.8 KB of it.
+	// s.modes stays the source of truth — strikeWeight above is the same pattern,
+	// already derived rather than read — and these are rebuilt only in
+	// NewSingleHead, which is the only place the bank is written.
+	//
+	// modeOmegaSquared is omega*omega rounded once at construction. The energy
+	// term multiplies it by the displacement twice, exactly as the inline form
+	// did, so this is bit-identical rather than merely equal to within rounding.
+	modePickupShape     []float64
+	modeRadiationWeight []float64
+	modeModalMassKg     []float64
+	modeStrikeAccelPerN []float64
+	modeOmegaSquared    []float64
+
+	release     releaseBound
+	radiationHP biquad.Section
+	radiationLP biquad.Section
 
 	contact contact
 	energy  float64
@@ -97,8 +114,21 @@ func NewSingleHead(config PhysicalDrum) (*SingleHead, error) {
 	}
 
 	model.strikeWeight = make([]float64, modeCount)
+	model.modePickupShape = make([]float64, modeCount)
+	model.modeRadiationWeight = make([]float64, modeCount)
+	model.modeModalMassKg = make([]float64, modeCount)
+	model.modeStrikeAccelPerN = make([]float64, modeCount)
+	model.modeOmegaSquared = make([]float64, modeCount)
+
 	for index, mode := range modes {
 		model.strikeWeight[index] = mode.StrikeAccelerationPerN * mode.ModalMassKg
+
+		model.modePickupShape[index] = mode.PickupShape
+		model.modeRadiationWeight[index] = mode.RadiationWeight
+		model.modeModalMassKg[index] = mode.ModalMassKg
+		model.modeStrikeAccelPerN[index] = mode.StrikeAccelerationPerN
+		// The same product Tick used to form per mode per sample.
+		model.modeOmegaSquared[index] = mode.AngularFrequency * mode.AngularFrequency
 	}
 
 	model.contact = newContact(config)
@@ -184,25 +214,40 @@ func (s *SingleHead) Tick() Output {
 	output := Output{ContactForceN: forceN}
 
 	// Hoisted for the reason DoubleHead.solveMidpoint documents: the stores into
-	// displacement and velocity may alias s, so read as s.field the six headers
-	// and config.SampleRateHz are reloaded from the struct on every mode. Mode is
-	// taken by pointer rather than by value because it is 144 bytes and this loop
-	// reads five of its fields.
-	displacement := s.displacement
-	velocity := s.velocity
-	matrix11, matrix12 := s.matrix11, s.matrix12
-	matrix21, matrix22 := s.matrix21, s.matrix22
+	// displacement and velocity may alias s, so read as s.field the headers and
+	// config.SampleRateHz are reloaded from the struct on every mode.
+	//
+	// The five per-mode quantities come from the struct-of-arrays mirrors rather
+	// than from s.modes: this loop used to walk the 144-byte bank for 40 useful
+	// bytes per mode, and the fields it wanted span offsets +48 to +112, so no
+	// mode fitted in one cache line.
+	//
+	// All eleven are sliced to one common length, and that is not decoration:
+	// eleven independent slices indexed by one counter cannot be proven in range
+	// from the counter's bound alone, so the naive form emits a bounds check per
+	// slice per mode and measures *slower* than the array-of-structs loop it
+	// replaces — one pointer into the bank got five fields for one check. Sliced to
+	// a common length and ranged over, every check moves out of the loop;
+	// `go build -gcflags=-d=ssa/check_bce/debug=1` reports none inside the body.
+	modeCount := len(s.modes)
+	displacement := s.displacement[:modeCount]
+	velocity := s.velocity[:modeCount]
+	matrix11, matrix12 := s.matrix11[:modeCount], s.matrix12[:modeCount]
+	matrix21, matrix22 := s.matrix21[:modeCount], s.matrix22[:modeCount]
+	pickupShape := s.modePickupShape[:modeCount]
+	radiationWeight := s.modeRadiationWeight[:modeCount]
+	modalMass := s.modeModalMassKg[:modeCount]
+	strikeAccel := s.modeStrikeAccelPerN[:modeCount]
+	omegaSquared := s.modeOmegaSquared[:modeCount]
 
-	for index := range s.modes {
-		mode := &s.modes[index]
-
+	for index := range displacement {
 		oldDisplacement := displacement[index]
 		// Captured before the contact impulse, so the acceleration below
 		// includes it. Taking it afterwards would leave only
 		// (matrix22 - 1)*F*a*dt of the strike, which is very nearly nothing.
 		previousVelocity := velocity[index]
 		oldVelocity := previousVelocity +
-			forceN*mode.StrikeAccelerationPerN*inverseSampleRate
+			forceN*strikeAccel[index]*inverseSampleRate
 		newDisplacement := matrix11[index]*oldDisplacement +
 			matrix12[index]*oldVelocity
 		newVelocity := matrix21[index]*oldDisplacement +
@@ -211,13 +256,14 @@ func (s *SingleHead) Tick() Output {
 		displacement[index] = newDisplacement
 		velocity[index] = newVelocity
 
-		output.DisplacementM += mode.PickupShape * newDisplacement
-		output.VelocityMPerS += mode.PickupShape * newVelocity
-		output.RawRadiated += mode.RadiationWeight *
+		shape := pickupShape[index]
+		output.DisplacementM += shape * newDisplacement
+		output.VelocityMPerS += shape * newVelocity
+		output.RawRadiated += radiationWeight[index] *
 			(newVelocity - previousVelocity) * sampleRate
-		output.MechanicalEnergyJ += 0.5 * mode.ModalMassKg *
+		output.MechanicalEnergyJ += 0.5 * modalMass[index] *
 			(newVelocity*newVelocity +
-				mode.AngularFrequency*mode.AngularFrequency*newDisplacement*newDisplacement)
+				omegaSquared[index]*newDisplacement*newDisplacement)
 	}
 
 	radiated := s.radiationHP.ProcessSample(output.RawRadiated)

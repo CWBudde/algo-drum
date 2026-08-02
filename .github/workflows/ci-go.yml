@@ -65,3 +65,41 @@ jobs:
           # break CI with no repo change. Must stay a v2.x — .golangci.yml is
           # schema `version: "2"` and golangci-lint-action@v9 requires v2.
           version: v2.12.2
+
+  purego:
+    name: Go (purego)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25"
+          cache: true
+
+      # The Go job above compiles the amd64 assembly tier and never the
+      # portable one: `internal/physical/midpoint_noasm.go` is
+      # `!amd64 || purego`, both false on the runner. The shipped voice is
+      # js/wasm and always takes that file, so without this job the code the
+      # browser runs is build-checked (`GOOS=js GOARCH=wasm go build ./...`) and
+      # numerically untested — a new `_amd64.s` could land beside a broken
+      # portable twin and CI would stay green.
+      #
+      # `purego` on the runner is the closest *testable* stand-in: same source
+      # file, same Go semantics, and a real architecture to run the digests on.
+      # A js/wasm test job would be the real thing and is not possible today —
+      # Go's own FMA-accelerated exp_amd64.s makes math.Exp differ by one ULP
+      # between the two targets, so the committed render digests do not
+      # reproduce there. See AGENTS.md, "The portable path is what ships".
+      - name: Build the portable path
+        # ./... and not just internal/physical: the tag is a repo-wide
+        # convention, so a future `!purego` file anywhere must compile under it
+        # from the day it lands. tools/paper-figures is a separate module and is
+        # not reached here; `just lint` covers it.
+        run: go build -tags purego ./...
+
+      - name: Test the portable path
+        # Only internal/physical/...: that is the only tree where the tag
+        # selects different code, so a full `./...` run would recompile an
+        # identical program and spend the time twice.
+        run: go test -tags purego ./internal/physical/...

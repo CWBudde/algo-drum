@@ -40,6 +40,21 @@ test:
 test-assert:
     go test -tags drumassert ./...
 
+# Build and test the portable, non-assembly path — the one the browser ships.
+#
+# internal/physical/midpoint_noasm.go is `!amd64 || purego`, so on any amd64
+# machine — this one, and the CI runner — it is not compiled by `just test` at
+# all and the AVX2 tier is the only kernel under test. The shipped voice is
+# js/wasm and always lands on the portable file, so without this recipe the code
+# that actually reaches a listener is build-checked and numerically untested.
+#
+# `./...` for the build because the tag is a repo-wide convention; only
+# `./internal/physical/...` for the test because that is the only tree where the
+# tag selects different code. Mirrors the `purego` job in ci-go.yml.
+test-purego:
+    go build -tags purego ./...
+    go test -tags purego ./internal/physical/...
+
 # Physical-model benchmarks on the host architecture.
 #
 # Deliberately not part of `ci`: there is no measured run-to-run floor for these
@@ -337,7 +352,7 @@ preview: build
 # ── Quality gates ────────────────────────────────────────────────────────────
 
 # Run all CI checks, mirroring .github/workflows/ci.yml (a green `just ci` must mean the same as a green CI run)
-ci: check-formatted lint check-tidy check-params check-physical-reference test test-assert web-typecheck web-test
+ci: check-formatted lint check-tidy check-params check-physical-reference test test-assert test-purego web-typecheck web-test
 
 # ── Housekeeping ─────────────────────────────────────────────────────────────
 

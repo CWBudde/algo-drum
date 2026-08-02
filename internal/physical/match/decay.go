@@ -641,6 +641,17 @@ func measureDecays(work *extractScratch, hit []float64, sampleRateHz float64, op
 		// heterodyne output it comes from is scratch too, so this costs one more
 		// reused buffer and saves two multiply-add sweeps of the fit window per
 		// partial.
+		//
+		// Collecting the decimated refinement trace here as well — blocking this
+		// loop by `step` and taking the first element of each block, so that the
+		// walk at `step` below reads a 24 KiB contiguous buffer instead of every
+		// ~2.75th cache line of this 534 KiB one — was tried and is *not* what is
+		// written, because it does not measure faster: +1.3 % instructions and
+		// +1.5 % cycles on BenchmarkMeasureDecays, with the L2 miss count
+		// unmoved. `envelope` is 534 KiB against a 1.25 MB L2 and nothing else is
+		// read between the two passes, so the strided walk is served out of L2
+		// and costs close to nothing, while blocking the build pass costs real
+		// instructions on every one of its ~68,000 samples.
 		envelope := growFloats(work.envelope, end-start)
 		work.envelope = envelope
 
