@@ -69,8 +69,18 @@ bench-physical:
 # see scripts/bench-wasm.sh. Extra arguments are forwarded to `go test`, e.g.
 # `just bench-physical-wasm -run '^$' -bench . -benchtime 20x ./internal/physical/`.
 # Not part of `ci`, for the same unmeasured-floor reason as `bench-physical`.
+#
+# `[positional-arguments]` plus `"$@"` rather than `{{ ARGS }}`, and the
+# difference is not cosmetic. `{{ ARGS }}` interpolates the arguments into the
+# recipe line as *text*, which bash then re-parses: a `-bench` pattern
+# containing `(A|B)` — an ordinary Go benchmark regex, and the exact shape
+# needed to select a subset of the nonlinear benchmarks — dies with a shell
+# syntax error before a single iteration runs. `"$@"` hands the arguments to
+# the script as an argument vector, so no regex metacharacter, space or quote
+# in a caller's pattern is ever seen by the shell.
+[positional-arguments]
 bench-physical-wasm *ARGS:
-    bash scripts/bench-wasm.sh {{ ARGS }}
+    bash scripts/bench-wasm.sh "$@"
 
 # Ensure go.mod / go.sum are tidy
 check-tidy:

@@ -1859,12 +1859,14 @@ measurement to re-scope it.
     measurement and nothing follows from it automatically; the coefficient count
     stays at 256 and no digest moves.
 
-    **A trap for the next person running this.** `just bench-physical-wasm`
-    splices `{{ ARGS }}` into `bash` unquoted, so a `-bench` pattern containing
-    `(A|B)` dies with a shell syntax error before a single iteration runs — and
-    the recipe's own doc comment shows exactly such a pattern. Call
-    `bash scripts/bench-wasm.sh` directly, or use a pattern with no shell
-    metacharacters.
+    **A trap this retake hit, since fixed.** `just bench-physical-wasm` spliced
+    `{{ ARGS }}` into `bash` as text, which bash then re-parsed, so a `-bench`
+    pattern containing `(A|B)` — an ordinary Go benchmark regex — died with a
+    shell syntax error before a single iteration ran. The wasm column here was
+    taken by calling `bash scripts/bench-wasm.sh` directly. The recipe now
+    carries `[positional-arguments]` and passes `"$@"`, so the arguments reach
+    the script as a vector and no metacharacter in a caller's pattern is seen by
+    the shell.
 
 - [ ] **N10: jitter mode frequencies per trigger** by a fraction of a percent so
       repeated hits are not identical (Cook, PhISEM, ICMC 1996). The static
