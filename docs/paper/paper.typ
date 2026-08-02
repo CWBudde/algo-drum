@@ -956,6 +956,7 @@ model. @provenance-table is it.
       [Attack level], [*fitted*], [to spectral balance against the modal layer],
       [Output gain], [*fitted*], [so a full-velocity hit peaks below clipping],
       [Berger $beta$], [*fitted*], [to a 100-cent glide, and *pending a refit* --- see @coupling],
+      [Cavity pressure loss $lambda$], [*unjustified*], [nothing; 5 1/s is a placeholder no measurement stands behind],
     ),
     caption: [
       Where each number comes from. The six fitted rows are the model's
@@ -964,7 +965,10 @@ model. @provenance-table is it.
       The coupling coefficient is the one row of its own kind --- it is not a new
       free parameter but the fitted Berger one spent on the channels Berger
       projects away, and it then lands within 8% of a material value it was not
-      fitted to.
+      fitted to. The last row is of a fourth kind and was absent from this table
+      until it was noticed to be: the cavity's pressure loss is neither derived,
+      measured nor fitted, and a taxonomy that simply omitted it was making the
+      model look better argued than it is.
     ],
   ) <provenance-table>
 ]

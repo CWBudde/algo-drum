@@ -2102,6 +2102,55 @@ than the item described. The number is kept because things point at it.
       vent, or simply a field nobody ever calibrated because nothing audible
       depended on it until the band measurement existed.
 
+      **Second half worked 2026-08-02, and it does not close.** The default stays
+      at 5, `docs/physical-cavity.md` gains the section saying why, and the
+      paper's provenance table gains the row it never had — λ is neither derived,
+      measured nor fitted, and a taxonomy that omitted it made the model look
+      better argued than it is.
+
+      **The bound that looked like it would settle this does not bind, and that
+      is the useful part.** Fletcher & Rossing §18.4 Table 18.8's 0.8–1.05 s
+      overall T60 for a mounted 32 cm tom appears to cap any internal mode at
+      λ ≥ 13.2–17.3. It does not, twice over: the rendered 630 Hz band already
+      rings **0.743 s**, inside the published range rather than above it, because
+      the cavity mode is driven and damped through the two-head coupling and its
+      isolated 2.763 s is not the audible number; and a whole-instrument T60 is a
+      low-frequency quantity that a third-octave band at 660 Hz cannot be
+      compared against in either direction. **Two hours of arithmetic that
+      produced a refusal is still the answer** — the next person will otherwise
+      reach for the same table.
+
+      **What survives is a shape argument needing no new measurement.** Across
+      the shipped bank's third octaves band T60 runs 0.661 s at 250 Hz to 0.107 s
+      at 1260 Hz — except 630 Hz at 0.743 s, longer than *every other band
+      including the lowest*. Band decay falls with frequency in every real
+      membranophone and in this model's own loss law, so the inversion is the
+      finding, and it says the cavity is out of step with the instrument it sits
+      inside without needing a target value for λ.
+
+      **The mechanism cannot be chosen from what is in the repository**, and the
+      reason is sharper than "unmeasured": all of `physical-cavity.md`'s existing
+      arithmetic is about **stiffness**, and a leak's compliance is a different
+      question from its dissipation. The vent table shows a 10 mm port diverting
+      4.6 % of the *flow* at the (0,1) — a port that diverts flow also radiates,
+      and the loss it adds is not the fraction it diverts. `physical-tom-review.md`'s
+      "do not model a vent resonance" is a statement about a *resonance*, not
+      about a loss, and the two have been conflated here before. Head
+      transmission is partly modelled already, as the coupling that turns 2.763 s
+      into 0.743 s; shell-wall radiation is deliberately absent.
+
+      So the item narrows rather than closes: **what would settle it is the
+      radiation-versus-internal damping split `physical-tom-review.md` already
+      lists as missing.** Changing λ is a labelled product decision — four
+      committed render digests regenerate and
+      `TestTheCavityIsUnderdampedAgainstTheHeadLossLaw` fails by design at
+      roughly λ ≥ 13.6, which is what it is for.
+
+      One hazard recorded while in view: **no migration has ever touched
+      `Cavity.LossPerSecond`**, so a persisted document omitting the field decodes
+      to 0 — the lossless limit, not the shipped 5. Nothing known writes one, and
+      nothing checks that either.
+
 - [ ] **N20: can the objective's staircase be smoothed?** _Opened by N6, which
       measured it rather than assuming it._ The fitting objective is deterministic
       but piecewise-constant at the scale its own parameters live at: a

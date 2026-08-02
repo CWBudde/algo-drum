@@ -384,6 +384,95 @@ Assembly stays linear in the retained mode count, because the selection rule
 restricts each head mode to its own azimuthal family, and uses preallocated
 structure-of-arrays storage. `Render` allocates nothing.
 
+### Open: the cavity's loss has no argument behind it
+
+Everything above justifies something. The mode set is derived from the
+rigid-walled Neumann condition and truncated on a stated criterion; the coupling
+areas have a closed form and a quadrature validated to \(2\times10^{-16}\); the
+stiffness scale is fitted, and four candidate explanations for its distance from
+the rigid ceiling are eliminated arithmetically. \(\lambda\) —
+`Cavity.LossPerSecond`, the pressure loss — is the one quantity in this section
+with none of that. It is `5` in `config.go`, with no comment where its two
+neighbours carry fifteen and nine lines of justification, no citation, no
+migration that has ever touched it, and — until this section was written — no row
+in the paper's provenance table. Every other mention of it above is a symbol in
+an equation; the passivity argument in particular shows only that it dissipates
+for either sign, which is a statement about its _sign_ and not about its size.
+PLAN.md's [N19](../PLAN.md) is the item.
+
+**What it currently is.** The sections are \((s^2+\lambda s+\omega_c^2)\), so
+\(\lambda\) is the coefficient of \(s\) and the envelope decays at
+\(\lambda/2 = 2.5\ \mathrm{s^{-1}}\). For the (1,1) transverse pair at 659.5 Hz —
+the mode inside the anomalous 630 Hz band — that is a T60 of **2.763 s** and an
+equivalent \(\zeta\) of \(6.03\times10^{-4}\), against the
+\(\zeta = 0.0072\) every head mode in the same band is calibrated to.
+`TestTheCavityIsUnderdampedAgainstTheHeadLossLaw` measures it: **11.9× in
+\(\zeta\)**, and 10.9× on T60 against the slowest head mode sharing the band.
+
+**The obvious bound does not bind, and it is worth writing down why.** Fletcher
+& Rossing §18.4, Table 18.8 gives 0.8–1.05 s overall T60 for a mounted 32 cm tom,
+which looks like it should cap any internal mode at \(\lambda \ge 13.2\)–17.3.
+It does not, for two independent reasons:
+
+- The rendered 630 Hz band already rings **0.743 s**, not 2.763 s. The cavity
+  mode is driven by two heads and damped through the same coupling, so its
+  isolated T60 is not the audible one, and the audible one is inside the
+  published range rather than above it.
+- A whole-instrument T60 is a low-frequency quantity, dominated by the
+  fundamental. Comparing it against a third-octave band at 660 Hz is not
+  like-for-like in either direction.
+
+**What does survive is a shape argument, and it needs no new measurement.** Band
+T60 falls with frequency in every real membranophone and in this model's own
+loss law; measured across the shipped bank's third octaves it runs 0.661 s at
+250 Hz down to 0.107 s at 1260 Hz — except at 630 Hz, which rings 0.743 s, longer
+than **every other band including the lowest**. That inversion is the finding.
+It says the cavity is out of step with the instrument it sits inside, and it says
+so without needing a target value for \(\lambda\).
+
+**Which mechanism is missing cannot be chosen from what is in the repository.**
+Absorption in a closed wooden shell is small, so a factor of eleven points at a
+path _out_ of the cavity rather than at a mis-set absorption coefficient. Three
+candidates, and the arithmetic above settles none of them, because all of it is
+about **stiffness** and a leak's compliance is a different question from its
+dissipation:
+
+- **Vent leakage.** The table above shows a 10 mm vent diverting 4.6 % of the
+  _flow_ at the 150 Hz (0,1), falling as \(1/f^2\) — but a port that diverts flow
+  also radiates, and the loss it adds is not the fraction it diverts.
+  [`physical-tom-review.md`](physical-tom-review.md) says not to model a vent
+  _resonance_, on the arithmetic that \(f_H \approx 30\) Hz sits far below the
+  fundamental. That is a statement about a resonance and not about a loss, and
+  the two have been conflated here before.
+- **Transmission through the heads.** Partly modelled already, as the two-head
+  coupling, which is why the isolated 2.763 s becomes 0.743 s. Whether what
+  remains is the residue of an unmodelled path or an artefact of the coupling
+  being the only path is exactly what is not known.
+- **Shell-wall radiation.** Unmodelled and deliberately so
+  ([`physical-real-instrument-departures.md`](physical-real-instrument-departures.md)):
+  a shell bank would need measured shell poles, damping and signed coupling to
+  both heads, and inventing them would make them indistinguishable from errors
+  elsewhere.
+
+**So \(\lambda\) stays at 5 and this section stays open.** Choosing a number to
+flatten the 630 Hz band would be fitting the one free parameter in the region to
+the one measurement that exposes it, which is not a calibration. What would
+settle it is the measurement
+[`physical-tom-review.md`](physical-tom-review.md) already lists as missing —
+a numeric radiation-versus-internal damping split for a real drum — and the
+capture protocol already requires vent count and diameter on the provenance
+sheet, so the input is specified even though nobody has been asked for it.
+Changing \(\lambda\) moves the rendered output, so it would also be a labelled
+product decision: four committed render digests regenerate, and
+`TestTheCavityIsUnderdampedAgainstTheHeadLossLaw` fails by design at roughly
+\(\lambda \ge 13.6\), which is the point of it — the closing is what gets
+written down.
+
+**One hazard worth recording while it is in view.** No migration has ever touched
+`Cavity.LossPerSecond`, so a persisted document that omits the field decodes to
+0 — the lossless limit, not the shipped 5. Nothing known writes such a document,
+and nothing checks that either.
+
 ## Closed: what the one-mode cavity was not hiding
 
 This section used to record an open question. P9/M2 answered it, in the negative,
