@@ -984,12 +984,34 @@ recording and can be taken at any time.
     did not show. Its consequence is also discharged — `measure-objective` was
     re-run through the repaired estimator and the gates re-edited from it (see
     N17), so a total from this objective can now be read against a measured floor
-    of 6.54 / 7.86. Result 10's −0.52 has been re-measured too, and the guess was
+    of **6.32 median / 8.25 p90** (first recorded as 6.54 / 7.86, from a run that predated the gate edit — the per-term p90s were current, the totals were not). Result 10's −0.52 has been re-measured too, and the guess was
     right in direction and larger than expected in size: **−0.70**, Result 11a.
 
     **Nothing further gates the fit.** N3's remaining content is: run
     `just fit-physical-series reference/tt08x08/lp/hd`, read where `D.TILT`
     lands, and only then decide about a correction entry.
+
+    **First reading, from an interrupted joint fit (2026-08-01, 5 000 of ~12 400
+    evaluations, total 39.882 → 15.835).** `D.TILT` landed at **0.892 and did not
+    pin** — the predicted answer, between the stops. But two things beside it say
+    the shape is still the problem, and they are worth having before the next
+    round:
+
+    - **`DAMP` pinned at its lower stop (0.25 of 0.25–4).** The search wants less
+      loss than the shipped range offers. Whether the *range* is wrong is a
+      product decision, not a fit result; `-loss-scale` exists to test it without
+      moving the knob.
+    - **The fitted bank's own decay law is far too flat: slope −0.21 against the
+      reference's −0.70.** 0.84 s at 233 Hz against a measured 1.09 s, and 0.51 s
+      at 2.6 kHz against a measured 0.21 s — too short at the fundamental and
+      **two and a half times too long at the top**. So the model is not uniformly
+      under-damped, and `-loss-scale` is the wrong lever: scaling every rate down
+      would fix the fundamental and make the top end worse. The reachable lever is
+      `D.TILT`, which the search left at 0.892 while `DAMP` sat on its stop —
+      i.e. it chose to lengthen everything rather than to steepen. That is a
+      statement about what the *whole* objective rewards, since spectrum, envelope
+      and attack carried 9.7 of the 15.8 total and the three partial terms were
+      already at their floors.
 
   - **The instrument for that experiment exists**, so it is not what the next
     round is spent on: `cmd/fit-physical -mode-correction m,n=perSecond` adds an
@@ -1139,7 +1161,7 @@ recording and can be taken at any time.
     cannot return to 2.3 ¢ — that number belonged to a level table that no longer
     exists. Gates now: decay 0.6 → **0.55**, glide 10 → **30**, unmatched and
     spurious 0.3 → **0.25**; frequency 70, level 7, spectrum 3.5, envelope 1.5
-    and attack 0.9 unchanged. The floor is **6.54 median / 7.86 p90**.
+    and attack 0.9 unchanged. The floor is **6.32 median / 8.25 p90** under those gates; the 6.54 / 7.86 recorded first came from a run made minutes before the edit and is withdrawn.
 
     **The transferable lesson, and the reason this is written out at length:** an
     estimator change justified by a *stability* measurement must be checked
@@ -1519,9 +1541,13 @@ recording and can be taken at any time.
       - Two partials-per-take facts worth carrying: 4.7 % of partials are assigned
         a ring time longer than the 2.08 s file, and **all of them are the same
         357–360 Hz component** in twelve of sixteen takes, now at R² 0.95–0.99. It
-        is not a failed fit; it is something in that room that outlives the take.
-        The 286–360 Hz band stays excluded, on a stated ground rather than on poor
-        fit quality.
+        is not a failed fit, and it is not an unmeasured one either: every one of
+        the twelve falls **35–40 dB inside the window**, so the T60 is a T35–T40
+        extrapolation with more evidence behind it than most partials here have.
+        `slowestSupportedT60`'s criterion — the fall, not the duration — admits
+        them deliberately. The 286–360 Hz band is left out of the **power-law fit**
+        only. Whether the model should be asked to reproduce the component at all
+        is open and is a question about the target, not the estimator.
 
       **Results 2, 3 and 6 remain open**, and 2 and 3 cannot be re-run without
       rewriting tooling that was never committed (the four-window residual budget,
@@ -1567,6 +1593,20 @@ detail and citations in
   drum's two-head tuning, a mechanism the model already has.
 - **A tom vent (Helmholtz) resonance.** A first-principles estimate puts a 12"×9"
   tom near 30 Hz, far below the (0,1), and no measurement of one was found.
+- **Bounding a ring time against the length of the recording.** Proposed twice and
+  refuted twice, the second time on 2026-08-01 after Result 11a's "4.7 % of
+  partials ring longer than the file" was read as a defect. It is not one. All
+  twelve fall 35–40 dB inside the window, which is a T35–T40 — about twice the
+  evidence ISO 3382 asks for, and more than most partials in this reference have.
+  `slowestSupportedT60` already carries the right criterion: **evidence is the
+  fall, not the duration.** The treatment was implemented as a probe and scored
+  through `cmd/measure-objective`; the only term that moved was partial decay, and
+  it moved **worse** (p90 0.535 → 0.537). A long ring time in a short file is the
+  ordinary arithmetic of a decay measurement, not a fabrication. If the 358 Hz
+  component should be kept out of a fit, that is a decision about what belongs in
+  a **target** — it is loud, it is not at a predicted mode frequency, and a fit
+  will spend budget on it — and must be argued as one, not smuggled in as an
+  estimator bound.
 - **The spectral-envelope residual as a band-coverage artifact.** Band-limiting to
   50 Hz–2 kHz, where the model has full modal content, buys **2 dB of 11**.
 - **A fitted static body/radiation post-filter.** The topology is physically

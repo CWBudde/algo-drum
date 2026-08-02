@@ -42,7 +42,11 @@ here should be restated at length elsewhere — link to it instead.
 >   2026-08-01 and the gates in `DefaultWeights` are that measurement — partial
 >   decay 0.6 → 0.55, glide 10 → 30, unmatched and spurious 0.3 → 0.25, the rest
 >   unchanged. Read the comment on `DefaultWeights` for the four-column table; the
->   floor is now 6.54 median / 7.86 p90, so **no total below 6.54 means anything**.
+>   floor is now **6.32 median / 8.25 p90**, so **no total below 6.32 means
+>   anything**. It was first recorded here as 6.54 / 7.86, from a run made minutes
+>   before the gates were edited — right per term, wrong in the totals, which are a
+>   property of the weight set. The p90 moves _up_ under the tighter gates for the
+>   reason Result 7 already gave: a tighter gate is a heavier weight.
 >
 >   That re-run is also what found the one N17 defect nothing in N17 could see.
 >   The per-partial refinement bound had no lower limit, so a fast partial's level
@@ -1004,16 +1008,35 @@ mean, SD 3.1 %** across the sixteen takes, against the 0.686 s Result 10 recorde
 — the 0.6 s window was cutting 36 % off the single partial the whole fit is
 anchored to.
 
-**The 286-360 Hz row is still unusable, and for the opposite reason to before.**
-Twelve of 256 partials (4.7 %) are assigned a ring time longer than the 2.08 s
-file, and all twelve are the same component at **357-360 Hz**, one per take, in
-twelve of the sixteen takes. Result 10 recorded it at R2 0.12-0.66 and read it as
-a failed fit. Through the wider window and the floor model it comes back at
-**R2 0.95-0.99 with T60 2.3-2.6 s** — an excellently fitted component that
-outlives the recording. That is a statement about the recording, not about the
-estimator: something in that room rings for longer than the take is long, close to
-but not at the \((1,1)\) at 378.8 Hz. It cannot be measured from this material and
-it should not be matched against; the band stays excluded, now on a stated ground.
+**The 286-360 Hz row is still unusable for the power law, and for the opposite
+reason to before.** Twelve of 256 partials (4.7 %) are assigned a ring time longer
+than the 2.08 s file, and all twelve are the same component at **357-360 Hz**, one
+per take, in twelve of the sixteen takes. Result 10 recorded it at R2 0.12-0.66
+and read it as a failed fit. Through the wider window and the floor model it comes
+back at **R2 0.95-0.99 with T60 2.3-2.6 s**, close to but not at the \((1,1)\) at
+378.8 Hz.
+
+**A ring time longer than the file is not by itself a defect, and the first draft
+of this subsection said it was.** Every one of the twelve falls **35-40 dB inside
+the fit window** — a T35 to T40, roughly twice the evidence ISO 3382 asks of a
+reported T60, and more than most partials in this reference have. Extrapolating a
+T60 from that is the ordinary arithmetic of a decay measurement, not a fabrication;
+it is how a room's own RT60 is measured. `slowestSupportedT60` already implements
+the correct criterion — evidence is the **fall**, not the duration — and it admits
+these twelve deliberately. Attempting to bound a ring time against the file's
+length instead was tried, measured, and refuted, twice: once in N17 and once again
+on 2026-08-01 when the same idea was re-proposed from this row. The second attempt
+was scored through `cmd/measure-objective`, and the only term it moved was partial
+decay, **worse** — p90 0.535 → 0.537.
+
+So what is excluded, and why, is narrower than "unmeasurable". The component is
+well measured; it is a _long_ one, longer than this material can bound tightly,
+so the band is left out of the power-law fit where a 2.5 s value would carry the
+low end. Whether the **model** should be asked to reproduce it is a separate and
+still-open question — it is 12-22 dB below the fundamental, it is not at a mode
+frequency the geometry predicts, and a fit will spend real parameter budget on it
+(one did: see the joint-fit note in `PLAN.md` N5). That question is about what
+belongs in a target, not about whether the estimator can read it.
 
 ### 11b — the fast-versus-subspace disagreement got wider, not narrower
 

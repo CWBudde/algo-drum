@@ -131,9 +131,11 @@ What the columns say, in order:
   reach; that much stands.
 
 Read totals against the floor, never alone: on this reference the objective's
-disagreement with itself totals **6.54 at the median and 7.86 at p90** under
-these weights, so **no fit total below 6.54 is distinguishable from the
-objective's own noise**. Three things have moved across the four measurements —
+disagreement with itself totals **6.32 at the median and 8.25 at p90** under
+these weights, so **no fit total below 6.32 is distinguishable from the
+objective's own noise**. (6.54 / 7.86 was recorded here first and is wrong: that
+run predated the gate edit by minutes, so its per-term p90s were current and its
+totals were computed under the previous weights.) Three things have moved across the four measurements —
 the estimator, the drum and the windows — so no total recorded before 2026-08-01
 is comparable to any recorded after it, in either direction.
 

@@ -229,9 +229,19 @@ type Weights struct {
 //     still aimed at thresholds nothing could reach; that part stands.
 //
 // Measured consequence: at these weights the objective's disagreement with itself
-// totals **6.54 at the median and 7.86 at p90** on this reference. Read that as
-// the floor, not as a score: no fit total below 6.54 is distinguishable from the
+// totals **6.32 at the median and 8.25 at p90** on this reference. Read that as
+// the floor, not as a score: no fit total below 6.32 is distinguishable from the
 // objective's own noise, whatever else it claims.
+//
+// Those two numbers were briefly recorded as 6.54 / 7.86, which was an error of
+// exactly the kind the paragraph below warns about: the run that produced them
+// was made minutes *before* the gates in this function were edited, so the
+// per-term p90s in the table above were right and the totals beside them were
+// computed under the previous weight set. Re-run against the shipped weights the
+// median falls to 6.32 and the p90 rises to 8.25 — the p90 moving the other way,
+// because tightening a gate raises its weight and the same raw disagreement then
+// scores higher. A total is a property of a weight set, and a floor quoted from
+// the wrong one is worse than no floor.
 //
 // Which is the whole difficulty with reading totals: **no total recorded before
 // this change is comparable to any total after it**, and not even the sign of the
