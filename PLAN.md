@@ -2179,6 +2179,45 @@ than the item described. The number is kept because things point at it.
       is that a total is a property of a weight set. Do not smooth anything
       before N6's sweep has been re-run per term.
 
+      **Step 1 done 2026-08-02, and it answers step 2's question as well.**
+      `cmd/fit-physical -hessian-terms` decomposes the sweep into the nine terms
+      over their adoption gates. It costs **nothing** — `match.Distance` returns
+      all nine on every call and `evaluator.cost` keeps one, so the decomposed run
+      is the same 109 evaluations, and its total column reproduces the committed
+      scalar sweep **entry for entry**, which is checked rather than assumed.
+
+      The prediction was stated before running and held in full. Median absolute
+      curvature over the five components, coarsest step against finest; a genuine
+      curvature is h-independent and gives ≈ 1, a staircase ≈ 4e3 — that is
+      (3e-2/1e-4)² divided by the 22× the numerator itself grows over the range:
+
+      | terms | read the matching? | plateaus | ratio |
+      | ----- | ------------------ | -------: | ----: |
+      | `freq`, `level`, `decay`, `unmatched`, `spurious` | yes | **0/5** each | 156 – 3 736 |
+      | `spectrum`, `envelope`, `glide`, `attack` | no | 3/5 – **5/5** | 0.42 – 1.90 |
+
+      **The line falls on `matchPartials`'s reference-to-candidate assignment and
+      on nothing else.** Not on the terms' own arithmetic: `decay` and `envelope`
+      are both decay measurements and land on opposite sides. **And the staircase
+      is where the weight is** — at h = 3e-2 the five matching terms carry 83–95 %
+      of the summed absolute curvature at every component, so this is not a large
+      smooth objective with a small rough correction.
+
+      So step 2's answer is that this is **one mechanism, not nine**: a single
+      discrete assignment shared by five terms. That is the good news and the bad
+      news together — there is one place to change, and changing it changes what
+      those five terms *mean*. Two qualifications, since the smooth column is
+      smooth in a particular way: `glide` still reads its fundamental off the
+      partial table, so it is free of the *cross*-assignment rather than of peak
+      picking; and the smooth terms' plateaus sit at the small-h end and break at
+      the large one (`glide` is −1.243 at 1e-4, 3e-4 and 1e-3, then 20.31 at
+      3e-3), which is the opposite failure and why three of four score 3/5.
+
+      **Step 3 is untouched and is a decision, not a measurement.** Nothing has
+      been smoothed, no weight has moved, no committed total has changed. Evidence:
+      [physical-objective-validation.md](docs/physical-objective-validation.md)
+      §12a.
+
 - [ ] **N14: the doublet pair, by physical capture.** The one measurement the
       sample pack cannot supply. Ten centre hits with the resonant head removed, ten
       with it refitted, batter tuning untouched; Fischer's protocol on a tom.

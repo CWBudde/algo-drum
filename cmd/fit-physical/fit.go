@@ -285,6 +285,48 @@ func (e *evaluator) cost(position []float64) float64 {
 	return total / float64(len(rendered))
 }
 
+// terms is cost decomposed: the same evaluation, the same arithmetic, and the
+// nine numbers cost throws away.
+//
+// A search needs one scalar, so cost keeps terms.Total and discards the rest.
+// PLAN.md N20 needs the rest — whether this objective's staircase is one term or
+// all nine is a question about the nine — and match.Distance has already computed
+// them by the time cost drops them. So this costs nothing beyond what cost costs,
+// which is the whole reason the per-term sweep is affordable.
+//
+// It returns ok rather than a sentinel because there is no per-term equivalent of
+// cost's +Inf: a configuration the model rejects is rejected for every term at
+// once, and inventing nine infinities would look like nine measurements.
+// TestTermsIsExactlyCostDecomposed pins that the Total this returns is the same
+// float64 cost returns, bit for bit — without which the per-term sweep would be a
+// second measurement of the objective rather than the scalar sweep decomposed.
+func (e *evaluator) terms(position []float64) (match.Terms, bool) {
+	rendered, err := e.measure(position)
+	if err != nil {
+		return match.Terms{}, false
+	}
+
+	takes := make([]TakeResult, 0, len(rendered))
+
+	for index, features := range rendered {
+		if len(features.Partials) == 0 {
+			return match.Terms{}, false
+		}
+
+		terms := match.Distance(e.references[index], features, e.weights)
+		if math.IsNaN(terms.Total) {
+			return match.Terms{}, false
+		}
+
+		takes = append(takes, TakeResult{Terms: terms})
+	}
+
+	// meanTerms rather than a second averaging loop written here, so that the
+	// Total this returns is formed by the same additions in the same order as
+	// cost's — which is what makes the two bit-identical rather than merely close.
+	return meanTerms(takes), true
+}
+
 // ParamValue reports one parameter of a fitted candidate.
 type ParamValue struct {
 	Index      int     `json:"index"`

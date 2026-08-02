@@ -42,6 +42,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -52,6 +53,7 @@ import (
 	"time"
 
 	"github.com/cwbudde/algo-drum/internal/drum"
+	"github.com/cwbudde/algo-drum/internal/physical/match"
 )
 
 // defaultHessianScope is the 5×5 block N6 starts from: the three angles that
@@ -93,8 +95,37 @@ const plateauTolerance = 1.0 / 3.0
 // statement about a trend instead of about a single pair.
 const minimumPlateauLength = 3
 
+// identifyFlags is the -hessian mode's command line.
+//
+// Registered here rather than in main.go, which is what this file's header
+// originally promised and what the file-length limit has since made necessary:
+// main.go sits at 1497 of its 1500 lines. Declaring these beside the code that
+// reads them is the better arrangement anyway — every word of their help text is
+// a claim about something in this file.
+type identifyFlags struct {
+	scope      *string
+	outputPath *string
+	terms      *bool
+}
+
+func registerIdentifyFlags(flags *flag.FlagSet) identifyFlags {
+	return identifyFlags{
+		scope: flags.String("hessian", "",
+			"measure a central-difference Hessian at the -checkpoint file's best point "+
+				"and stop: parameter labels separated by commas, 'free' for every free "+
+				"parameter, 'all' to add the velocities, 'block' for "+defaultHessianScope),
+		outputPath: flags.String("hessian-o", "-",
+			"JSON path for the -hessian report, or - for stdout; name it after the "+
+				"reference it was measured against, as every other fit artifact is"),
+		terms: flags.Bool("hessian-terms", false,
+			"decompose the -hessian step sweep into the nine distance terms, each over "+
+				"its adoption gate; costs no extra evaluations, since the terms are "+
+				"computed and discarded on every one already"),
+	}
+}
+
 // identifyOptions is what the -hessian mode needs from the command line, kept in
-// one struct so main.go carries the flag registration and nothing else.
+// one struct so main.go carries the dispatch and nothing else.
 type identifyOptions struct {
 	// scope names the components to differentiate: a comma-separated list of
 	// parameter labels or IDs, "free" for every free parameter, or "all" for the
@@ -117,6 +148,8 @@ type identifyOptions struct {
 	// a property of a weight set, so an eigenvalue does not survive a gate edit
 	// any better than a total does.
 	weightsFingerprint string
+	// terms asks for the per-term decomposition of the step sweep. PLAN.md N20.
+	terms bool
 }
 
 // IdentifiabilityReport is what -hessian writes out.
@@ -140,6 +173,15 @@ type IdentifiabilityReport struct {
 	Evaluations   int            `json:"searchEvaluations"`
 	Scope         []ScopeEntry   `json:"scope"`
 	StepSweep     []StepSweep    `json:"stepSweep"`
+	// TermStepSweep is StepSweep decomposed into the nine distance terms, present
+	// only when -hessian-terms asked for it. It is the same evaluations read nine
+	// more ways, not a second measurement: each entry's "total" row is the
+	// corresponding StepSweep above, bit for bit. PLAN.md N20 step 1.
+	TermStepSweep []TermStepSweep `json:"termStepSweep,omitempty"`
+	// TermVerdict counts which terms produced a plateau anywhere, and is empty
+	// when the per-term sweep was not run. A count, not a conclusion — reading it
+	// as "the staircase is in the matching terms" is a person's job.
+	TermVerdict string `json:"termVerdict,omitempty"`
 	// Step is the h the off-diagonals were taken at, and StepRationale says what
 	// in the sweep justified it.
 	Step          float64 `json:"step"`
@@ -207,6 +249,15 @@ type StepSweep struct {
 type StepSample struct {
 	Step      float64  `json:"step"`
 	Curvature *float64 `json:"curvature"`
+	// Numerator is Curvature × h², i.e. the raw f₊ − 2f₀ + f₋ the difference was
+	// formed from, and it is the column that says whether the curvature means
+	// anything. A genuine second derivative is the limit of the ratio, so its
+	// numerator has to fall as h²; a piecewise-constant objective's numerator is a
+	// finite jump and barely moves. On this repository's own 5×5 run it moves by a
+	// factor of 22 while h² moves by 90 000, which is how N6 concluded what it did.
+	// Derived rather than measured, but derived here so that the conclusion is a
+	// column of the artifact instead of arithmetic a reader has to redo.
+	Numerator *float64 `json:"numerator,omitempty"`
 	Note      string   `json:"note,omitempty"`
 }
 
@@ -410,10 +461,20 @@ func runIdentifiability(
 	counted := &counter{cost: local.cost}
 	position := slices.Clone(snapshot.Position)
 
-	report.Cost = counted.at(position)
-	if !isUsable(report.Cost) {
-		return fmt.Errorf("%w: the stored point does not evaluate (%v); it is not an optimum of this objective",
-			errInvalidFitOption, report.Cost)
+	if options.terms {
+		counted.terms = local.terms
+	}
+
+	// One evaluation either way. With -hessian-terms it returns the nine terms
+	// beside the total; without, the total alone — and the total is the same
+	// number in both cases, which is what lets the per-term sweep claim to be this
+	// sweep decomposed. See counter.vectorAt and evaluator.terms.
+	origin, ok := counted.vectorAt(position)
+	report.Cost = origin[termTotalSlot]
+
+	if !ok {
+		return fmt.Errorf("%w: the stored point does not evaluate; it is not an optimum of this objective",
+			errInvalidFitOption)
 	}
 
 	report.Scope = describeScope(local, scope, position)
@@ -427,7 +488,7 @@ func runIdentifiability(
 	// step, which on the sixteen-take series is the larger half of the run — and
 	// throwing it away to return an error message would leave the refusal
 	// unauditable. So: artifact first, then the non-zero exit.
-	measured := measureHessian(&report, counted, position, scope, report.Cost, stderr)
+	measured := measureHessian(&report, counted, position, scope, origin, stderr)
 
 	report.Timing = sizeFollowUp(counted, started, local)
 
@@ -536,7 +597,12 @@ func verifyFingerprint(fingerprint Fingerprint, options identifyOptions) error {
 // counter wraps the objective so the report can say what the measurement cost
 // and the next, larger run can be sized from it.
 type counter struct {
-	cost  func([]float64) float64
+	cost func([]float64) float64
+	// terms is the same objective decomposed, and is optional. Where it is nil —
+	// the synthetic scalar objectives the unit tests differentiate — only the
+	// total is available, and the per-term half of the sweep is absent rather than
+	// filled in with the total repeated nine times.
+	terms func([]float64) (match.Terms, bool)
 	calls int
 }
 
@@ -544,6 +610,40 @@ func (c *counter) at(position []float64) float64 {
 	c.calls++
 
 	return c.cost(position)
+}
+
+// decomposed reports whether the nine terms are available beside the total.
+func (c *counter) decomposed() bool { return c.terms != nil }
+
+// vectorAt is at() with the nine terms beside the total where the objective can
+// supply them, and one evaluation either way.
+//
+// The scalar branch fills the total slot alone and leaves the nine at zero. That
+// is safe because every consumer reads only the slots decomposed() admits, and it
+// is why the scalar path's arithmetic is untouched by this: it is still exactly
+// at(), and the sweep's total column is still exactly what it always was.
+func (c *counter) vectorAt(position []float64) (termVector, bool) {
+	if c.terms == nil {
+		value := c.at(position)
+		if !isUsable(value) {
+			return termVector{}, false
+		}
+
+		var vector termVector
+
+		vector[termTotalSlot] = value
+
+		return vector, true
+	}
+
+	c.calls++
+
+	terms, ok := c.terms(position)
+	if !ok || !isUsable(terms.Total) {
+		return termVector{}, false
+	}
+
+	return newTermVector(terms), true
 }
 
 // isUsable is the one test every stencil point has to pass. +Inf is what cost
@@ -737,6 +837,15 @@ func writeIdentifiability(stdout io.Writer, report IdentifiabilityReport) {
 		}
 
 		_, _ = fmt.Fprintf(stdout, "   none (unavailable)\n")
+	}
+
+	// Before the verdict on the total, because the nine terms are what the total's
+	// verdict is made of, and reading them afterwards invites reading them as an
+	// explanation of a conclusion already drawn.
+	writeTermSweeps(stdout, report.TermStepSweep)
+
+	if report.TermVerdict != "" {
+		_, _ = fmt.Fprintf(stdout, "  → %s\n", report.TermVerdict)
 	}
 
 	// A refused measurement stops here, and the sweep above is the whole point of

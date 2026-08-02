@@ -401,14 +401,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 	inspect := flags.Bool("inspect", false,
 		"describe the -checkpoint file's best point and stop, without searching")
 	// -hessian is the identifiability measurement (PLAN.md N6); the whole mode
-	// lives in identify.go and only its two flags are here.
-	hessian := flags.String("hessian", "",
-		"measure a central-difference Hessian at the -checkpoint file's best point "+
-			"and stop: parameter labels separated by commas, 'free' for every free "+
-			"parameter, 'all' to add the velocities, 'block' for "+defaultHessianScope)
-	hessianOut := flags.String("hessian-o", "-",
-		"JSON path for the -hessian report, or - for stdout; name it after the "+
-			"reference it was measured against, as every other fit artifact is")
+	// lives in identify.go, its flags included — see registerIdentifyFlags.
+	identify := registerIdentifyFlags(flags)
 	wavPath := flags.String("wav", "",
 		"also render the fitted bank to this mono WAV file, for listening to")
 	wavDuration := flags.Duration("wav-duration", 3*time.Second,
@@ -787,7 +781,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		// two builds' measurements, so it is the one mode that may proceed across
 		// a baseline that has drifted in its last bits — and it records the drift.
 		// See reconcileBaseline; every other mode keeps the bit-exact check.
-		rebased, err := reconcileBaseline(&fingerprint, *hessian != "", *checkpointPath)
+		rebased, err := reconcileBaseline(&fingerprint, *identify.scope != "", *checkpointPath)
 		if err != nil {
 			return err
 		}
@@ -841,11 +835,12 @@ func run(args []string, stdout, stderr io.Writer) error {
 		// exactly the reason -inspect does: loadStore's fingerprint check, and
 		// the baseline cost inside it, is what stops a stored position being read
 		// — or differentiated — against a different drum. See identify.go.
-		if *hessian != "" {
+		if *identify.scope != "" {
 			return runIdentifiability(stdout, stderr, base, checkpoint, identifyOptions{
-				scope: *hessian, outputPath: *hessianOut, checkpointPath: *checkpointPath,
-				baselineCost: report.Baseline.Terms.Total, rebased: rebased,
-				weightsFingerprint: report.WeightsFingerprint,
+				scope: *identify.scope, outputPath: *identify.outputPath,
+				checkpointPath: *checkpointPath,
+				baselineCost:   report.Baseline.Terms.Total, rebased: rebased,
+				weightsFingerprint: report.WeightsFingerprint, terms: *identify.terms,
 			})
 		}
 

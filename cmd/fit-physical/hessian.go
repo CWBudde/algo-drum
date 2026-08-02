@@ -24,15 +24,22 @@ func measureHessian(
 	counted *counter,
 	position []float64,
 	scope []int,
-	cost float64,
+	origin termVector,
 	stderr io.Writer,
 ) error {
+	cost := origin[termTotalSlot]
+
 	labels := make([]string, len(scope))
 	for slot := range scope {
 		labels[slot] = report.Scope[slot].Label
 	}
 
-	report.StepSweep = sweepSteps(counted, position, scope, labels, cost, stderr)
+	report.StepSweep, report.TermStepSweep = sweepSteps(counted, position, scope, labels, origin, stderr)
+
+	if len(report.TermStepSweep) > 0 {
+		report.TermVerdict = termVerdict(report.TermStepSweep)
+		_, _ = fmt.Fprintf(stderr, "  terms: %s\n", report.TermVerdict)
+	}
 
 	step, rationale := chooseStep(report.StepSweep)
 	report.Step, report.StepRationale = step, rationale
@@ -202,57 +209,125 @@ func sweepDirection(
 // per (component, h) pair — which on the sixteen-take series is a good half of
 // the whole run, so each component's row is printed to stderr as it finishes:
 // an interrupt an hour in should not cost the evidence gathered so far.
+//
+// Every point is evaluated as a termVector rather than as a scalar, and the
+// scalar sweep is that vector's total column. It costs nothing — match.Distance
+// computes the nine terms whether or not anyone keeps them — and it is what makes
+// the per-term sweep (PLAN.md N20) a decomposition of this measurement instead of
+// a second one taken beside it. Where the objective cannot supply the nine, the
+// vector carries the total alone and the per-term half is simply absent.
 func sweepSteps(
 	counted *counter,
 	position []float64,
 	scope []int,
 	labels []string,
-	cost float64,
+	base termVector,
 	stderr io.Writer,
-) []StepSweep {
+) ([]StepSweep, []TermStepSweep) {
 	sweeps := make([]StepSweep, len(scope))
+	terms := make([]TermStepSweep, 0, len(scope))
 
 	for slot, index := range scope {
-		sweep := StepSweep{Label: labels[slot]}
+		samples := make([][]float64, len(hessianSteps))
+		notes := make([]string, len(hessianSteps))
 
-		for _, step := range hessianSteps {
-			sample := StepSample{Step: step}
-
-			switch {
-			case position[index]-step < 0 || position[index]+step > 1:
+		for order, step := range hessianSteps {
+			if position[index]-step < 0 || position[index]+step > 1 {
 				// apply clamps, so this stencil would be one-sided while
 				// looking two-sided. Recorded rather than skipped: which steps a
 				// component's position rules out is part of why its plateau is
 				// where it is.
-				sample.Note = "the stencil would cross a [0,1] bound and be clamped"
-			default:
-				value, ok := secondDifference(counted, position, cost, index, index, step)
+				notes[order] = "the stencil would cross a [0,1] bound and be clamped"
 
-				switch {
-				case !ok:
-					sample.Note = "a stencil point was not a drum, at h and at h/3"
-				case value == 0:
-					curvature := value
-					sample.Curvature = &curvature
-					sample.Note = "the cost did not move at all: at or inside Map's ±0.2 % " +
-						"default detent, or below the render's own resolution"
-				default:
-					curvature := value
-					sample.Curvature = &curvature
-				}
+				continue
 			}
 
-			sweep.Samples = append(sweep.Samples, sample)
+			value, ok := vectorSecondDifference(counted, position, base, index, step)
+			if !ok {
+				notes[order] = "a stencil point was not a drum, at h and at h/3"
+
+				continue
+			}
+
+			samples[order] = value[:]
 		}
 
-		sweep.PlateauFrom, sweep.PlateauTo, sweep.Available, sweep.Note = findPlateau(sweep.Samples)
-		sweeps[slot] = sweep
+		sweep := sweepTermSteps(labels[slot], counted.decomposed(), samples, notes)
+		sweeps[slot] = sweep.Terms[len(sweep.Terms)-1]
+		sweeps[slot].Label = labels[slot]
+
+		if sweep.Decomposed {
+			terms = append(terms, sweep)
+		}
 
 		_, _ = fmt.Fprintf(stderr, "  sweep %-8s %s | %s\n",
-			sweep.Label, formatSamples(sweep.Samples), sweep.Note)
+			sweeps[slot].Label, formatSamples(sweeps[slot].Samples), sweeps[slot].Note)
 	}
 
-	return sweeps
+	return sweeps, terms
+}
+
+// detentNote is what an exactly-zero second difference means here, and it is the
+// same sentence whether the total or one of the nine terms did not move.
+const detentNote = "the cost did not move at all: at or inside Map's ±0.2 % " +
+	"default detent, or below the render's own resolution"
+
+// vectorSecondDifference is secondDifference on a decomposed evaluation: the
+// three-point diagonal stencil, applied slot by slot, with the same single retry
+// at h/3 that a rejected stencil point is allowed.
+//
+// Slot by slot rather than on the total alone, and every slot shares one pair of
+// evaluations — which is the point. The total column it produces is arithmetically
+// the same expression secondDifference forms, on the same two renders, so it is
+// the same float64 and not merely a close one.
+func vectorSecondDifference(
+	counted *counter,
+	position []float64,
+	base termVector,
+	index int,
+	step float64,
+) (termVector, bool) {
+	for _, attempt := range []float64{step, step / 3} {
+		value, ok := vectorStencil(counted, position, base, index, attempt)
+		if ok {
+			return value, true
+		}
+	}
+
+	return termVector{}, false
+}
+
+// vectorStencil evaluates one decomposed second difference at exactly the step it
+// is given.
+func vectorStencil(
+	counted *counter,
+	position []float64,
+	base termVector,
+	index int,
+	step float64,
+) (termVector, bool) {
+	probe := slices.Clone(position)
+
+	probe[index] = position[index] + step
+
+	plus, ok := counted.vectorAt(probe)
+	if !ok {
+		return termVector{}, false
+	}
+
+	probe[index] = position[index] - step
+
+	minus, ok := counted.vectorAt(probe)
+	if !ok {
+		return termVector{}, false
+	}
+
+	var value termVector
+	for slot := range value {
+		value[slot] = (plus[slot] - 2*base[slot] + minus[slot]) / (step * step)
+	}
+
+	return value, true
 }
 
 // formatSamples is one sweep row, for the progress line and the summary table.

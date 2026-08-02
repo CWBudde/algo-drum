@@ -1310,6 +1310,68 @@ running it.
    confident wrong answer this tool could give. Exact zeros are therefore refused
    as plateau members.
 
+### 12a — which of the nine terms steps, and the line it falls on
+
+`-hessian-terms` decomposes the sweep above into the nine distance terms. It
+costs nothing: `match.Distance` returns all nine on every call and
+`evaluator.cost` keeps one of them, so the decomposed run is the **same 109
+evaluations**, and its total column reproduces the five rows above entry for
+entry — checked, not assumed.
+
+The prediction was written before the run: `Unmatched` and `Spurious` are shares
+of a matched set and should step hardest; `SpectralEnvelope` and `Envelope`
+involve no matching and are the candidates for a genuine plateau; `PartialDecay`
+carries `slowestSupportedT60`'s admissibility test and should behave like the
+matching terms. All three held.
+
+Median absolute curvature across the five components, at the coarsest and finest
+swept step. The ratio is the discriminator, and both ends of it are predicted
+rather than chosen: a genuine curvature is `h`-independent and gives **≈ 1**,
+while a staircase with a constant numerator gives `(3e-2/1e-4)² =` **9e4** —
+divided by the factor ~22 by which the numerator itself grows over that range,
+so **≈ 4e3** is what a staircase looks like here.
+
+| term        | reads the matching? | plateaus | \|c\| at 3e-2 | \|c\| at 1e-4 |     ratio |
+| ----------- | ------------------- | -------: | ------------: | ------------: | --------: |
+| `freq`      | yes                 |      0/5 |          59.9 |       2.236e5 | **3 736** |
+| `level`     | yes                 |      0/5 |          77.7 |       1.214e4 |   **156** |
+| `decay`     | yes                 |      0/5 |         227.2 |       3.468e5 | **1 526** |
+| `unmatched` | yes                 |      0/5 |         582.3 |        1.25e6 | **2 146** |
+| `spurious`  | yes                 |      0/5 |         380.8 |       7.781e5 | **2 043** |
+| `spectrum`  | no                  |  **5/5** |          34.1 |          64.7 |      1.90 |
+| `envelope`  | no                  |  **4/5** |          64.9 |          62.0 |      0.96 |
+| `glide`     | no                  |  **3/5** |           2.8 |           1.2 |      0.42 |
+| `attack`    | no                  |  **3/5** |          27.0 |          14.2 |      0.53 |
+
+**The line falls on `matchPartials`'s reference-to-candidate assignment, and on
+nothing else.** Every term that reads that assignment steps, and none of them
+produces a plateau at any component. Every term that does not is smooth, three of
+the four within a factor of two of ideal `h`-independence, and `envelope` at 0.96
+is as close to a textbook second derivative as this objective has. It is not a
+property of the terms' own arithmetic — `decay` and `envelope` are both decay
+measurements and land on opposite sides of the line.
+
+Two qualifications, because the smooth column is smooth in a particular way and
+not unconditionally. `glide` reads its fundamental off the same partial table
+(§5's `measureGlide`), so it is not free of peak picking — what it is free of is
+the _cross_-assignment. And the smooth terms' plateaus sit at the **small** end:
+`glide` reads −1.243 identically at 1e-4, 3e-4 and 1e-3 and then jumps to 20.31
+at 3e-3, which is a peak-picking change crossed by the larger step. That is the
+opposite failure from the matched-set terms, which are worst at small `h`, and it
+is why three of the four score 3/5 or 4/5 rather than 5/5.
+
+**And the staircase is where the weight is.** At `h = 3e-2` the five matched-set
+terms carry 83–95 % of the summed absolute curvature at every component, the four
+smooth terms 5–17 %. So this is not a case of a large smooth objective with a
+small rough correction: the terms that cannot be differentiated are the terms
+that dominate.
+
+That gives `PLAN.md` N20's second question a target it did not have. The
+staircase is **one mechanism** — the discrete assignment in `matchPartials` —
+shared by five terms rather than nine separate quantization effects, and any
+attempt at a soft assignment would be a change to what those five terms _mean_,
+which is N20's third question and a decision rather than a measurement.
+
 ### What it costs to believe a fitted bank
 
 Nothing here says the fitted bank is bad. It says the local instrument that would
