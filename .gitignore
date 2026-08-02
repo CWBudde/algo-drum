@@ -106,6 +106,7 @@ reference/tt12x08/*
 # Built by `go build ./cmd/fit-physical` and `./cmd/render-physical`, and by
 # `go build ./...` inside tools/paper-figures (its own module, so the binary
 # lands here rather than beside its source).
+/compare-fits
 /fit-physical
 /render-physical
 /paper-figures
