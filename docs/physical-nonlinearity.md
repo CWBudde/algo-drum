@@ -493,34 +493,82 @@ tension coefficient in this document as a fitting constant.
 
 ### Cost
 
-The `BenchmarkNonlinearDoubleHeadActive48k` worst case — full-velocity retrigger
-before every 512-sample chunk, so the nonlinear solve never idles — at 120
-oscillators, medians of five runs, zero allocations throughout:
+The whole table below comes out of one command per target, both at 120
+oscillators and with zero allocations throughout:
 
-| coefficients  | host (amd64) | `js/wasm` (node) |
-| ------------- | ------------ | ---------------- |
-| off           | 4.39x        | 1.40x            |
-| 128           | 2.65x        | 0.79x            |
-| 256 (shipped) | 2.06x        | 0.70x            |
-| 408 (full)    | 1.37x        | 0.58x            |
+```
+just bench-physical         # host, amd64
+just bench-physical-wasm    # js/wasm under node
+```
 
-This is the honest number and it is not good: at the shipped 256 the `js/wasm`
-worst case is **below real time**. Three things soften it and none of them make it
-acceptable indefinitely. It is the worst case, not the steady one — a real hit
-lets the solve idle. The mean fixed-point iteration count barely moved (2.404 →
-2.491 at velocity 1), so the cost is the table walk itself and not a
-harder solve. And nothing here is optimised: the table is walked as three
-separate index arrays with no blocking by channel or by receiver, and the whole
-thing is rebuilt per iteration rather than being updated incrementally. Making
-this affordable is open work, not a closed question.
+Measured 2026-08-02 on a 12th Gen Core i7-1255U, Go 1.26.1, node v24.12.0. Host
+figures are medians of three runs of the recipe; `js/wasm` figures are medians of
+four, with the observed range beside them, because the run-to-run spread there is
+wide enough that a single value would be a fiction — `Active48k/408` alone ran
+0.41x to 0.68x across those four.
 
-The budget is also not currently buying much. Measured on the (2,2) at 524.9 Hz
-under the pumps-only excitation, the 476–700 Hz level runs −29.30 dB at 64
-coefficients, −28.79 at 128, −28.43 at 256 and −28.53 at the full 408 — a
-0.9 dB spread across a sixfold budget, and the full table is not even the loudest
-of them. So `MaxCoefficients: 256` is chosen for margin rather than because the
-spectrum needs it, and 128 is the first thing to try if the cost has to come
-down.
+The three cases differ only in how often the strike lands, and the hit rate is
+the whole story:
+
+- **Active**, 93.75 hits/s: a full-velocity retrigger before every 512-sample
+  chunk, so the nonlinear solve never idles. The worst case, and nothing a player
+  produces.
+- **Musical**, 8 hits/s: a 16th-note roll at 120 bpm. **This is the rate the
+  contract is written against.**
+- **Steady**, 4 hits/s: one strike per 0.25 s window, so most of each window is
+  decayed tail.
+
+| coefficients  | Active host | Active wasm           | Musical host | Musical wasm          | Steady host | Steady wasm           |
+| ------------- | ----------- | --------------------- | ------------ | --------------------- | ----------- | --------------------- |
+| off           | 4.46x       | 1.42x (1.21–1.49)     | 5.30x        | 1.70x (1.45–1.79)     | 6.24x       | 1.89x (1.07–2.01)     |
+| 64            | 3.48x       | 0.98x (0.83–1.06)     | 4.23x        | 1.26x (1.05–1.34)     | 5.26x       | 1.36x (0.85–1.49)     |
+| 128           | 3.08x       | 0.91x (0.86–0.96)     | 3.71x        | 1.14x (0.92–1.24)     | 4.58x       | 1.24x (1.22–1.26)     |
+| 256 (shipped) | 2.66x       | **0.69x** (0.64–0.76) | 3.09x        | **0.93x** (0.89–0.96) | 3.95x       | **1.07x** (0.99–1.15) |
+| 408 (full)    | 1.89x       | 0.64x (0.41–0.68)     | 2.77x        | 0.81x (0.56–0.86)     | 3.28x       | 0.93x (0.81–0.95)     |
+
+**At the shipped 256 the musical case is 0.93x on `js/wasm` — below real time,
+but by 7 % rather than by the 30 % the worst case suggests.** "off" here means
+`Nonlinearity.Coupling.Enabled = false`; the Berger tension solve stays on in
+every row, which is why the off column is not free.
+
+The mean fixed-point iteration count is reported by the same benchmarks as
+`solve_iters/sample`, and it is deterministic — identical to three digits on host
+and on `js/wasm`, and across every run:
+
+| coefficients | Active | Musical | Steady |
+| ------------ | ------ | ------- | ------ |
+| off          | 3.616  | 2.924   | 2.484  |
+| 64           | 3.965  | 3.009   | 2.557  |
+| 128          | 3.958  | 3.028   | 2.580  |
+| 256          | 3.961  | 3.045   | 2.590  |
+| 408          | 3.962  | 3.047   | 2.596  |
+
+Enabling the coupling at all costs 3–10 % more iterations, and every budget from
+64 to 408 costs the same iterations to within 0.2 % while the render cost falls
+by a factor of 2 to 2.4. **So the cost is the table walk itself and not a harder
+solve** — this table is that claim's reproduction, which it previously lacked.
+Nor is the walk optimised: the receiver side is still an unblocked scatter with a
+per-entry branch, and the table is rebuilt per iteration rather than updated
+incrementally. Making this affordable is open work, not a closed question; see
+`PLAN.md` §N9.
+
+The budget is also not currently buying much — **under the pumps-only
+excitation**. Measured on the (2,2) at 524.9 Hz with the pumps driven directly
+and no strike, the 476–700 Hz level runs −29.30 dB at 64 coefficients, −28.79 at
+128, −28.43 at 256 and −28.53 at the full 408: a 0.9 dB spread across a sixfold
+budget, and the full table is not even the loudest of them.
+
+**That is not the same measurement as the one `config.go` quotes beside
+`MaxCoefficients: 256`**, and the two must be read together. That comment
+measures the _radiated spectrum of a velocity-1 hit_, where 128 coefficients cost
+**4.2 dB** against the full table in the same 476–700 Hz band and 256 cost 0.9 dB.
+A strike excites every mode, so the truncated table loses contributions the
+pumps-only drive never asks for; the pumps-only figure is therefore a lower bound
+on what truncation costs, not an estimate of it. Any case for "128 is the first
+thing to try if the cost has to come down" rests on the weaker of the two
+measurements, and dropping to 128 is a labelled product decision — the digests in
+`TestCoupledRenderIsBitExact` are what make it visible as one — not an
+optimization.
 
 ## Discrete passivity
 
