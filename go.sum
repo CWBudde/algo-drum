@@ -4,6 +4,8 @@ github.com/cucumber/godog v0.15.1 h1:rb/6oHDdvVZKS66hrhpjFQFHjthFSrQBCOI1LwshNTI
 github.com/cucumber/godog v0.15.1/go.mod h1:qju+SQDewOljHuq9NSM66s0xEhogx0q30flfxL4WUk8=
 github.com/cucumber/messages/go/v21 v21.0.1 h1:wzA0LxwjlWQYZd32VTlAVDTkW6inOFmSM+RuOwHZiMI=
 github.com/cucumber/messages/go/v21 v21.0.1/go.mod h1:zheH/2HS9JLVFukdrsPWoPdmUtmYQAQPLk7w5vWsk5s=
+github.com/cwbudde/algo-approx v0.1.0 h1:0i+ogADelGMNKx82mOes80ikmdA8SNdSM5UDJ27G/TY=
+github.com/cwbudde/algo-approx v0.1.0/go.mod h1:Bz0OrNQt5WJFTjbrOrNjg1JOZCPDZsjfSYfkSmBeNUc=
 github.com/cwbudde/algo-dsp v0.0.0-20260729115219-8ea972cf5f07 h1:K2zn1StYVC1TG9D/IV8uqxLHAPBQRKtzAp6StshSacE=
 github.com/cwbudde/algo-dsp v0.0.0-20260729115219-8ea972cf5f07/go.mod h1:TngjsQIOjAHbD7y7xwI/wXm6yBxDJHzF8Nr6q44VTc8=
 github.com/cwbudde/algo-fft v0.7.3 h1:1MDkBhgo/hhigpbTMDvcXZpMaW0ubz844IL6rDL/Bms=
