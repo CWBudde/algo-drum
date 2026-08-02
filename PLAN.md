@@ -1588,30 +1588,55 @@ measurement to re-scope it.
     one. `TestCoupledRenderIsBitExact` now carries two digests, at the shipped
     256 coefficients and at the full 408-entry table, with the retained counts
     asserted so the second cannot silently become a duplicate of the first.
-  - [ ] **N9b: commit the measurement.** The `js/wasm` column of §Cost has never
-    had a committed reproduction, and the reason is specific: `wasm_exec.js` caps
-    argv+environ at 4096 bytes and `go_js_wasm_exec` forwards the whole
-    environment, so a developer shell fails with *"total length of command line
-    and environment variables exceeds limit"* while a bare one does not. Under
-    `env -i` with only `PATH HOME GOOS GOARCH GOCACHE GOMODCACHE` it runs, and it
-    **reproduces**: 0.676× against the documented 0.70×, Go 1.26.1, node v24.12.0.
-    Wanted: `scripts/bench-wasm.sh` carrying that error text in a comment, plus
-    `just bench-physical` and `just bench-physical-wasm`. Neither joins `just ci`
-    — there is no measured run-to-run floor for these numbers on a runner, and
-    this repository does not ship gates it has not measured.
-  - [ ] **N9c: repair the benchmark set before quoting anything from it.**
-    `BenchmarkDoubleHeadRender48k` triggers once and renders `b.N × 512` samples,
-    so the fraction of the run spent in the decayed tail grows with `b.N` and its
-    `x_realtime` reads **1.046 / 1.710 / 2.042** at 20x / 200x / 1000x. Same code,
-    same machine, three answers: that metric is not a measurement and nothing may
-    be quoted from it. `BenchmarkNonlinearDoubleHeadActive48k` is stable (0.6816
-    at 20x, 0.6756 at 200x) because it re-triggers per iteration, which is why it
-    is the only figure in §Cost. Wanted beside it: a **steady** case (one trigger,
-    a fixed window) and a **musical** one (8 hits/s — a 16th roll at 120 bpm),
-    `b.Run` sub-benchmarks over `MaxCoefficients` so the whole table comes out of
-    one command, and a reported mean solve-iteration count, since "the cost is the
-    table walk and not a harder solve" currently rests on two numbers with no
-    committed reproduction.
+  - [x] **N9b: commit the measurement.** _Done 2026-08-02._ `scripts/bench-wasm.sh`
+    plus `just bench-physical` and `just bench-physical-wasm`; neither joins
+    `just ci`. The reason the `js/wasm` column had never had a committed
+    reproduction is specific: `wasm_exec.js` caps argv+environ at 4096 bytes and
+    `go_js_wasm_exec` forwards the whole environment, so a developer shell fails
+    with *"total length of command line and environment variables exceeds
+    limit"* where a bare one does not. **The `env -i` set this item named was not
+    sufficient**: `go test` locates the wasm exec wrapper by *name* on `PATH`, and
+    `GOROOT/lib/wasm` is not on a normal `PATH`, so with exactly
+    `PATH HOME GOOS GOARCH GOCACHE GOMODCACHE` the run fails earlier with
+    `exec format error`. The script prepends the wrapper's directory. And the
+    figure reproduces but its precision does not: four runs on one machine gave
+    **0.4386, 0.4888, 0.7130 and 0.7660** against the documented 0.70×, with
+    `BenchmarkDoubleHeadRender48k` spreading 0.78×–1.94× over the same runs. That
+    spread is the argument for keeping both recipes out of `ci`.
+
+  - [x] **N9c: finish the benchmark set.** _Done 2026-08-02, and this item's own
+    premise was stale when it was written._ It said
+    `BenchmarkDoubleHeadRender48k` renders `b.N × 512` samples from one trigger so
+    its `x_realtime` grows without bound (1.046 / 1.710 / 2.042 at 20x/200x/1000x).
+    Commit `7949164` had already fixed that with `retriggerEvery = 256`, **one
+    commit before PLAN.md recorded it**, and for a better-documented reason: an
+    undamped strike decays into the subnormal range after ~15 s and every multiply
+    takes a microcode assist. What the metric does now is grow and then
+    **saturate** — 2.7–4.0 at 20x, 5.4–6.6 at 200x, 5.8–6.6 at 1000x, four repeats
+    each — by the opposite mechanism, since at 20x the whole window sits in the
+    first 0.21 s where the contact pulse, the attack layer and the solve transient
+    are all live, and settled ring is cheaper. The verdict survives and the
+    diagnosis does not.
+
+    Added: `BenchmarkNonlinearDoubleHeadMusical48k` (8 hits/s, derived from the
+    tempo and subdivision rather than a sample count), `…Steady48k` (a fixed
+    0.25 s window), and `…Active48k` re-expressed as 93.75 hits/s — the same
+    schedule it always had. All three render exactly one hit period per iteration,
+    which is what makes them benchtime-independent, sweep `MaxCoefficients` over
+    {off, 64, 128, 256, 408} with `b.Run`, and report mean solve iterations per
+    sample.
+
+    **The solve-iteration claim is now measured rather than asserted**: enabling
+    the coupling costs 3–10 % more iterations, and 64 → 408 coefficients costs the
+    same iterations to within 0.2 % while render cost falls 2–2.4×. The cost is
+    the table walk.
+
+    Also closed: §Cost's 0.9 dB and `config.go`'s 4.2 dB are different
+    excitations — pumps-only against the radiated spectrum of a velocity-1 hit —
+    and the document now says so and cross-references, since a strike excites
+    every mode and the pumps-only figure is a lower bound on truncation cost
+    rather than an estimate of it.
+
   - [ ] **N9d: the order-preserving optimizations**, each verified against N9a's
     digest. Ranked by expected payoff against a measured budget of ~7.7 ns per
     entry visit for a loop doing ~4 flops — i.e. the cost is overhead, not
@@ -1628,15 +1653,35 @@ measurement to re-scope it.
     re-associates. A CSC transpose or any entry permutation changes the order
     `accel[j]` receives its contributions. Go emits no wasm SIMD, so the AVX2
     precedent beside `midpoint.go` cannot be followed here.
-  - [ ] **N9e: read the target before spending anything on the walk.** The
-    contract is **≥ 1.0× at musical hit rates**, decided 2026-08-02, not in the
-    94-hits/s retrigger stress case. That case is the only one measured, and
-    order-preserving work plausibly buys 20–35 % against the ~60 % it would need.
-    So N9b–N9c may resolve this item without touching the walk, and if they do
-    the honest outcome is to **change the claim, not the code** — both numbers
-    stated plainly, both reproducible. `MaxCoefficients` 256 → 128 stays a
-    separate, labelled product decision and must not be smuggled in as an
-    optimization; N9a's digest is what makes it visible that it is one.
+  - [ ] **N9e: the target has been read, and the shipped configuration misses
+    it.** _Measured 2026-08-02._ The contract is **≥ 1.0× at musical hit rates**.
+    At 8 hits/s on `js/wasm` the shipped 256-coefficient configuration runs at
+    **0.93× real time** (0.89–0.96 over four runs, below 1.0 in all four). It
+    misses, but by about 7 % rather than the ~30 % the 93.75-hits/s retrigger
+    stress case implies — so this was worth measuring before optimizing, and the
+    answer is neither of the two that were expected.
+
+    Host and `js/wasm`, median of three and of four runs, by `MaxCoefficients`:
+
+    | coefficients | Active host | Active wasm | Musical host | Musical wasm | Steady wasm |
+    | ------------ | ----------- | ----------- | ------------ | ------------ | ----------- |
+    | off          | 4.46×       | 1.42×       | 5.30×        | 1.70×        | 1.89×       |
+    | 64           | 3.48×       | 0.98×       | 4.23×        | 1.26×        | 1.36×       |
+    | 128          | 3.08×       | 0.91×       | 3.71×        | **1.14×**    | 1.24×       |
+    | 256 (shipped)| 2.66×       | 0.69×       | 3.09×        | **0.93×**    | 1.07×       |
+    | 408 (full)   | 1.89×       | 0.64×       | 2.77×        | 0.81×        | 0.93×       |
+
+    Two ways to close 7 %, and **this is a decision, not a measurement**:
+    N9d's order-preserving work, plausibly worth 20–35 %; or `MaxCoefficients`
+    256 → 128, which clears it at 1.14× and is a **labelled product decision**
+    about the sound, not an optimization. N9a's digest is what makes it visible
+    that it is one. The case for 128 still rests on the weaker of the two
+    truncation measurements — see N9c.
+
+    Note also that N9's own headline is now stale on the host side: it says
+    2.06× host / 0.70× wasm at 256, where §Cost measures **2.66× / 0.69×**. The
+    host figure improved ~29 %, almost certainly from `35bb690`/`7949164`; the
+    wasm figure did not move.
 
 - [ ] **N10: jitter mode frequencies per trigger** by a fraction of a percent so
       repeated hits are not identical (Cook, PhISEM, ICMC 1996). The static
@@ -1646,173 +1691,147 @@ measurement to re-scope it.
       different pack. Confound to watch — a frequency spread that tracks take peak
       level is the Berger nonlinearity, not jitter.
 
-- [ ] **N11: assert the damping shape across the _modal_ octave bands.** P8's one
-      unmet exit clause. `damping_test.go` asserts constant ζ, near-proportional
-      decay rate and the (0,1) as the fastest-decaying mode of the low band, and
-      `TestAttackBandsDecayAtTheirOwnRate` does the same one attack band at a time —
-      but nothing states it across the modal bands, where a uniformly damped bank
-      would still pass today's tests.
+- [x] **N11: assert the damping shape across the modal bands, rendered.** _Done
+      2026-08-02._ The analytic half was deliberately **not** built:
+      `TestDefaultDampingHoldsConstantQ` already holds every retained mode's ζ
+      inside a factor of 1.5, which fixes any band statistic of γ arithmetically.
+      What was unasserted is the claim about the *audio*.
 
-      **Re-scoped 2026-08-02, before any of it was written: the analytic half is
-      redundant and must not be built.** `TestDefaultDampingHoldsConstantQ`
-      already bounds *every* retained mode's ζ to `[0.9, 1.35] × 0.0072`. If every
-      mode's ζ is inside a factor of 1.5, then so is any band statistic of γ —
-      median, mean, energy- or radiation-weighted — and the band-to-band slope is
-      pinned to `1 ± log2(1.35/0.9)/S` over an `S`-octave span as arithmetic
-      rather than as evidence. Binning the committed fixture's 96 modes confirms
-      it: slope 0.987 by octave, 0.971 by half-octave, 0.962 by third-octave
-      (0.997 radiation-weighted) against the 1.000 constant ζ predicts. An
-      analytic band test would re-spell an assertion that already ships, and this
-      repository has a rule about tests that pass because of what they were meant
-      to guard.
+      Measured on the shipped default at 48 kHz, third-octave bands:
 
-      **What is unasserted is the rendered claim**, and it is not the same
-      quantity. Between a mode's γ and the audible band envelope sit the
-      radiation weights and strike amplitudes, the two-head coupling and the
-      cavity (the resonant head's 24 modes interleave with the batter's, so a
-      band's envelope carries a *different bank's* γ), the Berger nonlinearity,
-      the pickup filters and the attack skirt. N3's own reading is the existence
-      proof that these come apart: the fitted bank's γ table and its measured
-      decay slope of −0.21 are different numbers about the same drum.
+  | band | T60 | band | T60 |
+  | ---- | --- | ---- | --- |
+  | 250.0 Hz | 0.661 s | 630.0 Hz | 0.743 s |
+  | 315.0 Hz | 0.428 s | 793.7 Hz | 0.426 s |
+  | 396.9 Hz | 0.366 s | 1000.0 Hz | 0.119 s |
+  | 500.0 Hz | 0.291 s | 1259.9 Hz | 0.107 s |
 
-      So the item is: strike, bandpass per third octave, fit a band T60, and
-      assert the slope over the retained span. Four things it has to get right,
-      none of them optional:
+  **Slope −0.917** against the −1 constant ζ predicts, inside a tolerance of
+  **0.251** that is computed from the shipped ζ window over the measured span
+  plus the estimator's measured floor, and from nothing else. Widening it would
+  mean widening the shipped calibration, in the open.
 
-  - **The span bounds the claim.** Excluding the (0,1) the bank covers 238.7 →
-    1309.7 Hz — **2.456 octaves**, and the top octave band is truncated
-    mid-band by the mode limit. State it as a slope over the retained span, not
-    as a per-band halving, or the assertion measures the band edge as much as
-    the loss law. Admit a band only if the bank fully populates it.
-  - **The control is what makes it non-vacuous.** `setUniformLoss` at the
-    default bank's radiation-weighted mean rate must come back near slope 0 and
-    *outside* the tolerance — the executable form of this item's own "a
-    uniformly damped bank would still pass today's tests". Same shape as
-    `TestEqualDampingIsNotSplitByTheEstimator` and its partner.
-  - **The tolerance is derived, not chosen.** Component one is the shape budget
-    already shipped — the factor-1.5 ζ window, computed at runtime from the same
-    constants `TestDefaultDampingHoldsConstantQ` uses and divided by the fitted
-    octave span (±0.268 as shipped), so it cannot be hand-tuned. Component two
-    is the estimator's own floor, measured in the same change against synthetic
-    exponentials and against the model with cavity, nonlinearity, coupling and
-    attack disabled, where the analytic per-band T60 is computable. The
-    mechanisms between γ and the audio get **no allowance**: they are what the
-    test exists to measure.
-  - **If the slope lands outside that, the tolerance does not move.** The number
-    is recorded as a result, N11 closes with whatever narrower assertion the
-    measurement supports, and the gap becomes its own item.
+  Three things this found that the item did not predict:
 
-    Not to be put in `internal/physical/analysis`: `Analyze` builds a
-    `SingleHead`, so a band table there would exclude the cavity and the coupling
-    — exactly the mechanisms the rendered claim is about — while churning a
-    CI-diffed fixture.
+  - **The estimator had to be calibrated, and the first calibration was too
+    easy.** A single biquad bandpass falls at 6 dB/octave, leaving the 238 Hz
+    fundamental only ~15 dB down at 1.26 kHz — so once a high band's own modes
+    had died it reported the *fundamental's* ring time, and the shipped bank
+    measured slope **+0.004**. Four cascaded sections fix it. The floor test
+    missed it because it fed each band only that band's own tone, and the
+    confound is out-of-band energy: **a floor test with no interferer cannot
+    measure leakage.**
+  - **Monotonicity is not assertable, and the enclosed air is why.** The 630 Hz
+    band rings 0.743 s between neighbours at 0.291 and 0.426. Disabling the
+    cavity drops it to **0.225 s** and takes the whole-span slope to −1.115 —
+    the render tracks the head loss law *more* closely without the cavity than
+    with it. Disabling the resonant head instead makes it far worse, 1.494 s,
+    since the air is then driven by one head and damped by one. → **N19**.
+  - **The first diagnosis was wrong and is recorded as such.** Doublet beating
+    stretching a Schroeder integral — the mechanism objective-validation
+    Result 8 flags for the fast estimator — is refuted: with the tension
+    asymmetry removed the band still reads 0.764 s.
+
+  Two controls, since a shape measurement that cannot reject a flat law asserts
+  nothing. A uniformly damped bank at the same radiation-weighted mean rate
+  measures **+0.150**, on the far side of −1 by more than four tolerances. The
+  attack layer is not the source of the trend (−0.828 without it) but is **not
+  neutral** to the measurement either: 0.089 is 180× the estimator floor, so
+  that control asserts agreement against the shape budget — what a mechanism
+  inside the instrument may move — rather than against the floor, which is what
+  only an artefact would stay inside.
 
 **N12: two model-internal soundness gaps.** Both found while fixing a validated
 config that could render NaN. **Split into N12a and N12b on 2026-08-02**, after
 the first gap was measured and turned out to be a bigger and different problem
 than the item described. The number is kept because things point at it.
 
-- [ ] **N12a: the voice never releases.** As written, this said `Validate()`
-      accepts a head with **zero total loss** — finite, but the modes never decay
-      and `IsActive()` stays true forever, where the clamp in `attack.go` cannot
-      reach it. True, and **not the interesting case.**
+- [x] **N12a: the voice never releases.** _Done 2026-08-02._ Measured over the
+      product-reachable knob space, one knob at a time at the ring-maximising
+      strip position, rendering until `IsActive()` goes false:
 
-      **Measured 2026-08-02 over the product-reachable knob space**, one knob at
-      a time from `newPhysicalTom` at 48 kHz, rendering until `IsActive()` goes
-      false:
+  | knob | release | knob | release |
+  | ---- | ------- | ---- | ------- |
+  | defaults | 1.527 s | `DAMP` 0 | 4.572 s |
+  | `D.TILT` 0 | **> 120 s** | `B.TUNE` 0 | 3.314 s |
+  | `DAMP` 0 + `D.TILT` 0 | **> 120 s** | `ATK.T` 0 | 3.274 s |
+  | | | `AIR` 0 | 1.155 s (shortest) |
 
-  - the shipped default releases at **1.527 s**;
-  - **`D.TILT` at its lower stop alone reaches 21.5 s** — a 14× excursion from a
-    single knob, because `scaleHeadLosses` multiplies `d₁`, `d₂` *and* the
-    mode-decay corrections by `lossScale × tilt`, so a zero tilt leaves only
-    `d₀` and the whole frequency-dependent half of the loss law is gone;
-  - `DAMP` at its lower stop with `D.TILT` 0 and `DEC` at maximum reaches
-    **65.3 s**;
-  - next worst single knobs are `B.TUNE` low at 3.16 s and `DAMP` low at 3.01 s;
-    `AIR` low is the *shortest* at 0.76 s.
+  `scaleHeadLosses` multiplies `d₁`, `d₂` **and every `ModeDecayCorrections`
+  entry** by `DAMP × D.TILT`, so a zero tilt deletes the whole
+  frequency-dependent half of the loss law and the measured (0,1) correction with
+  it, leaving only the flat `d₀` and radiation terms.
 
-    So zero loss in `Validate()` is the most extreme of at least three doors into
-    the same hang, and **the only one the product cannot open**. A validator
-    rejecting a configuration `PhysicalTomConfig` cannot build is a check that
-    never fires where the defect is.
+  `TestTheVoiceReleasesAtEveryKnobPosition` holds that sweep. It is a **separate
+  test rather than an entry in `newTestVoices()`**, and that is the honest
+  framing rather than the convenient one: `TestVoicesVelocityScalesPeak` asserts
+  a peak linear in velocity to within 2 %, which the Berger nonlinearity exists
+  to violate, so enrolling the physical voice there would either fail for a
+  correct reason or force the nonlinearity off for the test.
 
-    **A joint loss floor in `Validate()` is therefore refused**, and for three
-    reasons beyond that one. A lossless head is a legitimate analytic object and
-    the tests that build one are load-bearing evidence, not conveniences —
-    `TestDoubleHeadLosslessEnergyExchangeIsConservative`,
-    `TestTransverseCavityIsPassive`, `TestCouplingLosslessEnergyIsConserved` and
-    the discrete-gradient passivity argument four documents rest on. It would put
-    that proof on a path the shipped validator calls invalid. And
-    `TestValidatedEndpointsRenderFinite` **`continue`s past a rejected
-    endpoint**, so its two explicit "lossless" endpoints would silently stop
-    testing anything while the test stayed green — the exact failure mode this
-    repository keeps finding.
+  What landed: a release bound with a raised-cosine fade in `DoubleHead` and
+  `SingleHead`, gating the radiated output and `IsActive` and **nothing else** —
+  the state update still runs in full past the deadline, so `d.energy` and every
+  raw component are unchanged and the conservation and passivity tests still
+  measure the model. A `Trigger` re-arms rather than extends, so a roll never
+  trips it. The fade sits **inside** the deadline, so `ReleaseBoundSeconds` is
+  the whole claim and its exact zero lands on the last sample before the voice
+  is declared over. `testdata/physical-reference-v2.json` is byte-identical,
+  which is the standing proof of inertness.
 
-    What lands instead: a **release bound with a fade**, in `DoubleHead` and
-    `SingleHead`. Past a deadline the radiated output takes a short raised-cosine
-    fade and `IsActive()` goes false. The fade is not decoration —
-    `physicalTom.Tick` hard-returns 0 when inactive, so a bound firing mid-ring
-    would click. It gates `IsActive` and the ramp **only, never `Tick`/`Render`**,
-    so every conservation test — which reads `d.energy` over a bounded render —
-    is untouched, and so is anything that renders a fixed window.
+  **The item was wrong about its own last piece.** It asked for a negative-total-
+  rate check in `Validate`, "which costs nothing". `buildMode` already rejects
+  one, `GenerateModes` is the only way to reach a model, and
+  `TestModeCorrectionCannotMakeDecayNegative` already pins it. Adding it to
+  `Validate` would double bank generation on every knob edit to restate a
+  guarantee that already holds.
 
-    **The ceiling is 8 s**, decided 2026-08-02. It is a product statement and has
-    to be: a deadline derived from the generated bank would scale with the
-    pathology, since at `D.TILT = 0` the bank's own slowest T60 *is* the problem.
-    8 s is 5.2× the shipped voice's own release, so the bound is provably inert
-    on everything that ships — `just check-physical-reference` staying clean is
-    the proof — and decisive on both pathological cases.
+- [x] **N12b: the unmeasured level ceilings.** _Done 2026-08-02, in two commits:
+      plumbing with no behaviour change, then the tightening._
+      `attack.levelRelative` goes 1 000 → **0.15** and `pickup.outputGain`
+      100 → **0.48**.
 
-    Two smaller pieces belong here. `InactiveEnergyThresholdJ` is validated
-    `[0, 1]` and may be **0**, which is an independent second way to make a voice
-    immortal; the release bound closes it, and a test should say so. And
-    `buildMode` already rejects a *negative* total rate — state the same in
-    `Validate` as a joint check on the generated bank, **negative only, never
-    zero**, so a negative `ModeDecayCorrections` entry cancelling the law is
-    caught at validation. No `ConfigVersion` bump: nothing that decodes today
-    stops decoding. A zero-loss rejection would additionally have broken
-    `migrateV5Config`, whose whole purpose is to preserve a nearly-lossless law.
+  `attack.levelRelative`'s ceiling is the level at which the attack layer **on
+  its own** reaches 0 dBFS at the shipped gain and velocity 1 — above it every
+  setting is guaranteed to clip whatever the modal bank does. Measured at
+  **0.1461**, rounded up to 0.15, which is *also exactly the `ATK.L` knob's own
+  maximum*. The two were arrived at independently, so the tightening costs the
+  product nothing; they now sit on top of each other and the knob-reach test is
+  what notices if either moves.
 
-- [ ] **N12b: the unmeasured level ceilings.** `attack.levelRelative = 1000` and
-      `pickup.outputGain = 100` let the physical voice hand ~1e4 to the master
-      chain. Legitimate and clamped downstream, but the ceilings look chosen for
-      headroom rather than measured — they stand at 6 700× and 20 800× the values
-      beneath them, a knob maximum of 0.15 and a calibrated 0.0048.
+  The measurement is **by difference**, because the new ceiling forbids the
+  obvious method: turning the level up until the layer dominates would leave the
+  range being measured. The layer is a pure addition to the radiated sum and
+  feeds nothing back into the modal state, so rendering with and without it and
+  subtracting isolates it exactly. Its linearity is asserted rather than assumed
+  — 6.8467 per unit at both probe levels.
 
-      What is already measured is only the default:
-      `TestPhysicalTomReachesProductLevelWithoutACompensatingGain` renders the
-      velocity-1 peak handed to the master chain and asserts `[0.70, 0.95]`,
-      against `OutputGain` documented as "fitted so a velocity-1 hit peaks at
-      0.9". Unmeasured: the level anywhere else in the reachable space, and the
-      ceilings themselves.
+  `pickup.outputGain`'s ceiling is **100 × the calibrated gain**, the factor
+  taken from `migrateV7Config`'s record that the pre-v8 gain ran "roughly two
+  orders of magnitude hot". It is written as a multiplication and pinned to the
+  calibrated value by test, so a recalibration carries the ceiling with it.
 
-      **Land the plumbing first, green and with no behaviour change.**
-      `TestValidatedEndpointsRenderFinite` hard-codes literal copies of every
-      bound in `validate.go` *and* skips rejected endpoints, so tightening a
-      ceiling without editing the list silently deletes that endpoint's coverage.
-      Hoist the bounds into one table both read — the same defence N17 applied to
-      `analysisSeconds`/`-duration`, and for the same reason — and make the
-      skipped-endpoint count an assertion. Add the check nothing states today:
-      **a validated ceiling below a knob's mapped maximum lets the product build
-      a configuration its own validator rejects.**
+  Two things the plumbing found the moment it landed:
 
-      Then derive the ceilings from a measurement rather than from taste. Sweep
-      the **product-reachable** space only; do not try to bound the
-      validate-reachable one, whose fields multiply — bound its inputs instead.
-      `Attack.LevelRelative`'s ceiling is the level at which the attack layer
-      alone reaches 0 dBFS at the shipped output gain and velocity 1, above which
-      every setting is guaranteed clipping and carries no information.
-      `Pickup.OutputGain`'s is **100× the calibrated 0.0048 ≈ 0.5**, the factor
-      taken from `migrateV7Config`'s own record that the pre-v8 gain ran "roughly
-      two orders of magnitude hot" — a measured historical excursion of the
-      calibration, so the ceiling survives a recalibration and not only today's.
+  - **Six of the 120 endpoints were already being skipped, silently.**
+    `sampleRateHz` at its floor, the batter radius at its floor, the batter
+    tension or bending stiffness at its ceiling, and either head's
+    `frequencyLimitFraction` at its ceiling all move the top of the bank far
+    enough that the nonlinearity crosses the anti-alias bound. Validate is right
+    to reject them; the point is that those six were not covered by the render
+    check and nothing said so. The count is now asserted.
+  - **Nothing stated that the product's knobs land inside the validated
+    region.** `TestTheProductCannotBuildAConfigItsOwnValidatorRejects` states it
+    directly rather than by comparing two tables — stronger, and it needs no
+    exported bounds. It holds today, and it is the precondition for tightening
+    any ceiling, since a tightening that crossed a knob's reach would surface as
+    a knob that stops working part-way along its travel with no indication why.
 
-      This is a config-schema tightening and the commit must say so. Nothing is
-      affected in practice, and that was checked rather than assumed: persistence
-      stores normalized knob positions rather than SI configs, presets hold
-      parameter IDs, `testdata/physical-fit-tom.json` sits far below any
-      candidate ceiling and is read by no code, and the CI-diffed fixture holds
-      no config fields at all.
+  Also measured, because "unmeasured" was being read as "fine": the
+  product-reachable level. Worst case **+9.05 dBFS**, with `B.TUNE` at its lower
+  stop — a slacker head is louder. That is before the 0.5 mix headroom, the
+  reverb and the −1 dBFS limiter, so it is absorbed; an order of magnitude, which
+  the old ceilings permitted, would not have been.
 
 - [x] **N13: citation debt.** _Done 2026-08-02._ All three keys added, each
       verified against a primary source rather than reconstructed:
@@ -1916,6 +1935,30 @@ than the item described. The number is kept because things point at it.
     genuine drift between the document and the test that backs it, and the
     document is the one to re-derive.
 
+- [ ] **N19: the cavity is the least-damped element in 630–800 Hz.** _Found by
+      N11, 2026-08-02._ On the shipped default the 630 Hz third-octave band rings
+      **0.743 s** where its neighbours at 500 and 794 Hz ring 0.291 s and 0.426 s.
+      Disabling the cavity drops it to **0.225 s** and takes the whole-span decay
+      slope from −0.917 to −1.115 — the render tracks the head loss law *more*
+      closely without the enclosed air than with it. Disabling the resonant head
+      instead makes it far worse, **1.494 s**, because the air is then driven by
+      one head and damped by one.
+
+      So in that region the audible ring time is set by the cavity rather than by
+      the loss law the whole damping calibration is about, and
+      `cavity.lossPerSecond` is a free field with a validated range of
+      `[0, 10 000]` and **no measurement behind its default**. Every other
+      element's damping has been argued for; this one has not.
+
+      Two things to settle before touching it, and in this order. Whether the
+      figure is even right: `TestTheRenderedDampingIsNotMonotoneAndTheCavityIsWhy`
+      measures a band, not a mode, so the first job is to identify *which* cavity
+      mode carries it and at what rate. And whether a real drum does this — a
+      shell cavity with two heads on it is not an undamped Helmholtz resonator,
+      and [`physical-cavity.md`](docs/physical-cavity.md) is where the answer
+      would have to come from. Do not tune the number to flatten the band: the
+      band is evidence, and N11's tolerance does not move to accommodate a fix.
+
 - [ ] **N14: the doublet pair, by physical capture.** The one measurement the
       sample pack cannot supply. Ten centre hits with the resonant head removed, ten
       with it refitted, batter tuning untouched; Fischer's protocol on a tom.
@@ -2016,13 +2059,35 @@ test depending on a measured number; the long-ringing spurious mode is either
 fixed with a measured improvement or closed by the measurement that rejected the
 fix; and the paper reports that state rather than the previous one.
 
-**Status, 2026-08-02.** Done: N1, N2, N8, N8a, N13, N15, N17, N18, and N9a. Open
-and unblocked by any recording: N9b–N9e, N11, N12a, N12b, and N6's code. Open
-and waiting on a reading of a fit that already exists: N3, N5. Open and blocked:
-N7 (on N5), N10 and N14 (on captures that do not exist), N16 §2–§3 (on tooling
-that was never committed). N4 is a decision rather than a measurement, and the
-one thing it wanted the licensed reference for — the drum's own doublet split —
-§Result 11c disqualifies the subspace estimator from supplying.
+**Status, 2026-08-02, second pass.** Done: N1, N2, N8, N8a, N9a, N9b, N9c, N11,
+N12a, N12b, N13, N15, N17, N18. Open and unblocked by any recording: **N9e**,
+which is now a decision rather than a measurement — the shipped configuration
+misses the musical-rate contract by 7 % and the two ways to close it are N9d's
+order-preserving work or a labelled 256 → 128 product decision — plus **N6**
+(tool and the 5×5 run) and **N19**. Open and waiting on a reading of a fit that
+already exists: N3, N5. Open and blocked: N7 (on N5), N10 and N14 (on captures
+that do not exist), N16 §2–§3 (on tooling that was never committed). N4 is a
+decision rather than a measurement, and the one thing it wanted the licensed
+reference for — the drum's own doublet split — §Result 11c disqualifies the
+subspace estimator from supplying.
+
+**The pattern held, and it is the most useful thing this pass produced.** Of the
+seven items taken across the two passes, **six were about something other than
+what they said**: N8a's normalisation made its own document's claim stronger
+rather than weaker; N9's bit-exactness discipline was unenforceable; N9c's
+central defect had already been fixed a commit before it was written down; N11's
+analytic half was redundant and its rendered half was defeated by a filter skirt
+until the estimator was calibrated against the right confound; N12a's hazard was
+a product-reachable 65-second tail rather than the validator gap it described,
+and its "costs nothing" rider was already implemented; N12b's plumbing was
+load-bearing rather than tidying, and found six endpoints that had silently
+stopped being tested. Only N13 was what it claimed to be.
+
+The rule that follows is stronger than "measure the item before implementing
+it", which the first pass wrote. It is: **an item written from reading code
+records a hypothesis about a measurement nobody made, and the measurement's
+first job is to re-scope the item.** Budget for the re-scoping, not for the
+implementation.
 
 ### Closed on evidence — do not re-open
 
