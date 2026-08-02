@@ -255,65 +255,6 @@ func TestObjectiveIsInvariantUnderCommonAngleRotation(t *testing.T) {
 	}
 }
 
-// hessianOver builds the Hessian of the real objective over the named labels at
-// a fixed step, and returns the reduced matrix with its spectrum.
-//
-// The step is fixed rather than swept here on purpose. The sweep is a
-// measurement of *this reference set's* piecewise structure and belongs to the
-// real run; what these tests are about is whether the Hessian machinery recovers
-// a symmetry the model provably has, and re-measuring the plateau on a synthetic
-// target would only add evaluations and a second thing to fail.
-func hessianOver(
-	tb testing.TB,
-	probe *evaluator,
-	position []float64,
-	step float64,
-	labels ...string,
-) (IdentifiabilityReport, []float64, [][]float64) {
-	tb.Helper()
-
-	scope, err := resolveScope(probe, strings.Join(labels, ","))
-	if err != nil {
-		tb.Fatalf("resolveScope: %v", err)
-	}
-
-	counted := &counter{cost: probe.cost}
-
-	cost := counted.at(position)
-	if !isUsable(cost) {
-		tb.Fatalf("the probe point does not score: %v", cost)
-	}
-
-	report := IdentifiabilityReport{Cost: cost, Scope: describeScope(probe, scope, position)}
-	names := make([]string, len(scope))
-
-	for slot := range scope {
-		names[slot] = report.Scope[slot].Label
-	}
-
-	keep := admissible(&report, position, scope, step)
-	report.Hessian = fillHessian(counted, position, scope, cost, step, keep)
-	report.Dropped = append(report.Dropped, dropNulls(report.Hessian, names, keep)...)
-	report.ReducedLabels, report.Reduced = reduce(report.Hessian, names, keep)
-	report.ReducedDimension = len(report.ReducedLabels)
-
-	if report.ReducedDimension != len(labels) {
-		tb.Fatalf("only %d of %d components survived: %v", report.ReducedDimension, len(labels), report.Dropped)
-	}
-
-	report.Predictions = scorePredictions(
-		sweepDirections(counted, position, scope, names, cost, io.Discard),
-	)
-
-	values, vectors := jacobiEigen(report.Reduced)
-	report.Eigenvalues = values
-	report.Eigenvectors = describeEigenvectors(values, vectors, report.ReducedLabels)
-	report.ConstrainedCounts = countDecades(values)
-	relateToSpectrum(&report.Predictions, report.Reduced, values, vectors, report.ReducedLabels, step)
-
-	return report, values, vectors
-}
-
 // blockFixture is the default 5x5 block measured once and shared, because it is
 // a minute of synthesis and both prediction tests read the same run. The tool's
 // own scope, so the tests exercise what an actual invocation does.

@@ -1181,6 +1181,31 @@ func probeGlide(
 // settling with a time constant of tens of milliseconds, so a reading taken at
 // 0.10 s has already seen nearly all of it, while a reading taken at 0.400 s on
 // a dead partial has seen none of it.
+//
+// # How long the walk actually is
+//
+// Counted rather than assumed, because the two sides of it differ by two orders
+// of magnitude and only one of them is on the hot path.
+//
+//   - On a *recording* the walk never runs. All sixteen takes of
+//     reference/tt08x08/lp/hd accept the very first probe, at 0.400 s, as does
+//     the synthetic hit the package benchmarks use: two probes per extraction,
+//     2,400 samples. Three of the sixteen refuse the early probe and take one.
+//   - On a *candidate render* it runs to near exhaustion: 303 to 305 probes of
+//     1,764 samples, which is 536 k math.Atan2 and as many math.Sqrt. That is
+//     the paragraph above being right — the model's fundamental really is gone
+//     by 0.400 s — and it is also the path a fit spends all its time on, since
+//     the reference is extracted once and cached while a render is extracted
+//     per candidate.
+//
+// So the walk is only redundant where it is hot, which is what makes glideTerms
+// worth its complexity: the probes overlap by a factor of forty and every one
+// of them recomputes the same per-sample arctangent and square root. Memoized,
+// cmd/fit-physical's BenchmarkExtract — one extraction of one render — measures
+// −11.6 % instructions and −9.7 % cycles, three interleaved pairs of runs
+// pinned to one P-core with a 0.01 % instruction spread, and a whole objective
+// evaluation (BenchmarkCost) −0.86 %. The recording path is unmoved, inside a
+// 0.1 % spread, because two probes still fill the table exactly twice.
 func measureGlide(work *extractScratch, hit []float64, sampleRateHz float64, options Options, frequencyHz, cutoffHz float64) (float64, bool) {
 	inPhase, quadrature := work.basebandPair(len(hit))
 	heterodyneInto(inPhase, quadrature, hit, sampleRateHz, frequencyHz, cutoffHz, 1)

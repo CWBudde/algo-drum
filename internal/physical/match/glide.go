@@ -8,14 +8,14 @@ import "math"
 
 // glideTerms memoizes the two per-sample quantities a probe window averages:
 // the wrapped phase step and the magnitude. Both are properties of the sample
-// alone, not of the window, so the walk below re-derives them for every probe
-// it takes — and the walk overlaps its own windows by a factor of forty.
+// alone and not of the window, so measureGlide's late-probe walk re-derives
+// them for every probe it takes, over windows that overlap by a factor of
+// forty. On a candidate render that is 304 probes of 1,764 samples — 536 k
+// math.Atan2 and as many math.Sqrt per extraction. Memoized it is 1,920 samples
+// for the first probe plus 48 for each step of the walk: 17 k of each.
 //
-// Measured on a candidate render, which is the only place the walk actually
-// runs: 304 probes of 1,764 samples each, 536 k math.Atan2 and 536 k math.Sqrt
-// per extraction. Memoized it is 1,920 samples for the first probe plus 48 for
-// each step of the walk, 17 k of each — a factor of 31. See measureGlide for
-// why the reference path never sees any of this.
+// measureGlide carries the counts and what they cost, including why a recording
+// never walks at all and is therefore not slowed down by this table.
 //
 // The cache holds one contiguous range because the walk is contiguous: it
 // starts at the latest probe and steps down by a millisecond, so each probe
@@ -24,8 +24,10 @@ import "math"
 // window — refills from scratch rather than bridging the gap, because bridging
 // it would compute the 16,000 samples in between that nobody reads.
 //
-// It is bit-exact. Each window is still summed in index order over the same
-// values; only the arctangent and the square root stop being recomputed.
+// It is bit-exact, which is what lets it land without regenerating a fixture:
+// each window is still summed in index order over the same values, and only the
+// arctangent and the square root stop being recomputed. Extract's glide on
+// three renders is identical to the last bit against the direct form.
 type glideTerms struct {
 	phaseStep []float64
 	magnitude []float64

@@ -22,6 +22,36 @@ type Output struct {
 	MechanicalEnergyJ float64
 }
 
+// modeTransition is one mode's exact 2x2 state-transition matrix for one
+// sample: [displacement velocity] -> [displacement velocity].
+//
+// # Why this one is interleaved and DoubleHead's is not
+//
+// The four entries are always read at the same mode, in the same expression, so
+// they are the textbook interleaving candidate: one bounds check and one 32-byte
+// stride instead of four base pointers walked in lockstep. Measured on this loop
+// it is worth −5.3 % retired instructions and −14.5 % L1 loads on
+// BenchmarkSingleHeadRender48k (3 runs each, spread < 0.1 %, `taskset -c 0 perf
+// stat`, host amd64).
+//
+// The identical change was made to DoubleHead.tickUncoupled at the same time and
+// measured **+1.9 % instructions — slower** — so it was reverted there and
+// DoubleHead keeps four parallel []float64. Neither the value form nor
+// `&slice[i]` recovered it. The difference is register pressure, not cache: the
+// bank is L1-resident in both layouts (0.06 % L1 miss rate), and Tick here has
+// eleven live slice bases against tickUncoupled's eight, so folding three of
+// them away pays here and only buys scaled-index addressing there.
+//
+// That split is the whole finding of the layout experiment: there is no bank
+// layout that is right for every loop, and which way a given interleave falls
+// has to be measured per loop rather than argued from the byte counts.
+type modeTransition struct {
+	m11 float64
+	m12 float64
+	m21 float64
+	m22 float64
+}
+
 // SingleHead is the P2 real-time modal prototype. It owns all working memory;
 // Trigger, Tick, Reset, and Render perform no allocations.
 type SingleHead struct {
@@ -30,10 +60,7 @@ type SingleHead struct {
 
 	displacement []float64
 	velocity     []float64
-	matrix11     []float64
-	matrix12     []float64
-	matrix21     []float64
-	matrix22     []float64
+	transition   []modeTransition
 	strikeWeight []float64
 
 	// Struct-of-arrays mirrors of the five Mode fields Tick reads, for the reason
@@ -75,10 +102,7 @@ func NewSingleHead(config PhysicalDrum) (*SingleHead, error) {
 		modes:        modes,
 		displacement: make([]float64, modeCount),
 		velocity:     make([]float64, modeCount),
-		matrix11:     make([]float64, modeCount),
-		matrix12:     make([]float64, modeCount),
-		matrix21:     make([]float64, modeCount),
-		matrix22:     make([]float64, modeCount),
+		transition:   make([]modeTransition, modeCount),
 		release:      newReleaseBound(config.SampleRateHz),
 		radiationHP: biquad.Section{Coefficients: design.Highpass(
 			min(config.Pickup.HighpassHz, config.SampleRateHz*0.45),
@@ -107,10 +131,12 @@ func NewSingleHead(config PhysicalDrum) (*SingleHead, error) {
 			)
 		}
 
-		model.matrix11[index] = matrix11
-		model.matrix12[index] = matrix12
-		model.matrix21[index] = matrix21
-		model.matrix22[index] = matrix22
+		model.transition[index] = modeTransition{
+			m11: matrix11,
+			m12: matrix12,
+			m21: matrix21,
+			m22: matrix22,
+		}
 	}
 
 	model.strikeWeight = make([]float64, modeCount)
@@ -232,8 +258,7 @@ func (s *SingleHead) Tick() Output {
 	modeCount := len(s.modes)
 	displacement := s.displacement[:modeCount]
 	velocity := s.velocity[:modeCount]
-	matrix11, matrix12 := s.matrix11[:modeCount], s.matrix12[:modeCount]
-	matrix21, matrix22 := s.matrix21[:modeCount], s.matrix22[:modeCount]
+	transitions := s.transition[:modeCount]
 	pickupShape := s.modePickupShape[:modeCount]
 	radiationWeight := s.modeRadiationWeight[:modeCount]
 	modalMass := s.modeModalMassKg[:modeCount]
@@ -248,10 +273,11 @@ func (s *SingleHead) Tick() Output {
 		previousVelocity := velocity[index]
 		oldVelocity := previousVelocity +
 			forceN*strikeAccel[index]*inverseSampleRate
-		newDisplacement := matrix11[index]*oldDisplacement +
-			matrix12[index]*oldVelocity
-		newVelocity := matrix21[index]*oldDisplacement +
-			matrix22[index]*oldVelocity
+		transition := transitions[index]
+		newDisplacement := transition.m11*oldDisplacement +
+			transition.m12*oldVelocity
+		newVelocity := transition.m21*oldDisplacement +
+			transition.m22*oldVelocity
 
 		displacement[index] = newDisplacement
 		velocity[index] = newVelocity

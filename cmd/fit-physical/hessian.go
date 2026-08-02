@@ -1051,15 +1051,22 @@ func judge(predictions *Predictions) {
 	}
 
 	pinned.Verdict = againstFloor(pinned.Samples, rotation.Samples,
-		"the split-broken rotation", "AXIS would then do nothing at this drum's asymmetry")
+		"the split-broken rotation",
+		"AXIS would then do nothing at this drum's asymmetry",
+		"How far above the floor is not a measure of how weakly the split breaks it: "+
+			"the number is set by the objective's staircase, not by the 0.4 %.")
 
 	for index := range predictions.RadiusPair {
 		probe := &predictions.RadiusPair[index]
-		if probe.Available {
-			probe.Verdict = againstFloor(probe.Samples, rotation.Samples, "this direction",
-				"the exchange argument does not predict a flat direction — it is discrete, "+
-					"and a discrete symmetry produces no zero eigenvalue even when it is exact")
+		if !probe.Available {
+			continue
 		}
+
+		probe.Verdict = againstFloor(probe.Samples, rotation.Samples, "this direction",
+			"the exchange argument does not predict a flat direction — it is discrete, "+
+				"and a discrete symmetry produces no zero eigenvalue even when it is exact",
+			"Whether it is also *softer* than its partner direction is a separate question, "+
+				"and not one this answers: compare the two radius rows against each other.")
 	}
 }
 
@@ -1096,7 +1103,7 @@ func contrastRange(numerator, denominator []StepSample) (low, high float64, step
 // all. The common angle rotation is an exact symmetry of the model, so whatever
 // it returns is what this tool reports for zero — and a direction is flat only if
 // it is down at that level.
-func againstFloor(samples, floor []StepSample, subject, flatMeans string) string {
+func againstFloor(samples, floor []StepSample, subject, flatMeans, caveat string) string {
 	low, high, steps := contrastRange(floor, samples)
 	if steps == 0 {
 		return "unavailable: no step measured both this direction and the exact symmetry"
@@ -1107,15 +1114,16 @@ func againstFloor(samples, floor []StepSample, subject, flatMeans string) string
 	if low < symmetryContrast {
 		return fmt.Sprintf(
 			"REFUTED: %s comes within %.3g of the floor an exact symmetry reaches (over %d steps) — %s",
-			subject, low, steps, flatMeans,
-		)
+			subject, low, steps, flatMeans)
 	}
 
+	// "Not flat" and nothing more. This says the direction is not a symmetry; it
+	// does not say the direction is soft, because a ratio to the floor is not a
+	// measure of curvature — the numerator is the objective's staircase.
 	return fmt.Sprintf(
 		"borne out: %s stands %.3g to %.3g times above the floor an exact symmetry reaches, "+
-			"over %d steps — soft, and not flat",
-		subject, low, high, steps,
-	)
+			"over %d steps — not flat. %s",
+		subject, low, high, steps, caveat)
 }
 
 func sortedKeys(weights map[string]float64) []string {
@@ -1127,18 +1135,6 @@ func sortedKeys(weights map[string]float64) []string {
 	slices.Sort(keys)
 
 	return keys
-}
-
-func labelled(direction []float64, labels []string) []VectorComponent {
-	var components []VectorComponent
-
-	for slot, weight := range direction {
-		if weight != 0 {
-			components = append(components, VectorComponent{Label: labels[slot], Weight: weight})
-		}
-	}
-
-	return components
 }
 
 // rayleigh is dᵀHd for a unit d.
