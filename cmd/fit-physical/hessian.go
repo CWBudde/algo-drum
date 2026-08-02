@@ -1114,7 +1114,8 @@ func againstFloor(samples, floor []StepSample, subject, flatMeans, caveat string
 	if low < symmetryContrast {
 		return fmt.Sprintf(
 			"REFUTED: %s comes within %.3g of the floor an exact symmetry reaches (over %d steps) — %s",
-			subject, low, steps, flatMeans)
+			subject, low, steps, flatMeans,
+		)
 	}
 
 	// "Not flat" and nothing more. This says the direction is not a symmetry; it
@@ -1123,7 +1124,8 @@ func againstFloor(samples, floor []StepSample, subject, flatMeans, caveat string
 	return fmt.Sprintf(
 		"borne out: %s stands %.3g to %.3g times above the floor an exact symmetry reaches, "+
 			"over %d steps — not flat. %s",
-		subject, low, high, steps, caveat)
+		subject, low, high, steps, caveat,
+	)
 }
 
 func sortedKeys(weights map[string]float64) []string {
