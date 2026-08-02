@@ -19,7 +19,7 @@ func (d PhysicalDrum) Validate() error {
 		return fmt.Errorf("%w: got %d, want %d", ErrConfigVersion, d.Version, ConfigVersion)
 	}
 
-	if err := finiteRange("sampleRateHz", d.SampleRateHz, minSampleRateHz, maxSampleRateHz); err != nil {
+	if err := boundedRange("sampleRateHz", "sampleRateHz", d.SampleRateHz); err != nil {
 		return err
 	}
 
@@ -48,11 +48,11 @@ func (d PhysicalDrum) Validate() error {
 		return err
 	}
 
-	if err := finiteRange("strike.radius01", d.Strike.Radius01, 0, 1); err != nil {
+	if err := boundedRange("strike.radius01", "strike.radius01", d.Strike.Radius01); err != nil {
 		return err
 	}
 
-	if err := finiteRange("strike.angleRad", d.Strike.AngleRad, -2*math.Pi, 2*math.Pi); err != nil {
+	if err := boundedRange("strike.angleRad", "strike.angleRad", d.Strike.AngleRad); err != nil {
 		return err
 	}
 
@@ -60,15 +60,15 @@ func (d PhysicalDrum) Validate() error {
 		return err
 	}
 
-	if err := finiteRange("strike.malletMassKg", d.Strike.MalletMassKg, 1e-4, 1); err != nil {
+	if err := boundedRange("strike.malletMassKg", "strike.malletMassKg", d.Strike.MalletMassKg); err != nil {
 		return err
 	}
 
-	if err := finiteRange("strike.velocityMPerS", d.Strike.VelocityMPerS, 0, 20); err != nil {
+	if err := boundedRange("strike.velocityMPerS", "strike.velocityMPerS", d.Strike.VelocityMPerS); err != nil {
 		return err
 	}
 
-	if err := finiteRange("strike.hardness01", d.Strike.Hardness01, 0, 1); err != nil {
+	if err := boundedRange("strike.hardness01", "strike.hardness01", d.Strike.Hardness01); err != nil {
 		return err
 	}
 
@@ -76,27 +76,27 @@ func (d PhysicalDrum) Validate() error {
 		return err
 	}
 
-	if err := finiteRange("cavity.depthM", d.Cavity.DepthM, 0.01, 2); err != nil {
+	if err := boundedRange("cavity.depthM", "cavity.depthM", d.Cavity.DepthM); err != nil {
 		return err
 	}
 
-	if err := finiteRange("cavity.coupling01", d.Cavity.Coupling01, 0, 1); err != nil {
+	if err := boundedRange("cavity.coupling01", "cavity.coupling01", d.Cavity.Coupling01); err != nil {
 		return err
 	}
 
-	if err := finiteRange("cavity.stiffnessScale", d.Cavity.StiffnessScale, 0, 1); err != nil {
+	if err := boundedRange("cavity.stiffnessScale", "cavity.stiffnessScale", d.Cavity.StiffnessScale); err != nil {
 		return err
 	}
 
-	if err := finiteRange("cavity.airDensityKgPerM3", d.Cavity.AirDensityKgPerM3, 0.5, 2); err != nil {
+	if err := boundedRange("cavity.airDensityKgPerM3", "cavity.airDensityKgPerM3", d.Cavity.AirDensityKgPerM3); err != nil {
 		return err
 	}
 
-	if err := finiteRange("cavity.soundSpeedMPerS", d.Cavity.SoundSpeedMPerS, 250, 400); err != nil {
+	if err := boundedRange("cavity.soundSpeedMPerS", "cavity.soundSpeedMPerS", d.Cavity.SoundSpeedMPerS); err != nil {
 		return err
 	}
 
-	if err := finiteRange("cavity.lossPerSecond", d.Cavity.LossPerSecond, 0, 10_000); err != nil {
+	if err := boundedRange("cavity.lossPerSecond", "cavity.lossPerSecond", d.Cavity.LossPerSecond); err != nil {
 		return err
 	}
 
@@ -108,11 +108,11 @@ func (d PhysicalDrum) Validate() error {
 		return err
 	}
 
-	if err := finiteRange("pickup.radius01", d.Pickup.Radius01, 0, 1); err != nil {
+	if err := boundedRange("pickup.radius01", "pickup.radius01", d.Pickup.Radius01); err != nil {
 		return err
 	}
 
-	if err := finiteRange("pickup.angleRad", d.Pickup.AngleRad, -2*math.Pi, 2*math.Pi); err != nil {
+	if err := boundedRange("pickup.angleRad", "pickup.angleRad", d.Pickup.AngleRad); err != nil {
 		return err
 	}
 
@@ -120,15 +120,15 @@ func (d PhysicalDrum) Validate() error {
 		return err
 	}
 
-	if err := finiteRange("pickup.nearFieldScale", d.Pickup.NearFieldScale, 0, 10); err != nil {
+	if err := boundedRange("pickup.nearFieldScale", "pickup.nearFieldScale", d.Pickup.NearFieldScale); err != nil {
 		return err
 	}
 
-	if err := finiteRange("pickup.distanceM", d.Pickup.DistanceM, 0.01, 10); err != nil {
+	if err := boundedRange("pickup.distanceM", "pickup.distanceM", d.Pickup.DistanceM); err != nil {
 		return err
 	}
 
-	if err := finiteRange("pickup.highpassHz", d.Pickup.HighpassHz, 1, maxSampleRateHz/2); err != nil {
+	if err := boundedRange("pickup.highpassHz", "pickup.highpassHz", d.Pickup.HighpassHz); err != nil {
 		return err
 	}
 
@@ -136,7 +136,7 @@ func (d PhysicalDrum) Validate() error {
 		return err
 	}
 
-	if err := finiteRange("pickup.outputGain", d.Pickup.OutputGain, 0, 100); err != nil {
+	if err := boundedRange("pickup.outputGain", "pickup.outputGain", d.Pickup.OutputGain); err != nil {
 		return err
 	}
 
@@ -156,11 +156,10 @@ func validateContact(contact Contact) error {
 		)
 	}
 
-	if err := finiteRange(
+	if err := boundedRange(
+		"strike.contact.stiffnessNPerMAlpha",
 		"strike.contact.stiffnessNPerMAlpha",
 		contact.StiffnessNPerMAlpha,
-		1,
-		1e12,
 	); err != nil {
 		return err
 	}
@@ -169,11 +168,10 @@ func validateContact(contact Contact) error {
 	// v^(-(alpha-1)/(alpha+1)), so alpha = 1 is a linear spring whose contact
 	// time does not depend on how hard the drum is hit at all, and below it the
 	// dependence inverts and a loud stroke would dwell longer than a quiet one.
-	if err := finiteRange(
+	if err := boundedRange(
+		"strike.contact.exponent",
 		"strike.contact.exponent",
 		contact.Exponent,
-		1,
-		4,
 	); err != nil {
 		return err
 	}
@@ -185,20 +183,18 @@ func validateContact(contact Contact) error {
 	// discontinuity, and it costs the pulse the smooth spectrum it exists to
 	// have. One second per metre is above any strike this model admits and well
 	// below where the clipping starts to matter.
-	if err := finiteRange(
+	if err := boundedRange(
+		"strike.contact.hysteresisSPerM",
 		"strike.contact.hysteresisSPerM",
 		contact.HysteresisSPerM,
-		0,
-		1,
 	); err != nil {
 		return err
 	}
 
-	return finiteRange(
+	return boundedRange(
+		"strike.contact.maxDurationSeconds",
 		"strike.contact.maxDurationSeconds",
 		contact.MaxDurationSeconds,
-		1e-4,
-		0.5,
 	)
 }
 
@@ -254,29 +250,26 @@ func validateCavityModes(config PhysicalDrum) error {
 
 func validateNonlinearity(config PhysicalDrum) error {
 	nonlinearity := config.Nonlinearity
-	if err := finiteRange(
+	if err := boundedRange(
+		"nonlinearity.batterTensionCoefficientNPerM3",
 		"nonlinearity.batterTensionCoefficientNPerM3",
 		nonlinearity.BatterTensionCoefficientNPerM3,
-		0,
-		1e9,
 	); err != nil {
 		return err
 	}
 
-	if err := finiteRange(
+	if err := boundedRange(
+		"nonlinearity.resonantTensionCoefficientNPerM3",
 		"nonlinearity.resonantTensionCoefficientNPerM3",
 		nonlinearity.ResonantTensionCoefficientNPerM3,
-		0,
-		1e9,
 	); err != nil {
 		return err
 	}
 
-	if err := finiteRange(
+	if err := boundedRange(
+		"nonlinearity.maximumTensionRatio",
 		"nonlinearity.maximumTensionRatio",
 		nonlinearity.MaximumTensionRatio,
-		0,
-		1,
 	); err != nil {
 		return err
 	}
@@ -345,11 +338,10 @@ func validateNonlinearCoupling(config PhysicalDrum) error {
 		return nil
 	}
 
-	if err := finiteRange(
+	if err := boundedRange(
+		"nonlinearity.coupling.coefficientNPerM",
 		"nonlinearity.coupling.coefficientNPerM",
 		coupling.CoefficientNPerM,
-		0,
-		maxCouplingCoefficientNPerM,
 	); err != nil {
 		return err
 	}
@@ -383,11 +375,10 @@ func validateNonlinearCoupling(config PhysicalDrum) error {
 		return err
 	}
 
-	if err := finiteRange(
+	if err := boundedRange(
+		"nonlinearity.coupling.aliasFraction",
 		"nonlinearity.coupling.aliasFraction",
 		coupling.AliasFraction,
-		math.SmallestNonzeroFloat64,
-		0.5,
 	); err != nil {
 		return err
 	}
@@ -475,45 +466,33 @@ func validateHead(name string, head Head, required bool) error {
 		return fmt.Errorf("%w: %s must be enabled", ErrInvalidConfig, name)
 	}
 
+	// One row per field, keyed under "head." in configBounds and reported under
+	// this head's own name, so batter and resonant cannot drift apart.
 	checks := []struct {
-		field    string
-		value    float64
-		minValue float64
-		maxValue float64
+		field string
+		value float64
 	}{
-		{"radiusM", head.RadiusM, 0.02, 1},
-		{"surfaceDensityKgPerM2", head.SurfaceDensityKgPerM2, 0.01, 10},
-		{"tensionNPerM", head.TensionNPerM, 1, 100_000},
-		{"bendingStiffnessNM", head.BendingStiffnessNM, 0, 100},
-		{"loss0PerSecond", head.Loss0PerSecond, 0, 10_000},
-		{"loss1MPerSecond", head.Loss1MPerSecond, 0, 1_000},
-		{"loss2M2PerSecond", head.Loss2M2PerSecond, 0, 10},
-		{"radiationLossPerSecond", head.RadiationLossPerSecond, 0, 10_000},
-		{"frequencyLimitFraction", head.FrequencyLimitFraction, 0.05, 0.49},
-		{"inactiveEnergyThresholdJ", head.InactiveEnergyThresholdJ, 0, 1},
+		{"radiusM", head.RadiusM},
+		{"surfaceDensityKgPerM2", head.SurfaceDensityKgPerM2},
+		{"tensionNPerM", head.TensionNPerM},
+		{"bendingStiffnessNM", head.BendingStiffnessNM},
+		{"loss0PerSecond", head.Loss0PerSecond},
+		{"loss1MPerSecond", head.Loss1MPerSecond},
+		{"loss2M2PerSecond", head.Loss2M2PerSecond},
+		{"radiationLossPerSecond", head.RadiationLossPerSecond},
+		{"frequencyLimitFraction", head.FrequencyLimitFraction},
+		{"inactiveEnergyThresholdJ", head.InactiveEnergyThresholdJ},
+		{"tensionAsymmetry.splitRatio", head.TensionAsymmetry.SplitRatio},
+		{"tensionAsymmetry.principalAxisAngleRad", head.TensionAsymmetry.PrincipalAxisAngleRad},
 	}
 	for _, check := range checks {
-		if err := finiteRange(name+"."+check.field, check.value, check.minValue, check.maxValue); err != nil {
+		if err := boundedRange(
+			"head."+check.field,
+			name+"."+check.field,
+			check.value,
+		); err != nil {
 			return err
 		}
-	}
-
-	if err := finiteRange(
-		name+".tensionAsymmetry.splitRatio",
-		head.TensionAsymmetry.SplitRatio,
-		0,
-		0.02,
-	); err != nil {
-		return err
-	}
-
-	if err := finiteRange(
-		name+".tensionAsymmetry.principalAxisAngleRad",
-		head.TensionAsymmetry.PrincipalAxisAngleRad,
-		-math.Pi,
-		math.Pi,
-	); err != nil {
-		return err
 	}
 
 	seenCorrections := make(map[[2]int]struct{}, len(head.ModeDecayCorrections))
@@ -529,11 +508,10 @@ func validateHead(name string, head Head, required bool) error {
 			)
 		}
 
-		if err := finiteRange(
+		if err := boundedRange(
+			"head.modeDecayCorrection",
 			name+".modeDecayCorrection",
 			correction.DecayRatePerSecond,
-			-10_000,
-			10_000,
 		); err != nil {
 			return err
 		}
@@ -572,11 +550,10 @@ func finiteRange(name string, value, minValue, maxValue float64) error {
 
 func validateAttack(config PhysicalDrum) error {
 	attack := config.Attack
-	if err := finiteRange(
+	if err := boundedRange(
+		"attack.levelRelative",
 		"attack.levelRelative",
 		attack.LevelRelative,
-		0,
-		1_000,
 	); err != nil {
 		return err
 	}
@@ -590,14 +567,13 @@ func validateAttack(config PhysicalDrum) error {
 		return err
 	}
 
-	if err := finiteRange(
+	if err := boundedRange(
+		"attack.qualityFactor",
 		"attack.qualityFactor",
 		attack.QualityFactor,
-		0.1,
-		20,
 	); err != nil {
 		return err
 	}
 
-	return finiteRange("attack.decayScale", attack.DecayScale, 0, 100)
+	return boundedRange("attack.decayScale", "attack.decayScale", attack.DecayScale)
 }
