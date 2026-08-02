@@ -5,12 +5,26 @@ import (
 	"testing"
 )
 
-// hertzianDrum is the default drum with the Hertzian contact selected, at the
-// reference recording's 44.1 kHz so the frequencies quoted here line up with
-// docs/physical-excitation-gap.md.
-func hertzianDrum() PhysicalDrum {
+// contactDrum is the default drum at 44.1 kHz, the rate the frequencies quoted
+// in this file and in docs/physical-excitation-gap.md were read at.
+//
+// It also supplies the bank every level in this file is referred to. The
+// prescribed-pulse tests below analyse an analytic force pulse rather than a
+// render, but they still normalise against a modal frequency, and it has to be
+// the same one the rendered tests use or the two sets of tables stop being
+// comparable. The contact model does not enter contactReferenceHz — that reads
+// the batter bank, which ContactHertzian does not touch — so this and
+// hertzianDrum refer to the same 150.10 Hz.
+func contactDrum() PhysicalDrum {
 	config := DefaultPhysicalDrum()
 	config.SampleRateHz = 44100
+
+	return config
+}
+
+// hertzianDrum is contactDrum with the Hertzian contact selected.
+func hertzianDrum() PhysicalDrum {
+	config := contactDrum()
 	config.Strike.Contact.Model = ContactHertzian
 
 	return config
@@ -59,10 +73,12 @@ func TestPrescribedContactForceHasAZeroComb(t *testing.T) {
 
 	const (
 		sampleRateHz = 44100.0
-		fundamental  = 118.0
 		// The fitted bank's contact, 8.23 ms.
 		sampleCount = 363
 	)
+
+	// Derived, not written down; see contactReferenceHz.
+	fundamental := contactReferenceHz(t, contactDrum())
 
 	pulse := make([]float64, sampleCount)
 	addContactPulse(pulse, 0, sampleCount, 1)
@@ -104,7 +120,7 @@ func TestPrescribedContactForceHasAZeroComb(t *testing.T) {
 // the head at about 3.5 ms and is touched again by the wave returning off the
 // rim. What this test guards is the consequence of spending that dwell as one
 // smooth half-sine: on top of the comb above, the envelope falls as 1/f^2, so
-// the force is around 30 dB down through the band where a recorded tom carries
+// the force is 21-40 dB down through the band where a recorded tom carries
 // much of its character, and no mode count, microphone geometry or loss law
 // downstream can recover what was never injected.
 //
@@ -115,9 +131,11 @@ func TestPrescribedContactExcitationBandwidth(t *testing.T) {
 
 	const (
 		sampleRateHz = 44100.0
-		fundamental  = 118.0
 		sampleCount  = 363
 	)
+
+	// Derived, not written down; see contactReferenceHz.
+	fundamental := contactReferenceHz(t, contactDrum())
 
 	pulse := make([]float64, sampleCount)
 	addContactPulse(pulse, 0, sampleCount, 1)
@@ -158,12 +176,12 @@ func TestPrescribedContactExcitationBandwidth(t *testing.T) {
 // (k+1/2)/tau whatever its shape, and the Hertzian contact is still one lobe.
 // What changes is that they stop being exact. The half-sine's zeros are analytic
 // zeros of cos(pi*f*tau) and go to numerical nothing; the Hertzian pulse is
-// asymmetric, so the same interference leaves a finite dip — 51 dB at its worst
-// here against 309 dB — and the dips sit at the new duration's spacing rather
+// asymmetric, so the same interference leaves a finite dip — 50 dB at its worst
+// here against 301 dB — and the dips sit at the new duration's spacing rather
 // than the old one's.
 //
 // The honest reading is that this halves the problem rather than solving it. A
-// 51 dB hole is still a hole. Removing it needs structure *inside* the contact,
+// 50 dB hole is still a hole. Removing it needs structure *inside* the contact,
 // which is what Wagner measured and what this model does not reproduce; see
 // docs/physical-contact.md.
 func TestHertzianContactShallowsAndMovesTheComb(t *testing.T) {
@@ -174,9 +192,12 @@ func TestHertzianContactShallowsAndMovesTheComb(t *testing.T) {
 	prescribed := make([]float64, 363)
 	addContactPulse(prescribed, 0, len(prescribed), 1)
 
+	// Derived, not written down; see contactReferenceHz.
+	reference := contactReferenceHz(t, contactDrum())
+
 	worstHz, worstDB := 0.0, 0.0
 	for frequencyHz := 150.0; frequencyHz <= 1000; frequencyHz += 2.5 {
-		level := contactPulseLevelDB(forces, 44100, frequencyHz, 118)
+		level := contactPulseLevelDB(forces, 44100, frequencyHz, reference)
 		if level < worstDB {
 			worstHz, worstDB = frequencyHz, level
 		}
@@ -203,8 +224,8 @@ func TestHertzianContactShallowsAndMovesTheComb(t *testing.T) {
 	tau := float64(len(prescribed)) / 44100
 	for order := 4; order <= 6; order++ {
 		zeroHz := (float64(order) + 0.5) / tau
-		hertzian := contactPulseLevelDB(forces, 44100, zeroHz, 118)
-		half := contactPulseLevelDB(prescribed, 44100, zeroHz, 118)
+		hertzian := contactPulseLevelDB(forces, 44100, zeroHz, reference)
+		half := contactPulseLevelDB(prescribed, 44100, zeroHz, reference)
 
 		t.Logf("%.0f Hz: prescribed %.1f dB, Hertzian %.1f dB", zeroHz, half, hertzian)
 
@@ -321,10 +342,12 @@ func contactSpectrumAtSubsteps(
 		forces[index] = model.Tick().ContactForceN
 	}
 
+	reference := contactReferenceHz(t, config)
+
 	var levels [len(contactProbeHz)]float64
 	for index, frequencyHz := range contactProbeHz {
 		levels[index] = contactPulseLevelDB(
-			forces, config.SampleRateHz, frequencyHz, 118,
+			forces, config.SampleRateHz, frequencyHz, reference,
 		)
 	}
 

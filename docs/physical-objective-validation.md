@@ -230,10 +230,19 @@ partial — with T60 0.128 s** on the other.
 
 Two structural causes, both in `internal/physical/match/features.go`:
 
-- **`MinSeparationHz = 15`** is **207 cents at 118 Hz**. The extractor structurally
-  cannot resolve the mode pairs that `TensionAsymmetry`/`ASYM` exists to model — a
-  2 % split at 213 Hz is 4.3 Hz — so `ASYM` is fitted against a target with
-  asymmetry averaged out of it. Merged pairs also **beat**, and the log-linear
+- **`MinSeparationHz = 15`** is **105 cents at 240 Hz**, the fundamental of the
+  current reference `reference/tt08x08/lp/hd/` (measured 239.9 Hz; see Result 10).
+  Restated 2026-08-02 (`PLAN.md` N18): this used to read _207 cents at 118 Hz_,
+  which is the fundamental of the retired `reference/tom.wav`, so the claim was
+  being made at roughly twice its size against a drum the fit no longer aims at.
+  The claim itself survives the correction, because it does not turn on the
+  factor of two: the extractor structurally cannot resolve the mode pairs that
+  `TensionAsymmetry`/`ASYM` exists to model — a 2 % split at this drum's (1,1),
+  378.8 Hz, is 7.6 Hz, and a 2 % split does not reach 15 Hz anywhere below
+  **750 Hz** — so `ASYM` is fitted against a target with asymmetry averaged out
+  of it. (The retired _2 % split at 213 Hz is 4.3 Hz_ was a partial of `tom.wav`
+  and is replaced above; it illustrated the same thing, and less sharply, since
+  it did not say where the guard stops binding.) Merged pairs also **beat**, and the log-linear
   decay fit over a beating envelope terminates at the first null and returns a
   slope with a _high_ R², so `FitQuality` does not protect against this and may
   reward it.

@@ -232,11 +232,29 @@ everything measured against it, none of which can now be re-measured:
   recording that no longer exists, and one that missed all three adoption gates
   even while it did;
 - the figures in `docs/paper/` and the totals the paper quotes;
-- `contactReferenceHz` = 118 Hz in the contact code, which is this recording's
-  fundamental and wants re-pointing at the model's own 150.08 Hz;
+- ~~`contactReferenceHz` = 118 Hz in the contact code~~ — **re-pointed
+  2026-08-02** (`PLAN.md` N8a and N18). `contactReferenceHz` is no longer a
+  constant: it is derived from the configuration under test, the retained (0,1)
+  of `generateHeadModes`, which is 150.10 Hz on `DefaultPhysicalDrum()`. The
+  literal 118s that survived N8a in `contact_test.go`'s analytic-pulse tests went
+  with it, and the tables in
+  [`docs/physical-contact.md`](../docs/physical-contact.md) were re-measured from
+  the tests rather than adjusted;
 - the historical dimensions quoted for it throughout `docs/physical-*.md` —
   44.1 kHz, channels 1.56 ms apart correlating 0.36 at zero lag — which are
   recorded measurements from while it existed and are no longer checkable.
+
+**Not on that list, and deliberately: the 118.05 Hz partials in
+`internal/physical/match/`.** `bench_test.go`, `esprit_test.go`, `glide_test.go`
+and the worked example in `features.go`'s comments all put a 118 Hz fundamental
+under a louder, shorter 212 Hz partial, which is this recording's layout and was
+plainly taken from it — the last two say so in as many words. They are still not
+anchors. Nothing there opens a file: each is a sum of exponentially decaying
+sinusoids the test synthesizes and then measures itself, so every one of them
+is checked against its own input rather than against the recording, and shifting
+the whole table in pitch would change no result. The prose that names the
+recording is a dated historical note of the kind this section asks for. Leave
+them alone.
 
 Re-deriving those against the licensed set above is `PLAN.md` N5 (the joint
 sixteen-velocity fit) and N7 (the paper). Until then, treat every number

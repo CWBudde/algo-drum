@@ -46,9 +46,23 @@ document did not ask for.
 > make it differ between the two columns, which is the defect this fixed.
 >
 > 118 Hz has a second life as the denominator that makes `MinSeparationHz = 15`
-> an unusable resolution limit — see
-> [objective validation](physical-objective-validation.md), which still carries
-> it and is not covered by this fix.
+> an unusable resolution limit —
+> [objective validation](physical-objective-validation.md) carried that too, and
+> it was restated against the current reference's 240 Hz on 2026-08-02
+> (`PLAN.md` N18), where the same guard is 105 cents rather than 207.
+>
+> **Completed 2026-08-02 (`PLAN.md` N18).** The fix above re-pointed the
+> _rendered_ tables and left four literal `118`s behind in `contact_test.go`,
+> which normalise the _analytic force-pulse_ spectra — the "What the comb
+> actually is" table and the two figures quoted for it in the short version
+> below. Those are now referred to the same derived 150.10 Hz, and the table was
+> re-measured by running the test rather than adjusted. Each column moved by its
+> own constant — **+7.9 dB prescribed, +5.8 dB Hertzian** — because each is
+> normalised by its own bin, so the difference between the columns shrank by
+> 2.1 dB and no Δ here survives the re-point unchanged either. One figure moved
+> for an unrelated reason and is called out where it appears: the worst Hertzian
+> notch is at **808 Hz**, not the 465 Hz this document recorded, and a notch
+> frequency does not depend on the normaliser at all.
 
 The short version:
 
@@ -57,10 +71,10 @@ The short version:
   547 and 668 Hz — sit inside the gap. That is why nothing downstream could fix
   it: no mode count, microphone, or loss law can amplify an excitation of zero.
 - The Hertzian contact turns those zeros into finite dips and moves them. The
-  gap's two zeros go from −309 and −315 dB to −26.4 and −28.6 dB.
+  gap's two zeros go from −301 and −307 dB to −21.7 and −19.1 dB.
 - But it does **not** remove the comb, because it is still one smooth touch, and
   any single touch of duration τ interferes with itself. Its own worst dip is
-  −51 dB at 465 Hz.
+  −50 dB at 808 Hz.
 - It does not reproduce Wagner's separation-and-re-contact structure at all. The
   version that appeared to was **numerically wrong**, and that is the most
   important thing in this document.
@@ -185,6 +199,19 @@ It was an artifact. Refining the integration removes it:
 | 44.1     | 64       | 7.46 ms    | 7.46 ms | 1       | −26.4   |
 | 352.8    | 64       | 7.45 ms    | 7.45 ms | 1       | −26.8   |
 
+**This table is a record of the artifact as it was measured, and it no longer
+reproduces.** Only two of its rows are covered by a shipped test, and neither
+matches: `TestHertzianContactDurationIsPredictedNotPrescribed` now logs a
+**7.12 ms** first lobe and dwell where the 44.1 kHz/64 row says 7.46, and
+`TestHertzianContactIsSubstepConverged` logs **−27.0 dB** at 1500 Hz where the
+same row says −26.4. Neither gap is the 118 Hz normalisation — it costs 5.8 dB
+here and the residual is 0.6 — so the contact itself has moved since, and the
+three rows that no shipped test produces cannot be re-derived without rebuilding
+the sweep. What the table is being cited for is the _trend_ — chatter that
+disappears as the step refines — and that is still what the converged column
+says. Left as measured rather than half-corrected; re-running the sweep is its
+own item.
+
 The converged contact is a single smooth touch. The chatter came from the contact
 being unresolved near δ = 0, where the spring is arbitrarily soft and a step size
 that is fine at the force peak decides by rounding whether the surfaces have
@@ -207,9 +234,15 @@ fitted bank's 8.23 ms they fall every 121.5 Hz:
 
 | f      | prescribed | Hertzian |
 | ------ | ---------- | -------- |
-| 547 Hz | −309.1 dB  | −26.4 dB |
-| 668 Hz | −315.0 dB  | −28.6 dB |
-| 790 Hz | −338.4 dB  | −36.2 dB |
+| 547 Hz | −301.2 dB  | −21.7 dB |
+| 668 Hz | −307.1 dB  | −19.1 dB |
+| 790 Hz | −330.5 dB  | −39.9 dB |
+
+Re-derived 2026-08-02 from `TestHertzianContactShallowsAndMovesTheComb`'s own
+`t.Logf` output at the derived reference; the version this replaced read
+−309.1/−315.0/−338.4 against −26.4/−28.6/−36.2, of which the first column was
+the old 118 Hz normalisation and the 790 Hz Hertzian figure was 9.5 dB adrift of
+the test on top of that.
 
 That is the mechanism of the gap, and it is a better explanation than the −30 dB
 tilt the earlier document settled on: a tilt leaves modes quiet, a zero leaves
@@ -220,8 +253,13 @@ comb has to land somewhere.
 The Hertzian contact does not remove the comb either. It is still one lobe, and
 one lobe of duration τ interferes with itself wherever it sits. What changes is
 that an asymmetric pulse's interference leaves a **finite** dip instead of a
-zero: the worst below 1 kHz is −51.2 dB at 465 Hz. Better by a wide margin, and
+zero: the worst below 1 kHz is −50.0 dB at 808 Hz. Better by a wide margin, and
 still a hole.
+
+That frequency is a correction rather than a re-normalisation. This document read
+**−51.2 dB at 465 Hz**, and where a level depends on what it is divided by, the
+_position_ of a notch does not — the 150–1000 Hz sweep reports 808 Hz both before
+and after the re-point. 465 Hz was simply stale.
 
 Removing the comb needs structure _inside_ the contact interval — which is
 precisely the separation-and-re-contact Wagner measured, and precisely what this

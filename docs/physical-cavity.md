@@ -265,9 +265,14 @@ Two of the tom measurements the fit should have used:
 
 - Fletcher & Rossing §18.4 p. 608 relays Bork & Meyer's **32 cm two-headed tom**
   with the (0,1) doublet at **101 and 191 Hz — a ratio of 1.891**.
-- Gärder (2005) gives lower-branch shifts of **+28.5 %** on a 14" tom and
-  **+37.2 %** on a 15" when the resonant head is fitted, against the snare's
-  +16 %.
+- Gärder (2005) prints single-head and two-head spectra for a 14" and a 15" tom.
+  Reading the lower branch off them gives shifts of **+28.5 %** and **+37.2 %**
+  when the resonant head is fitted, against the snare's +16 %. Those two
+  percentages are **my own arithmetic from his figures and are not stated in the
+  thesis** — the only shift he gives as a number is a pitch glide of almost 8 %
+  on a hard strike to a 14" tom (§C.4.3), which is a different quantity
+  altogether. Recompute from the source before committing either to code, and do
+  not cite them as measurements of his.
 
 **How Fischer's two numbers map onto the doublet is itself ambiguous**, and this
 document used to assert one reading. 186 → 215 was taken here as

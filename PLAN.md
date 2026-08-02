@@ -766,8 +766,8 @@ everything after them:
 Ordered. N2 gates the measurement-dependent items; N9–N13 and N18 are
 independent of any recording and can be taken at any time.
 
-**Read the recording-independent group's own history before adding to it.** Five
-of its items were taken on 2026-08-02 and **four of the five turned out to be
+**Read the recording-independent group's own history before adding to it.** Six
+of its items were taken on 2026-08-02 and **five of the six turned out to be
 about something other than what they said** — N8a's re-point moved the Δ columns
 it was assumed to leave alone and by doing so revealed the document had been
 understating its central claim by 5–6 dB; N9's premise that the walk is unblocked
@@ -775,7 +775,9 @@ was already stale and its cheap-looking option rests on the weaker of two
 measurements that disagree by an order of magnitude; N11's prescribed test was
 implied by one that already ships; and N12's zero-loss defect was the one door
 into the hang that the product cannot open, while a single knob opens a 21.5 s
-one. Only N13 was what it claimed to be. The pattern is not carelessness in the
+one; and N18 undercounted its own stale anchor by four, mis-stated the arithmetic
+it was correcting, and had the wrong reason for the one defect it called
+independent. Only N13 was what it claimed to be. The pattern is not carelessness in the
 writing — it is that an item written from reading the code, without measuring,
 records a hypothesis. **Measure the item before implementing it**, and expect the
 measurement to re-scope it.
@@ -1547,7 +1549,8 @@ measurement to re-scope it.
     [`physical-objective-validation.md`](docs/physical-objective-validation.md)
     §Result 1 still divides `MinSeparationHz = 15` by 118 Hz to call it 207
     cents, where the current reference drum's fundamental is 240 Hz and the same
-    guard is 108 cents. → **N18**.
+    guard is **105** cents (this line said 108, which is the figure for 233 Hz).
+    → **N18**, done 2026-08-02.
 
 - [ ] **N9: make the nonlinear mode coupling affordable on `js/wasm`.** The
       retrigger worst case at 120 oscillators went 1.40× → **0.70× real time**
@@ -1850,9 +1853,47 @@ than the item described. The number is kept because things point at it.
     thesis** — they are this repository's own arithmetic over his spectra. The
     `note` records only what he printed. → **N18**.
 
-- [ ] **N18: three attribution and staleness defects, found while closing N8a
-      and N13.** None is large; all three are the kind that survive by being
-      nobody's item.
+- [x] **N18: three attribution and staleness defects, found while closing N8a
+      and N13.** _Done 2026-08-02._ None is large; all three are the kind that
+      survive by being nobody's item.
+
+      Three things this item got wrong about itself, in the pattern the
+      recording-independent group's header warns about:
+
+  - **The stale anchor had six live copies in `contact_test.go`, not two.**
+    Besides the two named `fundamental = 118.0` constants there were four bare
+    `118` literals — three in `TestHertzianContactShallowsAndMovesTheComb`, which
+    is the very test the third bullet re-derives a document from, and one in
+    `contactSpectrumAtSubsteps`. All six now go through
+    `contactReferenceHz(t, contactDrum())`.
+  - **105 cents, not 108.** `1200·log2(255/240) = 105.0`; 108 is the figure for
+    233 Hz. The correction does not touch the argument, which is why it is worth
+    stating: the bullet was right that the claim survives being halved.
+  - **The third defect was not independent of the normalisation after all.** The
+    figures do come from the analytic pulse, but that pulse was normalised at
+    118 Hz too, so re-deriving the table had to wait on the first bullet's
+    re-point and then moved by two different constants — **+7.9 dB prescribed,
+    +5.8 dB Hertzian**, each column being normalised by its own bin. What was
+    genuinely independent is the notch _frequency_: **808 Hz against the
+    documented 465**, which no normaliser can explain.
+
+      Two things found and left, both reported rather than fixed: the substep
+      convergence table in `physical-contact.md` no longer reproduces either
+      (7.12 ms dwell against a documented 7.46, and −27.0 dB at 1500 Hz against
+      −26.4, neither of which the 5.8 dB re-point accounts for) and only two of
+      its five rows are covered by a shipped test, so it is now marked as a dated
+      record; and `TestPrescribedContactExcitationBandwidth`'s 504 Hz bound is
+      down to 0.8 dB of margin (−20.8 against a pinned −20) after the re-point.
+
+      `internal/physical/feasibility_scratch_test.go` was **deleted** rather than
+      re-pointed. Its `referenceHz`/`referenceDB` are the deleted recording's
+      seven partials and their levels, which cannot be re-derived; it is skipped
+      unless `PHYSICAL_PROBE` is set, asserts nothing, and its own comment calls
+      it "a scratch probe, not a test of anything". The question it asked — can
+      the mode set reach the target's partials — is now answered properly against
+      a drum of known geometry (Result 10's 239.9/378.8 Hz, ratio 1.579 against
+      the ideal 1.594) and by `cmd/fit-physical` through the real objective.
+
   - [`physical-cavity.md`](docs/physical-cavity.md) presents "+28.5 % / +37.2 %"
     as Gärder's measurements. They are computed here from his spectra. Re-word to
     say so, as `physical-tom-review.md` already does about its own derived
@@ -1975,8 +2016,8 @@ test depending on a measured number; the long-ringing spurious mode is either
 fixed with a measured improvement or closed by the measurement that rejected the
 fix; and the paper reports that state rather than the previous one.
 
-**Status, 2026-08-02.** Done: N1, N2, N8, N8a, N13, N15, N17, and N9a. Open and
-unblocked by any recording: N9b–N9e, N11, N12a, N12b, N18, and N6's code. Open
+**Status, 2026-08-02.** Done: N1, N2, N8, N8a, N13, N15, N17, N18, and N9a. Open
+and unblocked by any recording: N9b–N9e, N11, N12a, N12b, and N6's code. Open
 and waiting on a reading of a fit that already exists: N3, N5. Open and blocked:
 N7 (on N5), N10 and N14 (on captures that do not exist), N16 §2–§3 (on tooling
 that was never committed). N4 is a decision rather than a measurement, and the
