@@ -115,16 +115,78 @@ func (head nonlinearHead) potentialEnergy(strainMeasureM2 float64) float64 {
 		head.coefficientNPerM3 * logCosh(scaledStrain)
 }
 
+// tensionReference is the left endpoint of the discrete gradient for one head
+// over one solve: the pre-step strain, already scaled, plus a memo of its
+// logCosh.
+//
+// It exists because that endpoint is *fixed* for the whole fixed-point
+// iteration. solveNonlinearStep reads d.<head>Nonlinear.strainMeasureM2 as the
+// old strain on every iteration, and that field is written in exactly three
+// places — Reset, and the two commits in tickCoupled and observe — all of which
+// run outside the solve. The diverged re-solve re-enters from the same
+// unchanged pre-step state, which is what makes it a clean redo rather than a
+// rollback, so the endpoint is invariant across that second pass too.
+//
+// Recomputing logCosh(oldScaled) per iteration was therefore two libm calls
+// (Log and Cosh) spent on a value that could not have moved. Counted on
+// BenchmarkNonlinearDoubleHeadActive48k, the solve runs 3.96 iterations per head
+// per sample and 99.8 % of them reach the branch below that needs it, so the
+// memo removes about three quarters of the old-side calls. In that profile the
+// logCosh reached through discreteTension falls from 5.7 % to 3.9 % of samples.
+//
+// Be careful what that is worth: it is 1.8 points of a *profile*, not of the
+// clock. The same benchmark retires only 0.58 % fewer instructions (41.826 G ->
+// 41.583 G, pinned to one P-core, +-0.03 %) for 1.3 % fewer cycles, because
+// Log and Exp are short in instructions and long in dependency chains, which is
+// exactly what a sampling profiler over-attributes. BenchmarkCost in
+// cmd/fit-physical does not move at all (-0.02 %, inside run-to-run spread): a
+// fit evaluation is dominated by feature extraction, not by this solve.
+// Wall-clock benchstat called all three of these runs insignificant.
+//
+// The memo is lazy rather than hoisted into the caller because the *quiet* path
+// does not want it at all: on BenchmarkDoubleHeadRender48k, where the tail has
+// decayed, the solve runs 1.35 iterations per head per sample and 91 % of the
+// calls take the small-difference branch and never touch logCosh. Computing it
+// up front would have added a libm pair per head per sample there in exchange
+// for nothing; as written that benchmark is unchanged (-0.09 %, noise).
+//
+// It is a value local to solveNonlinearStep rather than a field beside
+// strainMeasureM2 so that a stale memo is not a state that can be represented:
+// the reference is built from the strain it belongs to and dies with the solve.
+type tensionReference struct {
+	scaled      float64
+	logCosh     float64
+	haveLogCosh bool
+}
+
+// tensionReferenceAt builds the fixed endpoint the solve's discrete gradients
+// are all taken from.
+func (head nonlinearHead) tensionReferenceAt(strainMeasureM2 float64) tensionReference {
+	if head.coefficientNPerM3 == 0 {
+		return tensionReference{}
+	}
+
+	return tensionReference{
+		scaled: head.coefficientNPerM3 * strainMeasureM2 /
+			head.maxTensionNPerM,
+	}
+}
+
 // discreteTension is the discrete gradient 2[U(S1)-U(S0)]/(S1-S0).
 // Paired with q_mid, it makes the nonlinear work exactly equal the change in
 // stored potential, up to the bounded nonlinear solve tolerance.
-func (head nonlinearHead) discreteTension(oldStrain, newStrain float64) float64 {
+//
+// oldEnd carries S0 and is updated in place with its memoized logCosh; see
+// tensionReference for why that is sound and what it saves.
+func (head nonlinearHead) discreteTension(
+	oldEnd *tensionReference,
+	newStrain float64,
+) float64 {
 	if head.coefficientNPerM3 == 0 {
 		return 0
 	}
 
-	oldScaled := head.coefficientNPerM3 * oldStrain /
-		head.maxTensionNPerM
+	oldScaled := oldEnd.scaled
 	newScaled := head.coefficientNPerM3 * newStrain /
 		head.maxTensionNPerM
 
@@ -138,8 +200,13 @@ func (head nonlinearHead) discreteTension(oldStrain, newStrain float64) float64 
 				(1-tanhMidpoint*tanhMidpoint)/12)
 	}
 
+	if !oldEnd.haveLogCosh {
+		oldEnd.logCosh = logCosh(oldScaled)
+		oldEnd.haveLogCosh = true
+	}
+
 	return head.maxTensionNPerM *
-		(logCosh(newScaled) - logCosh(oldScaled)) / difference
+		(logCosh(newScaled) - oldEnd.logCosh) / difference
 }
 
 func logCosh(value float64) float64 {

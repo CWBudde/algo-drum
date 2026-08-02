@@ -811,6 +811,13 @@ func (d *DoubleHead) solveNonlinearStep(
 	batterStrain := d.batterNonlinear.strainMeasureM2
 	resonantStrain := d.resonantNonlinear.strainMeasureM2
 
+	// The left endpoint of every discrete gradient below is this pre-step strain,
+	// which no iteration touches — nothing in this function or anything it calls
+	// writes strainMeasureM2. Built once here so its logCosh is paid for once per
+	// solve instead of once per iteration; see tensionReference.
+	batterEnd := d.batterNonlinear.tensionReferenceAt(batterStrain)
+	resonantEnd := d.resonantNonlinear.tensionReferenceAt(resonantStrain)
+
 	iterationCount := 1
 	if d.config.Nonlinearity.Enabled {
 		iterationCount = nonlinearSolveIterations
@@ -839,12 +846,12 @@ func (d *DoubleHead) solveNonlinearStep(
 
 		batterStrain, resonantStrain = d.solveMidpoint(forceN, batterTension, resonantTension)
 		nextBatterTension := d.batterNonlinear.discreteTension(
-			d.batterNonlinear.strainMeasureM2,
+			&batterEnd,
 			batterStrain,
 		)
 
 		nextResonantTension := d.resonantNonlinear.discreteTension(
-			d.resonantNonlinear.strainMeasureM2,
+			&resonantEnd,
 			resonantStrain,
 		)
 		converged := tensionConverged(

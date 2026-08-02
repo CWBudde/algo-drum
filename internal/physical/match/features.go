@@ -27,7 +27,7 @@ var ErrInvalidOptions = errors.New("invalid match options")
 // per extraction.
 const (
 	// decibelsPerPower converts a natural log of power to decibels: the folded
-	// 10/ln(10). decay.go's decayFloorModel names the same constant locally.
+	// 10/ln(10). decay.go's powerDecibels applies the same constant.
 	decibelsPerPower = 10 / math.Ln10
 	// decibelsPerAmplitude is the same for an amplitude ratio: 20/ln(10).
 	decibelsPerAmplitude = 20 / math.Ln10

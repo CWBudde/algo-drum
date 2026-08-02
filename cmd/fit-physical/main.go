@@ -400,6 +400,16 @@ func run(args []string, stdout, stderr io.Writer) error {
 		"file to save finished restarts and the best point to, and to resume from")
 	inspect := flags.Bool("inspect", false,
 		"describe the -checkpoint file's best point and stop, without searching")
+	// -hessian is the identifiability measurement (PLAN.md N6); the whole mode
+	// lives in identify.go and only its two flags are here.
+	hessian := flags.String("hessian", "",
+		"measure a central-difference Hessian of the objective at the -checkpoint "+
+			"file's best point and stop: a comma-separated list of parameter labels, "+
+			"'free' for every free parameter, 'all' to add the per-take velocities, "+
+			"or 'block' for the "+defaultHessianScope+" block")
+	hessianOut := flags.String("hessian-o", "-",
+		"JSON path for the -hessian report, or - for stdout; name it after the "+
+			"reference it was measured against, as every other fit artifact is")
 	wavPath := flags.String("wav", "",
 		"also render the fitted bank to this mono WAV file, for listening to")
 	wavDuration := flags.Duration("wav-duration", 3*time.Second,
@@ -814,6 +824,21 @@ func run(args []string, stdout, stderr io.Writer) error {
 			// distance called good, and a run one has to finish before it can be
 			// auditioned is one nobody auditions.
 			return finish(stdout, stderr, report, *wavPath, *wavDuration, *wavTake, *outputPath)
+		}
+
+		// -hessian reads the same stored point -inspect describes and
+		// differentiates the objective around it. It sits inside this block for
+		// exactly the reason -inspect does: loadStore's fingerprint check, and
+		// the baseline cost inside it, is what stops a stored position being read
+		// — or differentiated — against a different drum. See identify.go.
+		if *hessian != "" {
+			return runIdentifiability(stdout, stderr, base, checkpoint, identifyOptions{
+				scope:              *hessian,
+				outputPath:         *hessianOut,
+				checkpointPath:     *checkpointPath,
+				baselineCost:       report.Baseline.Terms.Total,
+				weightsFingerprint: report.WeightsFingerprint,
+			})
 		}
 
 		// An interrupt asks the search to wind up, not the process to die: the
