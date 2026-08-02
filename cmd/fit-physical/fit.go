@@ -329,10 +329,10 @@ type Candidate struct {
 	// in nine different units and cannot be compared with each other, and these
 	// can. It is stored rather than left to the reader because it was being
 	// re-derived by hand outside this tool every time.
-	TermsVsGate GateRatios   `json:"termsVsGate"`
-	Params      []ParamValue `json:"params"`
-	Config physical.PhysicalDrum `json:"config"`
-	Takes  []TakeResult          `json:"takes"`
+	TermsVsGate GateRatios            `json:"termsVsGate"`
+	Params      []ParamValue          `json:"params"`
+	Config      physical.PhysicalDrum `json:"config"`
+	Takes       []TakeResult          `json:"takes"`
 	// Convergence is the winning restart's best cost after each iteration.
 	Convergence []float64 `json:"convergence,omitempty"`
 }

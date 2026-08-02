@@ -1349,8 +1349,12 @@ func writePinned(stdout io.Writer, best Candidate) {
 		len(pinned))
 
 	for _, param := range pinned {
-		_, _ = fmt.Fprintf(stdout, "  %-10s %s stop, normalized %.4f = %.4g %s\n",
-			param.Label, param.PinnedAt, param.Normalized, param.Value, param.Unit)
+		// Trimmed because a good half of the bank is dimensionless, and a
+		// trailing space is the kind of thing that survives into a pasted table.
+		_, _ = fmt.Fprintln(stdout, strings.TrimRight(fmt.Sprintf(
+			"  %-10s %s stop, normalized %.4f = %.4g %s",
+			param.Label, param.PinnedAt, param.Normalized, param.Value, param.Unit,
+		), " "))
 	}
 
 	_, _ = fmt.Fprintf(stdout,

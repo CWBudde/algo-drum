@@ -88,7 +88,14 @@ func (t termField) String() string {
 		digits = 3
 	}
 
-	return fmt.Sprintf("%s %.*f%s ×%.2f", t.Name, digits, t.Value, t.Unit, t.Ratio())
+	// Cents attach to the number and word-like units stand off it, which is what
+	// this tool has always printed and what reads correctly: "76.6¢", "12.5 dB".
+	separator := " "
+	if t.Unit == "" || t.Unit == "¢" {
+		separator = ""
+	}
+
+	return fmt.Sprintf("%s %.*f%s%s ×%.2f", t.Name, digits, t.Value, separator, t.Unit, t.Ratio())
 }
 
 // termFields pairs each term with its adoption gate.

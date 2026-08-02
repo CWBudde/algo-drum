@@ -56,7 +56,8 @@ import (
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintf(os.Stderr, "compare-fits: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "compare-fits: %v\n", err)
+
 		os.Exit(1)
 	}
 }
@@ -157,7 +158,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 	paths := flags.Args()
 	if len(paths) < 2 {
 		return fmt.Errorf(
-			"need at least two fit reports: compare-fits fits/a.json fits/b.json")
+			"need at least two fit reports: compare-fits fits/a.json fits/b.json",
+		)
 	}
 
 	reports := make([]*report, 0, len(paths))
@@ -234,10 +236,11 @@ func comparable(reports []*report, stderr io.Writer, allow bool) error {
 					"%w: %s and %s were scored under different weights, so their totals "+
 						"measure different objectives and not different fits; pass "+
 						"-allow-incomparable to print them anyway",
-					errCompare, first.path, other.path)
+					errCompare, first.path, other.path,
+				)
 			}
 
-			fmt.Fprintf(stderr, "WARNING: %s and %s use different weights; "+
+			_, _ = fmt.Fprintf(stderr, "WARNING: %s and %s use different weights; "+
 				"every total and every gate ratio below is on its own scale\n", first.path, other.path)
 		}
 
@@ -246,16 +249,17 @@ func comparable(reports []*report, stderr io.Writer, allow bool) error {
 				return fmt.Errorf(
 					"%w: %s and %s targeted different references, so nothing below pairs up; "+
 						"pass -allow-incomparable to print them anyway",
-					errCompare, first.path, other.path)
+					errCompare, first.path, other.path,
+				)
 			}
 
-			fmt.Fprintf(stderr, "WARNING: %s and %s targeted different references\n",
+			_, _ = fmt.Fprintf(stderr, "WARNING: %s and %s targeted different references\n",
 				first.path, other.path)
 		}
 
 		if first.Baseline != nil && other.Baseline != nil &&
 			first.Baseline.Terms.Total != other.Baseline.Terms.Total {
-			fmt.Fprintf(stderr,
+			_, _ = fmt.Fprintf(stderr,
 				"WARNING: baseline totals differ (%.6f vs %.6f). Same references under the "+
 					"same weights measure the shipped defaults identically, so the extraction "+
 					"options differed between these runs and the per-term table below compares "+
@@ -267,14 +271,14 @@ func comparable(reports []*report, stderr io.Writer, allow bool) error {
 	return nil
 }
 
-func sameReferences(a, b *report) bool {
-	left := make([]string, 0, len(a.References))
-	for _, item := range a.References {
+func sameReferences(first, second *report) bool {
+	left := make([]string, 0, len(first.References))
+	for _, item := range first.References {
 		left = append(left, item.Path)
 	}
 
-	right := make([]string, 0, len(b.References))
-	for _, item := range b.References {
+	right := make([]string, 0, len(second.References))
+	for _, item := range second.References {
 		right = append(right, item.Path)
 	}
 
@@ -287,7 +291,7 @@ func sameReferences(a, b *report) bool {
 func printHeader(out io.Writer, reports []*report) {
 	writer := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintln(writer, "report\ttakes\tvariant\tit\tpop\trestarts\tseed\tevals\tstate\ttotal")
+	_, _ = fmt.Fprintln(writer, "report\ttakes\tvariant\tit\tpop\trestarts\tseed\tevals\tstate\ttotal")
 
 	for _, item := range reports {
 		state := "finished"
@@ -295,7 +299,7 @@ func printHeader(out io.Writer, reports []*report) {
 			state = "interrupted"
 		}
 
-		fmt.Fprintf(writer, "%s\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%s\t%.3f\n",
+		_, _ = fmt.Fprintf(writer, "%s\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%s\t%.3f\n",
 			item.path, len(item.Best.Takes), item.Search.Variant, item.Search.Iterations,
 			item.Search.Population, item.Search.Restarts, item.Search.Seed,
 			item.Search.Evaluations, state, item.Best.Terms.Total)
@@ -315,24 +319,42 @@ type termOf struct {
 
 func terms() []termOf {
 	return []termOf{
-		{"partial frequency", "cents", func(t match.Terms) float64 { return t.PartialFrequency },
-			func(w match.Weights) float64 { return w.PartialFrequency }},
-		{"partial level", "dB", func(t match.Terms) float64 { return t.PartialLevel },
-			func(w match.Weights) float64 { return w.PartialLevel }},
-		{"partial decay", "logratio", func(t match.Terms) float64 { return t.PartialDecay },
-			func(w match.Weights) float64 { return w.PartialDecay }},
-		{"spectral envelope", "dB", func(t match.Terms) float64 { return t.SpectralEnvelope },
-			func(w match.Weights) float64 { return w.SpectralEnvelope }},
-		{"envelope", "dB", func(t match.Terms) float64 { return t.Envelope },
-			func(w match.Weights) float64 { return w.Envelope }},
-		{"glide", "cents", func(t match.Terms) float64 { return t.Glide },
-			func(w match.Weights) float64 { return w.Glide }},
-		{"attack balance", "dB", func(t match.Terms) float64 { return t.AttackBalance },
-			func(w match.Weights) float64 { return w.AttackBalance }},
-		{"unmatched share", "", func(t match.Terms) float64 { return t.Unmatched },
-			func(w match.Weights) float64 { return w.Unmatched }},
-		{"spurious share", "", func(t match.Terms) float64 { return t.Spurious },
-			func(w match.Weights) float64 { return w.Spurious }},
+		{
+			"partial frequency", "cents", func(t match.Terms) float64 { return t.PartialFrequency },
+			func(w match.Weights) float64 { return w.PartialFrequency },
+		},
+		{
+			"partial level", "dB", func(t match.Terms) float64 { return t.PartialLevel },
+			func(w match.Weights) float64 { return w.PartialLevel },
+		},
+		{
+			"partial decay", "logratio", func(t match.Terms) float64 { return t.PartialDecay },
+			func(w match.Weights) float64 { return w.PartialDecay },
+		},
+		{
+			"spectral envelope", "dB", func(t match.Terms) float64 { return t.SpectralEnvelope },
+			func(w match.Weights) float64 { return w.SpectralEnvelope },
+		},
+		{
+			"envelope", "dB", func(t match.Terms) float64 { return t.Envelope },
+			func(w match.Weights) float64 { return w.Envelope },
+		},
+		{
+			"glide", "cents", func(t match.Terms) float64 { return t.Glide },
+			func(w match.Weights) float64 { return w.Glide },
+		},
+		{
+			"attack balance", "dB", func(t match.Terms) float64 { return t.AttackBalance },
+			func(w match.Weights) float64 { return w.AttackBalance },
+		},
+		{
+			"unmatched share", "", func(t match.Terms) float64 { return t.Unmatched },
+			func(w match.Weights) float64 { return w.Unmatched },
+		},
+		{
+			"spurious share", "", func(t match.Terms) float64 { return t.Spurious },
+			func(w match.Weights) float64 { return w.Spurious },
+		},
 	}
 }
 
@@ -348,48 +370,48 @@ func terms() []termOf {
 func printTerms(out io.Writer, reports []*report) {
 	gates := match.AdoptionGates()
 
-	fmt.Fprintln(out, "\nper-term, raw and over the adoption gate (a term at its gate contributes 1.0):")
+	_, _ = fmt.Fprintln(out, "\nper-term, raw and over the adoption gate (a term at its gate contributes 1.0):")
 
 	writer := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 
-	fmt.Fprint(writer, "term\tunit\tgate")
+	_, _ = fmt.Fprint(writer, "term\tunit\tgate")
 
 	for i := range reports {
-		fmt.Fprintf(writer, "\traw%d\txgate%d", i+1, i+1)
+		_, _ = fmt.Fprintf(writer, "\traw%d\txgate%d", i+1, i+1)
 	}
 
-	fmt.Fprint(writer, "\tdelta/gate\tnote\n")
+	_, _ = fmt.Fprintf(writer, "\t%s/gate\tnote\n", spreadLabel(len(reports)))
 
 	for _, definition := range terms() {
 		gate := definition.gate(gates)
 
-		fmt.Fprintf(writer, "%s\t%s\t%.3f", definition.name, definition.unit, gate)
+		_, _ = fmt.Fprintf(writer, "%s\t%s\t%.3f", definition.name, definition.unit, gate)
 
-		lowest, highest := math.Inf(1), math.Inf(-1)
+		ratios := make([]float64, 0, len(reports))
 
 		for _, item := range reports {
 			value := definition.of(item.Best.Terms)
 			ratio := value / gate
-			lowest, highest = math.Min(lowest, ratio), math.Max(highest, ratio)
+			ratios = append(ratios, ratio)
 
-			fmt.Fprintf(writer, "\t%.3f\t%.3f", value, ratio)
+			_, _ = fmt.Fprintf(writer, "\t%.3f\t%.3f", value, ratio)
 		}
 
 		note := ""
-		if highest < 1 {
+		if slices.Max(ratios) < 1 {
 			note = "inside the objective's own noise"
 		}
 
-		fmt.Fprintf(writer, "\t%+.3f\t%s\n", highest-lowest, note)
+		_, _ = fmt.Fprintf(writer, "\t%+.3f\t%s\n", spread(ratios), note)
 	}
 
-	fmt.Fprint(writer, "total\t\t")
+	_, _ = fmt.Fprint(writer, "total\t\t")
 
 	for _, item := range reports {
-		fmt.Fprintf(writer, "\t\t%.3f", item.Best.Terms.Total)
+		_, _ = fmt.Fprintf(writer, "\t\t%.3f", item.Best.Terms.Total)
 	}
 
-	fmt.Fprint(writer, "\t\t\n")
+	_, _ = fmt.Fprint(writer, "\t\t\n")
 
 	_ = writer.Flush()
 }
@@ -398,48 +420,49 @@ func printTerms(out io.Writer, reports []*report) {
 // parameter lists differ in order or membership (a different -fix set) still line
 // up. Order follows the first report, which is the order fit-physical prints.
 func printParams(out io.Writer, reports []*report) {
-	fmt.Fprintln(out, "\nper-parameter, normalized position (* = fixed, PINNED = free but at a stop):")
+	_, _ = fmt.Fprintln(out, "\nper-parameter, normalized position (* = fixed, PINNED = free but at a stop):")
 
 	writer := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 
-	fmt.Fprint(writer, "parameter\tlabel\tunit")
+	_, _ = fmt.Fprint(writer, "parameter\tlabel\tunit")
 
 	for i := range reports {
-		fmt.Fprintf(writer, "\tnorm%d\tvalue%d", i+1, i+1)
+		_, _ = fmt.Fprintf(writer, "\tnorm%d\tvalue%d", i+1, i+1)
 	}
 
-	fmt.Fprint(writer, "\tdelta\tnote\n")
+	_, _ = fmt.Fprintf(writer, "\t%s\tnote\n", spreadLabel(len(reports)))
 
 	for _, first := range reports[0].Best.Params {
-		fmt.Fprintf(writer, "%s\t%s\t%s", first.ID, first.Label, first.Unit)
+		_, _ = fmt.Fprintf(writer, "%s\t%s\t%s", first.ID, first.Label, first.Unit)
 
-		lowest, highest := math.Inf(1), math.Inf(-1)
+		positions := make([]float64, 0, len(reports))
 		pinned, everywhere, free := false, true, false
 
 		for _, item := range reports {
 			found, ok := lookup(item.Best.Params, first.ID)
 			if !ok {
-				fmt.Fprint(writer, "\t-\t-")
+				_, _ = fmt.Fprint(writer, "\t-\t-")
 
 				everywhere = false
 
 				continue
 			}
 
-			lowest = math.Min(lowest, found.Normalized)
-			highest = math.Max(highest, found.Normalized)
+			positions = append(positions, found.Normalized)
 
 			marker := ""
+
 			if found.Fixed {
 				marker = "*"
 			} else {
 				free = true
+
 				if atStop(found.Normalized) {
 					pinned = true
 				}
 			}
 
-			fmt.Fprintf(writer, "\t%.4f%s\t%.4g", found.Normalized, marker, found.Value)
+			_, _ = fmt.Fprintf(writer, "\t%.4f%s\t%.4g", found.Normalized, marker, found.Value)
 		}
 
 		note := ""
@@ -455,10 +478,37 @@ func printParams(out io.Writer, reports []*report) {
 			note = "PINNED: free, at a stop — the shipped range excludes the optimum"
 		}
 
-		fmt.Fprintf(writer, "\t%+.4f\t%s\n", highest-lowest, note)
+		_, _ = fmt.Fprintf(writer, "\t%+.4f\t%s\n", spread(positions), note)
 	}
 
 	_ = writer.Flush()
+}
+
+// spread is signed for two reports and a range for more.
+//
+// With two reports "the second is 0.18 gates worse than the first" is the
+// question being asked, and a magnitude would throw away the direction. With
+// three or more there is no direction to report, so the column becomes the range
+// — how far apart the runs landed — which is the quantity that still means
+// something when there is no privileged pair.
+func spread(values []float64) float64 {
+	if len(values) < 2 {
+		return 0
+	}
+
+	if len(values) == 2 {
+		return values[1] - values[0]
+	}
+
+	return slices.Max(values) - slices.Min(values)
+}
+
+func spreadLabel(reports int) string {
+	if reports == 2 {
+		return "delta"
+	}
+
+	return "range"
 }
 
 func lookup(params []param, id string) (param, bool) {
@@ -518,46 +568,46 @@ func printVelocities(out io.Writer, reports []*report) error {
 		}
 	}
 
-	fmt.Fprintln(out, "\nper-take fitted velocity (0-1), in the first report's take order:")
+	_, _ = fmt.Fprintln(out, "\nper-take fitted velocity (0-1), in the first report's take order:")
 
 	writer := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 
-	fmt.Fprint(writer, "take")
+	_, _ = fmt.Fprint(writer, "take")
 
 	for i := range reports {
-		fmt.Fprintf(writer, "\tvel%d", i+1)
+		_, _ = fmt.Fprintf(writer, "\tvel%d", i+1)
 	}
 
-	fmt.Fprintln(writer)
+	_, _ = fmt.Fprintln(writer)
 
 	for index, path := range order {
-		fmt.Fprintf(writer, "%s", path)
+		_, _ = fmt.Fprintf(writer, "%s", path)
 
 		for i := range reports {
-			fmt.Fprintf(writer, "\t%.4f", velocities[i][index])
+			_, _ = fmt.Fprintf(writer, "\t%.4f", velocities[i][index])
 		}
 
-		fmt.Fprintln(writer)
+		_, _ = fmt.Fprintln(writer)
 	}
 
 	_ = writer.Flush()
 
-	fmt.Fprintln(out, "\nvelocity agreement (Spearman rank correlation):")
+	_, _ = fmt.Fprintln(out, "\nvelocity agreement (Spearman rank correlation):")
 
 	for i := range reports {
 		for j := i + 1; j < len(reports); j++ {
 			rho, err := series.Spearman(velocities[i], velocities[j])
-			fmt.Fprintf(out, "  report %d vs report %d:  %s\n", i+1, j+1, format(rho, err))
+			_, _ = fmt.Fprintf(out, "  report %d vs report %d:  %s\n", i+1, j+1, format(rho, err))
 		}
 	}
 
-	fmt.Fprintln(out, "\nvelocity against take index (is the vNN order a strike ramp?):")
+	_, _ = fmt.Fprintln(out, "\nvelocity against take index (is the vNN order a strike ramp?):")
 
 	indices := series.Indices(len(order))
 
 	for i := range reports {
 		rho, err := series.Spearman(velocities[i], indices)
-		fmt.Fprintf(out, "  report %d:  %s\n", i+1, format(rho, err))
+		_, _ = fmt.Fprintf(out, "  report %d:  %s\n", i+1, format(rho, err))
 	}
 
 	printVelocityVerdict(out, reports, velocities)
@@ -592,7 +642,7 @@ func printVelocityVerdict(out io.Writer, reports []*report, velocities [][]float
 	}
 
 	if worst < agreementThreshold {
-		fmt.Fprintf(out,
+		_, _ = fmt.Fprintf(out,
 			"\nVERDICT: the runs' per-take velocities correlate at rho = %+.2f, which is not agreement.\n"+
 				"The velocity is then a nuisance parameter the objective does not identify: the\n"+
 				"search is filling those dimensions with noise, and nothing may be read off them\n"+
@@ -602,7 +652,7 @@ func printVelocityVerdict(out io.Writer, reports []*report, velocities [][]float
 		return
 	}
 
-	fmt.Fprintf(out,
+	_, _ = fmt.Fprintf(out,
 		"\nVERDICT: the runs' per-take velocities correlate at rho = %+.2f. The objective\n"+
 			"identifies the strike ordering; the velocities are evidence, within that rho.\n",
 		worst)

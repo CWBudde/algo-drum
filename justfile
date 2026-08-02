@@ -92,7 +92,7 @@ check-params: gen-params
 # Low pitch rather than the medium set this started on, chosen on the sound. It
 # is also the better-behaved target of the two, which was not the reason but is
 # worth knowing: the objective disagrees with itself less on every one of the
-# nine terms, and on glide by a factor of 120, because this drum's fundamental
+# nine terms, and on glide by a factor of 12, because this drum's fundamental
 # outlives the estimator's late probe and the medium one's does not. The gates in
 # internal/physical/match/distance.go are measured on *this* set and do not
 # transfer to another.
@@ -199,6 +199,37 @@ fit-physical-series directory="reference/tt08x08/lp/hd" *args="":
 # part of `just ci`; unlike fit-physical its output is meant to be committed.
 measure-tom +files:
     go run ./cmd/measure-tom -o tom-measurements.json {{files}}
+
+# Reduce a set of takes as an ordered *series* rather than as repeats.
+#
+# `measure-tom` alone summarises scatter across takes, which is the right
+# reduction for repeats at one dynamic and the wrong one for a deliberate
+# velocity ramp: there a clean monotone trend reads as enormous "spread". This
+# adds the rank correlation of each measured quantity against the take index,
+# and the cross-take partial correspondence table — which is what makes a
+# partial that is present in some takes and absent in others visible at all.
+#
+# The take order is a claim, not a measurement (AGENTS.md). Correlating against
+# it tests that claim; it never assumes it.
+measure-series directory="reference/tt08x08/lp/hd":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    slug="$(echo "{{directory}}" | sed 's#^reference/##; s#/#-#g')"
+    go run ./cmd/measure-tom -channel mono -series \
+        -o "fits/measure-$slug-series.json" {{directory}}/v*.wav
+
+# Compare two or more fit reports: do two runs of the search agree?
+#
+# cmd/measure-objective asks this of the objective and calls the disagreement
+# the floor. This asks it of the search, which has the larger opportunity to
+# disagree with itself — it is stochastic and it is stopped by hand. The headline
+# is the rank correlation of the per-take fitted velocities: a quantity two runs
+# cannot agree on is not a measurement, and nothing may be read off it.
+#
+# It refuses reports scored under different weight sets, because a total is a
+# property of its weights and comparing across them is meaningless.
+compare-fits +reports:
+    go run ./cmd/compare-fits {{reports}}
 
 # Fail if the physical-model calibration metrics are stale
 check-physical-reference: gen-physical-reference

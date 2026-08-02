@@ -106,6 +106,13 @@ func run(args []string, stdout, stderr io.Writer) error {
 	espritOrder := flags.Int("esprit-max-order", espritDefaults.MaxOrder,
 		"most components ESTER may put in one subband")
 
+	seriesMode := flags.Bool("series", false,
+		"also read the takes as an ordered set: rank correlation of each quantity "+
+			"against the take index, and the partials aligned into common modes")
+	correspondenceMinTakes := flags.Int("correspondence-min-takes", 2,
+		"omit modes seen in fewer takes than this from the printed correspondence table; "+
+			"the JSON always carries every row")
+
 	doublet := flags.Bool("doublet", false,
 		"treat the two files as Fischer's pair: resonant head off first, on second")
 	doubletMinRatio := flags.Float64("doublet-min-ratio", 1.02,
@@ -183,8 +190,17 @@ func run(args []string, stdout, stderr io.Writer) error {
 		report.Repeatability = measureRepeatability(report.Takes)
 	}
 
+	// -series is additive rather than an alternative to the scatter block: the
+	// two reductions of the same takes disagree loudly on a ramp, and seeing
+	// both is what makes it obvious which question was answered.
+	if *seriesMode && !*doublet {
+		report.Series = measureSeries(report.Takes)
+		report.Correspondence = measureCorrespondence(report.Takes,
+			correspondenceTolerance(options.MinSeparationHz))
+	}
+
 	if !*quiet && *outputPath != "-" {
-		printReport(stdout, report)
+		printReport(stdout, report, *correspondenceMinTakes)
 	}
 
 	if *outputPath == "" {
@@ -194,7 +210,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	return encodeJSON(*outputPath, report, stdout)
 }
 
-func printReport(writer io.Writer, report Report) {
+func printReport(writer io.Writer, report Report, correspondenceMinTakes int) {
 	for index, take := range report.Takes {
 		if index > 0 {
 			_, _ = fmt.Fprintln(writer)
@@ -206,6 +222,16 @@ func printReport(writer io.Writer, report Report) {
 	if report.Repeatability != nil {
 		_, _ = fmt.Fprintln(writer)
 		printRepeatability(writer, *report.Repeatability)
+	}
+
+	if report.Series != nil {
+		_, _ = fmt.Fprintln(writer)
+		printSeries(writer, *report.Series)
+	}
+
+	if report.Correspondence != nil {
+		_, _ = fmt.Fprintln(writer)
+		printCorrespondence(writer, *report.Correspondence, correspondenceMinTakes)
 	}
 
 	if report.Doublet != nil {
@@ -225,9 +251,9 @@ func printTake(writer io.Writer, take Take) {
 	}
 
 	_, _ = fmt.Fprintf(writer,
-		"   peak %.3f  clipped %d  DC %+.5f  pre-roll %.2f s  floor %s  analysed %.2f s\n",
-		take.Health.PeakAmplitude, take.Health.ClippedSamples, take.Health.DCOffset,
-		take.Health.PreOnsetSeconds, floor, take.Health.AnalyzedSeconds)
+		"   peak %.3f  crest %.2f  clipped %d  DC %+.5f  pre-roll %.2f s  floor %s  analysed %.2f s\n",
+		take.Health.PeakAmplitude, take.Health.CrestFactor, take.Health.ClippedSamples,
+		take.Health.DCOffset, take.Health.PreOnsetSeconds, floor, take.Health.AnalyzedSeconds)
 
 	for _, warning := range take.Health.Warnings {
 		_, _ = fmt.Fprintf(writer, "   ! %s\n", warning)
@@ -263,7 +289,9 @@ func printTake(writer io.Writer, take Take) {
 }
 
 func printRepeatability(writer io.Writer, repeat Repeatability) {
-	_, _ = fmt.Fprintf(writer, "== repeatability across %d takes\n", repeat.Takes)
+	_, _ = fmt.Fprintf(writer,
+		"== repeatability: scatter across %d takes, the reduction for repeats at one dynamic\n",
+		repeat.Takes)
 	_, _ = fmt.Fprintf(writer, "   base %.2f Hz, SD %.1f cents, spread %.1f cents\n",
 		repeat.MeanBaseHz, repeat.BaseSDCents, repeat.BaseSpreadCents)
 	_, _ = fmt.Fprintf(writer, "   base T60 %.3f s, SD %.1f %%\n",
@@ -274,6 +302,10 @@ func printRepeatability(writer io.Writer, repeat Repeatability) {
 		"   plot base frequency against take peak before calling any of this jitter:")
 	_, _ = fmt.Fprintln(writer,
 		"   a spread that tracks the level is the tension nonlinearity, working as designed.")
+	_, _ = fmt.Fprintln(writer,
+		"   if these takes are a velocity ramp rather than repeats, none of the above is jitter:")
+	_, _ = fmt.Fprintln(writer,
+		"   run -series, which reduces the same takes as an ordered set instead.")
 }
 
 func printDoublet(writer io.Writer, doublet Doublet) {

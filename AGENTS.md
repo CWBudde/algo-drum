@@ -220,11 +220,26 @@ What a fit is scored with, and the instrument that judges that instrument.
 
 | Tool | What it is for |
 | ---- | -------------- |
-| `cmd/measure-tom/` | Turns recordings into the committable tables [docs/physical-measurement-protocol.md](docs/physical-measurement-protocol.md) asks for, through the same code a fit scores with. `-high-resolution` adds the ESPRIT table and the partial-by-partial agreement between the two estimators (PLAN.md §N2) |
+| `cmd/measure-tom/` | Turns recordings into the committable tables [docs/physical-measurement-protocol.md](docs/physical-measurement-protocol.md) asks for, through the same code a fit scores with. `-high-resolution` adds the ESPRIT table and the partial-by-partial agreement between the two estimators (PLAN.md §N2). `-series` (`just measure-series`) reduces the takes as an **ordered set** instead of as repeats — see "Scatter or trend" below |
 | `cmd/measure-objective/` | Measures the objective's reproducibility floor and proposes the gates `DefaultWeights` inverts. It scores each channel of a **coincident** stereo pair against the other through `match.Distance` itself, so the floor is measured by the shipped code rather than a reimplementation of it, and it refuses a spaced pair, where the disagreement would be two arrival times |
-| `cmd/fit-physical/` | Searches the parameter bank for the drum closest to a recording. `-inspect` reads a running checkpoint and stops, emitting the full report — per-term breakdown, per-take terms and velocities, parameter table — without disturbing the run |
+| `cmd/fit-physical/` | Searches the parameter bank for the drum closest to a recording. `-inspect` reads a running checkpoint and stops, emitting the full report — per-term breakdown, per-take terms and velocities, parameter table — without disturbing the run. `-schema` dumps the report shape; `-floor` states the measured floor to read the total against, and has no default because a floor is a property of a reference set |
+| `cmd/compare-fits/` | Asks of the **search** what `measure-objective` asks of the objective: does it agree with itself? Per-term and per-parameter deltas, and the rank correlation of the per-take fitted velocities. Refuses reports scored under different weight sets (`just compare-fits`) |
 | `cmd/analyze-physical/` | The analysis report and the reference fixture (`just gen-physical-reference`; CI diffs it) |
 | `cmd/render-physical/` | Renders the voice to a WAV for offline auditioning |
+| `internal/physical/series/` | Rank correlation over take series. Not signal processing — algo-dsp covers that layer; this is the layer above it that was missing |
+
+**Every term is reported over its adoption gate.** `weight = 1/gate`, so a term
+divided by its gate *is* its additive contribution to the total, and the total is the
+plain sum of the nine ratios. A ratio below 1.0 is inside the objective's own measured
+noise and has not moved in any sense that means anything. Reports also carry a
+fingerprint of the weight set they were scored under, because **a total is a property of
+a weight set** and comparing across two of them is meaningless — a mistake this
+repository has actually made.
+
+**A free parameter pinned against a stop is a bound, not a fit.** `fit-physical` and
+`compare-fits` both flag any non-fixed parameter within 1 % of 0 or 1. Read it as
+evidence that the shipped range excludes the optimum. `physicalTom.damping` trips this
+in two independent runs.
 
 **Gates are hand-edited.** `measure-objective` proposes; a human applies. There is
 deliberately no generated or CI-diffed gate fixture — a gate is a judgement about what
@@ -269,9 +284,17 @@ obliquity moved too, and the fit has nowhere to put them.
   nuisance parameter this objective does not identify, so the search fills those sixteen
   dimensions with noise.
 - **What does measure the order is the recordings alone.** Crest factor over the first
-  50 ms runs **ρ = +0.92** against the file index and attack balance **ρ = +0.85**, both
-  gain-invariant and so unharmed by the per-file peak normalisation that leaves absolute
-  level at ρ = +0.16. Read a velocity ramp off these, never off a fit.
+  50 ms from the onset runs **ρ = +0.91** against the file index and attack balance
+  **ρ = +0.85**, both gain-invariant and so unharmed by the per-file peak normalisation
+  that leaves absolute level at ρ = +0.16. Read a velocity ramp off these, never off a
+  fit. (The coefficient is +0.91…+0.93 for every window between 20 and 80 ms, so it is
+  the quantity that carries the trend, not the window; `just measure-series` prints the
+  shipped 50 ms figure.)
+- **Scatter or trend — pick the right reduction.** `measure-tom`'s repeatability block
+  summarises scatter across takes, which is right for repeats at one dynamic and wrong
+  for a deliberate ramp, where a clean monotone trend reads as enormous "spread". `-series`
+  reduces the same takes as an ordered set and reports rank correlation against the take
+  index instead. Both are printed; neither is the default reading.
 - **One shared bank is structurally wrong across the series.** On `tt08x08/lp/hd` the
   358 Hz partial's level relative to the fundamental scatters over 14.8 dB (sd 3.5 dB),
   and a partial at 255.7 Hz is absent from all nine of v01–v09 and present in six of the

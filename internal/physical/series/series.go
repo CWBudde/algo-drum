@@ -87,36 +87,36 @@ func Ranks(values []float64) []float64 {
 }
 
 // Pearson is the linear correlation of two equal-length series.
-func Pearson(a, b []float64) (float64, error) {
-	if len(a) != len(b) {
-		return 0, fmt.Errorf("%w: %d values against %d", ErrSeries, len(a), len(b))
+func Pearson(first, second []float64) (float64, error) {
+	if len(first) != len(second) {
+		return 0, fmt.Errorf("%w: %d values against %d", ErrSeries, len(first), len(second))
 	}
 
-	if len(a) < minimumPairs {
+	if len(first) < minimumPairs {
 		return 0, fmt.Errorf("%w: %d pairs, need at least %d",
-			ErrSeries, len(a), minimumPairs)
+			ErrSeries, len(first), minimumPairs)
 	}
 
-	meanA, meanB := mean(a), mean(b)
+	meanFirst, meanSecond := mean(first), mean(second)
 
-	var covariance, varianceA, varianceB float64
+	var covariance, varianceFirst, varianceSecond float64
 
-	for i := range a {
-		da, db := a[i]-meanA, b[i]-meanB
-		covariance += da * db
-		varianceA += da * da
-		varianceB += db * db
+	for i := range first {
+		deltaFirst, deltaSecond := first[i]-meanFirst, second[i]-meanSecond
+		covariance += deltaFirst * deltaSecond
+		varianceFirst += deltaFirst * deltaFirst
+		varianceSecond += deltaSecond * deltaSecond
 	}
 
 	// A series with no variance has no correlation with anything, and reporting
 	// 0 would be a claim of independence rather than of absence. Sixteen takes
 	// that all measured the same is a fact about the takes; it is not evidence
 	// that the quantity fails to trend.
-	if varianceA == 0 || varianceB == 0 {
+	if varianceFirst == 0 || varianceSecond == 0 {
 		return 0, fmt.Errorf("%w: a series is constant, so no correlation exists", ErrSeries)
 	}
 
-	return covariance / math.Sqrt(varianceA*varianceB), nil
+	return covariance / math.Sqrt(varianceFirst*varianceSecond), nil
 }
 
 // Spearman is the rank correlation of two equal-length series: Pearson over
@@ -127,12 +127,12 @@ func Pearson(a, b []float64) (float64, error) {
 // list" does not assert that loudness rises linearly with the index, and a
 // linear coefficient would be depressed by a perfectly monotone ramp that
 // happens to be curved.
-func Spearman(a, b []float64) (float64, error) {
-	if len(a) != len(b) {
-		return 0, fmt.Errorf("%w: %d values against %d", ErrSeries, len(a), len(b))
+func Spearman(first, second []float64) (float64, error) {
+	if len(first) != len(second) {
+		return 0, fmt.Errorf("%w: %d values against %d", ErrSeries, len(first), len(second))
 	}
 
-	return Pearson(Ranks(a), Ranks(b))
+	return Pearson(Ranks(first), Ranks(second))
 }
 
 // minimumPairs is the fewest pairs a correlation is reported from. Two points

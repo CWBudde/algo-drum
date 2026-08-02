@@ -6,6 +6,7 @@ import (
 
 	"github.com/cwbudde/algo-drum/internal/physical/match"
 	"github.com/cwbudde/algo-dsp/measure/ir"
+	timestats "github.com/cwbudde/algo-dsp/stats/time"
 )
 
 // Report is the derived table set. This — not the audio — is what a measurement
@@ -16,7 +17,14 @@ type Report struct {
 	Base          BaseRule       `json:"base"`
 	Takes         []Take         `json:"takes"`
 	Repeatability *Repeatability `json:"repeatability,omitempty"`
-	Doublet       *Doublet       `json:"doublet,omitempty"`
+	// Series and Correspondence are the -series reductions: the takes as an
+	// ordered set, and their partial tables aligned into common modes. They are
+	// separate from Repeatability rather than replacing it because the two
+	// answer different questions of the same files and a reader has to be able
+	// to see which one was asked — see the commentary in series.go.
+	Series         *Series         `json:"series,omitempty"`
+	Correspondence *Correspondence `json:"correspondence,omitempty"`
+	Doublet        *Doublet        `json:"doublet,omitempty"`
 }
 
 // BaseRule records how the partial the ratios are taken against was chosen. It
@@ -84,7 +92,20 @@ type Format struct {
 // partial table on purpose. Every field here corresponds to a failure mode
 // listed in docs/physical-measurement-protocol.md.
 type Health struct {
-	PeakAmplitude   float64 `json:"peakAmplitude"`
+	PeakAmplitude float64 `json:"peakAmplitude"`
+	// CrestFactor is peak over RMS across the first crestWindowSeconds after
+	// the onset, and it is here because PeakAmplitude above it is, on a
+	// committed reference, worth nothing as a record of how hard the drum was
+	// struck. Every file in reference/tt08x08/lp/hd is peak-normalised to
+	// 0.88–1.00, so absolute level carries no strike information at all: rank
+	// correlation with the take index is +0.16, which is noise. Crest factor is
+	// gain-invariant, survives that normalisation untouched, and runs +0.91
+	// against the take index — the single best strike-velocity proxy in the set,
+	// ahead of attack balance at +0.85. (AGENTS.md records +0.92 for the same
+	// reading; the scratch measurement it came from anchored the window
+	// differently, and the coefficient runs +0.91 to +0.93 across window lengths
+	// from 20 to 200 ms, so the choice of window is not what carries it.)
+	CrestFactor     float64 `json:"crestFactor"`
 	ClippedSamples  int     `json:"clippedSamples"`
 	DCOffset        float64 `json:"dcOffset"`
 	PreOnsetSeconds float64 `json:"preOnsetSeconds"`
@@ -123,6 +144,12 @@ type Row struct {
 // It is only meaningful when the takes really are repeats: the tool emits it
 // whenever more than one file is measured without -doublet, and the caller is
 // responsible for not reading it off a strike-position series.
+//
+// On a deliberate velocity ramp it is the wrong reduction outright, not merely
+// a loose one — a perfectly clean monotone trend is the largest spread a set of
+// takes can have, so this block reports the instrument as least repeatable
+// exactly when the player was most consistent. -series is the reduction for
+// that case; see Series in series.go.
 type Repeatability struct {
 	Takes           int     `json:"takes"`
 	MeanBaseHz      float64 `json:"meanBaseFrequencyHz"`
@@ -190,6 +217,13 @@ const (
 	// weakFitQuality is the R² below which a decay is not a single exponential
 	// — a beating pair, or a partial that fell into the noise.
 	weakFitQuality = 0.9
+	// crestWindowSeconds is how much of the strike Health.CrestFactor is taken
+	// over. It is the attack, not the whole take: peak over RMS of a two-second
+	// window is dominated by how long the tail was allowed to run, so the same
+	// hit trimmed differently would report a different strike. 50 ms is past the
+	// contact transient and short of the modal sustain, and it is the window the
+	// +0.92 against the take index was measured over.
+	crestWindowSeconds = 0.05
 )
 
 // measureTake loads one file and reduces it to the tables the protocol asks
@@ -378,6 +412,13 @@ func takeHealth(reference match.Reference, features match.Features, options matc
 
 	if len(samples) > 0 {
 		health.DCOffset = sum / float64(len(samples))
+	}
+
+	// From the onset rather than from the file start, so leading silence cannot
+	// inflate the ratio by depressing the RMS.
+	end := min(features.OnsetSample+int(crestWindowSeconds*rate), len(samples))
+	if end > features.OnsetSample {
+		health.CrestFactor = timestats.CrestFactor(samples[features.OnsetSample:end])
 	}
 
 	if health.PreOnsetSeconds >= minPreRollSeconds && health.PeakAmplitude > 0 {

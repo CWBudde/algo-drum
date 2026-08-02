@@ -3,9 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -358,6 +361,173 @@ func TestTruncatedTakeWarns(t *testing.T) {
 			t.Errorf("output does not warn about %q:\n%s", want, text)
 		}
 	}
+}
+
+// The series reduction has to say which way a quantity goes, and it has to keep
+// saying it when the files are listed in a different order — a coefficient that
+// moved with the shell's glob expansion would be evidence of nothing. The
+// fixtures ramp the 240 Hz partial's amplitude, so its level relative to the
+// 150 Hz base falls monotonically with the take index.
+func TestRunReportsSeriesTrendsAndSurvivesReordering(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	var paths []string
+
+	for take, amplitude := range []float64{0.10, 0.18, 0.32, 0.56} {
+		paths = append(paths, syntheticHit(t, dir, fmt.Sprintf("v%02d.wav", take+1),
+			[]float64{150, 240}, []float64{0.5, 0.4}, []float64{1, amplitude}))
+	}
+
+	forward := seriesReport(t, paths)
+
+	reversed := slices.Clone(paths)
+	slices.Reverse(reversed)
+
+	backward := seriesReport(t, reversed)
+
+	if forward.Series == nil || backward.Series == nil {
+		t.Fatal("no series block for four takes")
+	}
+
+	// The correspondence rows are a property of the recordings; the trends are a
+	// property of the order they were claimed to be in. Reversing the list must
+	// therefore leave the rows themselves untouched — only their columns move —
+	// and flip the sign of every coefficient.
+	if len(forward.Correspondence.Modes) != len(backward.Correspondence.Modes) {
+		t.Fatalf("correspondence has %d rows forwards and %d backwards",
+			len(forward.Correspondence.Modes), len(backward.Correspondence.Modes))
+	}
+
+	for index, mode := range forward.Correspondence.Modes {
+		other := backward.Correspondence.Modes[index]
+
+		cells := slices.Clone(other.LevelDB)
+		slices.Reverse(cells)
+		other.LevelDB = cells
+
+		if !reflect.DeepEqual(mode, other) {
+			t.Errorf("row %d changed when the files were listed in reverse:\n%+v\n%+v",
+				index, mode, other)
+		}
+	}
+
+	for index, item := range forward.Series.Trends {
+		other := backward.Series.Trends[index]
+
+		if item.Measured != other.Measured {
+			t.Errorf("%s: measured = %v forwards, %v backwards", item.Quantity, item.Measured, other.Measured)
+
+			continue
+		}
+
+		if item.Measured && math.Abs(item.Spearman+other.Spearman) > 1e-9 {
+			t.Errorf("%s: rho = %+.3f forwards but %+.3f backwards, want the negation",
+				item.Quantity, item.Spearman, other.Spearman)
+		}
+	}
+}
+
+// The finding the correspondence table exists for is a partial that some takes
+// have and others do not, so that is what the fixture plants: a 320 Hz mode in
+// the second half of the series only.
+func TestCorrespondenceSeparatesPresentFromAbsent(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	var paths []string
+
+	for take := range 4 {
+		frequencies, t60s, amplitudes := []float64{150, 240}, []float64{0.5, 0.4}, []float64{1, 0.5}
+		if take >= 2 {
+			frequencies = append(frequencies, 320)
+			t60s = append(t60s, 0.3)
+			amplitudes = append(amplitudes, 0.25)
+		}
+
+		paths = append(paths, syntheticHit(t, dir, fmt.Sprintf("v%02d.wav", take+1),
+			frequencies, t60s, amplitudes))
+	}
+
+	report := seriesReport(t, paths)
+
+	if report.Correspondence == nil {
+		t.Fatal("no correspondence block for four takes")
+	}
+
+	var planted *ModeRow
+
+	for index, mode := range report.Correspondence.Modes {
+		if math.Abs(mode.MeanHz-320) < 2 {
+			planted = &report.Correspondence.Modes[index]
+		}
+
+		// Every row is one mode of one take at most, which is what the tolerance
+		// is chosen to guarantee; a row holding two partials of the same take
+		// would be the alignment merging distinct modes.
+		if mode.Present > len(paths) {
+			t.Errorf("row at %.1f Hz is present %d times across %d takes",
+				mode.MeanHz, mode.Present, len(paths))
+		}
+	}
+
+	if planted == nil {
+		t.Fatalf("no row near 320 Hz: %+v", report.Correspondence.Modes)
+	}
+
+	if planted.Present != 2 {
+		t.Errorf("320 Hz row present in %d takes, want 2", planted.Present)
+	}
+
+	for take, cell := range planted.LevelDB {
+		if (cell != nil) != (take >= 2) {
+			t.Errorf("320 Hz row, take %d: cell = %v, want present only from take 2", take, cell)
+		}
+	}
+}
+
+// Crest factor is in the health block because peak amplitude is not enough: a
+// normalized file says nothing about the strike. This asserts the tool reads one
+// at all and reads it gain-invariantly, which is the whole reason it is there.
+func TestCrestFactorIsMeasuredAndGainInvariant(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	loud := syntheticHit(t, dir, "loud.wav", []float64{150, 240}, []float64{0.5, 0.4}, []float64{1, 0.5})
+	quiet := syntheticHit(t, dir, "quiet.wav", []float64{150, 240}, []float64{0.5, 0.4}, []float64{0.2, 0.1})
+
+	report := seriesReport(t, []string{loud, quiet})
+
+	first, second := report.Takes[0].Health.CrestFactor, report.Takes[1].Health.CrestFactor
+	if first <= 0 {
+		t.Fatalf("crest factor = %.3f, want a reading", first)
+	}
+
+	// wavio peak-normalizes on export, so the two files differ only in
+	// quantization noise; a gain-dependent statistic would still have to agree
+	// here, but one that failed to would be broken beyond doubt.
+	if math.Abs(first-second) > 0.05*first {
+		t.Errorf("crest factor = %.3f and %.3f for the same hit at two gains", first, second)
+	}
+}
+
+func seriesReport(t *testing.T, paths []string) Report {
+	t.Helper()
+
+	var stdout, stderr bytes.Buffer
+
+	if err := run(append([]string{"-series", "-o", "-", "-quiet"}, paths...), &stdout, &stderr); err != nil {
+		t.Fatalf("run() error = %v, stderr = %s", err, stderr.String())
+	}
+
+	var report Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+
+	return report
 }
 
 func TestRunRejectsBadInvocations(t *testing.T) {
