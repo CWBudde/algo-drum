@@ -639,16 +639,18 @@ func (d *DoubleHead) tickUncoupled(forceN float64) DoubleHeadOutput {
 	batterRadiated := 0.0
 	resonantRadiated := 0.0
 
-	for index := range modeCount {
-		// Captured before the contact impulse, so the acceleration below
-		// includes it. Taking it afterwards would leave only
-		// (matrix22 - 1)*F*a*dt of the strike, which is very nearly nothing.
+	// The two bodies are written out rather than shared through a helper: the
+	// only difference is the strike term, and a closure over the seven slices
+	// would put them back in a frame, which is the cost this function is trying
+	// to avoid. solveMidpoint's two kernels are duplicated for the same reason.
+	//
+	// previousVelocity is captured before the contact impulse, so the
+	// acceleration includes it. Taking it afterwards would leave only
+	// (matrix22 - 1)*F*a*dt of the strike, which is very nearly nothing.
+	for index := range batterModeCount {
 		previousVelocity := velocity[index]
-
-		oldVelocity := previousVelocity
-		if index < batterModeCount {
-			oldVelocity += forceN * strikeAccel[index] * inverseSampleRate
-		}
+		oldVelocity := previousVelocity +
+			forceN*strikeAccel[index]*inverseSampleRate
 
 		oldDisplacement := displacement[index]
 		displacement[index] = matrix11[index]*oldDisplacement +
@@ -659,13 +661,22 @@ func (d *DoubleHead) tickUncoupled(forceN float64) DoubleHeadOutput {
 
 		// Written identically in SingleHead.Tick. The zero-coupling equivalence
 		// test compares the two to the last bit, so the operand order matters.
-		radiated := radiationWeight[index] *
+		batterRadiated += radiationWeight[index] *
 			(newVelocity - previousVelocity) * sampleRate
-		if index < batterModeCount {
-			batterRadiated += radiated
-		} else {
-			resonantRadiated += radiated
-		}
+	}
+
+	for index := batterModeCount; index < modeCount; index++ {
+		oldVelocity := velocity[index]
+
+		oldDisplacement := displacement[index]
+		displacement[index] = matrix11[index]*oldDisplacement +
+			matrix12[index]*oldVelocity
+		newVelocity := matrix21[index]*oldDisplacement +
+			matrix22[index]*oldVelocity
+		velocity[index] = newVelocity
+
+		resonantRadiated += radiationWeight[index] *
+			(newVelocity - oldVelocity) * sampleRate
 	}
 
 	d.batterRadiatedM3PerS2 = batterRadiated
@@ -696,33 +707,47 @@ func (d *DoubleHead) tickCoupled(forceN float64) DoubleHeadOutput {
 	batterRadiated := 0.0
 	resonantRadiated := 0.0
 
-	for index := range d.modes {
-		mode := &d.modes[index]
+	// Same hoisting as tickUncoupled, and for the same aliasing reason: the
+	// stores into displacement and velocity force a reload of every header —
+	// and of config.SampleRateHz, which is 1/timeStep already in scope — on
+	// each mode otherwise.
+	sampleRate := d.config.SampleRateHz
+	velocity := d.velocity
+	displacement := d.displacement
+	midpointVelocities := d.midpointVelocity
+	radiationWeight := d.modeRadiationWeight
+	batterModeCount := d.batterModeCount
+	modeCount := len(d.modes)
 
-		midpointVelocity := d.midpointVelocity[index]
-		d.displacement[index] += timeStep * midpointVelocity
-		newVelocity := 2*midpointVelocity - d.velocity[index]
-		d.velocity[index] = newVelocity
+	// For the midpoint rule v_new - v_old = 2*(v_new - v_mid), so this is the
+	// same discrete acceleration the uncoupled path forms directly. The contact
+	// force is included even though it never appears as a velocity increment
+	// here: it enters solveMidpoint as an acceleration, v_mid gains F*a*dt/2
+	// from it, and the reflection below doubles that.
+	for index := range batterModeCount {
+		midpointVelocity := midpointVelocities[index]
+		displacement[index] += timeStep * midpointVelocity
+		newVelocity := 2*midpointVelocity - velocity[index]
+		velocity[index] = newVelocity
 
-		// For the midpoint rule v_new - v_old = 2*(v_new - v_mid), so this is
-		// the same discrete acceleration the uncoupled path forms directly. The
-		// contact force is included even though it never appears as a velocity
-		// increment here: it enters solveMidpoint as an acceleration, v_mid
-		// gains F*a*dt/2 from it, and the reflection above doubles that.
-		radiated := mode.RadiationWeight *
-			2 * (newVelocity - midpointVelocity) * d.config.SampleRateHz
-		if index < d.batterModeCount {
-			batterRadiated += radiated
-		} else {
-			resonantRadiated += radiated
-		}
+		batterRadiated += radiationWeight[index] *
+			2 * (newVelocity - midpointVelocity) * sampleRate
+	}
+
+	for index := batterModeCount; index < modeCount; index++ {
+		midpointVelocity := midpointVelocities[index]
+		displacement[index] += timeStep * midpointVelocity
+		newVelocity := 2*midpointVelocity - velocity[index]
+		velocity[index] = newVelocity
+
+		resonantRadiated += radiationWeight[index] *
+			2 * (newVelocity - midpointVelocity) * sampleRate
 	}
 
 	d.batterRadiatedM3PerS2 = batterRadiated
 	d.resonantRadiatedM3PerS2 = resonantRadiated
 
 	if d.config.Cavity.Enabled {
-		timeStep := 1 / d.config.SampleRateHz
 		for index := range d.cavityModes {
 			midpoint := d.cavityMidpointPa[index]
 			d.cavityPressurePa[index] = 2*midpoint - d.cavityPressurePa[index]
@@ -1094,46 +1119,61 @@ func (d *DoubleHead) solveMidpoint(
 	batterStrain := 0.0
 	resonantStrain := 0.0
 
+	// The same header hoisting the prologue above does, and needed for the same
+	// reason: the stores into couplingEnd, couplingBar and midpointVelocities may
+	// alias d, so read as d.field these six are reloaded from the struct on every
+	// mode and again on every coupling slot.
+	couplingFirst := d.couplingFirst
+	couplingCount := d.couplingCount
+	couplingGain := d.couplingGain
+	couplingCavity := d.couplingCavity
+	cavityMidpointPa := d.cavityMidpointPa
+	strainWeight := d.strainWeight
+	couplingEnd := d.couplingEnd
+	couplingBar := d.couplingBar
+
+	halfTimeStep := 0.5 * timeStep
+
 	// Split for the same reason the update loops are: which head a mode belongs to
 	// decides which strain it feeds and whether it has a coupling endpoint to
 	// record, and neither question changes within a run of indices.
 	for index := range batterModeCount {
 		midpointVelocity := midpointVelocities[index]
 
-		first := int(d.couplingFirst[index])
-		for slot, last := first, first+int(d.couplingCount[index]); slot < last; slot++ {
-			midpointVelocity -= d.couplingGain[slot] *
-				d.cavityMidpointPa[int(d.couplingCavity[slot])]
+		first := int(couplingFirst[index])
+		for slot, last := first, first+int(couplingCount[index]); slot < last; slot++ {
+			midpointVelocity -= couplingGain[slot] *
+				cavityMidpointPa[int(couplingCavity[slot])]
 		}
 
 		midpointVelocities[index] = midpointVelocity
 		newDisplacement := displacement[index] +
 			timeStep*midpointVelocity
 
-		batterStrain += d.strainWeight[index] *
+		batterStrain += strainWeight[index] *
 			newDisplacement * newDisplacement
 
 		if couplingActive {
-			d.couplingEnd[index] = newDisplacement
-			d.couplingBar[index] = displacement[index] +
-				0.5*timeStep*midpointVelocity
+			couplingEnd[index] = newDisplacement
+			couplingBar[index] = displacement[index] +
+				halfTimeStep*midpointVelocity
 		}
 	}
 
 	for index := batterModeCount; index < len(modes); index++ {
 		midpointVelocity := midpointVelocities[index]
 
-		first := int(d.couplingFirst[index])
-		for slot, last := first, first+int(d.couplingCount[index]); slot < last; slot++ {
-			midpointVelocity -= d.couplingGain[slot] *
-				d.cavityMidpointPa[int(d.couplingCavity[slot])]
+		first := int(couplingFirst[index])
+		for slot, last := first, first+int(couplingCount[index]); slot < last; slot++ {
+			midpointVelocity -= couplingGain[slot] *
+				cavityMidpointPa[int(couplingCavity[slot])]
 		}
 
 		midpointVelocities[index] = midpointVelocity
 		newDisplacement := displacement[index] +
 			timeStep*midpointVelocity
 
-		resonantStrain += d.strainWeight[index] *
+		resonantStrain += strainWeight[index] *
 			newDisplacement * newDisplacement
 	}
 

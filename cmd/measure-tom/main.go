@@ -142,6 +142,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	options.PeakProminenceDB = *prominenceDB
 	options.DecayFitStartSeconds = *decayStart
 	options.DecayFitEndSeconds = *decayEnd
+	// This tool reports Take.Decay, which is off by default because nothing that
+	// scores a fit reads it. See match.Options.Diagnostics.
+	options.Diagnostics = true
 
 	base := BaseRule{
 		WindowDB:   *baseWindowDB,

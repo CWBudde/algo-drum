@@ -463,8 +463,14 @@ func contactForceN(
 	// x*sqrt(x) rather than Pow for the canonical 3/2, which is the default and
 	// the measured value: the substep loop evaluates this tens of thousands of
 	// times per strike and Pow is an order of magnitude dearer than Sqrt.
-	elastic := compressionM * math.Sqrt(compressionM)
-	if exponent != 1.5 {
+	//
+	// Written as an either/or rather than as a Sqrt with a Pow override, which is
+	// what it was: exponent is fixed for the model's lifetime, so the override
+	// form paid for a discarded Sqrt on every substep of every non-default drum.
+	var elastic float64
+	if exponent == 1.5 {
+		elastic = compressionM * math.Sqrt(compressionM)
+	} else {
 		elastic = math.Pow(compressionM, exponent)
 	}
 

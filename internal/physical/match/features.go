@@ -5,20 +5,36 @@ import (
 	"fmt"
 	"math"
 	"slices"
-	"sync"
 
 	"github.com/cwbudde/algo-dsp/dsp/filter/biquad"
 	"github.com/cwbudde/algo-dsp/dsp/filter/design"
-	"github.com/cwbudde/algo-dsp/dsp/spectrum"
-	"github.com/cwbudde/algo-dsp/dsp/window"
 	"github.com/cwbudde/algo-dsp/measure/ir"
 	frequencystats "github.com/cwbudde/algo-dsp/stats/frequency"
 	timestats "github.com/cwbudde/algo-dsp/stats/time"
-	algofft "github.com/cwbudde/algo-fft"
 )
 
 // ErrInvalidOptions reports feature options that cannot describe an analysis.
 var ErrInvalidOptions = errors.New("invalid match options")
+
+// The decibel conversions, folded into single constants.
+//
+// Both substitutions are identities — 20*log10(x) is (20/ln10)*ln(x), and
+// 10^(x/20) is exp(x*ln10/20) — so what changes is only where the rounding
+// falls, by well under an ulp of the result. They are worth spelling out
+// because the library forms are not one operation each: Go's Log10 is a Frexp,
+// a Log and two multiplies, and Pow with a constant base is a general power.
+// These run per spectral bin and per trace point, tens of thousands of times
+// per extraction.
+const (
+	// decibelsPerPower converts a natural log of power to decibels: the folded
+	// 10/ln(10). decay.go's decayFloorModel names the same constant locally.
+	decibelsPerPower = 10 / math.Ln10
+	// decibelsPerAmplitude is the same for an amplitude ratio: 20/ln(10).
+	decibelsPerAmplitude = 20 / math.Ln10
+	// amplitudePerDecibel inverts decibelsPerAmplitude, for exp() in place of
+	// math.Pow(10, dB/20).
+	amplitudePerDecibel = math.Ln10 / 20
+)
 
 // TimeWindow is one span of the hit, measured from the onset.
 type TimeWindow struct {
@@ -289,7 +305,10 @@ func Extract(samples []float64, sampleRateHz float64, options Options) (Features
 		return Features{}, fmt.Errorf("%w: empty signal", ErrInvalidReference)
 	}
 
-	hit, onset, err := onsetAlignedHit(samples, sampleRateHz, options)
+	work := acquireExtractScratch()
+	defer releaseExtractScratch(work)
+
+	hit, onset, err := onsetAlignedHitInto(work, samples, sampleRateHz, options)
 	if err != nil {
 		return Features{}, err
 	}
@@ -307,9 +326,6 @@ func Extract(samples []float64, sampleRateHz float64, options Options) (Features
 			features.Decay = metrics
 		}
 	}
-
-	work := acquireExtractScratch()
-	defer releaseExtractScratch(work)
 
 	partials, err := detectPartials(work, hit, sampleRateHz, options)
 	if err != nil {
@@ -352,6 +368,14 @@ func Extract(samples []float64, sampleRateHz float64, options Options) (Features
 // be the estimate; where the hit begins and how loud it was scaled to are not
 // estimates, and a second copy of this would eventually make them one.
 func onsetAlignedHit(samples []float64, sampleRateHz float64, options Options) ([]float64, int, error) {
+	return onsetAlignedHitInto(nil, samples, sampleRateHz, options)
+}
+
+// onsetAlignedHitInto is onsetAlignedHit writing the normalized span into work's
+// buffer. A nil scratch allocates, which is what the high-resolution path and
+// the tests want; Extract passes its own, because at 2 s and 44.1 kHz this one
+// array was the largest single allocation left in an extraction.
+func onsetAlignedHitInto(work *extractScratch, samples []float64, sampleRateHz float64, options Options) ([]float64, int, error) {
 	if len(samples) == 0 {
 		return nil, 0, fmt.Errorf("%w: empty signal", ErrInvalidReference)
 	}
@@ -368,7 +392,13 @@ func onsetAlignedHit(samples []float64, sampleRateHz float64, options Options) (
 
 	// Peak-normalize once, here, so gain invariance is a property of the
 	// measurement rather than something every term has to remember.
-	return normalizePeak(span), onset, nil
+	if work == nil {
+		return normalizePeak(span), onset, nil
+	}
+
+	work.hit = growFloats(work.hit, len(span))
+
+	return normalizePeakInto(work.hit, span), onset, nil
 }
 
 func (o Options) validate(sampleRateHz float64) error {
@@ -414,6 +444,13 @@ func (o Options) validate(sampleRateHz float64) error {
 }
 
 func normalizePeak(samples []float64) []float64 {
+	return normalizePeakInto(make([]float64, len(samples)), samples)
+}
+
+// normalizePeakInto writes the normalized copy into out, which must be exactly
+// len(samples). Its previous contents are overwritten in full, including the
+// silent case.
+func normalizePeakInto(out, samples []float64) []float64 {
 	peak := 0.0
 	for _, sample := range samples {
 		if magnitude := math.Abs(sample); magnitude > peak {
@@ -421,8 +458,9 @@ func normalizePeak(samples []float64) []float64 {
 		}
 	}
 
-	out := make([]float64, len(samples))
 	if peak == 0 {
+		clear(out)
+
 		return out
 	}
 
@@ -432,187 +470,13 @@ func normalizePeak(samples []float64) []float64 {
 	// and half an ulp of scale is common to every sample and so invisible to
 	// every term downstream.
 	scale := 1 / peak
+
+	out = out[:len(samples)]
 	for i, sample := range samples {
 		out[i] = sample * scale
 	}
 
 	return out
-}
-
-// hannWindows caches periodic Hann windows by length, and realPlans caches real
-// FFT plans by size.
-//
-// Both are functions of a length alone, and a fitting run measures many
-// thousands of candidates at the same handful of lengths — so without a cache
-// every measurement pays to rebuild the identical window (a cosine per sample)
-// and the identical twiddle tables. algo-fft documents plans as safe for
-// concurrent transforms, which is what lets one plan serve every restart
-// goroutine.
-var (
-	hannWindows sync.Map // int -> []float64
-	realPlans   sync.Map // int -> *algofft.PlanReal[float64, complex128]
-)
-
-// hannWindow returns a cached periodic Hann window of the given length. The
-// result is shared and must not be modified by the caller.
-func hannWindow(length int) []float64 {
-	if cached, ok := hannWindows.Load(length); ok {
-		coefficients, _ := cached.([]float64)
-
-		return coefficients
-	}
-
-	coefficients := window.Generate(window.TypeHann, length, window.WithPeriodic())
-	shared, _ := hannWindows.LoadOrStore(length, coefficients)
-	result, _ := shared.([]float64)
-
-	return result
-}
-
-// realPlan returns a cached real FFT plan for the given size.
-func realPlan(size int) (*algofft.PlanReal[float64, complex128], error) {
-	if cached, ok := realPlans.Load(size); ok {
-		plan, _ := cached.(*algofft.PlanReal[float64, complex128])
-
-		return plan, nil
-	}
-
-	plan, err := algofft.NewPlanReal64(size)
-	if err != nil {
-		return nil, err
-	}
-
-	shared, _ := realPlans.LoadOrStore(size, plan)
-	result, _ := shared.(*algofft.PlanReal[float64, complex128])
-
-	return result, nil
-}
-
-// extractScratch is the working memory one Extract call reuses across its
-// partials, its transforms and its decay traces.
-//
-// The buffers here are what made an extraction cost tens of megabytes: a
-// heterodyne allocates two arrays the length of the whole hit and runs once per
-// detected partial, a magnitude spectrum allocates three arrays the length of
-// the transform and runs seven times, and each partial's decay builds four
-// traces at the full window's capacity. Every one of them is scratch — nothing
-// that reaches Features points into any of it — so one set per extraction
-// serves them all.
-//
-// It cannot be a package-level buffer: cmd/fit-physical runs one goroutine per
-// restart and every one of them is inside Extract at once. It is per call, from
-// a pool, so the sharing is between successive evaluations rather than between
-// concurrent ones and the buffers still come back sized from the last hit.
-type extractScratch struct {
-	inPhase    []float64
-	quadrature []float64
-
-	fftInput     []float64
-	fftBins      []complex128
-	fftReal      []float64
-	fftImaginary []float64
-	magnitude    []float64
-
-	times     []float64
-	trace     []float64
-	fullTimes []float64
-	fullTrace []float64
-}
-
-var extractScratchPool sync.Pool
-
-func acquireExtractScratch() *extractScratch {
-	if held, ok := extractScratchPool.Get().(*extractScratch); ok {
-		return held
-	}
-
-	return &extractScratch{}
-}
-
-func releaseExtractScratch(work *extractScratch) {
-	extractScratchPool.Put(work)
-}
-
-// growFloats returns a slice of exactly length, reusing buffer's array when it
-// is large enough. The contents are whatever the previous user left; every call
-// site below either overwrites them or clears what it does not.
-func growFloats(buffer []float64, length int) []float64 {
-	if cap(buffer) < length {
-		return make([]float64, length)
-	}
-
-	return buffer[:length]
-}
-
-// magnitudeSpectrum is a Hann-windowed, zero-padded real FFT magnitude,
-// allocating its result. Extract goes through spectrumInto instead; this form
-// is what the cache-equivalence test measures against.
-func magnitudeSpectrum(segment []float64, fftSize int) ([]float64, error) {
-	var work extractScratch
-
-	magnitude, err := work.spectrum(segment, fftSize)
-	if err != nil {
-		return nil, err
-	}
-
-	return slices.Clone(magnitude), nil
-}
-
-// spectrum is magnitudeSpectrum into the scratch buffers. The returned slice is
-// owned by work and is valid only until the next call.
-func (work *extractScratch) spectrum(segment []float64, fftSize int) ([]float64, error) {
-	if len(segment) == 0 {
-		return nil, fmt.Errorf("%w: empty segment", ErrInvalidOptions)
-	}
-
-	size := min(len(segment), fftSize)
-	coefficients := hannWindow(size)
-
-	input := growFloats(work.fftInput, fftSize)
-	work.fftInput = input
-
-	for i := range size {
-		input[i] = segment[i] * coefficients[i]
-	}
-
-	// Only the zero padding needs clearing: the head is overwritten in full
-	// above, so a reused buffer can only carry stale values past the segment.
-	clear(input[size:])
-
-	plan, err := realPlan(fftSize)
-	if err != nil {
-		return nil, err
-	}
-
-	length := plan.SpectrumLen()
-	if cap(work.fftBins) < length {
-		work.fftBins = make([]complex128, length)
-	}
-
-	bins := work.fftBins[:length]
-
-	if err := plan.Forward(bins, input); err != nil {
-		return nil, err
-	}
-
-	// spectrum.Magnitude would allocate its result; MagnitudeFromParts is the
-	// same vectorized kernel writing into a caller's buffer, so the bins are
-	// split into parts here rather than a magnitude being allocated per
-	// transform. TestCachedSpectrumMatchesFreshBuild holds the two forms
-	// together bit for bit.
-	parts, imaginary := growFloats(work.fftReal, length), growFloats(work.fftImaginary, length)
-	work.fftReal, work.fftImaginary = parts, imaginary
-
-	for i, bin := range bins {
-		parts[i], imaginary[i] = real(bin), imag(bin)
-	}
-
-	magnitude := growFloats(work.magnitude, length)
-	work.magnitude = magnitude
-
-	spectrum.MagnitudeFromParts(magnitude, parts, imaginary)
-
-	return magnitude, nil
 }
 
 // spectralPeak is one prominent interpolated maximum of one transform.
@@ -723,7 +587,7 @@ func detectPartials(work *extractScratch, hit []float64, sampleRateHz float64, o
 			return
 		}
 
-		floor := peaks[0].magnitude * math.Pow(10, (options.PartialFloorDB-detectionHeadroomDB)/20)
+		floor := peaks[0].magnitude * math.Exp((options.PartialFloorDB-detectionHeadroomDB)*amplitudePerDecibel)
 		budget := len(kept) + options.MaxPartials*detectionSurplus
 
 		for _, peak := range peaks {
@@ -790,7 +654,7 @@ func prominenceDB(magnitude []float64, peak int) float64 {
 		return math.Inf(1)
 	}
 
-	return 20 * math.Log10(magnitude[peak]/valley)
+	return decibelsPerAmplitude * math.Log(magnitude[peak]/valley)
 }
 
 // parabolicOffset interpolates a peak's sub-bin position from its neighbours,
@@ -883,9 +747,13 @@ func heterodyneInto(inPhase, quadrature, hit []float64, sampleRateHz, frequencyH
 		end := min(start+phasorAnchorInterval, len(hit))
 		sine, cosine := math.Sincos(step * float64(start))
 
-		for n := start; n < end; n++ {
-			sample := hit[n]
-			inPhase[n], quadrature[n] = sample*cosine, sample*sine
+		// Blocked through subslices of one length so the two writes carry no
+		// bounds check; the arithmetic is unchanged.
+		source := hit[start:end]
+		cosineOut, sineOut := inPhase[start:end], quadrature[start:end]
+
+		for n, sample := range source {
+			cosineOut[n], sineOut[n] = sample*cosine, sample*sine
 
 			cosine, sine = cosine*stepCosine-sine*stepSine,
 				sine*stepCosine+cosine*stepSine
@@ -928,11 +796,6 @@ func zeroPhaseLowpassPair(first, second, resonances []float64, cutoffHz, sampleR
 		coefficients = append(coefficients, design.Lowpass(cutoffHz, resonance, sampleRateHz))
 	}
 
-	// Reslicing to a common length is what lets the compiler drop the bounds
-	// checks inside the two passes below; without it every sample pays four.
-	length := min(len(first), len(second))
-	first, second = first[:length], second[:length]
-
 	// One section over the whole signal before the next, rather than one sample
 	// through the whole cascade before the next: a section is a pure function of
 	// its input stream, so the two orders produce the same numbers sample for
@@ -946,6 +809,30 @@ func zeroPhaseLowpassPair(first, second, resonances []float64, cutoffHz, sampleR
 	// The recurrence is spelled out rather than calling biquad.Section because
 	// neither of those two things is expressible through it: it processes one
 	// signal, forwards. The form below is its ProcessSample, unchanged.
+	// One section over the whole signal before the next, rather than one sample
+	// through the whole cascade before the next: a section is a pure function of
+	// its input stream, so the two orders produce the same numbers sample for
+	// sample, but this one lets the coefficients and the two-word state live in
+	// registers for the length of a pass instead of being reloaded per sample.
+	//
+	// The backward pass walks from the end rather than reversing the signal,
+	// filtering, and reversing it back — four sweeps of the pair that bought
+	// nothing.
+	//
+	// The recurrence is spelled out rather than calling biquad.Section because
+	// neither of those two things is expressible through it: it processes one
+	// signal, forwards. The form below is its ProcessSample, unchanged.
+	//
+	// The strided `index != to` form costs four bounds checks a sample, because
+	// nothing can be proved about an index moving by a variable stride, and
+	// splitting it into separate forward and backward loops removes all four —
+	// confirmed in the SSA. It was tried, and it is not written that way,
+	// because it does not measure faster: 25 interleaved pairs of runs put the
+	// split form at +3.3 % on the minimum and -7.8 % on the median, which is
+	// noise on either side of nothing. A biquad is a serial recurrence and every
+	// sample stalls on the multiply the previous one has not finished; the
+	// bounds checks were being issued into that stall and cost nothing to
+	// remove. Two copies of the body for no measured gain is a worse file.
 	run := func(from, to, stride int) {
 		for _, section := range coefficients {
 			var firstD0, firstD1, secondD0, secondD1 float64
@@ -1048,12 +935,18 @@ func glideCutoffHz(partials []Partial, index int) float64 {
 // linearFit returns the least-squares slope of levels against times, the level
 // that line reaches at time zero, and the fit's R².
 func linearFit(times, levels []float64) (slope, intercept, rSquared float64) {
-	count := float64(len(times))
+	// Reslicing to a common length once drops the bounds check from both
+	// sweeps, which measureDecays runs over tens of thousands of trace points
+	// per partial.
+	length := min(len(times), len(levels))
+	times, levels = times[:length], levels[:length]
+
+	count := float64(length)
 
 	var sumTimes, sumLevels float64
 
-	for i := range times {
-		sumTimes += times[i]
+	for i, elapsed := range times {
+		sumTimes += elapsed
 		sumLevels += levels[i]
 	}
 
@@ -1061,8 +954,8 @@ func linearFit(times, levels []float64) (slope, intercept, rSquared float64) {
 
 	var covariance, varianceTime, varianceLevel float64
 
-	for i := range times {
-		deltaTime, deltaLevel := times[i]-meanTime, levels[i]-meanLevel
+	for i, elapsed := range times {
+		deltaTime, deltaLevel := elapsed-meanTime, levels[i]-meanLevel
 		covariance += deltaTime * deltaLevel
 		varianceTime += deltaTime * deltaTime
 		varianceLevel += deltaLevel * deltaLevel
@@ -1143,12 +1036,27 @@ func probeGlide(inPhase, quadrature []float64, sampleRateHz, atSeconds, halfSeco
 	// fraction of a radian a sample, and taking it as the difference of two
 	// angles near +/-pi cancels most of the significand, whereas the cross and
 	// dot products carry it directly.
-	for n := start; n < end; n++ {
-		cross := quadrature[n]*inPhase[n-1] - inPhase[n]*quadrature[n-1]
-		dot := inPhase[n]*inPhase[n-1] + quadrature[n]*quadrature[n-1]
+	// The four streams the body reads are taken as subslices of one length —
+	// current and one-sample-delayed, in phase and quadrature — which is what
+	// lets the compiler drop the bounds checks on a loop the late-probe walk
+	// runs several hundred thousand times per extraction.
+	currentInPhase, currentQuadrature := inPhase[start:end], quadrature[start:end]
+	delayedInPhase, delayedQuadrature := inPhase[start-1:end-1], quadrature[start-1:end-1]
+
+	for n, nowInPhase := range currentInPhase {
+		nowQuadrature := currentQuadrature[n]
+		wasInPhase, wasQuadrature := delayedInPhase[n], delayedQuadrature[n]
+
+		cross := nowQuadrature*wasInPhase - nowInPhase*wasQuadrature
+		dot := nowInPhase*wasInPhase + nowQuadrature*wasQuadrature
 
 		phase += math.Atan2(cross, dot)
-		magnitude += math.Hypot(inPhase[n], quadrature[n])
+		// math.Hypot rather than this was guarding against an overflow that
+		// cannot happen: these are peak-normalized samples through a lowpass, so
+		// neither square can leave the range of a float64. Hypot costs a branch
+		// tree and a division per call, and this loop is the hottest caller in
+		// the package.
+		magnitude += math.Sqrt(nowInPhase*nowInPhase + nowQuadrature*nowQuadrature)
 		count++
 	}
 
@@ -1204,8 +1112,9 @@ func probeGlide(inPhase, quadrature []float64, sampleRateHz, atSeconds, halfSeco
 // settling with a time constant of tens of milliseconds, so a reading taken at
 // 0.10 s has already seen nearly all of it, while a reading taken at 0.400 s on
 // a dead partial has seen none of it.
-func measureGlide(hit []float64, sampleRateHz float64, options Options, frequencyHz, cutoffHz float64) (float64, bool) {
-	inPhase, quadrature := heterodyne(hit, sampleRateHz, frequencyHz, cutoffHz, 1)
+func measureGlide(work *extractScratch, hit []float64, sampleRateHz float64, options Options, frequencyHz, cutoffHz float64) (float64, bool) {
+	inPhase, quadrature := work.basebandPair(len(hit))
+	heterodyneInto(inPhase, quadrature, hit, sampleRateHz, frequencyHz, cutoffHz, 1)
 
 	early, ok := probeGlide(inPhase, quadrature, sampleRateHz,
 		options.GlideEarlySeconds, glideEarlyHalfSeconds)
@@ -1213,7 +1122,7 @@ func measureGlide(hit []float64, sampleRateHz float64, options Options, frequenc
 		return 0, false
 	}
 
-	floor := early.amplitude * math.Pow(10, -options.GlideFloorDB/20)
+	floor := early.amplitude * math.Exp(-options.GlideFloorDB*amplitudePerDecibel)
 	earliestLate := options.GlideEarlySeconds + options.GlideMinSpanSeconds
 
 	// A millisecond, in whole samples. Fine enough that the late probe moves
@@ -1270,16 +1179,21 @@ func bandLevelsDB(magnitude []float64, binHz float64, edges [][2]float64) []floa
 		counted int
 	)
 
+	scale := 1 / binHz
+
 	for band, edge := range edges {
-		lowBin := max(0, int(math.Ceil(edge[0]/binHz)))
-		highBin := min(len(magnitude)-1, int(math.Floor(edge[1]/binHz)))
+		lowBin := max(0, int(math.Ceil(edge[0]*scale)))
+		highBin := min(len(magnitude)-1, int(math.Floor(edge[1]*scale)))
 
 		power := 0.0
-		for bin := lowBin; bin <= highBin; bin++ {
-			power += magnitude[bin] * magnitude[bin]
+
+		if lowBin <= highBin {
+			for _, bin := range magnitude[lowBin : highBin+1] {
+				power += bin * bin
+			}
 		}
 
-		levels[band] = 10 * math.Log10(power+1e-30)
+		levels[band] = decibelsPerPower * math.Log(power+1e-30)
 		sum += levels[band]
 		counted++
 	}
@@ -1294,7 +1208,7 @@ func bandLevelsDB(magnitude []float64, binHz float64, edges [][2]float64) []floa
 	return levels
 }
 
-func measureWindows(hit []float64, sampleRateHz float64, options Options, edges [][2]float64) ([]WindowFeature, error) {
+func measureWindows(work *extractScratch, hit []float64, sampleRateHz float64, options Options, edges [][2]float64) ([]WindowFeature, error) {
 	features := make([]WindowFeature, 0, len(options.Windows))
 
 	for _, span := range options.Windows {
@@ -1305,7 +1219,7 @@ func measureWindows(hit []float64, sampleRateHz float64, options Options, edges 
 			continue
 		}
 
-		magnitude, err := magnitudeSpectrum(hit[start:end], options.WindowFFTSize)
+		magnitude, err := work.spectrum(hit[start:end], options.WindowFFTSize)
 		if err != nil {
 			return nil, err
 		}
@@ -1331,12 +1245,26 @@ func measureEnvelope(hit []float64, sampleRateHz float64, options Options) []flo
 	frame := max(1, int(options.EnvelopeFrameSeconds*sampleRateHz))
 	hop := max(1, int(options.EnvelopeHopSeconds*sampleRateHz))
 
-	var levels []float64
+	if len(hit) < frame {
+		return nil
+	}
 
+	// The frame count is closed form, so the slice is sized once instead of
+	// being grown a hundred times.
+	levels := make([]float64, 0, (len(hit)-frame)/hop+1)
 	peak := 0.0
 
 	for start := 0; start+frame <= len(hit); start += hop {
-		rms := timestats.Calculate(hit[start : start+frame]).RMS
+		// timestats.Calculate is a fourth-order Welford update over every
+		// sample of every frame — skewness, kurtosis, zero crossings — and one
+		// field of it is read. The RMS it reports is exactly sqrt(sum(x^2)/n)
+		// accumulated in this order, so this is the same number.
+		sumSquares := 0.0
+		for _, sample := range hit[start : start+frame] {
+			sumSquares += sample * sample
+		}
+
+		rms := math.Sqrt(sumSquares / float64(frame))
 
 		levels = append(levels, rms)
 
@@ -1349,8 +1277,9 @@ func measureEnvelope(hit []float64, sampleRateHz float64, options Options) []flo
 		return nil
 	}
 
+	scale := 1 / peak
 	for i, rms := range levels {
-		levels[i] = max(20*math.Log10(rms/peak+1e-30), options.EnvelopeFloorDB)
+		levels[i] = max(decibelsPerAmplitude*math.Log(rms*scale+1e-30), options.EnvelopeFloorDB)
 	}
 
 	return levels
@@ -1360,26 +1289,32 @@ func measureEnvelope(hit []float64, sampleRateHz float64, options Options) []flo
 //
 // It names in one number what the hybrid attack layer exists to supply, and it
 // is the term ATK.L and ATK.T move most directly.
-func measureAttackBalance(hit []float64, sampleRateHz float64, options Options) (float64, error) {
+func measureAttackBalance(work *extractScratch, hit []float64, sampleRateHz float64, options Options) (float64, error) {
 	end := clampIndex(int(options.AttackWindowSeconds*sampleRateHz), len(hit))
 	if end < 16 {
 		return 0, nil
 	}
 
-	magnitude, err := magnitudeSpectrum(hit[:end], options.WindowFFTSize)
+	magnitude, err := work.spectrum(hit[:end], options.WindowFFTSize)
 	if err != nil {
 		return 0, err
 	}
 
 	binHz := sampleRateHz / float64(options.WindowFFTSize)
 
+	scale := 1 / binHz
+
 	bandPower := func(lowHz, highHz float64) float64 {
-		lowBin := max(0, int(math.Ceil(lowHz/binHz)))
-		highBin := min(len(magnitude)-1, int(math.Floor(highHz/binHz)))
+		lowBin := max(0, int(math.Ceil(lowHz*scale)))
+		highBin := min(len(magnitude)-1, int(math.Floor(highHz*scale)))
 
 		power := 0.0
-		for bin := lowBin; bin <= highBin; bin++ {
-			power += magnitude[bin] * magnitude[bin]
+		if lowBin > highBin {
+			return power
+		}
+
+		for _, bin := range magnitude[lowBin : highBin+1] {
+			power += bin * bin
 		}
 
 		return power
@@ -1388,7 +1323,7 @@ func measureAttackBalance(hit []float64, sampleRateHz float64, options Options) 
 	high := bandPower(options.AttackHighMinHz, options.AttackHighMaxHz)
 	low := bandPower(options.AttackLowMinHz, options.AttackLowMaxHz)
 
-	return 10 * math.Log10((high+1e-30)/(low+1e-30)), nil
+	return decibelsPerPower * math.Log((high+1e-30)/(low+1e-30)), nil
 }
 
 func clampIndex(value, length int) int {

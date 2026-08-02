@@ -417,7 +417,7 @@ func TestHertzianContactReachesPastTheModalCeiling(t *testing.T) {
 	// mode coupling deposits energy at 2f_a +/- f_b regardless of what |F(f)|
 	// does there, so it fills part of the very band the half-sine's zero comb
 	// had deleted, and it does that on the *prescribed* side. That is why the
-	// 800 Hz advantage falls from 11.9 dB to 7.9 dB while 1500 and 2500 Hz
+	// 800 Hz advantage falls from 17.5 dB to 13.3 dB while 1500 and 2500 Hz
 	// barely move — the coupling doing what P9/M1 predicted, not the contact
 	// model losing ground.
 	cases := []struct {
@@ -427,13 +427,13 @@ func TestHertzianContactReachesPastTheModalCeiling(t *testing.T) {
 		uncoupledPrescribedDB float64
 		uncoupledHertzianDB   float64
 	}{
-		{400, -15.1, -6.4, -22.1, -19.4},
-		{504, -14.1, -13.9, -26.0, -26.2},
-		{635, -18.1, -18.2, -25.0, -18.1},
-		{800, -27.2, -19.3, -36.5, -24.7},
-		{1500, -48.1, -32.7, -48.3, -33.1},
-		{2500, -57.2, -34.2, -57.5, -34.6},
-		{4000, -63.1, -43.0, -63.5, -42.9},
+		{400, -28.7, -14.6, -35.8, -27.5},
+		{504, -27.7, -22.2, -39.7, -34.2},
+		{635, -31.7, -26.4, -38.7, -26.1},
+		{800, -40.8, -27.6, -50.2, -32.7},
+		{1500, -61.8, -40.9, -62.0, -41.2},
+		{2500, -70.8, -42.5, -71.2, -42.6},
+		{4000, -76.8, -51.2, -77.2, -51.0},
 	}
 
 	frequencies := make([]float64, len(cases))
@@ -483,7 +483,8 @@ func TestHertzianContactReachesPastTheModalCeiling(t *testing.T) {
 							"docs/physical-contact.md — re-derive that table's "+
 							"\"What it does buy\" section rather than widening this",
 						coupled, measurement.name, testCase.frequencyHz,
-						measurement.got, contactReferenceHz, measurement.want,
+						measurement.got, contactReferenceHz(t, config),
+						measurement.want,
 					)
 				}
 			}
@@ -497,26 +498,129 @@ func TestHertzianContactReachesPastTheModalCeiling(t *testing.T) {
 // that any real change to the excitation trips it.
 const contactTableToleranceDB = 1.5
 
-// contactReferenceHz is what the rendered levels are divided by.
+// TestContactReferenceIsARenderedPartial checks the thing the retired 118 Hz
+// constant could not: that the bin every table in docs/physical-contact.md is
+// normalized by lands on the render's own fundamental rather than on some other
+// partial's leakage skirt.
 //
-// It is the *reference recording's* fundamental, which is where it came from and
-// why it is not 150.1 Hz, the fundamental of DefaultPhysicalDrum()'s own bank.
-// At 118 Hz the rectangular-window DFT is therefore reading the leakage skirt of
-// the 150 Hz partial rather than a partial, which makes it an overall-level
-// normalizer rather than a literal "referred to the fundamental".
+// It does not land on it exactly, and that is the measured result rather than a
+// tolerance being nursed. contactReferenceHz returns the *uncoupled batter*
+// (0,1) mode at 150.10 Hz; the render's fundamental is the lower branch of the
+// cavity-coupled pair, and the enclosed air stiffens it to 154 Hz — **+3.9 Hz,
+// 44 cents**. Attributed by elimination on this bank: disabling the Berger term
+// leaves it at 154, disabling the mode coupling leaves it at 154, and disabling
+// the resonant head moves it to 160 Hz, so it is the cavity load and nothing
+// else.
 //
-// It is kept because every figure quoted in docs/physical-contact.md and
-// docs/physical-nonlinearity.md is relative to it, and because it is the
-// conservative choice: referring to the bank's own 150.08 Hz instead raises
-// every delta in the table (800 Hz goes 7.9 -> 13.2 dB coupled, 11.9 -> 17.5
-// uncoupled). Nothing in the argument depends on which is used.
-const contactReferenceHz = 118.0
+// The reference is left config-derived anyway, because deriving it from the
+// render instead would make it differ between the prescribed and the Hertzian
+// column — and the two columns being normalized separately is exactly the defect
+// this constant was re-pointed to fix. The cost of the 3.9 Hz offset is that the
+// bin reads the partial's flank rather than its peak: 2.1 dB below it on the
+// prescribed render and 1.3 dB on the Hertzian, so 0.8 dB of the Δ columns is
+// this offset. Against a 13.6 dB skirt under the old 118 Hz that is the
+// improvement, not a new problem.
+//
+// The gate is 6 Hz: enough for the measured cavity shift, not enough for a
+// different partial (the next is (1,1) at 238.7 Hz). The band is deliberately
+// 100-200 Hz and not the whole low end — the fundamental is *not* the strongest
+// partial of this render, (2,1) at 320 Hz is on the prescribed side and (1,1) at
+// 238 Hz on the Hertzian, so a wider band finds those instead.
+func TestContactReferenceIsARenderedPartial(t *testing.T) {
+	t.Parallel()
+
+	const maximumOffsetHz = 6.0
+
+	for _, contact := range []ContactModel{ContactPrescribed, ContactHertzian} {
+		config := hertzianDrum()
+		config.Attack.Enabled = false
+		config.Strike.Contact.Model = contact
+
+		model, err := NewDoubleHead(config)
+		if err != nil {
+			t.Fatalf("NewDoubleHead: %v", err)
+		}
+
+		if err := model.Trigger(1); err != nil {
+			t.Fatalf("Trigger: %v", err)
+		}
+
+		rendered := make([]float64, int(config.SampleRateHz))
+		model.Render(rendered)
+
+		reference := contactReferenceHz(t, config)
+		peak := strongestSpectralPeakHz(t, rendered, config.SampleRateHz, 100, 200)
+
+		t.Logf(
+			"contact=%s: reference (0,1) mode %.2f Hz, rendered fundamental "+
+				"%.2f Hz, cavity shift %+.2f Hz (%+.0f cents)",
+			contact, reference, peak, peak-reference,
+			1200*math.Log2(peak/reference),
+		)
+
+		if math.Abs(peak-reference) > maximumOffsetHz {
+			t.Errorf(
+				"contact=%s: the levels in docs/physical-contact.md are referred "+
+					"to the batter (0,1) mode at %.2f Hz, but the render's "+
+					"fundamental is at %.2f Hz — more than the %.0f Hz the "+
+					"cavity load accounts for, so the reference bin is no longer "+
+					"reading that partial. Re-derive the tables and this offset "+
+					"rather than widening the gate",
+				contact, reference, peak, maximumOffsetHz,
+			)
+		}
+	}
+}
+
+// contactReferenceHz is what the rendered levels are divided by: the (0,1) mode
+// of the *configuration under test*, read out of the bank the render actually
+// uses.
+//
+// Until 2026-08-02 this was a hard-coded 118.0 — the fundamental of
+// reference/tom.wav, a recording deleted on 2026-08-01 (PLAN.md §"P10" item N8)
+// and never this bank's fundamental in the first place. At 118 Hz the
+// rectangular-window DFT read the leakage skirt of the 150 Hz partial, so it
+// normalized overall level by accident rather than referring anything to a
+// fundamental, and it could no longer be checked against anything.
+//
+// Deriving it here rather than writing 150.08 keeps it tied to the config: the
+// fundamental is a consequence of TensionNPerM, RadiusM and SurfaceDensityKgPerM2
+// (config.go's B.TUNE spans 300-3500 N/m, i.e. 75-251 Hz), so a hard-coded
+// frequency would silently stop being the fundamental the moment any of those
+// moved.
+//
+// generateHeadModes is used in preference to the shorter
+// NaturalFrequencyHz(head, BesselZero(0, 1)) because it returns the mode as
+// *retained*: same dispersion relation, but reached through the same selection
+// and mode-building path the renderer walks, so a bank that stopped containing
+// (0,1) fails here loudly instead of being normalized by a frequency it does not
+// carry.
+func contactReferenceHz(t *testing.T, config PhysicalDrum) float64 {
+	t.Helper()
+
+	modes, err := generateHeadModes(config, config.Batter)
+	if err != nil {
+		t.Fatalf("generateHeadModes: %v", err)
+	}
+
+	mode, ok := modeByOrder(modes, 0, 1)
+	if !ok {
+		t.Fatal("the batter bank has no (0,1) mode to refer levels to")
+	}
+
+	return mode.FrequencyHz
+}
 
 // renderedBandDB is one strike's level at each of several frequencies, referred
 // to contactReferenceHz so the comparison survives a change of output gain.
 //
 // One render serves every frequency: the strike is deterministic, and the modal
 // bank is expensive enough that re-rendering per frequency dominated the test.
+//
+// The reference bin is taken from *this* render, not shared between renders, so
+// a Δ between two columns of the tables in docs/physical-contact.md does not
+// cancel the normalization — each column carries its own. That is why moving the
+// reference frequency moves the Δ columns too.
 func renderedBandDB(
 	t *testing.T, config PhysicalDrum, frequenciesHz []float64,
 ) []float64 {
@@ -546,7 +650,7 @@ func renderedBandDB(
 		return 20 * math.Log10(math.Hypot(real, imaginary)+1e-30)
 	}
 
-	reference := level(contactReferenceHz)
+	reference := level(contactReferenceHz(t, config))
 
 	levels := make([]float64, len(frequenciesHz))
 	for index, frequencyHz := range frequenciesHz {

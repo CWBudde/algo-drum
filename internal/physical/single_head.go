@@ -164,30 +164,43 @@ func (s *SingleHead) IsActive() bool {
 func (s *SingleHead) Tick() Output {
 	forceN := s.contact.nextForce(s.strikePointState())
 
-	inverseSampleRate := 1 / s.config.SampleRateHz
+	sampleRate := s.config.SampleRateHz
+	inverseSampleRate := 1 / sampleRate
 
 	output := Output{ContactForceN: forceN}
 
-	for index, mode := range s.modes {
-		oldDisplacement := s.displacement[index]
+	// Hoisted for the reason DoubleHead.solveMidpoint documents: the stores into
+	// displacement and velocity may alias s, so read as s.field the six headers
+	// and config.SampleRateHz are reloaded from the struct on every mode. Mode is
+	// taken by pointer rather than by value because it is 144 bytes and this loop
+	// reads five of its fields.
+	displacement := s.displacement
+	velocity := s.velocity
+	matrix11, matrix12 := s.matrix11, s.matrix12
+	matrix21, matrix22 := s.matrix21, s.matrix22
+
+	for index := range s.modes {
+		mode := &s.modes[index]
+
+		oldDisplacement := displacement[index]
 		// Captured before the contact impulse, so the acceleration below
 		// includes it. Taking it afterwards would leave only
 		// (matrix22 - 1)*F*a*dt of the strike, which is very nearly nothing.
-		previousVelocity := s.velocity[index]
+		previousVelocity := velocity[index]
 		oldVelocity := previousVelocity +
 			forceN*mode.StrikeAccelerationPerN*inverseSampleRate
-		newDisplacement := s.matrix11[index]*oldDisplacement +
-			s.matrix12[index]*oldVelocity
-		newVelocity := s.matrix21[index]*oldDisplacement +
-			s.matrix22[index]*oldVelocity
+		newDisplacement := matrix11[index]*oldDisplacement +
+			matrix12[index]*oldVelocity
+		newVelocity := matrix21[index]*oldDisplacement +
+			matrix22[index]*oldVelocity
 
-		s.displacement[index] = newDisplacement
-		s.velocity[index] = newVelocity
+		displacement[index] = newDisplacement
+		velocity[index] = newVelocity
 
 		output.DisplacementM += mode.PickupShape * newDisplacement
 		output.VelocityMPerS += mode.PickupShape * newVelocity
 		output.RawRadiated += mode.RadiationWeight *
-			(newVelocity - previousVelocity) * s.config.SampleRateHz
+			(newVelocity - previousVelocity) * sampleRate
 		output.MechanicalEnergyJ += 0.5 * mode.ModalMassKg *
 			(newVelocity*newVelocity +
 				mode.AngularFrequency*mode.AngularFrequency*newDisplacement*newDisplacement)

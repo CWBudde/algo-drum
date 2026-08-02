@@ -409,17 +409,31 @@ because the model had none: a mode pumped by coupling does not depend on
 half-sine's zero comb has deleted the excitation outright.
 
 The same effect shows up as a change to a P8 measurement. Those figures are
-normalised against `contactReferenceHz` = 118 Hz, a retired reference
-recording's fundamental rather than this bank's 150.08 Hz — see the warning at
+normalised against `contactReferenceHz`, which since 2026-08-02 is the retained
+(0,1) mode of the configuration under test — 150.10 Hz on this bank — rather than
+the hard-coded 118 Hz of a since-deleted reference recording; see the block at
 the top of [`physical-contact.md`](physical-contact.md). The Δ is what carries
-the argument and the normaliser cancels out of it, but the absolute levels
-should not be quoted. In
+the argument, and it should be said clearly that **the normaliser does not cancel
+out of it**: the two columns are separate renders, each divided by its own
+reference bin, so re-pointing the reference raised every Δ in that table by
+5.4 dB coupled and 5.6 dB uncoupled. This paragraph previously claimed the
+cancellation and was wrong.
+
+Re-measured under the corrected reference, in
 `TestHertzianContactReachesPastTheModalCeiling` the Hertzian contact's advantage
-over the prescribed one at 800 Hz fell from **11.9 dB to 7.9 dB**, with 1500 Hz
-(15.2 → 15.5) and 2500 Hz (22.9 → 22.9) unmoved. The prescribed side rose; the
+over the prescribed one at 800 Hz fell from **17.5 dB to 13.3 dB**, with 1500 Hz
+(20.8 → 20.8) and 2500 Hz (28.6 → 28.3) unmoved. The prescribed side rose; the
 Hertzian model did not lose ground. `docs/physical-contact.md` now carries both
 states of that table, and its "What the mode coupling changed" section is where
 this effect is laid out frequency by frequency.
+
+The modal-amplitude table above is unaffected by any of this, and was left
+untouched by the re-point. It lives in `TestCouplingExcitesModesTheStrikeCannotReach`,
+which never touches `contactReferenceHz`: it reads peak modal displacements and
+divides both the coupled and the uncoupled figure by the **same** number, the
+fundamental mode's peak in the coupled render. That is the one case here where a
+normaliser really does cancel out of the difference, because there is only one of
+it.
 
 ### The Dahl slope
 

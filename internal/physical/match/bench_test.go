@@ -126,7 +126,9 @@ func BenchmarkMeasureDecays(b *testing.B) {
 	hit := normalizePeak(benchHit(b))
 	options := DefaultOptions()
 
-	detected, err := detectPartials(hit, testSampleRate, options)
+	work := acquireExtractScratch()
+
+	detected, err := detectPartials(work, hit, testSampleRate, options)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -137,6 +139,24 @@ func BenchmarkMeasureDecays(b *testing.B) {
 	// measureDecays writes through its argument, so each iteration gets its own
 	// copy. Sixteen structs is nothing beside the fit it feeds.
 	for b.Loop() {
-		measureDecays(hit, testSampleRate, options, slices.Clone(detected))
+		measureDecays(work, hit, testSampleRate, options, slices.Clone(detected))
+	}
+}
+
+// BenchmarkZeroPhaseLowpassPair isolates the filter from the phasor that feeds
+// it: the single most expensive loop in the package.
+func BenchmarkZeroPhaseLowpassPair(b *testing.B) {
+	hit := normalizePeak(benchHit(b))
+
+	first := make([]float64, len(hit))
+	second := make([]float64, len(hit))
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		copy(first, hit)
+		copy(second, hit)
+		zeroPhaseLowpassPair(first, second, []float64{0.5411961, 1.3065630}, 20, testSampleRate)
 	}
 }

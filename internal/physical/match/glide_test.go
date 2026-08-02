@@ -203,7 +203,7 @@ func TestGlideRefusesADeadFundamental(t *testing.T) {
 	}
 	hit := normalizePeak(synthesizeSwept(tones, testSampleRate, 1.2))
 
-	cents, ok := measureGlide(hit, testSampleRate, options, 154, glideCutoffHz([]Partial{
+	cents, ok := measureGlide(&extractScratch{}, hit, testSampleRate, options, 154, glideCutoffHz([]Partial{
 		{FrequencyHz: 154}, {FrequencyHz: 154 * 1.43},
 	}, 0))
 	if ok {
@@ -219,7 +219,7 @@ func TestGlideRefusesADeadFundamental(t *testing.T) {
 	tones[0].t60Seconds = 0.5
 	alive := normalizePeak(synthesizeSwept(tones, testSampleRate, 1.2))
 
-	if _, ok := measureGlide(alive, testSampleRate, options, 154, glideCutoffHz([]Partial{
+	if _, ok := measureGlide(&extractScratch{}, alive, testSampleRate, options, 154, glideCutoffHz([]Partial{
 		{FrequencyHz: 154}, {FrequencyHz: 154 * 1.43},
 	}, 0)); !ok {
 		t.Error("no glide measured on a fundamental that rings for half a second")

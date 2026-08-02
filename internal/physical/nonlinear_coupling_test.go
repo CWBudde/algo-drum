@@ -27,6 +27,30 @@ const (
 	migratedRenderDigest = "09cc28f24839d9a9d4ceb9f353bfb2a22390096e5cd444bb82db2deaf679b89d"
 )
 
+// coupledRenderDigest and fullTableRenderDigest are the same statement made
+// about the *coupled* path, which the two digests above deliberately do not
+// reach: both are taken with the coupling absent, so no existing digest executes
+// accumulateCouplingForces or channelValuesAt even once. Neither does the
+// CI-diffed testdata/physical-reference-v2.json, which analysis/report.go
+// generates through NewSingleHead — a model with no coupling code in it at all.
+//
+// Both were captured from a worktree at the tree this work started from, and
+// reproduced bit-identically against the working tree it was written in — so
+// unlike the pre-coupling pair they are, at capture, this code agreeing with
+// itself. That is exactly what they are for: they pin the floating-point order
+// of the walk so a later "bit-exact" claim about a rewrite of it can be
+// refuted. If one moves, the question to answer is which sample first differs
+// and why, not what the new digest is.
+//
+// TestCouplingDiscreteGradientIsExact and TestCouplingLosslessEnergyIsConserved
+// do not cover this. Both compare against a tolerance, so both survive an edit
+// that reassociates a sum or contracts a multiply-add — which is precisely the
+// class of change a digest exists to catch.
+const (
+	coupledRenderDigest   = "3c83580f04a59f7039f6b35925a924f5b1a1b2fcd14727467d235b326e9bef08"
+	fullTableRenderDigest = "33aee9ffa4e838ac621359fdf7699328b4e59a0e257275478be5105446316420"
+)
+
 // TestCouplingUniformChannelReproducesBergerStrain checks the quadrature against
 // the one coefficient that is known in closed form.
 //
@@ -942,6 +966,69 @@ func TestCouplingDisabledMatchesTheShippedEngine(t *testing.T) {
 			"migrated render digest %s, want the pre-coupling %s",
 			migratedDigest,
 			migratedRenderDigest,
+		)
+	}
+}
+
+// TestCoupledRenderIsBitExact pins the coupled audio path itself.
+//
+// The shipped default retains 256 of the candidate coefficients; raising
+// MaxCoefficients past the candidate count retains all 408, which is a longer
+// walk over a different table and so must be a different render. The counts are
+// asserted rather than assumed, because two equal digests here would otherwise
+// read as "the walk is stable" when what actually happened is that the second
+// configuration silently reproduced the first.
+func TestCoupledRenderIsBitExact(t *testing.T) {
+	t.Parallel()
+
+	shipped := DefaultPhysicalDrum()
+	if !shipped.Nonlinearity.Coupling.Enabled {
+		t.Fatal("the shipped default no longer enables the coupling")
+	}
+
+	shippedModel, shippedDigest := couplingRenderDigest(t, shipped)
+	shippedCount := shippedModel.CouplingCoefficientCount()
+	t.Logf("shipped: %d coefficients, digest %s", shippedCount, shippedDigest)
+
+	if shippedCount != shipped.Nonlinearity.Coupling.MaxCoefficients {
+		t.Fatalf(
+			"the shipped table holds %d coefficients, want the %d cap",
+			shippedCount,
+			shipped.Nonlinearity.Coupling.MaxCoefficients,
+		)
+	}
+
+	// Any cap above the candidate count retains the whole table, and 4096 is
+	// both the validator's ceiling and an order of magnitude past the 408
+	// candidates the shipped geometry produces.
+	full := DefaultPhysicalDrum()
+	full.Nonlinearity.Coupling.MaxCoefficients = 4096
+
+	fullModel, fullDigest := couplingRenderDigest(t, full)
+	fullCount := fullModel.CouplingCoefficientCount()
+	t.Logf("full table: %d coefficients, digest %s", fullCount, fullDigest)
+
+	if fullCount <= shippedCount {
+		t.Fatalf(
+			"the uncapped table holds %d coefficients, not more than the shipped %d",
+			fullCount,
+			shippedCount,
+		)
+	}
+
+	if shippedDigest != coupledRenderDigest {
+		t.Fatalf(
+			"coupled render digest %s, want %s",
+			shippedDigest,
+			coupledRenderDigest,
+		)
+	}
+
+	if fullDigest != fullTableRenderDigest {
+		t.Fatalf(
+			"full-table render digest %s, want %s",
+			fullDigest,
+			fullTableRenderDigest,
 		)
 	}
 }

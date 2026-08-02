@@ -3,6 +3,8 @@ package match
 import (
 	"math"
 	"math/rand"
+	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/cwbudde/algo-dsp/dsp/spectrum"
@@ -93,6 +95,56 @@ func TestCachedWindowMatchesFreshBuild(t *testing.T) {
 						length, pass, i, got[i], want[i])
 				}
 			}
+		}
+	}
+}
+
+// TestExtractIsConcurrencySafe is the licence for the scratch pool.
+//
+// cmd/fit-physical runs one goroutine per restart and every one of them is
+// inside Extract at once, so the working buffers may be shared between
+// successive extractions but never between simultaneous ones. Run under -race
+// this catches the sharing; the comparison catches a buffer handed to two
+// callers at once even where the race detector does not see the write.
+func TestExtractIsConcurrencySafe(t *testing.T) {
+	t.Parallel()
+
+	samples := benchHit(t)
+	options := DefaultOptions()
+
+	want, err := Extract(samples, testSampleRate, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const workers = 8
+
+	results := make([]Features, workers)
+
+	var group sync.WaitGroup
+
+	for worker := range workers {
+		group.Add(1)
+
+		go func() {
+			defer group.Done()
+
+			got, err := Extract(samples, testSampleRate, options)
+			if err != nil {
+				t.Error(err)
+
+				return
+			}
+
+			results[worker] = got
+		}()
+	}
+
+	group.Wait()
+
+	for worker, got := range results {
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("worker %d disagreed with the serial extraction", worker)
 		}
 	}
 }

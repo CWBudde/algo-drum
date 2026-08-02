@@ -442,9 +442,22 @@ func matchPartials(reference, candidate []Partial, toleranceCents float64) (pair
 		cents     float64
 	}
 
-	var links []link
+	// At sixteen partials a side this inner body runs 256 times per scoring and
+	// keeps at most sixteen of them, so the logarithm is the wrong thing to lead
+	// with. The tolerance is a bound on |1200*log2(ratio)|, which is exactly a
+	// bound on the ratio itself — ratio within [1/bound, bound] — so the pairs
+	// that cannot possibly be kept are rejected by two comparisons and the
+	// logarithm is paid only by the survivors.
+	// Sized for the common case rather than grown from nothing: both tables hold
+	// at most Options.MaxPartials entries and most reference partials find one
+	// or two candidates inside the tolerance.
+	links := make([]link, 0, 2*len(reference))
 
 	for refIndex, refPartial := range reference {
+		if refPartial.FrequencyHz <= 0 {
+			continue
+		}
+
 		// The tolerance widens with the mode index: real two-headed drums
 		// scatter around the ideal Bessel series by ±20 % in both directions
 		// (Richardson, Toulson & Nunn, JASA 131(1) 2012), so demanding the
@@ -452,8 +465,11 @@ func matchPartials(reference, candidate []Partial, toleranceCents float64) (pair
 		// series unmatchable rather than the fit precise.
 		tolerance := toleranceCents * (1 + 0.15*float64(refIndex))
 
+		upperRatio := math.Exp2(tolerance / 1200)
+		lower, upper := refPartial.FrequencyHz/upperRatio, refPartial.FrequencyHz*upperRatio
+
 		for candIndex, candPartial := range candidate {
-			if refPartial.FrequencyHz <= 0 || candPartial.FrequencyHz <= 0 {
+			if candPartial.FrequencyHz < lower || candPartial.FrequencyHz > upper {
 				continue
 			}
 
@@ -477,6 +493,8 @@ func matchPartials(reference, candidate []Partial, toleranceCents float64) (pair
 
 	usedRef := make([]bool, len(reference))
 	usedCand := make([]bool, len(candidate))
+
+	pairs = make([]pair, 0, min(len(reference), len(candidate)))
 
 	for _, candidateLink := range links {
 		if usedRef[candidateLink.ref] || usedCand[candidateLink.cand] {
@@ -601,7 +619,10 @@ func trimmedRootMeanSquare(squares []float64) float64 {
 		return 0
 	}
 
-	ordered := slices.Clone(squares)
+	// Sorted in place: squares is private scratch built by the caller two lines
+	// before this, never the caller's own data, so there is nothing a copy would
+	// protect.
+	ordered := squares
 	slices.Sort(ordered)
 
 	// Truncated rather than rounded, which is what makes a small table safe.

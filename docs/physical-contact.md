@@ -6,25 +6,49 @@ of measuring what it actually bought. It bought less than that document
 predicted, for a reason worth having found, and it bought something else that
 document did not ask for.
 
-> **Normalisation warning (2026-08-01).** Every dB figure in this document, and
-> in [`physical-nonlinearity.md`](physical-nonlinearity.md), is normalised
+> **Normalisation defect, raised 2026-08-01, fixed 2026-08-02.** Every dB figure
+> in this document, and in
+> [`physical-nonlinearity.md`](physical-nonlinearity.md), used to be normalised
 > against `contactReferenceHz` = **118 Hz** — the fundamental of
-> `reference/tom.wav`, which was deleted on 2026-08-01 (`PLAN.md` §"P10" item N8) and
-> which was never this bank's fundamental anyway; the model's is 150.08 Hz. The
-> 118 Hz bin therefore reads the leakage skirt of the 150 Hz partial and acts as
-> an overall-level normaliser rather than as a fundamental. That was already
-> uncomfortable when the recording was current. Now that it is retired,
-> normalising by it is **indefensible**, and the constant should be re-pointed at
-> the bank's own fundamental in the code. 118 Hz has a second life as the
-> denominator that makes `MinSeparationHz = 15` an unusable resolution limit —
-> see [objective validation](physical-objective-validation.md).
+> `reference/tom.wav`, deleted on 2026-08-01 (`PLAN.md` §"P10" item N8) and never
+> this bank's fundamental anyway. The 118 Hz bin read the leakage skirt of the
+> model's own 150.1 Hz partial, 13.6 dB below it, so it normalised overall level
+> by accident rather than referring anything to a fundamental — and once the
+> recording was gone, to a number nothing could check.
 >
-> The figures are left as measured rather than silently renormalised: they cannot
-> be recomputed without re-running the model, and a doc edit that adjusts them by
-> hand would be a fabrication. Read every level and every Δ below as **relative
-> to a retired reference's fundamental**. The Δ columns are the ones that carry
-> the argument, and they are conservative in that direction — referring to the
-> bank's own 150.08 Hz raises them (800 Hz would go +7.9 → +13.2 dB).
+> `contactReferenceHz` is now **derived from the configuration under test**: the
+> retained (0,1) mode of `generateHeadModes(config, config.Batter)`, 150.10 Hz on
+> `DefaultPhysicalDrum()`. It is not hard-coded, because the fundamental is a
+> consequence of `TensionNPerM`, `RadiusM` and `SurfaceDensityKgPerM2` and B.TUNE
+> moves it over 75–251 Hz.
+>
+> **Every table below was re-measured by running the test, not adjusted by hand.**
+> The two columns of each table are separate renders, each normalised by its own
+> reference bin, so the Δ column does **not** cancel the normaliser — it moved
+> too. Uniformly: **every Δ in "What it does buy" rose by 5.4 dB coupled and
+> 5.6 dB uncoupled**, and 800 Hz went +7.9 → **+13.3 dB** coupled and
+> +11.9 → **+17.5 dB** uncoupled. The old code comment predicted +13.2 and +17.5
+> from the same reasoning, so the measurement confirms it to 0.1 dB.
+>
+> Say it plainly rather than banking it quietly: **the re-point makes this
+> document's central claim stronger, not weaker.** The Hertzian contact's reach
+> past the modal ceiling was being understated by 5–6 dB at every frequency by a
+> normaliser that should never have been there.
+>
+> One residual, measured and left in place: the derived 150.10 Hz is the
+> _uncoupled batter_ (0,1) mode, while the render's fundamental sits at 154 Hz —
+> the enclosed air stiffens it by **+3.9 Hz, 44 cents**
+> (`TestContactReferenceIsARenderedPartial` asserts this and attributes it: the
+> Berger term and the mode coupling both leave it at 154, disabling the resonant
+> head moves it to 160). The bin therefore reads the fundamental's flank, 2.1 dB
+> below its peak on the prescribed render and 1.3 dB on the Hertzian, so 0.8 dB
+> of each Δ is that offset. Deriving the reference from the render instead would
+> make it differ between the two columns, which is the defect this fixed.
+>
+> 118 Hz has a second life as the denominator that makes `MinSeparationHz = 15`
+> an unusable resolution limit — see
+> [objective validation](physical-objective-validation.md), which still carries
+> it and is not covered by this fix.
 
 The short version:
 
@@ -40,9 +64,9 @@ The short version:
 - It does not reproduce Wagner's separation-and-re-contact structure at all. The
   version that appeared to was **numerically wrong**, and that is the most
   important thing in this document.
-- What it does do, decisively, is reach past the modal ceiling: **+7.9 dB at
-  800 Hz, +15.5 dB at 1.5 kHz, +22.9 dB at 2.5 kHz** in the modal-only render.
-  That is the seam, not the gap. The 800 Hz figure was +11.9 dB before the
+- What it does do, decisively, is reach past the modal ceiling: **+13.3 dB at
+  800 Hz, +20.8 dB at 1.5 kHz, +28.3 dB at 2.5 kHz** in the modal-only render.
+  That is the seam, not the gap. The 800 Hz figure was +17.5 dB before the
   nonlinear mode coupling existed; the coupling raised the _prescribed_ side, for
   a reason worth reading.
 - It is implemented, tested and selectable, and it is **off by default**.
@@ -210,18 +234,19 @@ One strike at velocity 1, modal only, as shipped:
 
 | f       | prescribed | Hertzian | Δ         |
 | ------- | ---------- | -------- | --------- |
-| 400 Hz  | −15.1 dB   | −6.4 dB  | +8.7      |
-| 504 Hz  | −14.1      | −13.9    | +0.2      |
-| 635 Hz  | −18.1      | −18.2    | −0.1      |
-| 800 Hz  | −27.2      | −19.3    | **+7.9**  |
-| 1500 Hz | −48.1      | −32.7    | **+15.5** |
-| 2500 Hz | −57.2      | −34.2    | **+22.9** |
-| 4000 Hz | −63.1      | −43.0    | +20.2     |
+| 400 Hz  | −28.7 dB   | −14.6 dB | +14.0     |
+| 504 Hz  | −27.7      | −22.2    | +5.6      |
+| 635 Hz  | −31.7      | −26.4    | +5.3      |
+| 800 Hz  | −40.8      | −27.6    | **+13.3** |
+| 1500 Hz | −61.8      | −40.9    | **+20.8** |
+| 2500 Hz | −70.8      | −42.5    | **+28.3** |
+| 4000 Hz | −76.8      | −51.2    | +25.5     |
 
-Below 700 Hz it is worth between nothing and 9 dB, and which depends on where the
-two models' combs happen to fall relative to the modes there. From 800 Hz up it
-is worth 8–23 dB, and that is not an accident of alignment — it is the prescribed
-pulse's 1/f² envelope running out.
+Below 700 Hz it is worth 5–14 dB, and which depends on where the two models'
+combs happen to fall relative to the modes there — the spread across those three
+rows is the whole of the variation. From 800 Hz up it is worth 13–28 dB, and that
+is not an accident of alignment — it is the prescribed pulse's 1/f² envelope
+running out.
 
 So it addresses **the seam**, not the gap. The seam is the other finding in
 `physical-excitation-gap.md`: the fit dragged `ATK.T` from 4000 Hz down to
@@ -250,10 +275,15 @@ them reverses the sign of the whole table.
   window over one second is 60 dB down at 7 ms, and the table measured through
   one comes out with the Hertzian contact _duller_ than the prescribed one
   everywhere.
-- Levels are relative to `contactReferenceHz` = 118 Hz — a retired recording's
-  fundamental, not this bank's. See the warning at the top of this document; this
-  is the one thing here that still carries anything from the deleted recording,
-  and it wants re-pointing at 150.08 Hz in the code rather than in prose.
+- Levels are relative to `contactReferenceHz`, which since 2026-08-02 is derived
+  from the configuration rather than written down: the retained (0,1) mode of
+  `generateHeadModes(config, config.Batter)`, **150.10 Hz** on this bank. Before
+  that it was a hard-coded 118 Hz read off a since-deleted recording; see the
+  block at the top of this document for what that changed.
+- The reference bin is taken from **each render separately**, because each column
+  is its own render. A Δ between two columns therefore carries two
+  normalisations, not none, which is why re-pointing the reference moved the Δ
+  columns as well as the level columns.
 
 ### What the mode coupling changed
 
@@ -264,18 +294,22 @@ the state the original table was measured in — is:
 
 | f       | prescribed | Hertzian | Δ         |
 | ------- | ---------- | -------- | --------- |
-| 400 Hz  | −22.1 dB   | −19.4 dB | +2.7      |
-| 504 Hz  | −26.0      | −26.2    | −0.2      |
-| 635 Hz  | −25.0      | −18.1    | +6.9      |
-| 800 Hz  | −36.5      | −24.7    | **+11.9** |
-| 1500 Hz | −48.3      | −33.1    | **+15.2** |
-| 2500 Hz | −57.5      | −34.6    | **+22.9** |
-| 4000 Hz | −63.5      | −42.9    | +20.6     |
+| 400 Hz  | −35.8 dB   | −27.5 dB | +8.3      |
+| 504 Hz  | −39.7      | −34.2    | +5.4      |
+| 635 Hz  | −38.7      | −26.1    | +12.5     |
+| 800 Hz  | −50.2      | −32.7    | **+17.5** |
+| 1500 Hz | −62.0      | −41.2    | **+20.8** |
+| 2500 Hz | −71.2      | −42.6    | **+28.6** |
+| 4000 Hz | −77.2      | −51.0    | +26.3     |
 
-This reproduces the pre-coupling table to about a dB at every frequency except
-635 Hz, where the original recorded −29/−25 against −25.0/−18.1 here; that row
-drifted with model changes between P8 and now, and the original method was not
-recorded well enough to say which. Everywhere else the old numbers stand.
+Under the previous 118 Hz normalisation this reproduced the pre-coupling table to
+about a dB at every frequency except 635 Hz, where the original recorded −29/−25
+against −25.0/−18.1 then; that row drifted with model changes between P8 and now,
+and the original method was not recorded well enough to say which. That
+comparison is no longer available in absolute terms — the whole table is now
+referred to a different bin — but the differential is unchanged: every Δ here is
+its 118 Hz value plus a flat 5.6 dB, so nothing about which rows agreed with the
+pre-coupling measurement has moved.
 
 The interesting part is _where_ the coupling helps. A mode driven by the cubic
 coupling receives energy at 2f_a ± f_b and 3f_a **regardless of what |F(f)| does
@@ -284,17 +318,29 @@ nothing else, so the coupling is the one mechanism in this model that can
 populate a mode the comb has deleted. Reading the two tables against each other,
 row by row, says exactly that:
 
-| f       | prescribed rise | Hertzian rise | Δ moves      |
-| ------- | --------------- | ------------- | ------------ |
-| 400 Hz  | +7.0 dB         | +13.0 dB      | +2.7 → +8.7  |
-| 504 Hz  | +11.9           | +12.3         | −0.2 → +0.2  |
-| 635 Hz  | +6.9            | −0.1          | +6.9 → −0.1  |
-| 800 Hz  | +9.3            | +5.4          | +11.9 → 7.9  |
-| 1500 Hz | +0.2            | +0.4          | +15.2 → 15.5 |
-| 2500 Hz | +0.3            | +0.4          | +22.9 → 22.9 |
-| 4000 Hz | +0.4            | −0.1          | +20.6 → 20.2 |
+| f       | prescribed rise | Hertzian rise | Δ moves       |
+| ------- | --------------- | ------------- | ------------- |
+| 400 Hz  | +7.1 dB         | +12.9 dB      | +8.3 → +14.0  |
+| 504 Hz  | +12.0           | +12.0         | +5.4 → +5.6   |
+| 635 Hz  | +7.0            | −0.3          | +12.5 → +5.3  |
+| 800 Hz  | +9.4            | +5.1          | +17.5 → +13.3 |
+| 1500 Hz | +0.2            | +0.3          | +20.8 → +20.8 |
+| 2500 Hz | +0.4            | +0.1          | +28.6 → +28.3 |
+| 4000 Hz | +0.4            | −0.2          | +26.3 → +25.5 |
 
-Below 1 kHz both columns move by 5–13 dB; above it neither moves by half a dB.
+This table moved under the re-point too, and unevenly, which is worth being
+precise about. Its "Δ moves" column is read straight off the two tables above and
+so carries their full 5.4/5.6 dB shift. Its two **rise** columns are differences
+between the coupled and uncoupled renders of the _same_ contact model, and those
+two renders' reference bins agree to about half a dB, so the rises shifted by at
+most 0.3 dB — nothing here changes which rows rose and which did not. The two
+halves of the table move differently because they are differences taken in
+different directions across four separately normalised renders; there is no
+normalisation that cancels out of both.
+
+Below 1 kHz the rises run 5–13 dB — every row but the 635 Hz Hertzian one, which
+sits at −0.3 and did under the old normalisation too; above 1 kHz neither column
+moves by half a dB.
 The coupling reaches the band the comb deleted and stops dead where the comb
 stops, because the pumps are chosen from modes below `PumpMaxFrequencyHz` =
 700 Hz and a cubic force from those reaches roughly 3× that and no further.
@@ -344,15 +390,17 @@ not against any recording.
 Everything above is in `internal/physical/contact_test.go`, which is in
 `just test`. No render here ever depended on `reference/tom.wav` — the tests run
 against `DefaultPhysicalDrum` at 44.1 kHz — so deleting the recording broke
-nothing here. The **normalisation** is the exception, via `contactReferenceHz` =
-118 Hz: a number read off the deleted recording and now unverifiable. That
-constant is the retirement's one remaining hook into this document and into the
-tests that assert its tables; see the warning at the top.
+nothing here. The **normalisation** was the exception, via a hard-coded
+`contactReferenceHz` = 118 Hz read off that recording; it is now derived from the
+configuration instead, and this document carries no number traceable to the
+deleted file. See the block at the top for what that cost and what it bought.
 
 Both tables in "What it does buy" are asserted row by row, in both coupling
-states, by `TestHertzianContactReachesPastTheModalCeiling`, to ±1.5 dB. Its
-doc comment carries the method as well, so the two cannot drift apart silently
-the way the first version of that table did — that one was measured by an
+states, by `TestHertzianContactReachesPastTheModalCeiling`, to ±1.5 dB, and the
+bin they are referred to is itself checked against the render's fundamental by
+`TestContactReferenceIsARenderedPartial`. Its doc comment carries the method as
+well, so the two cannot drift apart silently the way the first version of that
+table did — that one was measured by an
 uncommitted program, and when it was re-derived the method had to be recovered
 from the surviving test helper rather than from the document.
 

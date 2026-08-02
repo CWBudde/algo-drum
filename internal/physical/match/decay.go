@@ -77,8 +77,8 @@ func decayFloorFit(times, trace []float64, seedSlope, seedIntercept float64) (de
 
 	// The power decays as exp(-a*t) where the seed's slope is in dB of power
 	// per second, so a = -slope * ln(10)/10.
-	logPower := seedIntercept * math.Ln10 / 10
-	logRate := math.Log(-seedSlope * math.Ln10 / 10)
+	logPower := seedIntercept / decibelsPerPower
+	logRate := math.Log(-seedSlope / decibelsPerPower)
 
 	// The floor seed is the quietest thing in the trace, backed off by a decade
 	// so the first step is taken from below it rather than through it.
@@ -87,7 +87,7 @@ func decayFloorFit(times, trace []float64, seedSlope, seedIntercept float64) (de
 		quietest = min(quietest, level)
 	}
 
-	logFloor := quietest*math.Ln10/10 - math.Ln10
+	logFloor := quietest/decibelsPerPower - math.Ln10
 
 	residual := decayFloorResidual(times, trace, logPower, logRate, logFloor)
 	damping := 1e-3
@@ -99,9 +99,13 @@ func decayFloorFit(times, trace []float64, seedSlope, seedIntercept float64) (de
 			right  [3]float64
 		)
 
+		rate, floor := math.Exp(logRate), math.Exp(logFloor)
+
+		levels := trace[:len(times)]
+
 		for i, elapsed := range times {
-			modelled, gradient := decayFloorModel(elapsed, logPower, logRate, logFloor)
-			delta := trace[i] - modelled
+			modelled, gradient := decayFloorModel(elapsed, logPower, rate, floor)
+			delta := levels[i] - modelled
 
 			for row := range 3 {
 				right[row] += gradient[row] * delta
@@ -189,49 +193,59 @@ func decayFloorFit(times, trace []float64, seedSlope, seedIntercept float64) (de
 	}
 
 	return decayFit{
-		slopeDBPerSecond: -rate * 10 / math.Ln10,
-		interceptDB:      logPower * 10 / math.Ln10,
+		slopeDBPerSecond: -rate * decibelsPerPower,
+		interceptDB:      logPower * decibelsPerPower,
 		rSquared:         quality,
-		rangeDB:          min((logPower-logFloor)*10/math.Ln10, loudest-quietestFitted),
+		rangeDB:          min((logPower-logFloor)*decibelsPerPower, loudest-quietestFitted),
 	}, true
 }
 
 // decayFloorModel is the fitted level in dB at one time, and its gradient with
 // respect to the three log-parameters.
-func decayFloorModel(elapsed, logPower, logRate, logFloor float64) (level float64, gradient [3]float64) {
-	const perDecibel = 10 / math.Ln10
-
-	signal := math.Exp(logPower - math.Exp(logRate)*elapsed)
-	floor := math.Exp(logFloor)
+//
+// It takes rate = exp(logRate) and floor = exp(logFloor) rather than the
+// logarithms, because both are constant for a whole Levenberg-Marquardt sweep
+// and this is the innermost point of the fit: called once per trace point per
+// gradient evaluation and once more per residual evaluation, of which there are
+// up to nine per iteration and sixty iterations per partial. Computing them here
+// meant three transcendentals per point where the fit needs one — the
+// exp(logPower - rate*t) that actually varies.
+func decayFloorModel(elapsed, logPower, rate, floor float64) (level float64, gradient [3]float64) {
+	signal := math.Exp(logPower - rate*elapsed)
 
 	total := signal + floor
 	if total <= 0 {
 		return math.Inf(-1), gradient
 	}
 
-	signalShare := signal / total
+	// One reciprocal rather than two divisions by the same denominator.
+	reciprocal := 1 / total
+	signalShare := signal * reciprocal
 
 	// d/dlogRate carries the extra factor of rate*t from the chain rule, and its
 	// sign is what makes the rate identifiable at all: only the part of the
 	// trace where the signal still stands above the floor constrains it.
-	gradient[0] = perDecibel * signalShare
-	gradient[1] = -perDecibel * signalShare * math.Exp(logRate) * elapsed
-	gradient[2] = perDecibel * floor / total
+	gradient[0] = decibelsPerPower * signalShare
+	gradient[1] = -decibelsPerPower * signalShare * rate * elapsed
+	gradient[2] = decibelsPerPower * floor * reciprocal
 
-	return perDecibel * math.Log(total), gradient
+	return decibelsPerPower * math.Log(total), gradient
 }
 
 // decayFloorResidual is the mean squared dB error of one parameter set.
 func decayFloorResidual(times, trace []float64, logPower, logRate, logFloor float64) float64 {
+	rate, floor := math.Exp(logRate), math.Exp(logFloor)
+	levels := trace[:len(times)]
+
 	sum := 0.0
 
 	for i, elapsed := range times {
-		modelled, _ := decayFloorModel(elapsed, logPower, logRate, logFloor)
+		modelled, _ := decayFloorModel(elapsed, logPower, rate, floor)
 		if math.IsInf(modelled, 0) {
 			return math.Inf(1)
 		}
 
-		delta := trace[i] - modelled
+		delta := levels[i] - modelled
 		sum += delta * delta
 	}
 
@@ -315,9 +329,12 @@ func t60From(slopeDBPerSecond float64) float64 {
 // the fit. Enforcing the slower bound would have discarded this drum's own
 // fundamental for no reason at all.
 func fastestObservableT60(cutoffHz float64) float64 {
-	const dampingRatio = 1 / (2 * 0.5411961)
+	const (
+		dampingRatio = 1 / (2 * 0.5411961)
+		numerator    = 3 * math.Ln10 / (dampingRatio * 2 * math.Pi)
+	)
 
-	return 3 * math.Ln10 / (dampingRatio * 2 * math.Pi * cutoffHz)
+	return numerator / cutoffHz
 }
 
 // minimumRefinementSpanSeconds is the shortest window the exponential-plus-floor
@@ -442,8 +459,18 @@ func slowestSupportedT60(fitSpanSeconds float64) float64 {
 // component was reported as the loudest thing in the recording, which pushed
 // every genuine partial below the detection floor, because levels are relative
 // to the strongest. TestShortPartialsDoNotOutrankLongOnes pins it.
-func measureDecays(hit []float64, sampleRateHz float64, options Options, partials []Partial) []Partial {
+func measureDecays(work *extractScratch, hit []float64, sampleRateHz float64, options Options, partials []Partial) []Partial {
 	levelLinear := make([]float64, len(partials))
+
+	inPhase, quadrature := work.basebandPair(len(hit))
+
+	// Loop-invariant: the truncation floor is a fixed number of decibels below
+	// each partial's own peak, so the ratio it multiplies by is the same for
+	// every partial and is a math.Pow that used to run once per partial.
+	floorRatio := math.Exp(options.DecayFitFloorDB * amplitudePerDecibel)
+	floorRatioSquared := floorRatio * floorRatio
+
+	secondsPerSample := 1 / sampleRateHz
 
 	for index := range partials {
 		// Half the distance to the nearest neighbour, bounded: too narrow and
@@ -451,7 +478,7 @@ func measureDecays(hit []float64, sampleRateHz float64, options Options, partial
 		// neighbour's decay is measured instead of this one's.
 		cutoff := clampFloat(0.5*neighbourSpacing(partials, index), 10, 40)
 
-		inPhase, quadrature := heterodyne(hit, sampleRateHz, partials[index].FrequencyHz, cutoff, 2)
+		heterodyneInto(inPhase, quadrature, hit, sampleRateHz, partials[index].FrequencyHz, cutoff, 2)
 
 		start := clampIndex(int(options.DecayFitStartSeconds*sampleRateHz), len(hit))
 
@@ -469,11 +496,24 @@ func measureDecays(hit []float64, sampleRateHz float64, options Options, partial
 		// identically, so the root the decibel conversion was undoing never needs
 		// taking. The floor comparison is squared to match, which is exact for
 		// non-negative operands.
+		// The squared envelope is written down once and read twice, rather than
+		// being recomputed by each of the three passes that want it. The
+		// heterodyne output it comes from is scratch too, so this costs one more
+		// reused buffer and saves two multiply-add sweeps of the fit window per
+		// partial.
+		envelope := growFloats(work.envelope, end-start)
+		work.envelope = envelope
+
 		peakSquared := 0.0
 
-		for sample := start; sample < end; sample++ {
-			squared := inPhase[sample]*inPhase[sample] +
-				quadrature[sample]*quadrature[sample]
+		realPart, imaginaryPart := inPhase[start:end], quadrature[start:end]
+		envelope = envelope[:len(realPart)]
+
+		for i, sample := range realPart {
+			imaginary := imaginaryPart[i]
+			squared := sample*sample + imaginary*imaginary
+			envelope[i] = squared
+
 			if squared > peakSquared {
 				peakSquared = squared
 			}
@@ -483,23 +523,25 @@ func measureDecays(hit []float64, sampleRateHz float64, options Options, partial
 			continue
 		}
 
-		times := make([]float64, 0, end-start)
-		trace := make([]float64, 0, end-start)
-		floor := math.Sqrt(peakSquared) * math.Pow(10, options.DecayFitFloorDB/20)
-		floorSquared := floor * floor
+		times := growFloats(work.times, 0)
+		trace := growFloats(work.trace, 0)
 
-		for sample := start; sample < end; sample++ {
-			squared := inPhase[sample]*inPhase[sample] +
-				quadrature[sample]*quadrature[sample]
+		// The floor is a ratio of the peak, so squaring it is exact for
+		// non-negative operands and no square root is taken at all.
+		floorSquared := peakSquared * floorRatioSquared
+
+		for i, squared := range envelope {
 			if squared < floorSquared {
 				// Below the fit floor the trace is noise or a neighbour, and
 				// including it would flatten every slope towards zero.
 				break
 			}
 
-			times = append(times, float64(sample)/sampleRateHz)
-			trace = append(trace, 10*math.Log10(squared))
+			times = append(times, float64(start+i)*secondsPerSample)
+			trace = append(trace, decibelsPerPower*math.Log(squared))
 		}
+
+		work.times, work.trace = times, trace
 
 		if len(times) < 16 {
 			continue
@@ -545,19 +587,20 @@ func measureDecays(hit []float64, sampleRateHz float64, options Options, partial
 		// thousands of candidates, and an undecimated Levenberg-Marquardt here
 		// would dominate the whole search.
 		step := max(1, int(sampleRateHz/decayTraceRateHz))
-		fullTimes := make([]float64, 0, (fitEnd-start)/step+1)
-		fullTrace := make([]float64, 0, (fitEnd-start)/step+1)
+		fullTimes := growFloats(work.fullTimes, 0)
+		fullTrace := growFloats(work.fullTrace, 0)
 
 		for sample := start; sample < fitEnd; sample += step {
-			squared := inPhase[sample]*inPhase[sample] +
-				quadrature[sample]*quadrature[sample]
+			squared := envelope[sample-start]
 			if squared <= 0 {
 				continue
 			}
 
-			fullTimes = append(fullTimes, float64(sample)/sampleRateHz)
-			fullTrace = append(fullTrace, 10*math.Log10(squared))
+			fullTimes = append(fullTimes, float64(sample)*secondsPerSample)
+			fullTrace = append(fullTrace, decibelsPerPower*math.Log(squared))
 		}
+
+		work.fullTimes, work.fullTrace = fullTimes, fullTrace
 
 		slope, interceptDB, fitQuality := linearFit(times, trace)
 		// Without the refinement the honest dynamic range is the span the
@@ -620,7 +663,7 @@ func measureDecays(hit []float64, sampleRateHz float64, options Options, partial
 		// directly. It extrapolates back only as far as DecayFitStartSeconds
 		// rather than through the whole Hann taper, and it is a least-squares
 		// fit over hundreds of samples rather than a ratio of two numbers.
-		levelLinear[index] = math.Pow(10, interceptDB/20)
+		levelLinear[index] = math.Exp(interceptDB * amplitudePerDecibel)
 		partials[index].T60Seconds = t60From(slope)
 		partials[index].FitQuality = fitQuality
 		partials[index].DecayRangeDB = rangeDB
@@ -635,6 +678,7 @@ func measureDecays(hit []float64, sampleRateHz float64, options Options, partial
 		return nil
 	}
 
+	strongestReciprocal := 1 / strongest
 	kept := partials[:0]
 
 	for index := range partials {
@@ -642,7 +686,7 @@ func measureDecays(hit []float64, sampleRateHz float64, options Options, partial
 			continue
 		}
 
-		levelDB := 20 * math.Log10(levelLinear[index]/strongest)
+		levelDB := decibelsPerAmplitude * math.Log(levelLinear[index]*strongestReciprocal)
 		if levelDB < options.PartialFloorDB {
 			continue
 		}
@@ -652,8 +696,10 @@ func measureDecays(hit []float64, sampleRateHz float64, options Options, partial
 	}
 
 	if len(kept) > options.MaxPartials {
-		byLevel := slices.Clone(kept)
-		slices.SortFunc(byLevel, func(a, b Partial) int {
+		// Sorted in place: kept is this function's own compaction of partials,
+		// which the caller handed over, so there is nothing a copy would
+		// protect. The final sort below restores frequency order.
+		slices.SortFunc(kept, func(a, b Partial) int {
 			switch {
 			case a.LevelDB > b.LevelDB:
 				return -1
@@ -664,7 +710,7 @@ func measureDecays(hit []float64, sampleRateHz float64, options Options, partial
 			}
 		})
 
-		kept = byLevel[:options.MaxPartials]
+		kept = kept[:options.MaxPartials]
 		slices.SortFunc(kept, func(a, b Partial) int {
 			switch {
 			case a.FrequencyHz < b.FrequencyHz:

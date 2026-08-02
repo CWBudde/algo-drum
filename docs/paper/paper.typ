@@ -915,9 +915,11 @@ Three things soften it and none of them settle it. It is the worst case and not
 the steady one, since a real hit lets the solve idle at 3.9$times$. The cost is
 not a harder solve: the mean iteration count moves only 2.40 to 2.49 at velocity
 1, so what is being paid for is the table walk itself. And nothing here is
-optimised --- the table is walked as three separate index arrays with no blocking
-by channel or by receiver, and is rebuilt per iteration rather than updated
-incrementally. The budget is also not currently buying much: across a sixfold
+optimised --- the table is walked over a run partition that blocks by channel and
+by the row of each retained pair, so within a run that mode's displacement and
+inverse mass hoist out of the inner loop and its force accumulates in a register,
+but the receiver side is unblocked and still scatters into the acceleration
+array, and the table is rebuilt per iteration rather than updated incrementally. The budget is also not currently buying much: across a sixfold
 range of retained coefficients the level in the band the coupling exists to reach
 moves 0.9 dB, and the full table is not even the loudest of them, so 256 is
 chosen for margin and 128 is the first thing to try. Making this affordable is
@@ -1094,9 +1096,13 @@ not a truncation but a property: the force is cubic and odd, so $2 f_i$ and
 $f_i plus.minus f_j$ are absent because they need a *quadratic* term in the
 potential, which a shell or a curved plate has and a flat tensioned head does
 not. That a hard hit is *brighter* and not merely sharper is measured in
-@dahl1997, a source cited here already for contact time; this model now produces
-part of that brightening as a source term and attributes the rest to excitation
-and to the attack layer's velocity scaling. Nonlinear modal synthesis with the
+@dahl1997, a source cited here already for contact time, and again in @kirby2021,
+which tracks a tom-tom's modes across 67 strike intensities and resynthesises
+that evolution well enough that twenty listeners scored exactly chance in an AB
+test against the recordings --- so what a strike does to the modes, and not only
+to the level, is what an intensity-dependent drum sound is made of. This model
+produces part of that brightening as a source term and attributes the rest to
+excitation and to the attack layer's velocity scaling. Nonlinear modal synthesis with the
 coupling terms retained wholesale runs in real time @diaz2026; this one, at the
 shipped truncation, does not yet --- see @cost.
 
@@ -1119,6 +1125,24 @@ this chapter should be read as agreement with a real drum. Where a number here
 does rest on a measured instrument --- the contact time, the damping ratio, the
 cavity split --- it is cited to the literature it came from, and @provenance-table
 is where that is visible at a glance.
+
+*Two rows of that table lean on measurements that do not appear to exist, and
+both are recorded here as OPEN rather than guessed at.* The first is the contact
+duration. Every source behind it is a *stick*: Dahl's 5.5--8 ms endpoints
+@dahl1997 and Wagner's crescendo @wagner2006 are both struck with sticks, and no
+measured felt-mallet contact time on any drum was found. The shipped mallet is
+therefore a stick's contact law given a different mass and hardness, and the
+longer, softer contact a felt head should give is uncalibrated --- which matters
+because @contact-eq turns duration directly into the excitation spectrum. The
+second is the loss split. @loss-eq keeps radiation apart from the structural
+channels precisely so that calibration can attribute a change to a cause, and
+@heads-table assigns $d_"rad" = 1.5$ 1/s, but no numeric
+radiation-versus-internal damping split has been published for *any* drum. Only
+the total the two sum to is answerable to the constant-$Q$ measurement
+@fletcher1998 the law is shaped against; the division between them is a modelling
+choice wearing the notation of a measured one. Neither gap is filled by a plausible
+number here, because a number with nothing behind it would be indistinguishable in
+@provenance-table from one of the measured rows.
 
 = The target
 
@@ -1897,8 +1921,9 @@ frequencies and never through this estimator or against this recording. The
 
 What is worth reading against it instead is the corrected target itself. Three
 independent measurements put a loud hit on a real tom between 130 and 165 cents
---- Fletcher and Rossing's §18.4 relays Bork and Meyer at 160 cents
-@fletcher1998, and Rose and Gärder each report about 8% --- against this
+--- Fletcher and Rossing's §18.4 relays Bork and Meyer at 160 cents on a 32 cm
+tom and Rose at about 8% on a 33 cm one @fletcher1998 @bork1983, and Gärder
+measures almost 8% on a 14-inch drum @garder2005 --- against this
 reference's corrected 54.1. Those do not conflict; the natural reading is that
 the reference is simply not a loud hit. But the reference is what the objective is
 written against, so a nonlinearity fitted through it is fitted to match *this
