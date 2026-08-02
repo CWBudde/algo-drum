@@ -2,20 +2,42 @@ package physical
 
 import "math"
 
-// The two level ceilings, named because they are the two this repository has
-// admitted it never measured.
-//
-// Everything else in configBounds is a physical plausibility range — a head
-// radius between 2 cm and 1 m, a speed of sound between 250 and 400 m/s — where
-// the number carries its own justification. These two do not: they stand at
-// roughly four orders of magnitude above the only values the product can
-// produce (a knob maximum of 0.15 for the attack level, and a calibrated 0.0048
-// output gain that no knob touches at all), which is headroom chosen rather
-// than a bound derived. Naming them is the first step to deriving them; see
-// PLAN.md N12b.
+// The two level ceilings, which until 2026-08-02 were 1 000 and 100 — roughly
+// four orders of magnitude above anything the product can produce. Everything
+// else in configBounds is a physical plausibility range, where the number
+// carries its own justification; these two were headroom chosen rather than
+// bounds derived. They are now derived. See PLAN.md N12b.
 const (
-	attackLevelRelativeCeiling = 1_000.0
-	pickupOutputGainCeiling    = 100.0
+	// attackLevelRelativeCeiling is the level at which the attack layer *on its
+	// own* reaches 0 dBFS at the shipped output gain and velocity 1. Above it
+	// every setting is guaranteed to clip whatever the modal bank does, so the
+	// range carries no further information.
+	//
+	// Measured at 0.1460 on the shipped bank — the layer's peak is exactly
+	// linear in this field, so it is read off a level high enough that the
+	// modal peak is negligible: 6.8569, 6.8508 and 6.8488 per unit at
+	// LevelRelative 20, 50 and 100. Rounded up, that is 0.15, which is also
+	// precisely the ATK.L knob's own maximum. The two were arrived at
+	// independently and the tightening therefore costs the product nothing —
+	// but it does mean this ceiling and that knob now sit exactly on top of each
+	// other, and TestTheProductCannotBuildAConfigItsOwnValidatorRejects is what
+	// notices if either moves.
+	//
+	// It is a property of the shipped bank and gain. A recalibration must
+	// re-derive it; TestValidatedLevelCeilingsAreMeasuredBounds fails if it
+	// drifts.
+	attackLevelRelativeCeiling = 0.15
+
+	// pickupOutputGainCeiling is 100x the calibrated gain.
+	//
+	// The factor is not taste: migrateV7Config records that the pre-v8 output
+	// gain ran "roughly two orders of magnitude hot" against the current
+	// radiated sum. That is a measured historical excursion of this exact
+	// calibration, so a ceiling built on it survives the next recalibration
+	// rather than only describing today's. The multiplication is written out so
+	// that moving the calibrated gain moves the ceiling with it, and a test
+	// pins the two together.
+	pickupOutputGainCeiling = 100 * 0.0048
 )
 
 // configBounds is the one place a validated *constant* range is written down.
