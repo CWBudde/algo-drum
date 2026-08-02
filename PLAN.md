@@ -1730,7 +1730,12 @@ measurement to re-scope it.
     rather than an estimate of it.
 
   - [ ] **N9d: the order-preserving optimizations**, each verified against N9a's
-    digest. Ranked by expected payoff against a measured budget of ~7.7 ns per
+    digest. **No longer required by the contract** — the retake at the end of N9e
+    puts the shipped configuration at 1.15× on `js/wasm` at musical hit rates,
+    so the 7 % shortfall this item existed to close is gone. The list below
+    stands as optimization worth having, not as work the target demands, and the
+    two conditions it inherits (a fresh baseline, a quiet machine) are now
+    satisfied by that retake. Ranked by expected payoff against a measured budget of ~7.7 ns per
     entry visit for a loop doing ~4 flops — i.e. the cost is overhead, not
     arithmetic: power-of-two padding so the `int32`-sourced gathers lose their
     bounds checks; peeling the diagonal, which is already at `run.first` under
@@ -1753,7 +1758,9 @@ measurement to re-scope it.
     stress case implies — so this was worth measuring before optimizing, and the
     answer is neither of the two that were expected.
 
-    Host and `js/wasm`, median of three and of four runs, by `MaxCoefficients`:
+    Host and `js/wasm`, median of three and of four runs, by `MaxCoefficients`.
+    **Superseded — see the retake at the end of this item; every figure below is
+    stale and the shortfall it reports no longer exists:**
 
     | coefficients | Active host | Active wasm | Musical host | Musical wasm | Steady wasm |
     | ------------ | ----------- | ----------- | ------------ | ------------ | ----------- |
@@ -1798,6 +1805,66 @@ measurement to re-scope it.
     2.06× host / 0.70× wasm at 256, where §Cost measures **2.66× / 0.69×**. The
     host figure improved ~29 %, almost certainly from `35bb690`/`7949164`; the
     wasm figure did not move.
+
+    ### The retake — the shortfall is gone, and N9d's motivation with it
+
+    _Measured 2026-08-02 at `a173faa`, Go 1.26.1 linux/amd64 on a 12th Gen
+    i7-1255U, Node v24.12.0, load average 1.1–1.6 throughout. Host is the median
+    of three, `js/wasm` the median of four, both from single `-count` runs of the
+    three nonlinear benchmarks; all five coefficient budgets come out of one
+    command as sub-benchmarks._
+
+    | coefficients  | Active host | Active wasm | Musical host | Musical wasm | Steady host | Steady wasm |
+    | ------------- | ----------- | ----------- | ------------ | ------------ | ----------- | ----------- |
+    | off           | 5.405×      | 1.74×       | 6.441×       | 2.20×        | 7.547×      | 2.48×       |
+    | 64            | 4.139×      | 1.26×       | 5.331×       | 1.58×        | 6.315×      | 1.89×       |
+    | 128           | 3.674×      | 1.10×       | 4.694×       | 1.41×        | 5.260×      | 1.63×       |
+    | 256 (shipped) | 3.046×      | 0.92×       | 3.861×       | **1.15×**    | 4.530×      | 1.36×       |
+    | 408 (full)    | 2.566×      | 0.76×       | 3.246×       | 0.97×        | 3.748×      | 1.12×       |
+
+    **The contract is met.** It is ≥ 1.0× at musical hit rates, and the shipped
+    256-coefficient configuration on `js/wasm` now runs at **1.15×** — 1.137,
+    1.142, 1.152 and 1.162 across the four runs, above 1.0 in all four, where the
+    stale table had 0.93× and below 1.0 in all four. That is **+24 %**, squarely
+    inside the 20–35 % N9d was projected to be worth, and it arrived without N9d:
+    `b276eb8`'s `logCosh` memoization and `9028068`/`476807a`'s coupling-walk
+    restructuring are the three commits N9e already flagged the table as
+    predating. The host side moved too — Musical 3.09× → 3.861× (+25 %), Active
+    2.66× → 3.046× (+14 %).
+
+    **One confound, stated rather than hidden.** No toolchain version was
+    recorded with the original table, so the improvement cannot be attributed to
+    the three commits alone — a Go release between the two measurements would sit
+    inside the same delta. What is not in doubt is the _level_: 1.15× at 256 on
+    the shipped target, measured on a quiet machine, is the number N9d would have
+    had to reach.
+
+    **What this leaves.** N9d becomes optimization without a deadline rather than
+    work the contract requires, and `MaxCoefficients` 256 → 128 is now doubly
+    unnecessary — it was already a labelled product decision about the sound, and
+    the performance argument that motivated it has evaporated. Two figures are
+    still under 1.0 and neither is the contract: Active wasm at 256 is 0.92× (up
+    from 0.69×, +33 %), and Active is the 93.75-hits/s retrigger stress case; and
+    the full 408-coefficient bank at musical rates is 0.97×, which is a statement
+    about a configuration that does not ship.
+
+    **`solve_iters/sample` reproduces the earlier run to three digits** — Musical
+    2.923 with coupling off against 3.046 at 256, where the pre-restructuring run
+    reported 2.923 and 3.045. So §Cost's claim survives the restructuring
+    unchanged: the solve is not getting harder as coefficients are added, the
+    table walk is the cost. That is still where N9d would have to bite if it is
+    picked up.
+
+    **No edits to `double_head_solve.go` were made for this.** It is a
+    measurement and nothing follows from it automatically; the coefficient count
+    stays at 256 and no digest moves.
+
+    **A trap for the next person running this.** `just bench-physical-wasm`
+    splices `{{ ARGS }}` into `bash` unquoted, so a `-bench` pattern containing
+    `(A|B)` dies with a shell syntax error before a single iteration runs — and
+    the recipe's own doc comment shows exactly such a pattern. Call
+    `bash scripts/bench-wasm.sh` directly, or use a pattern with no shell
+    metacharacters.
 
 - [ ] **N10: jitter mode frequencies per trigger** by a fraction of a percent so
       repeated hits are not identical (Cook, PhISEM, ICMC 1996). The static
@@ -2322,9 +2389,11 @@ fix; and the paper reports that state rather than the previous one.
 
 **Status, 2026-08-02, second pass.** Done: N1, N2, N8, N8a, N9a, N9b, N9c, N11,
 N6, N12a, N12b, N13, N15, N17, N18. Open and unblocked by any recording:
-**N9d** — N9e was decided in its favour on 2026-08-02, so the musical-rate
-shortfall closes with order-preserving work rather than a labelled 256 → 128
-product decision — plus **N19** and **N20**. Open and waiting on a reading of a fit that
+**N9d** — N9e was decided in its favour on 2026-08-02, but the baseline retake
+later the same day found the musical-rate shortfall already closed (1.15× on
+`js/wasm` at 256), so N9d is optimization worth having rather than work the
+contract requires, and the labelled 256 → 128 product decision is doubly
+unnecessary — plus **N19** and **N20**. Open and waiting on a reading of a fit that
 already exists: N3, N5. Open and blocked: N7 (on N5), N10 and N14 (on captures
 that do not exist), N16 §2–§3 (on tooling that was never committed). N4 is a
 decision rather than a measurement, and the one thing it wanted the licensed
