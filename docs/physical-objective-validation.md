@@ -587,7 +587,11 @@ property of the drum rather than of the code — three independent measurements 
 say so. What the estimator work does not do is make the ring time of one partial
 of this drum a well-defined quantity.
 
-## Result 6 — identifiability was never measured
+## Result 6 — identifiability had never been measured
+
+_Superseded by Result 12, which measured it and got a refusal. Kept because it is
+the item the work came from, and because two of the three claims it makes are
+wrong in ways worth having on the record._
 
 The converged fits show the textbook sloppy-model signature (Gutenkunst et al.,
 PLoS Comput. Biol. 3(10):e189, 2007): a search that reaches the same point from
@@ -604,6 +608,16 @@ flat directions, by construction.
 
 A central-difference Hessian at the optimum costs ~600 evaluations against the
 88 584 a full fit already spends. `PLAN.md` §P10/N6 carries this.
+
+**What Result 12 changes in the paragraphs above.** The Hessian code now exists
+(`cmd/fit-physical -hessian`), so the first paragraph's premise is gone. The
+second paragraph's "at least two exactly flat directions" is wrong twice over:
+the angle direction is **three**-dimensional rather than two, because `AXIS` is
+itself a fitted parameter, and the radius swap is **not** exact and was never
+going to be. And the sloppy-spectrum framing the first paragraph opens with does
+not apply to this objective at all — a sloppy spectrum is a statement about the
+eigenvalues of a Hessian, and Result 12 is that this objective does not have one
+at the resolution its parameters live at.
 
 ## Result 7 — the gates, re-measured after the repair
 
@@ -1186,9 +1200,123 @@ Not re-run, and the reason is recorded rather than deferred silently:
   Their qualitative claims (the residual is time-varying; a static post-filter
   cannot reach it) are about the model rather than the target and are more likely
   to transfer than their numbers, but neither has been checked here.
-- **Result 6** was never a measurement on any set: no Jacobian, Hessian or Fisher
-  information exists in the repository. It is `PLAN.md` N6 and is untouched by the
-  change of reference.
+- **Result 6** has since been run, on this reference, and is Result 12 below. It
+  needs nothing further; what it needed was doing, and the answer was that the
+  measurement it asked for cannot be taken. Its own two predictions were checked
+  as part of that and one of them was wrong.
+
+## Result 12 — the objective has no Hessian at the resolution its parameters live at
+
+Result 6's measurement was built (`cmd/fit-physical -hessian`, `PLAN.md` N6) and
+run against `fits/fit-tt08x08-lp-hd-series-deep.checkpoint` — the sixteen-take
+joint fit of `tt08x08/lp/hd`, 6 875 search evaluations, total **15.186413** under
+weights `aab79d40fd96`. **It returned a refusal, and the refusal is the result.**
+
+The run was the 5×5 block {`HIT.A`, `MIC.A`, `AXIS`, `HIT.R`, `MIC.R`} — the only
+one whose answer was claimed in advance. 109 evaluations at 11.75 s each, 21
+minutes; on that rate the 14 free parameters would be ~77 min and the full 30-wide
+space (14 free + 16 velocities) ~5.9 h, which is what makes those runs affordable
+whenever there is something to run them for.
+
+### The sweep
+
+Second differences on the diagonal, in normalized parameter units, over the swept
+step grid. Every entry is a curvature the tool would have believed if it had been
+told which `h` to use:
+
+| `h` →   |    1e-4 |    3e-4 |    1e-3 |    3e-3 |    1e-2 |  3e-2 |
+| ------- | ------: | ------: | ------: | ------: | ------: | ----: |
+| `HIT.A` | 4.881e6 | 5.430e5 | 1.355e5 | 5.692e4 | 1.050e4 | 1 197 |
+| `MIC.A` | 3.184e6 | 9.401e5 | 2.267e5 | 2.619e4 | 4.949e3 | 1 295 |
+| `AXIS`  | 1.697e6 | 5.858e5 | 2.168e5 | 2.927e4 | 6.427e3 | 1 205 |
+| `HIT.R` |   2 695 |   1 013 | 2.142e4 | 1.174e4 | 2.729e3 |   819 |
+| `MIC.R` |   −75.3 | 3.538e5 | 8.100e4 | 1.306e4 | 2.996e3 |   874 |
+
+**All five components report `unavailable`.** The criterion is three consecutive
+steps agreeing to within a third of the larger — deliberately coarse, against an
+objective whose own reproducibility gates are set at tens of percent — and no
+component has such a run anywhere in the grid. `MIC.R` even changes sign.
+
+### Why it is a staircase and not a step-size problem
+
+A genuine curvature is the limit of a second difference as `h → 0`, so the
+_numerator_ — the raw finite difference `f(x+h) − 2f(x) + f(x−h)` — must fall as
+`h²`. It does not. Multiplying each entry back out, for `HIT.A`:
+
+| h                | 1e-4   | 3e-4   | 1e-3  | 3e-3  | 1e-2 | 3e-2 |
+| ---------------- | ------ | ------ | ----- | ----- | ---- | ---- |
+| curvature × `h²` | 0.0488 | 0.0489 | 0.136 | 0.512 | 1.05 | 1.08 |
+
+`h²` moves by a factor of 90 000 and the numerator by a factor of 22 — that
+is a finite jump in the cost divided by a shrinking `h²`, not a curvature. The
+other four behave the same way. What the jumps _are_ is not mysterious: a partial
+entering or leaving the matched set, a peak crossing an FFT bin, a decay fit
+crossing `slowestSupportedT60`'s admissibility test. **The objective is
+deterministic and piecewise-constant at the scale its own parameters live at**,
+down to `h = 1e-4` normalized, which for `HIT.A` is 0.036°.
+
+This is a property of the objective, not of the differentiation, and no averaging
+removes it — the cost is exactly reproducible, so there is no noise to average.
+`PLAN.md` N20 carries the successor question of which of the nine terms steps and
+whether any of it is removable.
+
+### The two predictions, both checked, one of them wrong as stated
+
+Direction probes rather than a matrix: one second-difference stencil along a unit
+vector, on the same step grid, which needs no Hessian and so survives the sweep's
+refusal.
+
+- **The common-angle rotation is exact, and it is three-dimensional.** Every angle
+  enters the model only as `Strike.AngleRad − PrincipalAxisAngleRad` or
+  `Pickup.AngleRad − PrincipalAxisAngleRad`, and `AXIS` is a free fit parameter,
+  so rotating all three together changes nothing. In normalized coordinates that
+  direction is **(1, 1, 2)/√6** — the 2 because `AXIS` spans ±90° where the other
+  two span ±180°. Measured, it sits **6.07e8 to 7.13e11 times below** the same
+  rotation with `AXIS` held, at every one of the six steps: 1.87e−9 against 1 333
+  at `h = 3e-2`, on a cost of 15.186413. Result 6's (HIT.A, MIC.A)-only version
+  would have reported a failure the model does not have.
+- **The radius swap is not flat**, as predicted — the strike side carries a
+  contact footprint the pickup side does not, and the pickup side a directivity, a
+  radiating moment, a distance gain and a near-field term the strike side does
+  not. It stands **7.95e5 to 3.02e11 times above** the floor the exact symmetry
+  reaches. The prediction's other half, that it is nonetheless _soft_, is
+  **untested rather than confirmed**: the swap and the stiff (HIT.R + MIC.R)
+  direction agree to three significant figures at three of the six steps —
+  3.521e5 against 3.520e5, 1.021e5 against 1.018e5, 1.756e4 against 1.755e4 — and
+  disagree in both directions at the other three. Two directions that cannot be
+  told apart are not evidence that one is softer.
+
+How far a broken symmetry stands above the floor is **not** a measure of how
+weakly it is broken. That distance is set by the staircase, so it cannot be read
+as "the 0.4 % split costs this much".
+
+### Four ways this measurement could have returned confident garbage
+
+Three were anticipated and refused rather than repaired; the fourth was found by
+running it.
+
+1. `cost` returns `+Inf` for a config the validator rejects. Retried once at
+   `h/3`, then the entry is nulled and its row and column dropped, with the
+   reduced dimension reported. Neither happened here.
+2. `apply` clamps to [0, 1], so a component within `h` of a bound has a one-sided
+   stencil that looks two-sided. Refused and reported, not differentiated.
+3. `angleRad` is bounded to ±2π, so the rotation probe has to stay inside it.
+4. **`drum.ParamSpec.Map` returns `Shipped` verbatim within half a persistence
+   byte of `Default`** — a ±0.196 % detent in normalized units. A component
+   sitting on its default is genuinely constant across it, so every stencil point
+   returns a bit-identical cost and the second difference is exactly zero. A
+   plateau detector that admitted runs of zeros would pick a step inside the
+   detent and report a flat spectrum for **every** parameter, which is the most
+   confident wrong answer this tool could give. Exact zeros are therefore refused
+   as plateau members.
+
+### What it costs to believe a fitted bank
+
+Nothing here says the fitted bank is bad. It says the local instrument that would
+have measured how well-determined it is cannot be built against this objective, so
+the only evidence on that question remains the two independent `compare-fits` runs
+— which agree poorly on the per-take velocities (ρ = +0.15). A staircase is a
+sufficient explanation for that, and now a measured one.
 
 ## What this changes
 
@@ -1225,3 +1353,11 @@ Not re-run, and the reason is recorded rather than deferred silently:
    own (Result 11c): at this drum's fundamental its ring time moves by 9x across
    nominally identical strikes where the fast estimator's moves by 6 %. It cannot
    be used as the reference against which the fast one is corrected there.
+7. **The objective is piecewise-constant at the scale its parameters live at**
+   (Result 12), so no local analysis of a fitted bank is available: no Hessian, no
+   eigenspectrum, no profile likelihood, no sloppy-model reading. Every statement
+   about how well-determined a fit is has to come from re-running the search and
+   comparing, which is what `cmd/compare-fits` exists for and why it is expensive.
+   Result 6's confident "at least two exactly flat directions, by construction" is
+   the third instance of the pattern point 4 names — one of the two was three
+   dimensions, and the other was never a symmetry at all.
