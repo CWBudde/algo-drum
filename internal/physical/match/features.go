@@ -89,6 +89,16 @@ type Options struct {
 	AttackHighMaxHz     float64 `json:"attackHighMaxHz"`
 	AttackLowMinHz      float64 `json:"attackLowMinHz"`
 	AttackLowMaxHz      float64 `json:"attackLowMaxHz"`
+
+	// Diagnostics turns on Features.Waveform and Features.Decay, which are
+	// reported by cmd/measure-tom and read by nothing that scores anything.
+	//
+	// They are off by default because they are not free: between them they walk
+	// the whole hit twice more per extraction — a fourth-order Welford update
+	// over every sample, and a full Schroeder integration — for numbers
+	// match.Distance never looks at. A fit run pays that once per take per
+	// candidate, millions of times.
+	Diagnostics bool `json:"diagnostics,omitempty"`
 }
 
 // DefaultOptions is the measurement this repository's tom work is calibrated
@@ -284,45 +294,50 @@ func Extract(samples []float64, sampleRateHz float64, options Options) (Features
 		return Features{}, err
 	}
 
-	analyzer := ir.NewAnalyzer(sampleRateHz)
-
 	features := Features{
 		SampleRateHz: sampleRateHz,
 		OnsetSample:  onset,
-		Waveform:     timestats.Calculate(hit),
 	}
 
-	if metrics, err := analyzer.Analyze(hit); err == nil {
-		features.Decay = metrics
+	// Reporting only, and skipped unless asked for. See Options.Diagnostics.
+	if options.Diagnostics {
+		features.Waveform = timestats.Calculate(hit)
+
+		if metrics, err := ir.NewAnalyzer(sampleRateHz).Analyze(hit); err == nil {
+			features.Decay = metrics
+		}
 	}
 
-	partials, err := detectPartials(hit, sampleRateHz, options)
+	work := acquireExtractScratch()
+	defer releaseExtractScratch(work)
+
+	partials, err := detectPartials(work, hit, sampleRateHz, options)
 	if err != nil {
 		return Features{}, err
 	}
 
-	features.Partials = measureDecays(hit, sampleRateHz, options, partials)
+	features.Partials = measureDecays(work, hit, sampleRateHz, options, partials)
 
 	// The glide belongs to the fundamental — see glidePartial for why it is
 	// neither simply the lowest partial nor simply the loudest.
 	if index := glidePartial(features.Partials, options.GlidePartialWindowDB); index >= 0 {
-		features.GlideCents, features.GlideMeasured = measureGlide(hit, sampleRateHz, options,
+		features.GlideCents, features.GlideMeasured = measureGlide(work, hit, sampleRateHz, options,
 			features.Partials[index].FrequencyHz,
 			glideCutoffHz(features.Partials, index))
 	}
 
-	centres, edges := fractionalOctaveBands(options.BandMinHz, options.BandMaxHz,
+	centres, edges := cachedFractionalOctaveBands(options.BandMinHz, options.BandMaxHz,
 		options.BandsPerOctave, sampleRateHz)
 	features.BandCentresHz = centres
 
-	features.Windows, err = measureWindows(hit, sampleRateHz, options, edges)
+	features.Windows, err = measureWindows(work, hit, sampleRateHz, options, edges)
 	if err != nil {
 		return Features{}, err
 	}
 
 	features.EnvelopeDB = measureEnvelope(hit, sampleRateHz, options)
 
-	features.AttackBalance, err = measureAttackBalance(hit, sampleRateHz, options)
+	features.AttackBalance, err = measureAttackBalance(work, hit, sampleRateHz, options)
 	if err != nil {
 		return Features{}, err
 	}
@@ -411,8 +426,14 @@ func normalizePeak(samples []float64) []float64 {
 		return out
 	}
 
+	// One reciprocal and a multiply per sample rather than a divide per sample.
+	// Not exactly the same bits — 1/peak rounds once more than the quotient
+	// does — but this is a peak normalization ahead of a dB-domain measurement,
+	// and half an ulp of scale is common to every sample and so invisible to
+	// every term downstream.
+	scale := 1 / peak
 	for i, sample := range samples {
-		out[i] = sample / peak
+		out[i] = sample * scale
 	}
 
 	return out
@@ -467,8 +488,79 @@ func realPlan(size int) (*algofft.PlanReal[float64, complex128], error) {
 	return result, nil
 }
 
-// magnitudeSpectrum is a Hann-windowed, zero-padded real FFT magnitude.
+// extractScratch is the working memory one Extract call reuses across its
+// partials, its transforms and its decay traces.
+//
+// The buffers here are what made an extraction cost tens of megabytes: a
+// heterodyne allocates two arrays the length of the whole hit and runs once per
+// detected partial, a magnitude spectrum allocates three arrays the length of
+// the transform and runs seven times, and each partial's decay builds four
+// traces at the full window's capacity. Every one of them is scratch — nothing
+// that reaches Features points into any of it — so one set per extraction
+// serves them all.
+//
+// It cannot be a package-level buffer: cmd/fit-physical runs one goroutine per
+// restart and every one of them is inside Extract at once. It is per call, from
+// a pool, so the sharing is between successive evaluations rather than between
+// concurrent ones and the buffers still come back sized from the last hit.
+type extractScratch struct {
+	inPhase    []float64
+	quadrature []float64
+
+	fftInput     []float64
+	fftBins      []complex128
+	fftReal      []float64
+	fftImaginary []float64
+	magnitude    []float64
+
+	times     []float64
+	trace     []float64
+	fullTimes []float64
+	fullTrace []float64
+}
+
+var extractScratchPool sync.Pool
+
+func acquireExtractScratch() *extractScratch {
+	if held, ok := extractScratchPool.Get().(*extractScratch); ok {
+		return held
+	}
+
+	return &extractScratch{}
+}
+
+func releaseExtractScratch(work *extractScratch) {
+	extractScratchPool.Put(work)
+}
+
+// growFloats returns a slice of exactly length, reusing buffer's array when it
+// is large enough. The contents are whatever the previous user left; every call
+// site below either overwrites them or clears what it does not.
+func growFloats(buffer []float64, length int) []float64 {
+	if cap(buffer) < length {
+		return make([]float64, length)
+	}
+
+	return buffer[:length]
+}
+
+// magnitudeSpectrum is a Hann-windowed, zero-padded real FFT magnitude,
+// allocating its result. Extract goes through spectrumInto instead; this form
+// is what the cache-equivalence test measures against.
 func magnitudeSpectrum(segment []float64, fftSize int) ([]float64, error) {
+	var work extractScratch
+
+	magnitude, err := work.spectrum(segment, fftSize)
+	if err != nil {
+		return nil, err
+	}
+
+	return slices.Clone(magnitude), nil
+}
+
+// spectrum is magnitudeSpectrum into the scratch buffers. The returned slice is
+// owned by work and is valid only until the next call.
+func (work *extractScratch) spectrum(segment []float64, fftSize int) ([]float64, error) {
 	if len(segment) == 0 {
 		return nil, fmt.Errorf("%w: empty segment", ErrInvalidOptions)
 	}
@@ -476,22 +568,51 @@ func magnitudeSpectrum(segment []float64, fftSize int) ([]float64, error) {
 	size := min(len(segment), fftSize)
 	coefficients := hannWindow(size)
 
-	input := make([]float64, fftSize)
+	input := growFloats(work.fftInput, fftSize)
+	work.fftInput = input
+
 	for i := range size {
 		input[i] = segment[i] * coefficients[i]
 	}
+
+	// Only the zero padding needs clearing: the head is overwritten in full
+	// above, so a reused buffer can only carry stale values past the segment.
+	clear(input[size:])
 
 	plan, err := realPlan(fftSize)
 	if err != nil {
 		return nil, err
 	}
 
-	bins := make([]complex128, plan.SpectrumLen())
+	length := plan.SpectrumLen()
+	if cap(work.fftBins) < length {
+		work.fftBins = make([]complex128, length)
+	}
+
+	bins := work.fftBins[:length]
+
 	if err := plan.Forward(bins, input); err != nil {
 		return nil, err
 	}
 
-	return spectrum.Magnitude(bins), nil
+	// spectrum.Magnitude would allocate its result; MagnitudeFromParts is the
+	// same vectorized kernel writing into a caller's buffer, so the bins are
+	// split into parts here rather than a magnitude being allocated per
+	// transform. TestCachedSpectrumMatchesFreshBuild holds the two forms
+	// together bit for bit.
+	parts, imaginary := growFloats(work.fftReal, length), growFloats(work.fftImaginary, length)
+	work.fftReal, work.fftImaginary = parts, imaginary
+
+	for i, bin := range bins {
+		parts[i], imaginary[i] = real(bin), imag(bin)
+	}
+
+	magnitude := growFloats(work.magnitude, length)
+	work.magnitude = magnitude
+
+	spectrum.MagnitudeFromParts(magnitude, parts, imaginary)
+
+	return magnitude, nil
 }
 
 // spectralPeak is one prominent interpolated maximum of one transform.
@@ -501,8 +622,8 @@ type spectralPeak struct {
 }
 
 // spectralPeaks returns the prominent peaks of one segment, strongest first.
-func spectralPeaks(segment []float64, sampleRateHz float64, options Options) ([]spectralPeak, error) {
-	magnitude, err := magnitudeSpectrum(segment, options.FFTSize)
+func spectralPeaks(work *extractScratch, segment []float64, sampleRateHz float64, options Options) ([]spectralPeak, error) {
+	magnitude, err := work.spectrum(segment, options.FFTSize)
 	if err != nil {
 		return nil, err
 	}
@@ -563,7 +684,7 @@ func spectralPeaks(segment []float64, sampleRateHz float64, options Options) ([]
 // peak at every frequency — and is coarser in resolution, which costs a few
 // cents on the candidates only it finds; measureDecays heterodynes each partial
 // at its own frequency afterwards regardless.
-func detectPartials(hit []float64, sampleRateHz float64, options Options) ([]Partial, error) {
+func detectPartials(work *extractScratch, hit []float64, sampleRateHz float64, options Options) ([]Partial, error) {
 	sustainStart := clampIndex(int(options.SustainStartSecs*sampleRateHz), len(hit))
 
 	sustainEnd := clampIndex(int(options.SustainEndSecs*sampleRateHz), len(hit))
@@ -571,7 +692,7 @@ func detectPartials(hit []float64, sampleRateHz float64, options Options) ([]Par
 		sustainStart, sustainEnd = 0, len(hit)
 	}
 
-	sustainPeaks, err := spectralPeaks(hit[sustainStart:sustainEnd], sampleRateHz, options)
+	sustainPeaks, err := spectralPeaks(work, hit[sustainStart:sustainEnd], sampleRateHz, options)
 	if err != nil {
 		return nil, err
 	}
@@ -583,7 +704,7 @@ func detectPartials(hit []float64, sampleRateHz float64, options Options) ([]Par
 		earlyStart, earlyEnd = sustainStart, sustainEnd
 	}
 
-	earlyPeaks, err := spectralPeaks(hit[earlyStart:earlyEnd], sampleRateHz, options)
+	earlyPeaks, err := spectralPeaks(work, hit[earlyStart:earlyEnd], sampleRateHz, options)
 	if err != nil {
 		return nil, err
 	}
@@ -728,13 +849,29 @@ var phasorAnchorInterval = 512
 // Butterworth (24 dB down an octave past the cutoff), 1 a second-order one
 // whose group delay is short enough to read a pitch 30 ms after the strike.
 func heterodyne(hit []float64, sampleRateHz, frequencyHz, cutoffHz float64, sections int) (inPhase, quadrature []float64) {
-	resonances := []float64{0.5411961, 1.3065630}
-	if sections == 1 {
-		resonances = []float64{math.Sqrt2 / 2}
-	}
-
 	inPhase = make([]float64, len(hit))
 	quadrature = make([]float64, len(hit))
+
+	heterodyneInto(inPhase, quadrature, hit, sampleRateHz, frequencyHz, cutoffHz, sections)
+
+	return inPhase, quadrature
+}
+
+// The two cascades heterodyne offers, at package scope so that the choice
+// between them costs no allocation. A slice literal here ran once per detected
+// partial per extraction.
+var (
+	fourthOrderResonances = []float64{0.5411961, 1.3065630}
+	secondOrderResonances = []float64{math.Sqrt2 / 2}
+)
+
+// heterodyneInto is heterodyne writing into buffers the caller owns. Both must
+// be exactly len(hit); their previous contents are overwritten in full.
+func heterodyneInto(inPhase, quadrature, hit []float64, sampleRateHz, frequencyHz, cutoffHz float64, sections int) {
+	resonances := fourthOrderResonances
+	if sections == 1 {
+		resonances = secondOrderResonances
+	}
 
 	step := -2 * math.Pi * frequencyHz / sampleRateHz
 	stepSine, stepCosine := math.Sincos(step)
@@ -763,8 +900,6 @@ func heterodyne(hit []float64, sampleRateHz, frequencyHz, cutoffHz float64, sect
 	// probe that reads the glide, and its settling transient would sit right
 	// on top of the first tens of milliseconds a decay is fitted over.
 	zeroPhaseLowpassPair(inPhase, quadrature, resonances, cutoffHz, sampleRateHz)
-
-	return inPhase, quadrature
 }
 
 // zeroPhaseLowpassPair filters two signals of equal length through the same
@@ -783,10 +918,20 @@ func heterodyne(hit []float64, sampleRateHz, frequencyHz, cutoffHz float64, sect
 // per-signal form bit for bit, which is the whole licence for writing it this
 // way.
 func zeroPhaseLowpassPair(first, second, resonances []float64, cutoffHz, sampleRateHz float64) {
-	coefficients := make([]biquad.Coefficients, len(resonances))
-	for k, resonance := range resonances {
-		coefficients[k] = design.Lowpass(cutoffHz, resonance, sampleRateHz)
+	// Backed by a stack array rather than a heap slice: the cascade is two
+	// sections and this ran once per partial per extraction. append still grows
+	// correctly if a caller ever asks for a longer one.
+	var storage [4]biquad.Coefficients
+
+	coefficients := storage[:0]
+	for _, resonance := range resonances {
+		coefficients = append(coefficients, design.Lowpass(cutoffHz, resonance, sampleRateHz))
 	}
+
+	// Reslicing to a common length is what lets the compiler drop the bounds
+	// checks inside the two passes below; without it every sample pays four.
+	length := min(len(first), len(second))
+	first, second = first[:length], second[:length]
 
 	// One section over the whole signal before the next, rather than one sample
 	// through the whole cascade before the next: a section is a pure function of

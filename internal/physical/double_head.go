@@ -69,6 +69,11 @@ type DoubleHead struct {
 	modeWavenumberPerM  []float64
 	modeOmegaSquared    []float64
 	modeStrikeAccelPerN []float64
+	// modeRadiationWeight is a mirror for the opposite reason to the three above:
+	// the two tick loops read this one field per mode per sample and nothing else
+	// from the bank, so walking []Mode for it touched 144 bytes to consume 8. This
+	// one is exactly the cache-friendliness argument the block above disclaims.
+	modeRadiationWeight []float64
 	// stepDenominator carries D_i — midpointDenom plus this iteration's nonlinear
 	// tension term — from the two update loops to the cavity fill, which used to
 	// run inside them and now runs as its own pass. Written before it is read on
@@ -202,6 +207,7 @@ func NewDoubleHead(config PhysicalDrum) (*DoubleHead, error) {
 		modeWavenumberPerM:  make([]float64, modeCount),
 		modeOmegaSquared:    make([]float64, modeCount),
 		modeStrikeAccelPerN: make([]float64, modeCount),
+		modeRadiationWeight: make([]float64, modeCount),
 		stepDenominator:     make([]float64, modeCount),
 		radiationHP: biquad.Section{Coefficients: design.Highpass(
 			min(config.Pickup.HighpassHz, config.SampleRateHz*0.45),
@@ -308,6 +314,7 @@ func (d *DoubleHead) syncModeArrays() {
 		// The same product solveMidpoint used to form per mode per iteration.
 		d.modeOmegaSquared[index] = mode.AngularFrequency * mode.AngularFrequency
 		d.modeStrikeAccelPerN[index] = mode.StrikeAccelerationPerN
+		d.modeRadiationWeight[index] = mode.RadiationWeight
 	}
 }
 
@@ -602,34 +609,59 @@ func (d *DoubleHead) Render(dst []float64) {
 	}
 }
 
+// tickUncoupled is the linear path: no cavity, no Berger tension, so each mode
+// advances by its own precomputed 2x2 transition.
+//
+// The loop is split at batterModeCount and every slice header is taken into a
+// local first. Both are the treatment solveMidpoint's prologue already applies
+// for the reason given there: the stores into displacement and velocity may
+// alias d, so without the locals the compiler reloads all seven headers — plus
+// batterModeCount and config.SampleRateHz — on every mode. Splitting also lifts
+// the strike-force predicate out of the body, since it is loop-invariant per
+// half exactly as it is in solveMidpoint.
+//
+// The arithmetic is untouched, operand order included; see the note on radiated
+// below and TestZeroCouplingMatchesShipped.
 func (d *DoubleHead) tickUncoupled(forceN float64) DoubleHeadOutput {
-	inverseSampleRate := 1 / d.config.SampleRateHz
+	sampleRate := d.config.SampleRateHz
+	inverseSampleRate := 1 / sampleRate
+
+	velocity := d.velocity
+	displacement := d.displacement
+	matrix11, matrix12 := d.matrix11, d.matrix12
+	matrix21, matrix22 := d.matrix21, d.matrix22
+	strikeAccel := d.modeStrikeAccelPerN
+	radiationWeight := d.modeRadiationWeight
+
+	batterModeCount := d.batterModeCount
+	modeCount := len(d.modes)
+
 	batterRadiated := 0.0
 	resonantRadiated := 0.0
 
-	for index, mode := range d.modes {
+	for index := range modeCount {
 		// Captured before the contact impulse, so the acceleration below
 		// includes it. Taking it afterwards would leave only
 		// (matrix22 - 1)*F*a*dt of the strike, which is very nearly nothing.
-		previousVelocity := d.velocity[index]
+		previousVelocity := velocity[index]
 
 		oldVelocity := previousVelocity
-		if index < d.batterModeCount {
-			oldVelocity += forceN * mode.StrikeAccelerationPerN * inverseSampleRate
+		if index < batterModeCount {
+			oldVelocity += forceN * strikeAccel[index] * inverseSampleRate
 		}
 
-		oldDisplacement := d.displacement[index]
-		d.displacement[index] = d.matrix11[index]*oldDisplacement +
-			d.matrix12[index]*oldVelocity
-		newVelocity := d.matrix21[index]*oldDisplacement +
-			d.matrix22[index]*oldVelocity
-		d.velocity[index] = newVelocity
+		oldDisplacement := displacement[index]
+		displacement[index] = matrix11[index]*oldDisplacement +
+			matrix12[index]*oldVelocity
+		newVelocity := matrix21[index]*oldDisplacement +
+			matrix22[index]*oldVelocity
+		velocity[index] = newVelocity
 
 		// Written identically in SingleHead.Tick. The zero-coupling equivalence
 		// test compares the two to the last bit, so the operand order matters.
-		radiated := mode.RadiationWeight *
-			(newVelocity - previousVelocity) * d.config.SampleRateHz
-		if index < d.batterModeCount {
+		radiated := radiationWeight[index] *
+			(newVelocity - previousVelocity) * sampleRate
+		if index < batterModeCount {
 			batterRadiated += radiated
 		} else {
 			resonantRadiated += radiated

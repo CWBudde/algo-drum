@@ -39,7 +39,24 @@ package physical
 //
 // couplingAccel is nil when the coupling is inactive, which is not the same as
 // zero — adding a zero would turn a -0 numerator into +0 and change the sign of
-// a stored velocity. The branch is per call, not per element.
+// a stored velocity. The test is hoisted into two loop bodies so the branch is
+// per call, not per element.
+//
+// # Bounds checks
+//
+// Both loops range over equal-length reslices rather than walking an index from
+// first to last. The arithmetic is unchanged; only the bound moves. `last` is an
+// opaque parameter, so the prover could not relate it to any slice length and
+// emitted a check on every indexed load and store, per element. Reslicing once
+// gives it a length it can carry into the loop:
+//
+//	GOOS=js GOARCH=wasm go build -gcflags='-d=ssa/check_bce/debug=1' ./internal/physical/
+//
+// reported 16 IsInBounds inside these two loop bodies before this change and
+// none after — what remains is 16 IsSliceInBounds on the reslices themselves,
+// which are paid once per call instead of once per mode. That matters here
+// specifically because midpoint_noasm.go is what the shipped js/wasm build
+// always runs.
 func midpointReferenceBatter(
 	first, last int,
 	ratio, timeStep, inverseTimeStep, forceN float64,
@@ -47,8 +64,40 @@ func midpointReferenceBatter(
 	velocity, displacement, couplingAccel []float64,
 	stepDenominator, midpointVelocity []float64,
 ) {
-	for index := first; index < last; index++ {
-		wave := wavenumber[index]
+	count := last - first
+	if count <= 0 {
+		return
+	}
+
+	wavenumber = wavenumber[first:last]
+	omegaSquared = omegaSquared[first : first+count]
+	strikeAccel = strikeAccel[first : first+count]
+	midpointDenom = midpointDenom[first : first+count]
+	velocity = velocity[first : first+count]
+	displacement = displacement[first : first+count]
+	stepDenominator = stepDenominator[first : first+count]
+	midpointVelocity = midpointVelocity[first : first+count]
+
+	if couplingAccel == nil {
+		for index, wave := range wavenumber {
+			nonlinear := ratio * wave * wave
+			angularSquared := omegaSquared[index] + nonlinear
+			denominator := midpointDenom[index] + 0.5*nonlinear*timeStep
+
+			numerator := 2*velocity[index]*inverseTimeStep -
+				angularSquared*displacement[index] +
+				forceN*strikeAccel[index]
+
+			stepDenominator[index] = denominator
+			midpointVelocity[index] = numerator / denominator
+		}
+
+		return
+	}
+
+	couplingAccel = couplingAccel[first : first+count]
+
+	for index, wave := range wavenumber {
 		nonlinear := ratio * wave * wave
 		angularSquared := omegaSquared[index] + nonlinear
 		denominator := midpointDenom[index] + 0.5*nonlinear*timeStep
@@ -56,9 +105,7 @@ func midpointReferenceBatter(
 		numerator := 2*velocity[index]*inverseTimeStep -
 			angularSquared*displacement[index] +
 			forceN*strikeAccel[index]
-		if couplingAccel != nil {
-			numerator += couplingAccel[index]
-		}
+		numerator += couplingAccel[index]
 
 		stepDenominator[index] = denominator
 		midpointVelocity[index] = numerator / denominator
@@ -74,8 +121,20 @@ func midpointReferenceResonant(
 	velocity, displacement []float64,
 	stepDenominator, midpointVelocity []float64,
 ) {
-	for index := first; index < last; index++ {
-		wave := wavenumber[index]
+	count := last - first
+	if count <= 0 {
+		return
+	}
+
+	wavenumber = wavenumber[first:last]
+	omegaSquared = omegaSquared[first : first+count]
+	midpointDenom = midpointDenom[first : first+count]
+	velocity = velocity[first : first+count]
+	displacement = displacement[first : first+count]
+	stepDenominator = stepDenominator[first : first+count]
+	midpointVelocity = midpointVelocity[first : first+count]
+
+	for index, wave := range wavenumber {
 		nonlinear := ratio * wave * wave
 		angularSquared := omegaSquared[index] + nonlinear
 		denominator := midpointDenom[index] + 0.5*nonlinear*timeStep
