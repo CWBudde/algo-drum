@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -247,6 +248,108 @@ func TestInspectDescribesTheCheckpointsBestPoint(t *testing.T) {
 
 	if searched.String() != inspected.String() {
 		t.Errorf("inspecting the checkpoint described a different candidate than the search reported")
+	}
+}
+
+// rewriteStoredBaseline scales the baseline cost a checkpoint records, leaving
+// the rest of the file exactly as the search wrote it.
+//
+// Scaling rather than adding keeps the perturbation a *relative* one, which is
+// what baselineDriftTolerance is expressed in and what the caller wants to state.
+func rewriteStoredBaseline(t *testing.T, path string, factor float64) {
+	t.Helper()
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read checkpoint: %v", err)
+	}
+
+	var stored Checkpoint
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		t.Fatalf("decode checkpoint: %v", err)
+	}
+
+	stored.Fingerprint.BaselineCost *= factor
+
+	edited, err := json.Marshal(stored)
+	if err != nil {
+		t.Fatalf("encode checkpoint: %v", err)
+	}
+
+	if err := os.WriteFile(path, edited, 0o600); err != nil {
+		t.Fatalf("write checkpoint: %v", err)
+	}
+}
+
+// TestInspectReadsAcrossADriftedBaseline pins the reading half of
+// baselineDriftTolerance end to end.
+//
+// The case is not hypothetical and the omission had a cost. -inspect was left
+// out when the tolerance was added for -hessian, and the two checkpoints this
+// repository actually has both record a baseline that drifted by a relative
+// 5.6e-12 under a performance refactor — so the one reading a finished run is
+// owed, turning a checkpoint into a report that cmd/compare-fits can put beside
+// another, was impossible for exactly the runs the tolerance was measured from.
+//
+// What -inspect does with a checkpoint is what earns it the tolerance: it reads
+// a stored *position* and re-describes it with the current build throughout,
+// mixing nothing. A resume is the opposite and still refuses on the last bit,
+// which TestIdentifiabilityRefusesAFingerprintMismatch pins from the other side.
+func TestInspectReadsAcrossADriftedBaseline(t *testing.T) {
+	t.Parallel()
+
+	reference := writeSyntheticReference(t)
+	directory := t.TempDir()
+	path := filepath.Join(directory, "fit.checkpoint")
+	reportPath := filepath.Join(directory, "fit.json")
+
+	var searched, searchErrors strings.Builder
+	if err := run(tinySearch(reference, path), &searched, &searchErrors); err != nil {
+		t.Fatalf("search run: %v", err)
+	}
+
+	// A part in a trillion: inside the tolerance, and the size the drift this
+	// repository has actually is.
+	rewriteStoredBaseline(t, path, 1+1e-12)
+
+	var inspected, inspectErrors strings.Builder
+	if err := run(tinySearch(reference, path, "-inspect", "-o", reportPath),
+		&inspected, &inspectErrors); err != nil {
+		t.Fatalf("inspect across a drifted baseline: %v", err)
+	}
+
+	// Silently reading across it would be worse than refusing, so the disclosure
+	// is part of the behaviour rather than a nicety.
+	if !strings.Contains(inspectErrors.String(), "WARNING") {
+		t.Errorf("inspect did not warn about the drift:\n%s", inspectErrors.String())
+	}
+
+	raw, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+
+	var report Report
+	if err := json.Unmarshal(raw, &report); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+
+	if report.BaselineDrift == nil {
+		t.Fatal("the report does not record the drift it was read across")
+	}
+
+	if report.BaselineDrift.Relative > baselineDriftTolerance {
+		t.Errorf("recorded drift %g is past the tolerance it was let through on",
+			report.BaselineDrift.Relative)
+	}
+
+	// A part in a hundred is a different measurement, not a drift, and no mode
+	// reads across it.
+	rewriteStoredBaseline(t, path, 1.01)
+
+	var out, errorsOut strings.Builder
+	if err := run(tinySearch(reference, path, "-inspect"), &out, &errorsOut); !errors.Is(err, errCheckpointMismatch) {
+		t.Errorf("inspect across a moved baseline: %v", err)
 	}
 }
 

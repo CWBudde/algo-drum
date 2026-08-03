@@ -257,18 +257,60 @@ func comparable(reports []*report, stderr io.Writer, allow bool) error {
 				first.path, other.path)
 		}
 
-		if first.Baseline != nil && other.Baseline != nil &&
-			first.Baseline.Terms.Total != other.Baseline.Terms.Total {
-			_, _ = fmt.Fprintf(stderr,
-				"WARNING: baseline totals differ (%.6f vs %.6f). Same references under the "+
-					"same weights measure the shipped defaults identically, so the extraction "+
-					"options differed between these runs and the per-term table below compares "+
-					"two measurements rather than two fits\n",
+		if first.Baseline != nil && other.Baseline != nil {
+			warnBaselineDifference(stderr,
 				first.Baseline.Terms.Total, other.Baseline.Terms.Total)
 		}
 	}
 
 	return nil
+}
+
+// baselineDriftTolerance is how far two reports' baseline totals may sit apart
+// before the difference is read as a different measurement rather than as two
+// builds of the same one.
+//
+// It is the same part in a billion cmd/fit-physical's -inspect and -hessian
+// tolerate, and it is here for the same reason: the two committed series reports
+// were written by builds either side of a performance refactor that was meant to
+// be bit-exact and is not against the feature-extraction path, so their baselines
+// differ by a relative 5.6e-12. Without the tolerance this tool declared its own
+// pair of reports incomparable and blamed the extraction options — printing
+// "39.882034 vs 39.882034", two numbers that are equal at every digit shown,
+// which is the tell that the check was too strict rather than the reports wrong.
+const baselineDriftTolerance = 1e-9
+
+// warnBaselineDifference reports a baseline disagreement as what it is.
+//
+// The two cases want different words, which is the whole point of separating
+// them: a percent-level difference means the runs measured different things and
+// the per-term table is comparing measurements, while a difference in the last
+// bits means one build's arithmetic against another's and the fits still compare.
+// Saying "the extraction options differed" for the second is a false diagnosis,
+// and a false diagnosis in a warning is worse than no warning — it sends the
+// reader looking for a flag nobody passed.
+func warnBaselineDifference(stderr io.Writer, first, second float64) {
+	if first == second {
+		return
+	}
+
+	drift := math.Abs(first-second) / math.Abs(second)
+	if drift <= baselineDriftTolerance {
+		_, _ = fmt.Fprintf(stderr,
+			"note: baseline totals differ by a relative %.3g, inside the %.0e that separates "+
+				"two builds of one measurement from two measurements. These reports were "+
+				"written by different builds; the fits below still compare\n",
+			drift, baselineDriftTolerance)
+
+		return
+	}
+
+	_, _ = fmt.Fprintf(stderr,
+		"WARNING: baseline totals differ (%v vs %v, relative %.3g). Same references under the "+
+			"same weights measure the shipped defaults identically, so the extraction "+
+			"options differed between these runs and the per-term table below compares "+
+			"two measurements rather than two fits\n",
+		first, second, drift)
 }
 
 func sameReferences(first, second *report) bool {

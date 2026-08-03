@@ -301,11 +301,15 @@ type Report struct {
 	// below which a total is not distinguishable from noise — a measurement
 	// cmd/measure-objective makes, a property of one drum at one tuning, and
 	// deliberately not a constant anywhere in this tool.
-	ObjectiveFloor float64          `json:"objectiveFloor,omitempty"`
-	Search         SearchInfo       `json:"search"`
-	Baseline       Candidate        `json:"baseline"`
-	Best           *Candidate       `json:"best,omitempty"`
-	Targets        []match.Features `json:"targets"`
+	ObjectiveFloor float64    `json:"objectiveFloor,omitempty"`
+	Search         SearchInfo `json:"search"`
+	// BaselineDrift is present only on an -inspect that read a checkpoint whose
+	// recorded baseline no longer matches what this build measures. Absent on
+	// every searching run, which cannot proceed across a drift at all.
+	BaselineDrift *BaselineDrift   `json:"baselineDrift,omitempty"`
+	Baseline      Candidate        `json:"baseline"`
+	Best          *Candidate       `json:"best,omitempty"`
+	Targets       []match.Features `json:"targets"`
 }
 
 // ReferenceInfo records what was measured, so a report can be read a year
@@ -777,11 +781,13 @@ func run(args []string, stdout, stderr io.Writer) error {
 			BaselineCost:    report.Baseline.Terms.Total,
 		}
 
-		// -hessian re-measures everything at a stored position instead of mixing
-		// two builds' measurements, so it is the one mode that may proceed across
-		// a baseline that has drifted in its last bits — and it records the drift.
-		// See reconcileBaseline; every other mode keeps the bit-exact check.
-		rebased, err := reconcileBaseline(&fingerprint, *identify.scope != "", *checkpointPath)
+		// -inspect and -hessian both read a stored *position* and re-measure
+		// everything about it with the current build, mixing nothing, so they are
+		// the two modes that may proceed across a baseline that has drifted in its
+		// last bits — and both record the drift. See reconcileBaseline; a
+		// searching run keeps the bit-exact check.
+		rebased, err := reconcileBaseline(&fingerprint,
+			*inspect || *identify.scope != "", *checkpointPath)
 		if err != nil {
 			return err
 		}
@@ -803,31 +809,12 @@ func run(args []string, stdout, stderr io.Writer) error {
 		// guard still applies, which is what stops this describing one run's
 		// point against another run's reference.
 		if *inspect {
-			snapshot := checkpoint.best()
-			if snapshot == nil {
-				return fmt.Errorf("%w: %s holds no best point yet",
-					errInvalidFitOption, *checkpointPath)
-			}
-
-			candidate, err := base.describe(snapshot.Position)
-			if err != nil {
-				return err
-			}
-
-			report.Best = &candidate
-			report.Search.Evaluations = snapshot.Evaluations
-			report.Search.Interrupted = true
-
-			_, _ = fmt.Fprintf(stderr, "inspected: %s after %d evaluations\n",
-				summarize(candidate.Terms), snapshot.Evaluations)
-
-			// Same tail as a finished run, -wav included. A checkpoint holds the
-			// bank, so the point it describes can be listened to as well as read
-			// — which matters here more than the convenience suggests: twice now
-			// a defect in this metric has been found by hearing something the
-			// distance called good, and a run one has to finish before it can be
-			// auditioned is one nobody auditions.
-			return finish(stdout, stderr, report, *wavPath, *wavDuration, *wavTake, *outputPath)
+			return inspectCheckpoint(stdout, stderr, base, report, checkpoint, inspectOptions{
+				checkpointPath: *checkpointPath,
+				rebased:        rebased, storedBaseline: fingerprint.BaselineCost,
+				wavPath: *wavPath, wavDuration: *wavDuration, wavTake: *wavTake,
+				outputPath: *outputPath,
+			})
 		}
 
 		// -hessian reads the same stored point -inspect describes and

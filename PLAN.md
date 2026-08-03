@@ -1034,10 +1034,33 @@ measurement to re-scope it.
 
     **What the two runs do not agree on is anything read off the per-take
     velocities** (ρ = +0.15 between them), which is why `cmd/compare-fits` exists
-    and why nothing may be inferred from that vector. Neither run has been
-    compared through the committed tool: the first run left only a checkpoint, so
-    reproducing that comparison properly means `-inspect`-ing it into a report
-    first. Cheap, and not yet done.
+    and why nothing may be inferred from that vector.
+
+    **Done through the committed tool, 2026-08-03**, and it reproduces the
+    hand-parsed figure exactly: ρ = +0.150 between the runs, −0.053 and −0.065
+    against the file index. `fits/fit-tt08x08-lp-hd-series.json` is the first
+    run's report, `-inspect`-ed out of its checkpoint. Two defects had to be
+    fixed to get there, and both were in the reading tools rather than in
+    anything measured:
+
+    - **`-inspect` could not read either of this repository's checkpoints.**
+      `baselineDriftTolerance` was added for `-hessian` and gated on it alone,
+      so the one reading a finished run is owed — turning a checkpoint into a
+      report — was refused across the very drift the tolerance was measured from.
+      `-inspect` mixes nothing, exactly as `-hessian` mixes nothing, so it now
+      shares the tolerance and discloses the drift the same way. A resume still
+      refuses on the last bit.
+    - **`cmd/compare-fits` diagnosed that drift as an options difference**, in a
+      warning that printed "39.882034 vs 39.882034" — two numbers equal at every
+      digit it showed — and sent the reader looking for a flag nobody passed. It
+      now separates a build drift from a different measurement and says which it
+      has.
+
+    The drift itself is real and is **not** the layout round's doing: measured
+    three ways, `d0a9bb6` (before that round) and `HEAD` agree bit-for-bit in all
+    nine baseline terms, and both differ from the deep report's stored baseline by
+    the same relative 5.6e-12. It was left behind earlier, by one of the rounds
+    that preceded it.
 
     - **The fitted bank's own decay law is far too flat: slope −0.21 against the
       reference's −0.70.** 0.84 s at 233 Hz against a measured 1.09 s, and 0.51 s
@@ -1363,9 +1386,42 @@ measurement to re-scope it.
       0.3048 m and 0.20 m, so every fit against this 8" × 8" reference up to now
       was free to answer it with a 12" head on a 20 cm shell — and did, without
       anything in the report marking it as odd. Two of eighteen parameters are now
-      constants the recording cannot argue with. The head gauges are still fitted;
-      turning the stated Remo ply thicknesses into surface densities is the
-      remaining half of this paragraph.
+      constants the recording cannot argue with.
+
+      **"The head gauges are still fitted" was wrong, and correcting it re-scopes
+      the remaining half of this paragraph, 2026-08-03.** They are not fitted and
+      never were: the search has eighteen parameters and not one of them is a
+      surface density. Both are plain constants — `config.go:504` and `:553`,
+      0.35 and 0.25 kg/m², round numbers with no derivation recorded beside them.
+      So this is not a pinning that narrows the search, because nothing here is
+      loose. It is an edit to two shipped defaults, which moves both render digests
+      and `testdata/physical-reference-v2.json`. Another item written from reading
+      the code rather than measuring it; the tally in this section's preamble
+      stands at one more.
+
+      What the stated gauges give, at 1390 kg/m² for biaxially-oriented PET and
+      before any allowance for the Ambassador's coating, which
+      [`reference/CREDITS.md`](reference/CREDITS.md) already says is unaccounted
+      for: **batter 10 mil → 0.3531** against the shipped 0.35, **resonant 7.5 mil
+      → 0.2648** against the shipped 0.25. A part in a hundred and six in a
+      hundred.
+
+      **And the frequencies cannot see either of them.** `modes.go:289` has
+      ω² = (T/σ)k² + (B/σ)k⁴, so σ enters the low modes only as T/σ — and T is
+      `B.TUNE`/`R.TUNE`, free over a range wide enough to divide any 6 % out
+      exactly. The −7.5 and −49.8 cents the two corrections are worth at fixed
+      tension are therefore not a prediction of anything; the fit absorbs them and
+      reports a different tension. The degeneracy breaks only where the bending
+      term matters, which at the shipped B is above about j ≈ 11, the upper part
+      of the bank.
+
+      So what the gauges actually constrain is the **modal mass** (`modes.go:315`,
+      ∝ σ), i.e. how hard a given strike drives the head — which is the level and
+      attack-balance side of the objective, and those are two of the three worst
+      terms in both series fits (level ×1.61 and ×1.79, attack ×2.90 and ×2.31).
+      That is a better argument for making the edit than "the gauges are known"
+      was, and it is still an argument for spending the digest-and-fixture cost
+      **once**, together with anything else that needs it, rather than twice.
 
       **What the sixteen takes determine, measured 2026-08-01** — with the base
       rule repaired (see below), on `tt08x08/lp/hd`, `cmd/measure-tom -channel

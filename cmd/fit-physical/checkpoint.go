@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"sync"
+	"time"
 )
 
 var errCheckpointMismatch = errors.New("checkpoint does not match this run")
@@ -344,4 +346,70 @@ func (s *store) writeLocked() error {
 	}
 
 	return nil
+}
+
+// inspectOptions is what -inspect needs beyond the checkpoint itself.
+//
+// storedBaseline is carried separately from the report's own because the two are
+// the point when rebased is set: the checkpoint was written against one and this
+// build measures the other.
+type inspectOptions struct {
+	checkpointPath string
+	rebased        bool
+	storedBaseline float64
+	wavPath        string
+	wavDuration    time.Duration
+	wavTake        int
+	outputPath     string
+}
+
+// inspectCheckpoint describes a checkpoint's best point and stops.
+//
+// The point is to see a running fit's best candidate broken down by term without
+// interrupting it: checkpoints are written atomically, so a reader gets one whole
+// version or another, and the search never learns it was read. The fingerprint
+// guard has already run in the caller, which is what stops this describing one
+// run's point against another run's reference — with the one documented exception
+// of a baseline that drifted inside baselineDriftTolerance, disclosed here.
+//
+// It lives beside the checkpoint rather than in main for the reason -hessian
+// lives in identify.go: what it does is read a stored position, and everything it
+// needs to do that honestly is here.
+func inspectCheckpoint(
+	stdout, stderr io.Writer,
+	base *evaluator,
+	report Report,
+	checkpoint *store,
+	options inspectOptions,
+) error {
+	snapshot := checkpoint.best()
+	if snapshot == nil {
+		return fmt.Errorf("%w: %s holds no best point yet",
+			errInvalidFitOption, options.checkpointPath)
+	}
+
+	if options.rebased {
+		report.BaselineDrift = noteBaselineDrift(stderr,
+			options.storedBaseline, report.Baseline.Terms.Total, options.checkpointPath)
+	}
+
+	candidate, err := base.describe(snapshot.Position)
+	if err != nil {
+		return err
+	}
+
+	report.Best = &candidate
+	report.Search.Evaluations = snapshot.Evaluations
+	report.Search.Interrupted = true
+
+	_, _ = fmt.Fprintf(stderr, "inspected: %s after %d evaluations\n",
+		summarize(candidate.Terms), snapshot.Evaluations)
+
+	// Same tail as a finished run, -wav included. A checkpoint holds the bank, so
+	// the point it describes can be listened to as well as read — which matters
+	// here more than the convenience suggests: twice now a defect in this metric
+	// has been found by hearing something the distance called good, and a run one
+	// has to finish before it can be auditioned is one nobody auditions.
+	return finish(stdout, stderr, report,
+		options.wavPath, options.wavDuration, options.wavTake, options.outputPath)
 }

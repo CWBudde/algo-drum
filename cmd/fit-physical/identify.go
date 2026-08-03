@@ -219,6 +219,30 @@ type BaselineDrift struct {
 	Relative float64 `json:"relative"`
 }
 
+// noteBaselineDrift records a tolerated drift and says so on stderr.
+//
+// Shared by -inspect and -hessian because the disclosure has to be the same
+// either way: both read a stored position that was found against a baseline this
+// build no longer measures, and a reader of either output needs to know that
+// before quoting a total from it. The warning is the more important half — the
+// JSON field is easy to miss and a checkpoint that can no longer be resumed is
+// worth hearing about at the moment it is read.
+func noteBaselineDrift(stderr io.Writer, stored, measured float64, path string) *BaselineDrift {
+	drift := &BaselineDrift{
+		Stored:   stored,
+		Measured: measured,
+		Relative: math.Abs(stored-measured) / math.Abs(measured),
+	}
+
+	_, _ = fmt.Fprintf(stderr,
+		"WARNING: %s records a baseline of %v and this build measures %v (relative %.3g). "+
+			"The stored position is still this drum, so the measurement goes ahead and the "+
+			"report records the drift — but the checkpoint can no longer be resumed.\n",
+		path, stored, measured, drift.Relative)
+
+	return drift
+}
+
 // ScopeEntry is one differentiated component, and where it sits.
 type ScopeEntry struct {
 	Label string `json:"label"`
@@ -443,18 +467,8 @@ func runIdentifiability(
 	}
 
 	if options.rebased {
-		report.BaselineDrift = &BaselineDrift{
-			Stored:   fingerprint.BaselineCost,
-			Measured: options.baselineCost,
-			Relative: math.Abs(fingerprint.BaselineCost-options.baselineCost) / math.Abs(options.baselineCost),
-		}
-
-		_, _ = fmt.Fprintf(stderr,
-			"WARNING: %s records a baseline of %v and this build measures %v (relative %.3g). "+
-				"The stored position is still this drum, so the measurement goes ahead and the "+
-				"report records the drift — but the checkpoint can no longer be resumed.\n",
-			options.checkpointPath, fingerprint.BaselineCost, options.baselineCost,
-			report.BaselineDrift.Relative)
+		report.BaselineDrift = noteBaselineDrift(stderr,
+			fingerprint.BaselineCost, options.baselineCost, options.checkpointPath)
 	}
 
 	started := time.Now()
@@ -502,15 +516,22 @@ func runIdentifiability(
 }
 
 // baselineDriftTolerance is how far the checkpoint's recorded baseline may sit
-// from this build's before -hessian refuses the stored position, as a fraction.
+// from this build's before -inspect or -hessian refuses the stored position, as
+// a fraction.
 //
-// A part in a billion, and the *only* mode that gets a tolerance at all. A
-// resume must be bit-exact, because it forms a best-of across measurements taken
-// by two builds and a mixture of two objectives is not a fit; loadStore is right
-// to refuse on the last bit. -hessian mixes nothing: it reads a stored *position*
-// and re-measures everything around it with the current build, so a baseline that
-// has moved in its twelfth significant figure changes which drum is being
-// differentiated not at all.
+// A part in a billion, and the read-only modes are the *only* ones that get a
+// tolerance at all. A resume must be bit-exact, because it forms a best-of across
+// measurements taken by two builds and a mixture of two objectives is not a fit;
+// loadStore is right to refuse on the last bit. -inspect and -hessian mix
+// nothing: they read a stored *position* and re-describe or re-differentiate it
+// with the current build throughout, so a baseline that has moved in its twelfth
+// significant figure changes which drum is being read not at all.
+//
+// -inspect was left out when this was first written, and the omission had a
+// cost worth recording: it made the *only* reading a finished run is owed —
+// turning a checkpoint into a report so cmd/compare-fits can put two searches
+// beside each other — impossible for the one pair of runs this repository has,
+// which is exactly the case the tolerance was measured from.
 //
 // The number is set from the drift this repository actually has. The deep series
 // checkpoint (fits/fit-tt08x08-lp-hd-series-deep.checkpoint) records a baseline of
@@ -522,18 +543,20 @@ func runIdentifiability(
 // decades of headroom over the drift and three below anything that would matter.
 const baselineDriftTolerance = 1e-9
 
-// reconcileBaseline lets -hessian past loadStore's bit-exact fingerprint check
-// when the only disagreement is a baseline that has drifted within tolerance.
+// reconcileBaseline lets the read-only modes past loadStore's bit-exact
+// fingerprint check when the only disagreement is a baseline that has drifted
+// within tolerance.
 //
 // It edits the fingerprint the caller is about to hand to loadStore rather than
-// touching loadStore, because every other mode must keep the strict check: this
-// is a statement about what -hessian does with a checkpoint, not a loosening of
-// what a checkpoint means. Nothing else in the fingerprint is touched, so a
-// changed reference, quality, seed or fixed parameter is refused exactly as
-// before, by the same code and with the same message.
+// touching loadStore, because a searching run must keep the strict check: this
+// is a statement about what -inspect and -hessian do with a checkpoint, not a
+// loosening of what a checkpoint means. Nothing else in the fingerprint is
+// touched, so a changed reference, quality, seed or fixed parameter is refused
+// exactly as before, by the same code and with the same message.
 //
-// The checkpoint is never written back. -hessian records no restarts and does not
-// flush, so the file keeps the baseline it was written with.
+// The checkpoint is never written back. Both callers return before the search
+// runs, so neither records a restart nor flushes, and the file keeps the
+// baseline it was written with.
 func reconcileBaseline(fingerprint *Fingerprint, wanted bool, path string) (bool, error) {
 	if !wanted || path == "" {
 		return false, nil

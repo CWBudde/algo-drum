@@ -332,3 +332,109 @@ func TestRejectsUnfinishedReport(t *testing.T) {
 		t.Fatal("expected a report with no best point to be rejected")
 	}
 }
+
+// TestBaselineDriftIsNotCalledAnOptionsDifference separates the two things a
+// baseline disagreement can mean.
+//
+// The strict check that preceded this declared the repository's own pair of
+// series reports incomparable and blamed the extraction options, on a relative
+// difference of 5.6e-12 left by a performance refactor. It printed the two
+// totals to six decimals, so the warning read "39.882034 vs 39.882034" — a
+// diagnosis that is both wrong and visibly wrong, and one that sends the reader
+// looking for a flag nobody passed.
+func TestBaselineDriftIsNotCalledAnOptionsDifference(t *testing.T) {
+	const measured = 39.882034409620715
+
+	cases := []struct {
+		name    string
+		other   float64
+		wants   string
+		refuses string
+	}{
+		{
+			name:    "a drift between two builds",
+			other:   39.882034409395786,
+			wants:   "note:",
+			refuses: "extraction",
+		},
+		{
+			name:    "a different measurement",
+			other:   measured * 1.01,
+			wants:   "extraction",
+			refuses: "note:",
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			warnBaselineDifference(&stderr, measured, testCase.other)
+
+			if !strings.Contains(stderr.String(), testCase.wants) {
+				t.Errorf("want %q in:\n%s", testCase.wants, stderr.String())
+			}
+
+			if strings.Contains(stderr.String(), testCase.refuses) {
+				t.Errorf("did not want %q in:\n%s", testCase.refuses, stderr.String())
+			}
+		})
+	}
+
+	var quiet bytes.Buffer
+
+	warnBaselineDifference(&quiet, measured, measured)
+
+	if quiet.Len() != 0 {
+		t.Errorf("equal baselines said something:\n%s", quiet.String())
+	}
+}
+
+// TestBaselineDriftIsNotReportedAsAnOptionsDifference pins the distinction
+// warnBaselineDifference exists to draw.
+//
+// The strict check this replaced fired on the repository's own pair of series
+// reports, which were written by builds either side of a performance refactor
+// that was meant to be bit-exact and is not against the feature-extraction path.
+// It printed "39.882034 vs 39.882034" — two numbers equal at every digit shown —
+// and told the reader the extraction options differed, which was false and sent
+// them looking for a flag nobody passed. A difference large enough to be a
+// different measurement must still say exactly that.
+func TestBaselineDriftIsNotReportedAsAnOptionsDifference(t *testing.T) {
+	dir := t.TempDir()
+	weights := match.DefaultWeights()
+	velocities := []float64{0.1, 0.2, 0.3, 0.4}
+
+	drifted := synthetic(velocities, weights, nil)
+	drifted.Baseline.Terms.Total *= 1 + 1e-12
+
+	a := writeReport(t, dir, "a.json", synthetic(velocities, weights, nil))
+	b := writeReport(t, dir, "b.json", drifted)
+
+	var stdout, stderr bytes.Buffer
+	if err := run([]string{a, b}, &stdout, &stderr); err != nil {
+		t.Fatalf("comparing across a drifted baseline: %v", err)
+	}
+
+	if strings.Contains(stderr.String(), "extraction options differed") {
+		t.Errorf("a build drift was diagnosed as an options difference:\n%s", stderr.String())
+	}
+
+	if !strings.Contains(stderr.String(), "different builds") {
+		t.Errorf("the drift was not disclosed at all:\n%s", stderr.String())
+	}
+
+	// A percent is a different measurement, and the original warning is right.
+	moved := synthetic(velocities, weights, nil)
+	moved.Baseline.Terms.Total *= 1.01
+
+	c := writeReport(t, dir, "c.json", moved)
+
+	var movedOut, movedErr bytes.Buffer
+	if err := run([]string{a, c}, &movedOut, &movedErr); err != nil {
+		t.Fatalf("comparing across a moved baseline: %v", err)
+	}
+
+	if !strings.Contains(movedErr.String(), "extraction options differed") {
+		t.Errorf("a real baseline difference was not called one:\n%s", movedErr.String())
+	}
+}
