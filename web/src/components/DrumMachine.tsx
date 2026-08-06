@@ -17,14 +17,17 @@ import {
   VOICE_PARAMS,
 } from "../engine/voiceParams";
 import { DEFAULT_TOM_MODEL, type TomModel } from "../engine/tomModel";
-import { loadInitialState, saveLocal } from "../algo/persistence";
+import {
+  loadInitialState,
+  replaceAddressBarWithShareUrl,
+  saveLocal,
+} from "../algo/persistence";
 import {
   DEFAULT_TEMPO_BPM,
   defaultEngineState,
   reduceDrumState,
   type DrumStateAction,
 } from "./drumState";
-import { buildShareUrl } from "./shareUrl";
 import "./DrumMachine.css";
 
 // Visual order: Cymbal on top, Bass on bottom.
@@ -211,8 +214,8 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     return () => window.clearTimeout(id);
   }, [drumState]);
 
-  const getShareUrl = useCallback(
-    () => buildShareUrl(drumState, window.location),
+  const handleShare = useCallback(
+    () => replaceAddressBarWithShareUrl(drumState),
     [drumState],
   );
 
@@ -425,7 +428,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           pattern={flatPattern}
           stepCount={stepCount}
           onApplyPattern={applyFlatPattern}
-          getShareUrl={getShareUrl}
+          onShare={handleShare}
         />
       </header>
 

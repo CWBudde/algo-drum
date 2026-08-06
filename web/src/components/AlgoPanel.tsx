@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { mutate } from "../algo/mutate";
 import { PRESETS, presetToFlat } from "../algo/presets";
-import { replaceShareUrl } from "./shareUrl";
 import "./AlgoPanel.css";
 
 interface Props {
@@ -9,8 +8,9 @@ interface Props {
   pattern: number[]; // current flat, engine-major pattern
   stepCount: number;
   onApplyPattern: (flat: number[]) => void;
-  // Purely builds the shareable URL; handleShare owns browser side effects.
-  getShareUrl: () => string;
+  // Explicit share action: publishes the state in the address bar and returns
+  // the same URL for the clipboard.
+  onShare: () => string;
 }
 
 export default function AlgoPanel({
@@ -18,7 +18,7 @@ export default function AlgoPanel({
   pattern,
   stepCount,
   onApplyPattern,
-  getShareUrl,
+  onShare,
 }: Props) {
   const [presetIndex, setPresetIndex] = useState(-1);
   const [copied, setCopied] = useState(false);
@@ -39,8 +39,7 @@ export default function AlgoPanel({
   }, [onApplyPattern, pattern, stepCount]);
 
   const handleShare = useCallback(() => {
-    const url = getShareUrl();
-    replaceShareUrl(window.history, url);
+    const url = onShare();
     const clipboard = navigator.clipboard as Clipboard | undefined;
     if (clipboard) {
       void clipboard.writeText(url).catch(() => {
@@ -50,7 +49,7 @@ export default function AlgoPanel({
     setCopied(true);
     if (copiedTimer.current) window.clearTimeout(copiedTimer.current);
     copiedTimer.current = window.setTimeout(() => setCopied(false), 1600);
-  }, [getShareUrl]);
+  }, [onShare]);
 
   return (
     <section className="dm-algo" aria-label="Pattern tools">

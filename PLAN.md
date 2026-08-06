@@ -302,8 +302,11 @@ the important exception: A7/A16 still track its three views separately.
       existing v1 link; `FORMAT_VERSION` guards byte layout only.
       V14 stores integer BPM and step count in semantic units. The v1–v13 decoder retains
       their fixed historical 60–200 BPM and normalized step/swing mappings.
-- [ ] **A10: `getShareUrl` mutates history as a side effect of a getter**
+- [x] **A10: `getShareUrl` mutates history as a side effect of a getter**
       (`persistence.ts:198` calls `history.replaceState`).
+      URL construction is now pure and independently tested; the address-bar
+      replacement is a fail-soft, explicitly named share action that preserves
+      the existing history state.
 - [ ] **A11: a load error unmounts the whole machine.** `App.tsx:57` renders
       `DrumMachine` only when `status !== "error"`, so Retry discards all UI state and
       re-reads persistence, losing up to 300 ms of debounced edits.
@@ -365,7 +368,7 @@ structural rather than sloppy.
 - [ ] **F11: the whole machine re-renders per playhead tick.** `currentStep`
       (`DrumMachine.tsx:108`) lives in the top component, so ~8×/s React re-renders 80
       buttons, 16 step numbers, 10 SVG knobs and `AlgoPanel`. Nothing is memoized, and
-      `getShareUrl` (`:203`) changes identity on every edit.
+      the share callback (`:217`) changes identity on every edit.
 - [ ] **F12: `AlgoPanel` leaks a timer** — `copiedTimer` (`AlgoPanel.tsx:32`) is never
       cleared on unmount; the component has no `useEffect` at all.
 - [ ] **F13: `Knob` listener churn** — the non-passive wheel listener re-registers on

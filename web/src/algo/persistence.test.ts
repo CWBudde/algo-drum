@@ -587,9 +587,9 @@ describe("share URLs", () => {
     });
 
     const state = makeState();
-    expect(() => replaceAddressBarWithShareUrl(state)).not.toThrow();
     expect(replaceAddressBarWithShareUrl(state)).toBe(
       `https://example.test/drums#${encodeState(state)}`,
     );
+    expect(replaceState).toHaveBeenCalledOnce();
   });
 });
