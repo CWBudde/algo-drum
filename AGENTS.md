@@ -124,7 +124,7 @@ PLAN.md                   — Point-in-time review backlog (numbered items); ref
 
 ### Audio Signal Flow
 
-`Engine.Render(buf)` → Go voices mix mono samples → continuously advancing FDN reverb (smoothed wet amount) → true lookahead peak limiter + safety clamp → `Float32Array` → 512-sample chunks posted from the Web Worker to the `AudioWorklet` over a direct `MessageChannel` → `AudioContext` at 48 kHz (~2048 samples buffered). Each chunk carries the sequencer step it starts on; the worklet reports it back so the UI playhead tracks the audible step.
+`Engine.Render(buf)` → Go voices mix mono samples → continuously advancing FDN reverb (smoothed wet/dry mix, so the knob does not raise the master level) → true lookahead peak limiter + safety clamp → `Float32Array` → 512-sample chunks posted from the Web Worker to the `AudioWorklet` over a direct `MessageChannel` → `AudioContext` at 48 kHz (~2048 samples buffered). Each chunk carries the sequencer step it starts on; the worklet reports it back so the UI playhead tracks the audible step.
 
 ### Track Order (index 0–6)
 

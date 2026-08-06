@@ -16,8 +16,14 @@ const (
 	// one 4/4 bar.
 	MaxSteps = 16
 
-	// mixHeadroom scales the summed voice mix so simultaneous hits do not
-	// slam the limiter; the limiter then only catches rare worst cases.
+	// mixHeadroom scales the summed voice mix before the master chain. It does
+	// not buy enough headroom to keep the limiter idle: measured at 48 kHz, a
+	// solo hi-hat already peaks at +1.7 dBFS after this scaling and an ordinary
+	// bass/snare/hat pattern reaches +5.1 dBFS, so the limiter does routine
+	// transient reduction rather than only catching worst cases. That is the
+	// shipped balance — the per-voice gains it comes from are user-facing
+	// parameter defaults (hat ranges to 2.5), so no static scalar here can bound
+	// the mix; only the limiter can. See PLAN.md E7.
 	mixHeadroom = 0.5
 
 	// volSmoothTauS is the per-track volume ramp time constant. ~8 ms feels
@@ -739,7 +745,17 @@ func (e *Engine) Render(buf []float32) {
 
 		if e.reverb != nil {
 			e.liveReverbAmount += (e.reverbAmount - e.liveReverbAmount) * e.volCoef
-			logErr("reverb.SetWet", e.reverb.SetWet(e.liveReverbAmount*reverbMaxWet))
+
+			// FDNReverb returns input*dry + tail*wet and its dry gain defaults
+			// to 1, so setting only the wet gain would make REVERB a send that
+			// raises the master level rather than a mix. Trading dry for wet
+			// keeps the level flat across the sweep, which is what a 0–1
+			// "amount" knob means and what keeps the limiter off the tail.
+			// reverbMaxWet < 1, so the dry gain never goes negative.
+			wet := e.liveReverbAmount * reverbMaxWet
+			logErr("reverb.SetWet", e.reverb.SetWet(wet))
+			logErr("reverb.SetDry", e.reverb.SetDry(1-wet))
+
 			out = e.reverb.ProcessSample(out)
 		}
 

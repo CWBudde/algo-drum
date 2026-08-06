@@ -51,7 +51,9 @@ probes rather than the implementation's own tests:
 
 The Go engine pass replaced the attack-smoothed compressor with a true lookahead peak
 limiter; both an isolated 2.0 impulse and a dense all-track render stay below −1 dBFS
-without invoking the final safety clamp (**E7**).
+without invoking the final safety clamp (**E7**). REVERB became a wet/dry mix rather than
+a send, so the knob no longer raises the master level: pre-limiter peak across the sweep
+went from 1.802 → 2.202 (rising) to 1.802 → 1.400 (falling) (**E14**).
 
 ---
 
@@ -182,12 +184,27 @@ bar-length, velocity and humanize bounds. The engine pass closed every item belo
       Closed with an allocation-free monotonic-queue lookahead limiter whose instantaneous
       gain reduction mathematically bounds isolated transients as well as sustained peaks;
       tests assert the semantic hard-clamp counter stays at zero.
+      Closed on the limiter half only, deliberately. The gain staging this item also names
+      is real and stays: measured pre-limiter, a **solo hi-hat peaks at +1.7 dBFS** and a
+      solo snare at −0.5 dBFS, so an ordinary three-voice pattern runs +5.1 dBFS and the
+      worst case +10.4 dBFS into a −1 dBFS ceiling. The limiter therefore does routine
+      transient reduction, not rare worst-case catching, and `mixHeadroom`'s comment was
+      corrected to say so. It was left alone because `hatGain`/`cymGain` are user-facing
+      parameter _defaults_ (hat ranges to 2.5), so no static scalar can bound the mix —
+      lowering them would only rebalance the kit while leaving the worst case unbounded.
 - [x] **E8: reverb bypass is a discontinuity.** `engine.go:402` skips `ProcessSample`
       entirely at `reverbAmount == 0`, truncating the tail with a click and later dumping
       stale delay-line contents back out. `SetWet(0)` (`:288`) already mutes correctly.
       The FDN now advances at every wet setting, while its wet amount follows a short
       one-pole ramp; zero wet remains bit-exactly transparent and cannot preserve a stale
       tail to resurrect later.
+- [x] **E14: REVERB was a send, not a mix.** `FDNReverb.ProcessSample` returns
+      `input*dry + tail*wet` and its dry gain defaults to 1, but `Engine` only ever set
+      the wet gain — so turning REVERB up raised the master level and pushed the limiter
+      harder. Measured on an ordinary bass/snare/hat pattern, pre-limiter peak: 1.802 dry,
+      **1.845 at reverb 0.3, 2.202 at reverb 1.0**. `Render` now sets `dry = 1 - wet`
+      alongside the wet gain, so the same sweep reads 1.802 → **1.602** → **1.400** —
+      monotonically down instead of up, with `hardClipCount` at 0 throughout.
 - [x] **E9: `firePending` is O(32) per sample** (`engine.go:360`) ≈ 1.5 M iterations/s,
       almost always all-inactive. An active count or free-list head makes it near-free.
       A 32-bit active-slot mask makes the empty case O(1) and visits only live slots,
