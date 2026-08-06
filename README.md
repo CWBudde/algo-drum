@@ -59,35 +59,20 @@ cavity-coupled modal tom. It uses circular Fourier–Bessel modes, a passive
 damped/nonlinear state update, measured-range velocity-dependent stick
 contact, frequency-dependent loss, mode-dependent radiation, and a
 batter-side filtered microphone response. In the web demo, open either Tom
-voice’s settings and select **Physical — Experimental** to A/B it against that
-track’s algorithmic model. The two Toms keep independent model choices and
+voice's settings and select **Physical — Experimental** to A/B it against that
+track's algorithmic model. The two Toms keep independent model choices and
 physical parameter banks. Algorithmic remains the default, and older saved
 patterns and share links continue to select it.
 
-Render the default model to a normalized mono PCM WAV file for auditioning:
+**The model itself lives in [algo-tom](https://github.com/cwbudde/algo-tom)**,
+which algo-drum consumes as a module dependency. Everything about how it works
+and how far it can be trusted is over there: the modal solve, the nine-term
+matching objective, the offline fitting and measurement commands, the committed
+reference recordings, the working paper, and the evidence record in its `docs/`.
+It also has [its own web demo](https://cwbudde.github.io/algo-tom/), which draws
+the matching rather than describing it.
 
-```bash
-go run ./cmd/render-physical -o renders/physical-drum.wav
-```
-
-Use `-duration`, `-velocity`, `-strike-radius`, and `-hardness` to compare the
-prototype's response. WAV encoding uses the maintained
-[`CWBudde/wav`](https://github.com/CWBudde/wav) fork. The research basis and
-staged implementation plan are in
-[`docs/physical-model-research.md`](docs/physical-model-research.md) and
-[`PLAN.md`](PLAN.md).
-
-Generate modal targets, decay estimates, spectra, spectral peaks, and a
-fundamental-frequency track as JSON:
-
-```bash
-go run ./cmd/analyze-physical
-just gen-physical-reference # refresh the committed multi-condition suite
-```
-
-The equations, calibration workflow, and provenance of the synthetic reference
-set are documented in
-[`docs/physical-calibration.md`](docs/physical-calibration.md).
+What is in this repository is the adapter that makes it a drum-machine voice.
 
 ## Browser requirements
 

@@ -95,19 +95,7 @@ internal/drum/validate.go — Engine.Validate(): every invariant Render relies o
 internal/drum/assert.go   — assertValid(): a no-op in shipped builds; `-tags drumassert` (assert_debug.go) makes Render panic on a broken invariant (`just test-assert`)
 cmd/gen-voiceparams/      — Generates web/src/engine/voiceParams.generated.ts from params.go (`just gen-params`; CI diffs it)
 internal/drum/*_test.go   — Go unit tests: sequencing, clamping, bit-exact render determinism, per-voice envelopes
-internal/physical/        — The experimental double-headed physical Tom, selectable per Tom track and independent of the procedural voices → "The physical drum model"
-internal/physical/analysis/ — Offline report/suite generation for `cmd/analyze-physical`; backs testdata/physical-reference-v2.json
-internal/physical/match/  — Feature extraction and the nine-term perceptual distance a fit is scored with → "The physical drum model"
-cmd/measure-objective/    — Measures the objective's own reproducibility floor and proposes the gates `match.DefaultWeights` inverts
-cmd/fit-physical/         — Fits the model's parameter bank to one or more recordings, with the Mayfly Optimization Algorithm
-cmd/measure-tom/          — Turns recordings into the committable tables docs/physical-measurement-protocol.md asks for
-cmd/analyze-physical/     — Emits the analysis report and regenerates the reference fixture (`just gen-physical-reference`; CI diffs it)
-cmd/render-physical/      — Renders the physical Tom to a WAV for offline auditioning
-internal/wavio/           — Mono 16-bit PCM WAV export, shared by cmd/render-physical and cmd/fit-physical's `-wav` (reading WAVs lives in internal/physical/match, which drags in the whole FFT stack)
-docs/physical-*.md        — The physical model's design and evidence record → "The physical drum model"
-reference/CREDITS.md      — Licence and provenance for the committed reference recordings (CC BY 4.0)
-docs/paper/               — Typst working paper on the matching method (`just paper` → physical-tom-matching.pdf); figures/ holds the committed PNGs
-tools/paper-figures/      — Draws the paper's figures from a `cmd/fit-physical -o` report (`just paper-figures`). Its own Go module, and deliberately: matplotlib-go's graphics tree and its FreeType-linking raster backend have no business in the engine's go.mod, and `go mod tidy` ignores the `purego` build tag the pure-Go rasteriser needs
+internal/drum/physical_tom.go — Adapter wrapping algo-tom's physical.DoubleHead as a Voice; the model itself lives in github.com/cwbudde/algo-tom → "The physical Tom voice"
 web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands, exposes onPattern (engine-owned pattern snapshots) and dispose() (tears the worker + audio graph down)
 web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; renders audio chunks on demand, echoes the authoritative pattern after each edit
 web/src/engine/patternMirror.ts — Reconciles the engine's pattern echoes with in-flight optimistic UI edits (engine = single source of truth)
@@ -172,203 +160,53 @@ UI displays tracks in **reverse order** (Cymbal on top, Bass on bottom).
 | `render(n)`                    | Render n samples → Float32Array                                                    |
 | `currentStep()`                | Returns active step index (-1 if stopped)                                          |
 
-## The physical drum model
+## The physical Tom voice
 
-An experimental double-headed physical Tom, selectable per Tom track and independent of
-the procedural voices in `internal/drum`. It is a research line with its own tooling,
-its own measurement discipline, and its own evidence record; the sections below are the
-parts a change to it has to respect.
+An experimental double-headed physical Tom, selectable per Tom track and
+independent of the procedural voices in `internal/drum`. **The model, the fitting
+objective, the offline tooling, the reference recordings and the whole evidence
+record now live in [github.com/cwbudde/algo-tom](https://github.com/cwbudde/algo-tom)**,
+which this repository consumes as an ordinary module dependency.
 
-### The model (`internal/physical/`)
+What remains here is the adapter: `internal/drum/physical_tom.go` wraps
+`physical.DoubleHead` as a `Voice`, and `internal/drum/params.go` binds the knob
+table to `tomparams`.
 
-Modal banks per head (`modes.go`), the two-head + lumped-cavity + Berger-tension
-real-time model (`double_head.go`), the P2 linear single-head reference
-(`single_head.go`), the three-band stochastic attack layer that covers what modal
-synthesis cannot reach, decaying at rates read off the head's own loss law
-(`attack.go`), a versioned SI-valued config with a migration chain (`config.go`), and an
-offline continuous-time reference solve (`frequency_response.go`).
+**The knob→SI mapping is `tomparams.Config`, and it must not be copied.** The
+constant-ζ retune rule, the DAMP/DEC/D.TILT composition and the resonant head's
+reduced asymmetry are calibration decisions with their own evidence, and
+algo-tom's fitter scores candidates through that same function. A local
+reimplementation would mean every offline fit described an instrument this
+repository does not ship. For the same reason `ParamSpec` is a **type alias** for
+`tomparams.Spec` rather than a defined type: a defined type would fork `Map`, its
+byte-step snap and its `Default` derivation, and a drift between the two copies
+would silently retune the shipped sound with nothing but ears to catch it. The
+alias is also what keeps `web/src/engine/voiceParams.generated.ts` byte-identical
+across the extraction.
 
-The elementwise half of the midpoint solve is factored into `midpoint.go` with an AVX2
-kernel beside it (`midpoint_amd64.{go,s}`, `!purego`) and a portable fallback
-(`midpoint_noasm.go`). The shipped voice is js/wasm and always takes the fallback, so
-the assembly only runs in the offline tools. **The kernel is bit-exact against the Go
-reference, and that is a requirement rather than a courtesy:** the calibration fixture
-and the rendered-WAV digest both compare exactly, so no FMA and no reassociation
-(`midpoint_exact_test.go` pins it).
+`decayScaleMin` is the one constant that genuinely exists in both repositories:
+it defines what the persisted `setDecay` byte means for all seven procedural
+voices, so it cannot leave `internal/drum`, and `tomparams.Config` needs the same
+number to compose DEC with DAMP. `TestDecayScaleMinAgreesWithTomparams` asserts
+they match rather than hoping.
 
-### The portable path is what ships
+**`TestPhysicalTomRenderIsBitExact` is the gate on all of this.** Two seconds at
+the default bank, 48 kHz, velocity 1, hashed. It is the only assertion that hears
+a change to the calibration — the config-comparison tests compare structs and the
+level test tolerates a 0.25 window. Like every digest in this repository it is an
+amd64 fact: a mismatch on js/wasm is `math.Exp`, whose FMA-accelerated
+`exp_amd64.s` differs by one ULP, and a mismatch on the host is the calibration
+having moved. algo-tom's AGENTS.md carries the full argument under "The portable
+path is what ships".
 
-`midpoint_amd64.{go,s}` is the only architecture-specific code in the repository, and the
-rule it establishes applies to whatever joins it.
+`test-purego` and the `purego` CI job survive here as a **convention guard, not a
+numerical one**: no architecture-gated code remains in this repository, so the
+tag now selects nothing and only the build is run. algo-tom gates both halves.
 
-**Every `!purego`/arch-gated file needs a portable twin, and the twin is the one that
-ships.** The browser gets js/wasm, which is not amd64, so it takes `midpoint_noasm.go`
-every time; the assembly runs only in the offline tools. The asymmetry that follows is
-the trap: a developer machine and the CI runner are both amd64, so `go test ./...`
-compiles the assembly tier and **never compiles the portable file at all**. Left alone,
-a new `_amd64.s` could land beside a broken twin and every gate would stay green.
+Bumping the dependency is a change to the shipped sound until proven otherwise —
+run the render digest, and regenerate `voiceParams.generated.ts` and confirm it
+does not move.
 
-**So CI gates both.** `just test-purego` and the `purego` job in `ci-go.yml` run
-`go build -tags purego ./...` and `go test -tags purego ./internal/physical/...`. `./...`
-for the build because the tag is a repo-wide convention and a future gated file anywhere
-must compile under it; only `internal/physical/...` for the test because that is the one
-tree where the tag selects different code, and a wider run would recompile an identical
-program. Both digests, `TestMidpointKernelMatchesReferenceExactly` and
-`TestAxisymmetricResonantHeadIsBitExact` currently pass unchanged under the tag, so the
-portable kernel and the AVX2 kernel agree bit-for-bit on the amd64 host.
-
-**`purego` on amd64 is a stand-in, not the shipped target**, and the distance is
-measured rather than assumed: on a clean checkout of `a28b36a`, under
-`GOOS=js GOARCH=wasm`, the render digests `TestCouplingDisabledMatchesTheShippedEngine`
-and `TestCoupledRenderIsBitExact` **do not reproduce** — the coupled render hashes
-`9a5800d0…` against the committed `3c83580f…`, the uncoupled one `e982d32c…` against
-`9090a197…`. The same two tests pass on amd64 under `-tags purego`, so this is the
-*target*, not the fallback.
-
-**And it is not this repository's code — it is `math.Exp`.** Go ships an FMA-accelerated
-`exp_amd64.s`, selected at run time on any CPU with AVX+FMA, and `-tags purego` does not
-reach into the standard library to turn it off. Probed directly, `math.Exp(1.7)` is
-`4015e552770df8a7` on amd64 and `…a6` on js/wasm — one ULP — and `math.Pow(55.5, 1.37)`
-differs by two, `math.Pow` being built on `Exp`/`Log`. The loss laws call `Exp` per mode
-per sample, so one ULP is all it takes. **No repository-level build tag can close this**,
-which is why the `purego` job is the gate and js/wasm is not: a js/wasm test job would
-need its own digests and its own fixture, a second set of committed facts to keep in step
-with the first. `scripts/bench-wasm.sh` (`just bench-physical-wasm`) is how you run the
-js/wasm test binary under Node when you want to look. **The consequence is worth stating
-plainly: the committed digests and `testdata/physical-reference-v2.json` are amd64 facts,
-and the audio the browser makes is not bit-identical to them.**
-
-### The objective (`internal/physical/match/`)
-
-What a fit is scored with, and the instrument that judges that instrument.
-
-- `features.go` — the fast estimator `cmd/fit-physical` runs per candidate (FFT peak
-  picking, heterodyned envelopes).
-- `decay.go` — fits each partial's ring time as an exponential standing on a stationary
-  noise floor (Karjalainen et al., JAES 50(11), 2002) rather than a straight line
-  through a truncated trace. `slowestSupportedT60` carries the admissibility criterion:
-  **evidence is the fall, not the duration** — ISO 3382's ≥20 dB inside the fit window.
-- `distance.go` — the nine-term perceptual distance, aggregated as a trimmed RMS and
-  weighted by reciprocals of measured reproducibility gates (`AdoptionGates`). A term at
-  its gate contributes exactly 1.0, so **a total is a property of a weight set** and
-  totals from different gate sets are not comparable.
-- `esprit.go` / `linalg.go` — subband ESPRIT with a stabilisation sweep, deliberately
-  **not** in any fit loop: high resolution, seconds per extraction, used to establish
-  what the fast estimator is getting wrong. `linalg.go` holds the dense complex
-  eigen/least-squares routines it needs, which exist because no linear-algebra
-  dependency belongs in a module compiled for js/wasm.
-
-### The tools
-
-| Tool | What it is for |
-| ---- | -------------- |
-| `cmd/measure-tom/` | Turns recordings into the committable tables [docs/physical-measurement-protocol.md](docs/physical-measurement-protocol.md) asks for, through the same code a fit scores with. `-high-resolution` adds the ESPRIT table and the partial-by-partial agreement between the two estimators (PLAN.md §N2). `-series` (`just measure-series`) reduces the takes as an **ordered set** instead of as repeats — see "Scatter or trend" below |
-| `cmd/measure-objective/` | Measures the objective's reproducibility floor and proposes the gates `DefaultWeights` inverts. It scores each channel of a **coincident** stereo pair against the other through `match.Distance` itself, so the floor is measured by the shipped code rather than a reimplementation of it, and it refuses a spaced pair, where the disagreement would be two arrival times |
-| `cmd/fit-physical/` | Searches the parameter bank for the drum closest to a recording. `-inspect` reads a running checkpoint and stops, emitting the full report — per-term breakdown, per-take terms and velocities, parameter table — without disturbing the run. `-schema` dumps the report shape; `-floor` states the measured floor to read the total against, and has no default because a floor is a property of a reference set |
-| `cmd/compare-fits/` | Asks of the **search** what `measure-objective` asks of the objective: does it agree with itself? Per-term and per-parameter deltas, and the rank correlation of the per-take fitted velocities. Refuses reports scored under different weight sets (`just compare-fits`) |
-| `cmd/analyze-physical/` | The analysis report and the reference fixture (`just gen-physical-reference`; CI diffs it) |
-| `cmd/render-physical/` | Renders the voice to a WAV for offline auditioning |
-| `internal/physical/series/` | Rank correlation over take series. Not signal processing — algo-dsp covers that layer; this is the layer above it that was missing |
-
-**Every term is reported over its adoption gate.** `weight = 1/gate`, so a term
-divided by its gate *is* its additive contribution to the total, and the total is the
-plain sum of the nine ratios. A ratio below 1.0 is inside the objective's own measured
-noise and has not moved in any sense that means anything. Reports also carry a
-fingerprint of the weight set they were scored under, because **a total is a property of
-a weight set** and comparing across two of them is meaningless — a mistake this
-repository has actually made.
-
-**A free parameter pinned against a stop is a bound, not a fit.** `fit-physical` and
-`compare-fits` both flag any non-fixed parameter within 1 % of 0 or 1. Read it as
-evidence that the shipped range excludes the optimum. `physicalTom.damping` trips this
-in two independent runs.
-
-**Gates are hand-edited.** `measure-objective` proposes; a human applies. There is
-deliberately no generated or CI-diffed gate fixture — a gate is a judgement about what
-counts as agreement, and it should cost a person a decision.
-
-### Fitting discipline
-
-`-reference` is repeatable, and every take given is fitted by **one shared bank** with
-**one free strike velocity each**, scored as the mean of the per-take distances
-(`just fit-physical-series <directory>`). A single-file run is a diagnostic, since with
-one recording the contact parameters and the Berger nonlinearity trade freely against an
-assumed strike. `-set` pins a parameter in its own unit (metres, N/m) where `-fix` takes
-a normalized position; the geometry of a committed pack is pinned this way, read off
-`reference/<WxH>/`.
-
-**Anything a fit produces is named after the reference it was made against.**
-`just fit-physical` derives `fits/fit-tt08x08-lp-hd-v08.{json,checkpoint}` from the path
-and `just fit-physical-series` derives `fits/fit-tt08x08-lp-hd-series.{json,checkpoint}`
-from the directory; a hand-run `-o` must carry at least the drum/tuning/style class. A
-fit report is only meaningful beside the recording it targeted — the gates, the totals
-and the whole partial table are properties of that drum at that tuning, and they do not
-transfer between sets.
-
-Parallelism is one goroutine per restart and nothing below it: the takes, the feature
-extraction and the FFTs inside one evaluation are sequential, so `-restarts N` occupies
-N cores and no more. Throughput is memory-bandwidth bound rather than core bound — on a
-12-core machine 1/4/11 restarts measured 1.0×/1.8×/2.9× aggregate.
-
-### What the takes do and do not tell you
-
-The reference series was played by hand with velocity in mind, which means **velocity is
-not the only thing that varied between strikes** — position, mallet angle and contact
-obliquity moved too, and the fit has nowhere to put them.
-
-- **The file order is never read as evidence.** The v01…v16 labelling is a claim, so
-  reversing the take list leaves the cost bit-identical.
-- **The fitted per-take velocities are not a measurement of anything**, and were once
-  described here as an independent measurement of the file order. Two searches over the
-  same sixteen takes (5,002 and 8,976 evaluations, totals 15.835 and 15.186) returned
-  velocity vectors correlating **ρ = +0.15 with each other**, −0.07 and −0.05 with the
-  file index, and −0.22 and −0.18 with the takes' own attack brightness. Velocity is a
-  nuisance parameter this objective does not identify, so the search fills those sixteen
-  dimensions with noise.
-- **What does measure the order is the recordings alone.** Crest factor over the first
-  50 ms from the onset runs **ρ = +0.91** against the file index and attack balance
-  **ρ = +0.85**, both gain-invariant and so unharmed by the per-file peak normalisation
-  that leaves absolute level at ρ = +0.16. Read a velocity ramp off these, never off a
-  fit. (The coefficient is +0.91…+0.93 for every window between 20 and 80 ms, so it is
-  the quantity that carries the trend, not the window; `just measure-series` prints the
-  shipped 50 ms figure.)
-- **Scatter or trend — pick the right reduction.** `measure-tom`'s repeatability block
-  summarises scatter across takes, which is right for repeats at one dynamic and wrong
-  for a deliberate ramp, where a clean monotone trend reads as enormous "spread". `-series`
-  reduces the same takes as an ordered set and reports rank correlation against the take
-  index instead. Both are printed; neither is the default reading.
-- **One shared bank is structurally wrong across the series.** On `tt08x08/lp/hd` the
-  358 Hz partial's level relative to the fundamental scatters over 14.8 dB (sd 3.5 dB),
-  and a partial at 255.7 Hz is absent from all nine of v01–v09 and present in six of the
-  seven of v10–v16 at a consistent height (sd 0.7 dB). A mode that switches on above a
-  strike level is a nonlinear signature, not a positional one — so the loud takes are
-  not the quiet takes scaled up, and a single linear bank fitted to both must compromise
-  in exactly the spectrum and level terms that dominate the residual.
-
-### The design record
-
-Read [docs/physical-objective-validation.md](docs/physical-objective-validation.md)
-before quoting any fit number or adoption gate — it is the evidence record for how far
-the objective can be trusted, and it carries the results that have been superseded as
-well as the ones that stand.
-
-| Document | Subject |
-| -------- | ------- |
-| [physical-model-research.md](docs/physical-model-research.md) | The literature the model is built from |
-| [physical-calibration.md](docs/physical-calibration.md) | Calibration and the microphone model |
-| [physical-cavity.md](docs/physical-cavity.md) | The lumped cavity and the two-head coupling |
-| [physical-nonlinearity.md](docs/physical-nonlinearity.md) | Berger tension, the tanh cap, discrete-gradient passivity |
-| [physical-contact.md](docs/physical-contact.md) | The strike: prescribed half-sine and Hunt–Crossley |
-| [physical-excitation-gap.md](docs/physical-excitation-gap.md) | What the excitation could not reach |
-| [physical-hybrid.md](docs/physical-hybrid.md) | Why the attack layer exists; quality tiers |
-| [physical-product-integration.md](docs/physical-product-integration.md) | How the voice reaches the product |
-| [physical-measurement-protocol.md](docs/physical-measurement-protocol.md) | How a recording becomes a committable table |
-| [physical-objective-validation.md](docs/physical-objective-validation.md) | How far the fitting objective can be trusted |
-| [physical-measured-fit.md](docs/physical-measured-fit.md) | The measured fit results and their gates |
-| [physical-tom-review.md](docs/physical-tom-review.md) | The measured review the P8 work came from |
-| [physical-sound-audit.md](docs/physical-sound-audit.md) | Listening audit of the rendered voice |
-| [physical-real-instrument-departures.md](docs/physical-real-instrument-departures.md) | What the model is not, and the gate for adding it |
-| [reference/CREDITS.md](reference/CREDITS.md) | Licence and provenance (CC BY 4.0). Recordings are laid out `reference/<drum>/<tuning>/<style>/v<NN>.wav`; `reference/` is otherwise gitignored, and only the 8"x8" low-pitch head-strike subset (`tt08x08/lp/hd`) is tracked |
 
 ## Key Dependencies
 
@@ -377,8 +215,9 @@ Versions below are the pinned ones in `go.mod` / `web/package.json` — check th
 **Runtime**
 
 - **Go 1.25** — toolchain for the engine (`go.mod`)
-- **[algo-dsp](https://github.com/cwbudde/algo-dsp) `v0.0.0-20260729115219-8ea972cf5f07`** — compatibility commit for `algo-fft` v0.7.3; used for biquad filters in voices (`biquad.Section`, `design.Highpass`, `design.Bandpass`), master effects (`reverb.FDNReverb`, `dynamics.Limiter`), and physical-analysis metrics
-- **[algo-fft](https://github.com/cwbudde/algo-fft) v0.7.3** — FFT backend used directly by the physical-analysis tooling and transitively by `algo-dsp`
+- **[algo-dsp](https://github.com/cwbudde/algo-dsp) `v0.0.0-20260729115219-8ea972cf5f07`** — compatibility commit for `algo-fft` v0.7.3; used for biquad filters in voices (`biquad.Section`, `design.Highpass`, `design.Bandpass`) and master effects (`reverb.FDNReverb`, `dynamics.Limiter`)
+- **[algo-tom](https://github.com/cwbudde/algo-tom) v0.1.0** — the physical Tom: `physical` (the model) and `tomparams` (the knob→SI mapping). Everything else in that module — the fitting objective, the six offline commands, the reference recordings — is unreachable from this repository's non-test code and is dead-code-eliminated out of the browser build. `go tool nm -size web/public/algo_drum.wasm` finding any `mayfly`, `go-audio` or `algo-fft` symbol means that elimination failed across the module boundary. It is `v0.x` with nothing behind `internal/`, so treat every name it exports as movable
+- **[algo-fft](https://github.com/cwbudde/algo-fft) v0.7.3** — reached only transitively, through `algo-dsp` and `algo-tom`'s offline half; not linked into the WASM build
 - **React 19.2.8** (`react` + `react-dom`) — the only runtime npm dependencies; everything else is a devDependency
 
 **Build & tooling**

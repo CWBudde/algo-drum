@@ -729,6 +729,17 @@ procedural voices rather than replacing them. Modal banks per head, a lumped +
 modal cavity between them, a Berger tension nonlinearity, a Rayleigh/Lommel
 radiation weight and a stochastic attack layer above the modal ceiling.
 
+> **The physical model moved.** On 2026-08-06 the model, its objective, its
+> offline tooling, its reference recordings and its fourteen design documents
+> were extracted to [github.com/cwbudde/algo-tom](https://github.com/cwbudde/algo-tom),
+> which algo-drum now consumes as a module dependency. The items below are kept
+> verbatim as the record of work done **here**, at the time it was done. Every
+> `internal/physical/...`, `cmd/fit-physical`, `docs/physical-*.md` and
+> `reference/...` path in them now resolves in that repository instead — they
+> have deliberately not been rewritten, because a backlog entry that cites a
+> path the change did not touch is a worse record than one that cites where the
+> work actually happened.
+
 **This section is the forward backlog.** The phases that built the model are
 closed; what they established lives in `docs/physical-*.md`, and each phase below
 points at the document that holds its evidence. Numbers are not repeated here —

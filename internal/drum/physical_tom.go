@@ -1,11 +1,8 @@
 package drum
 
 import (
-	"errors"
-	"fmt"
-	"math"
-
-	"github.com/cwbudde/algo-drum/internal/physical"
+	"github.com/cwbudde/algo-tom/physical"
+	"github.com/cwbudde/algo-tom/tomparams"
 )
 
 // TomModel selects the implementation used by either Tom track.
@@ -37,7 +34,7 @@ func newPhysicalTom(sampleRate float64) (*physicalTom, error) {
 	return &physicalTom{
 		config:      config,
 		model:       model,
-		params:      newParamBank(physicalTomSpecs),
+		params:      newParamBank(tomparams.Specs()),
 		decayAmount: 0.5,
 	}, nil
 }
@@ -108,145 +105,16 @@ func (v *physicalTom) ParamSpecs() []ParamSpec {
 	return v.params.ParamSpecs()
 }
 
-// scaleHeadLosses applies the UI's damping scale and frequency tilt to one
-// head's loss law.
+// reconfigure rebuilds the SI configuration from the current knob bank.
 //
-// The measured (0,1) correction scales with the rest: it is a loss like any
-// other, and leaving it fixed would make DAMP and DEC unable to shorten the
-// one mode whose length is most audible. It follows the tilt too, because the
-// coupling loss it stands for is frequency-dependent in origin.
-func scaleHeadLosses(head *physical.Head, lossScale, tilt float64) {
-	head.Loss0PerSecond *= lossScale
-	head.Loss1MPerSecond *= lossScale * tilt
-	head.Loss2M2PerSecond *= lossScale * tilt
-	head.RadiationLossPerSecond *= lossScale
-
-	for index := range head.ModeDecayCorrections {
-		head.ModeDecayCorrections[index].DecayRatePerSecond *= lossScale * tilt
-	}
-}
-
-// ScaleHeadLosses multiplies one head's whole loss law by scale, which is
-// exactly what DAMP does and nothing else: the frequency tilt is left alone, so
-// the shape of the decay across the mode series does not move.
-//
-// It exists for offline experiments that need to reach outside DAMP's own
-// range. A fit that pins DAMP against a bound has said something about the
-// bound rather than about the drum, and the only way to tell which is to look
-// past it — but widening the shipped spec to find out would move every stored
-// preset, since presets hold normalized positions. Applying an extra factor
-// here answers the question without touching the product.
-//
-// Nothing in the engine calls it. If a fitted value ever justifies moving the
-// spec, that is a calibration decision with its own migration, not this.
-func ScaleHeadLosses(head *physical.Head, scale float64) {
-	scaleHeadLosses(head, scale, 1)
-}
-
-// ErrPhysicalTomParamCount reports a normalized bank of the wrong width.
-var ErrPhysicalTomParamCount = errors.New("physical tom parameter count")
-
-// NeutralDecayAmount is the strip DEC position at which the knob contributes
-// nothing: decayScaleMin + amount == 1, so the loss law is left as the
-// parameter bank set it. Offline callers that want to fit DAMP alone should
-// pass it rather than reaching for a bare 0.5.
-const NeutralDecayAmount = 1 - decayScaleMin
-
-// PhysicalTomConfig maps a normalized parameter bank to the SI configuration
-// the physical model consumes.
-//
-// values01 holds one 0..1 knob position per PhysicalTomSpecs() entry, in the
-// same order; decayAmount is the strip DEC position, also 0..1. Both are
-// clamped rather than rejected, matching the setter contract everywhere else.
-//
-// It is exported because it is the *only* correct spelling of this mapping —
-// the constant-ζ retune rule, the DAMP/DEC/D.TILT composition and the resonant
-// head's reduced asymmetry are all calibration decisions with their own
-// evidence. Offline tools that build a configuration from knob positions must
-// reuse it, or they measure a different instrument than the one that ships.
-func PhysicalTomConfig(values01 []float64, decayAmount, sampleRateHz float64) (physical.PhysicalDrum, error) {
-	if len(values01) != len(physicalTomSpecs) {
-		return physical.PhysicalDrum{}, fmt.Errorf(
-			"%w: got %d, want %d", ErrPhysicalTomParamCount,
-			len(values01), len(physicalTomSpecs),
-		)
-	}
-
-	value := func(index int) float64 {
-		return physicalTomSpecs[index].Map(clamp01(values01[index]))
-	}
-
-	config := physical.DefaultPhysicalDrum()
-	config.SampleRateHz = sampleRateHz
-
-	diameterM := value(physicalTomParamDiameter)
-	config.Batter.RadiusM = diameterM / 2
-	config.Resonant.RadiusM = diameterM / 2
-	// RetuneTension, not a bare assignment: the loss coefficients in the default
-	// config are quoted at its tension, so writing a new tension over them would
-	// leave ζ — and with it the whole decay calibration — drifting with the
-	// tuning knob. It used to, by a factor of three across B.TUNE's travel.
-	physical.RetuneTension(&config.Batter, value(physicalTomParamBatterTension))
-	physical.RetuneTension(&config.Resonant, value(physicalTomParamResonantTension))
-
-	// DAMP scales every loss rate together; the strip DEC knob then trims them
-	// all by its documented reciprocal 0.5×–1.5× time scale. D.TILT is applied
-	// on top and only to the frequency-dependent terms, so it changes the shape
-	// of the decay across the mode series rather than its overall level.
-	lossScale := value(physicalTomParamDamping) /
-		(decayScaleMin + clamp01(decayAmount))
-	tilt := value(physicalTomParamDampingTilt)
-	scaleHeadLosses(&config.Batter, lossScale, tilt)
-	scaleHeadLosses(&config.Resonant, lossScale, tilt)
-
-	config.Strike.Radius01 = value(physicalTomParamStrikeRadius)
-	config.Strike.AngleRad = value(physicalTomParamStrikeAngle) *
-		math.Pi / 180
-	config.Strike.Hardness01 = value(physicalTomParamHardness)
-	config.Cavity.DepthM = value(physicalTomParamShellDepth)
-	config.Cavity.Coupling01 = value(physicalTomParamCavityCoupling)
-
-	nonlinearScale := value(physicalTomParamNonlinearity)
-	config.Nonlinearity.Enabled = nonlinearScale > 0
-	config.Nonlinearity.BatterTensionCoefficientNPerM3 *= nonlinearScale
-	config.Nonlinearity.ResonantTensionCoefficientNPerM3 *= nonlinearScale
-
-	config.Attack.LevelRelative = value(physicalTomParamAttackLevel)
-	config.Attack.CentreHz = value(physicalTomParamAttackTone)
-	// Nothing to do for the layer's decay: it is derived from the batter head's
-	// loss law, which scaleHeadLosses has already scaled. So DAMP, the strip DEC
-	// and D.TILT all reach the attack for free, and D.TILT now genuinely applies
-	// to it — three bands at different rates are a shape to tilt, where the single
-	// band this replaced was not.
-
-	config.Pickup.Radius01 = value(physicalTomParamPickupRadius)
-	config.Pickup.AngleRad = value(physicalTomParamPickupAngle) *
-		math.Pi / 180
-
-	splitRatio := value(physicalTomParamAsymmetry) / 100
-	asymmetryAxis := value(physicalTomParamAsymmetryAxis) *
-		math.Pi / 180
-	config.Batter.TensionAsymmetry.SplitRatio = splitRatio
-	config.Batter.TensionAsymmetry.PrincipalAxisAngleRad = asymmetryAxis
-	// The thinner resonant head keeps a slightly smaller default departure,
-	// while the UI presents one comprehensible "amount" for the instrument.
-	config.Resonant.TensionAsymmetry.SplitRatio = splitRatio * 0.75
-	config.Resonant.TensionAsymmetry.PrincipalAxisAngleRad = asymmetryAxis
-
-	switch int(value(physicalTomParamQuality)) {
-	case 0:
-		config.Quality = physical.QualityDraft
-	case 1:
-		config.Quality = physical.QualityStandard
-	case 2:
-		config.Quality = physical.QualityHigh
-	}
-
-	return config, nil
-}
-
+// tomparams.Config is the *only* correct spelling of this mapping — the
+// constant-ζ retune rule, the DAMP/DEC/D.TILT composition and the resonant
+// head's reduced asymmetry are calibration decisions with their own evidence,
+// and the offline fitter scores candidates through this same function. A copy
+// here would mean the fitter measured a different instrument than the one that
+// ships, which is exactly why the mapping lives in algo-tom rather than here.
 func (v *physicalTom) reconfigure() error {
-	config, err := PhysicalTomConfig(v.params.vals, v.decayAmount, v.config.SampleRateHz)
+	config, err := tomparams.Config(v.params.vals, v.decayAmount, v.config.SampleRateHz)
 	if err != nil {
 		return err
 	}

@@ -77,29 +77,21 @@ jobs:
           go-version: "1.25"
           cache: true
 
-      # The Go job above compiles the amd64 assembly tier and never the
-      # portable one: `internal/physical/midpoint_noasm.go` is
-      # `!amd64 || purego`, both false on the runner. The shipped voice is
-      # js/wasm and always takes that file, so without this job the code the
-      # browser runs is build-checked (`GOOS=js GOARCH=wasm go build ./...`) and
-      # numerically untested — a new `_amd64.s` could land beside a broken
-      # portable twin and CI would stay green.
+      # This job is a convention guard, not a numerical one, and the distinction
+      # is worth being honest about because it used to be both.
       #
-      # `purego` on the runner is the closest *testable* stand-in: same source
-      # file, same Go semantics, and a real architecture to run the digests on.
-      # A js/wasm test job would be the real thing and is not possible today —
-      # Go's own FMA-accelerated exp_amd64.s makes math.Exp differ by one ULP
-      # between the two targets, so the committed render digests do not
-      # reproduce there. See AGENTS.md, "The portable path is what ships".
-      - name: Build the portable path
-        # ./... and not just internal/physical: the tag is a repo-wide
-        # convention, so a future `!purego` file anywhere must compile under it
-        # from the day it lands. tools/paper-figures is a separate module and is
-        # not reached here; `just lint` covers it.
+      # It existed to test `internal/physical/midpoint_noasm.go`, the portable
+      # twin of an AVX2 kernel: `!amd64 || purego` is false on the runner, so the
+      # Go job above compiled the assembly tier and never the portable one, even
+      # though the shipped js/wasm voice always takes the portable file. That
+      # code now lives in github.com/cwbudde/algo-tom, which gates both halves in
+      # its own CI, and no architecture-gated file remains in this repository.
+      #
+      # So there is nothing left here for the tag to *select*, and the test half
+      # was dropped rather than kept as reassurance it can no longer provide —
+      # under `purego` this repo compiles an identical program, and a green run
+      # would state nothing. What remains is the build, because `purego` is a
+      # repo-wide convention: anything added here that gates on it, or any
+      # dependency that does, must keep compiling under it from the day it lands.
+      - name: Build under the purego tag
         run: go build -tags purego ./...
-
-      - name: Test the portable path
-        # Only internal/physical/...: that is the only tree where the tag
-        # selects different code, so a full `./...` run would recompile an
-        # identical program and spend the time twice.
-        run: go test -tags purego ./internal/physical/...
