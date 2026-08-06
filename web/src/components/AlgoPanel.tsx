@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { mutate } from "../algo/mutate";
 import { PRESETS, presetToFlat } from "../algo/presets";
+import { replaceShareUrl } from "./shareUrl";
 import "./AlgoPanel.css";
 
 interface Props {
@@ -8,7 +9,7 @@ interface Props {
   pattern: number[]; // current flat, engine-major pattern
   stepCount: number;
   onApplyPattern: (flat: number[]) => void;
-  // Writes the share hash and returns the shareable URL to copy.
+  // Purely builds the shareable URL; handleShare owns browser side effects.
   getShareUrl: () => string;
 }
 
@@ -39,6 +40,7 @@ export default function AlgoPanel({
 
   const handleShare = useCallback(() => {
     const url = getShareUrl();
+    replaceShareUrl(window.history, url);
     const clipboard = navigator.clipboard as Clipboard | undefined;
     if (clipboard) {
       void clipboard.writeText(url).catch(() => {

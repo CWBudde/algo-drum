@@ -17,13 +17,14 @@ import {
   VOICE_PARAMS,
 } from "../engine/voiceParams";
 import { DEFAULT_TOM_MODEL, type TomModel } from "../engine/tomModel";
-import { loadInitialState, saveLocal, shareUrl } from "../algo/persistence";
+import { loadInitialState, saveLocal } from "../algo/persistence";
 import {
   DEFAULT_TEMPO_BPM,
   defaultEngineState,
   reduceDrumState,
   type DrumStateAction,
 } from "./drumState";
+import { buildShareUrl } from "./shareUrl";
 import "./DrumMachine.css";
 
 // Visual order: Cymbal on top, Bass on bottom.
@@ -210,7 +211,10 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     return () => window.clearTimeout(id);
   }, [drumState]);
 
-  const getShareUrl = useCallback(() => shareUrl(drumState), [drumState]);
+  const getShareUrl = useCallback(
+    () => buildShareUrl(drumState, window.location),
+    [drumState],
+  );
 
   const flatPattern = useMemo(
     () => Array.from(drumState.pattern),

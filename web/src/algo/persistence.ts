@@ -694,12 +694,33 @@ export function readHash(): EngineState | null {
   return hash ? decodeState(hash) : null;
 }
 
-// shareUrl encodes state into the URL hash, updates the address bar without a
-// navigation, and returns the full shareable link.
+// buildShareUrl is the pure share-link constructor. Taking the location as an
+// argument keeps URL construction testable and makes it impossible for a
+// getter to acquire a hidden history mutation again.
+export function buildShareUrl(state: EngineState, currentHref: string): string {
+  const url = new URL(currentHref);
+  url.hash = encodeState(state);
+  return url.toString();
+}
+
+// shareUrl returns a link rooted at the current page. It deliberately does
+// not mutate the address bar: copying a share link is a read operation.
 export function shareUrl(state: EngineState): string {
-  const encoded = encodeState(state);
-  const url = `${window.location.origin}${window.location.pathname}${window.location.search}#${encoded}`;
-  window.history.replaceState(null, "", url);
+  return buildShareUrl(state, window.location.href);
+}
+
+// replaceAddressBarWithShareUrl is the explicit opt-in mutation for callers
+// that intentionally want the share state reflected in browser history. It is
+// fail-soft like local persistence: a locked-down History API must not prevent
+// the already-built URL from being copied, and the current history state is
+// preserved so this module does not erase router/application metadata.
+export function replaceAddressBarWithShareUrl(state: EngineState): string {
+  const url = shareUrl(state);
+  try {
+    window.history.replaceState(window.history.state, "", url);
+  } catch {
+    // Best-effort address-bar update; the returned share URL is still valid.
+  }
   return url;
 }
 

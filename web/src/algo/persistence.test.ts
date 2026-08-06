@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createDefaultEngineState,
   type EngineState,
@@ -15,7 +15,13 @@ import {
   VEL_NORMAL,
   VEL_OFF,
 } from "./pattern";
-import { decodeState, encodeState } from "./persistence";
+import {
+  buildShareUrl,
+  decodeState,
+  encodeState,
+  replaceAddressBarWithShareUrl,
+  shareUrl,
+} from "./persistence";
 
 const LEGACY_TRACK_COUNT = 5;
 const LEGACY_PATTERN_SIZE = LEGACY_TRACK_COUNT * 16;
@@ -519,5 +525,71 @@ describe("invalid input", () => {
     const future = toBytes(encodeState(makeState()));
     future[0] = 99;
     expect(decodeState(toB64Url(future))).toBeNull();
+  });
+});
+
+describe("share URLs", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("builds a URL purely from state and an explicit location", () => {
+    const state = makeState();
+    const currentHref =
+      "https://example.test/algo-drum/?theme=dark#previous-state";
+
+    const first = buildShareUrl(state, currentHref);
+    const second = buildShareUrl(state, currentHref);
+
+    expect(first).toBe(second);
+    expect(first).toBe(
+      `https://example.test/algo-drum/?theme=dark#${encodeState(state)}`,
+    );
+    expect(currentHref).toBe(
+      "https://example.test/algo-drum/?theme=dark#previous-state",
+    );
+  });
+
+  it("gets the current-page share URL without touching history", () => {
+    const replaceState = vi.fn();
+    vi.stubGlobal("window", {
+      location: { href: "https://example.test/drums?preset=house#old" },
+      history: { replaceState },
+    });
+
+    expect(shareUrl(makeState())).toMatch(
+      /^https:\/\/example\.test\/drums\?preset=house#[A-Za-z0-9_-]+$/,
+    );
+    expect(replaceState).not.toHaveBeenCalled();
+  });
+
+  it("mutates history only through the explicitly named operation", () => {
+    const replaceState = vi.fn();
+    const historyState = { route: "drums", scroll: 42 };
+    vi.stubGlobal("window", {
+      location: { href: "https://example.test/drums" },
+      history: { state: historyState, replaceState },
+    });
+
+    const state = makeState();
+    const url = replaceAddressBarWithShareUrl(state);
+
+    expect(url).toBe(`https://example.test/drums#${encodeState(state)}`);
+    expect(replaceState).toHaveBeenCalledOnce();
+    expect(replaceState).toHaveBeenCalledWith(historyState, "", url);
+  });
+
+  it("returns the share URL when the address-bar mutation is unavailable", () => {
+    const replaceState = vi.fn(() => {
+      throw new DOMException("History access denied", "SecurityError");
+    });
+    vi.stubGlobal("window", {
+      location: { href: "https://example.test/drums" },
+      history: { state: { route: "drums" }, replaceState },
+    });
+
+    const state = makeState();
+    expect(() => replaceAddressBarWithShareUrl(state)).not.toThrow();
+    expect(replaceAddressBarWithShareUrl(state)).toBe(
+      `https://example.test/drums#${encodeState(state)}`,
+    );
   });
 });
