@@ -166,6 +166,42 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 			corrupt: func(engine *Engine) { engine.voices[4] = nil },
 			want:    "track 4 has no voice",
 		},
+		{
+			name: "physical shadow has wrong width",
+			corrupt: func(engine *Engine) {
+				engine.physicalTomParams[tomTrackIndex] = nil
+			},
+			want: "physical Tom track 3 shadow parameter count",
+		},
+		{
+			name: "physical shadow has non-finite value",
+			corrupt: func(engine *Engine) {
+				engine.physicalTomParams[tomTrackIndex][0] = math.NaN()
+			},
+			want: "physical Tom track 3 shadow param 0",
+		},
+		{
+			name: "physical instance diverges from shadow",
+			corrupt: func(engine *Engine) {
+				engine.SetTomModel(tomTrackIndex, TomModelPhysical)
+				engine.physicalTomParams[tomTrackIndex][0] = 0.9
+			},
+			want: "physical Tom track 3 param 0",
+		},
+		{
+			name: "selected physical Tom has no voice",
+			corrupt: func(engine *Engine) {
+				engine.tomModels[tomTrackIndex] = TomModelPhysical
+			},
+			want: "physical Tom track 3 has no physical voice",
+		},
+		{
+			name: "selected Tom does not own active voice",
+			corrupt: func(engine *Engine) {
+				engine.voices[tomTrackIndex] = engine.voices[0]
+			},
+			want: "procedural Tom track 3 does not own its active voice",
+		},
 	}
 
 	for _, tc := range cases {

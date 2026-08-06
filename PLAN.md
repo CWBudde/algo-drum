@@ -1,6 +1,6 @@
 # algo-drum — Repository Review & Improvement Plan
 
-Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pass: **2026-07-26** · Go engine pass: **2026-08-06**.
+Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pass: **2026-07-26** · Go engine/state passes: **2026-08-06**.
 
 > The 2026-07-09 review drove three implementation passes; its items are closed and
 > removed (`git log` is the record). The 07-26 re-review below replaced it, and a
@@ -17,7 +17,7 @@ Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pa
 | 1   | Correctness & robustness  | **8/10** | +2  | Non-finite input rejected, swing fixed at every step count, bridge load recoverable         |
 | 2   | Audio pipeline & WASM     | **9/10** | +2  | Self-healing pull protocol, reported underruns, recycled buffers, idle suspends the graph   |
 | 3   | Go engine / DSP           | **9/10** | +2  | True peak limiting, drift-free timing, explicit pause, continuous reverb, lean hot paths    |
-| 4   | Architecture & state      | **7/10** | +1  | Command layer fully typed and echoes validated; nine parameters still UI-owned              |
+| 4   | Architecture & state      | **8/10** | +2  | One semantic EngineState now spans Go, worker reconciliation, React and persistence          |
 | 5   | Frontend code quality     | **7/10** | —   | Dead bridge plumbing gone; the 502-line component and missing CSS tokens remain             |
 | 6   | UI / UX                   | **6/10** | —   | Good knob and playhead mechanics; the grid is still unusable below ~725 px                  |
 | 7   | Accessibility             | **6/10** | —   | Real buttons, real sliders, AA text contrast; 80 flat tab stops and no AT playhead          |
@@ -28,10 +28,10 @@ Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pa
 | 12  | PWA & deployment          | **6/10** | —   | Stamp verified and deploy no longer races CI; the bundle is still never precached           |
 | 13  | Feature depth vs the name | **6/10** | —   | The "algo" arrived — but every algorithmic control is global and one-shot                   |
 
-**Overall: 7.5/10** (was 6.6 at re-review, 4.0 at first review). The hardening, engine and
-pipeline passes closed the correctness, DSP and transport-plumbing gaps; what is left is
-mostly reach — mobile layout, offline, accessibility depth, and the per-step algorithms
-the name promises.
+**Overall: 7.6/10** (was 6.6 at re-review, 4.0 at first review). The hardening, engine,
+pipeline and state passes closed the correctness, DSP, transport-plumbing and split-state
+gaps; what is left is mostly reach — mobile layout, offline, accessibility depth, explicit
+transport ownership and the per-step algorithms the name promises.
 
 ### Verified after the hardening pass
 
@@ -265,19 +265,21 @@ bar-length, velocity and humanize bounds. The engine pass closed every item belo
       every step and loop boundary, swing pairs sum exactly, odd loops keep their final
       unpaired base step, and long-run tests pin the cumulative error below one sample.
 
-## 4. Architecture & state management — 7/10
+## 4. Architecture & state management — 8/10
 
-`PatternMirror` is small, isolated, unit-tested, and the `WorkerCommand`/`WorkerResponse`
-discriminated unions with the `AssertNever` guard are the best code in the repo, and the
-command layer is now typed end to end with echoes validated against the expected size. But
-"single source of truth" still holds for **one of ten** pieces of state, so two
-contradictory state disciplines sit side by side.
+`EngineState` now gives the Go engine, worker protocol, React reducer and v14 persistence
+one semantic, engine-major description of every persistent sound/configuration value.
+The UI remains optimistic, but `StateMirror` publishes the engine's complete clamped
+snapshot after every configuration edit once newer edits have drained. Transport remains
+the important exception: A7/A16 still track its three views separately.
 
-- [ ] **A4 (high): only the pattern is engine-owned.** Tempo, swing, step count, reverb,
+- [x] **A4 (high): only the pattern is engine-owned.** Tempo, swing, step count, reverb,
       probability, humanize, volumes, decays and mute are still UI-owned and fired
       one-way with no echo, no clamp feedback and no reconciliation — so the engine's
       clamping (e.g. tempo 30–300) is invisible to the UI. Either extend the echo
       protocol to a full state snapshot or document the split deliberately.
+      Closed through A13/A14: every configuration mutation now echoes a validated full
+      snapshot; mute is an explicit engine field that preserves its stored volume.
 - [x] **A5: the typed command layer has a hole at its constructor.**
       `wasmEngine.ts:67` is `command(name: string, ...args: unknown[])` with an
       `as WorkerCommand` cast, so `command("setTemp", 120)` compiles despite
@@ -289,14 +291,17 @@ contradictory state disciplines sit side by side.
 - [ ] **A7: `playing` has no owner** — set optimistically (`DrumMachine.tsx:253`), faked
       locally (`wasmEngine.ts:189`), with no `onRunning`. A dead worker leaves the UI
       showing "playing".
-- [ ] **A8: persistence mixes two coordinate systems.** `buildState`
+- [x] **A8: persistence mixes two coordinate systems.** `buildState`
       (`DrumMachine.tsx:170`) converts the pattern to engine-major but writes
       `volumes`/`decays`/`muted` in **visual** order, documented only as "length 5"
       (`persistence.ts:33`). Reordering `TRACKS` silently corrupts every saved blob and
       shared link with no version bump to catch it.
-- [ ] **A9: the share format encodes knob positions, not semantics.** Tempo is stored
+      V14 stores every track engine-major; visual order now exists only in rendering.
+- [x] **A9: the share format encodes knob positions, not semantics.** Tempo is stored
       normalized (`persistence.ts:91`), so changing `BPM_MIN`/`BPM_MAX` reinterprets every
       existing v1 link; `FORMAT_VERSION` guards byte layout only.
+      V14 stores integer BPM and step count in semantic units. The v1–v13 decoder retains
+      their fixed historical 60–200 BPM and normalized step/swing mappings.
 - [ ] **A10: `getShareUrl` mutates history as a side effect of a getter**
       (`persistence.ts:198` calls `history.replaceState`).
 - [ ] **A11: a load error unmounts the whole machine.** `App.tsx:57` renders
@@ -312,16 +317,19 @@ A4 and A8 are the same bug wearing two hats: **there is no shared definition of 
 state"**, so the engine, the echo protocol, the React tree and the persistence blob each
 describe it differently. One type fixes the category rather than the instances.
 
-- [ ] **A13: a single `EngineState` shape.** Define the full parameter set once and have
+- [x] **A13: a single `EngineState` shape.** Define the full parameter set once and have
       the engine snapshot echo it, the mount-time seed push it, and persistence serialise
       it — replacing today's three independent orderings. Removes A4's split ownership and
       A8's engine-major/visual-order mismatch by construction, and gives A9 a place to
       store tempo as BPM rather than a knob position.
-- [ ] **A14: collapse the eight push-effects into one state → command mapping.**
+      Implemented across Go snapshots, the typed worker contract, React and persistence.
+- [x] **A14: collapse the eight push-effects into one state → command mapping.**
       `DrumMachine.tsx:113-167` is eight `useEffect`s that each mirror one value to the
       engine. A reducer whose actions map to commands makes the set exhaustive (a new
       parameter cannot be forgotten), makes A7's `playing` an ordinary reducer field, and
       is the precondition for F7's component split.
+      `DrumMachine` now uses one reducer and an exhaustive action-to-command switch;
+      authoritative replacement actions never feed commands back to the engine.
 - [ ] **A15: version the worker protocol, not just its method list.** `REQUIRED_METHODS`
       checks that method _names_ exist; it cannot detect changed semantics or argument
       order. Send a `protocolVersion` in the `ready` message and refuse to run on
@@ -794,7 +802,8 @@ so the rest stays fixed), X5/X17 (roving tabindex + skip link), X7/X8/X15 (playh
 live regions), X9 (targets), P12 (generated SW → closes P5/P8) and P13 (update UX),
 T10 (a DOM test environment — the precondition for testing any of the above).
 
-**P5 — depth:** A13/A14/A16 (one state shape and one owner → closes A4, A7, A8), then
+**P5 — depth:** ✔ A13/A14 (one persistent state shape and owner → closed A4/A8/A9);
+next A16 (transport ownership → closes A7), then
 G8 (per-step probability), G16 (conditional trigs), G9 (per-track length), G10 (pattern
 banks), G11 (undo), G18 (continuous velocity — already in the engine), F7 (split
 `DrumMachine.tsx` once its state model settles).

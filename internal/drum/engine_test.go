@@ -1090,21 +1090,25 @@ func TestPhysicalTomParametersAreIndependentAndSurviveModelSwitch(t *testing.T) 
 	engine.SetPhysicalTomParam(tomTrackIndex, physicalTomParamBatterTension, 0.8)
 	engine.SetPhysicalTomParam(tom2TrackIndex, physicalTomParamBatterTension, 0.3)
 
-	if engine.physicalToms[tomTrackIndex] == nil {
-		t.Fatal("physical parameter edit did not initialize the physical Tom")
+	if engine.physicalToms[tomTrackIndex] != nil || engine.physicalToms[tom2TrackIndex] != nil {
+		t.Fatal("editing an inactive physical bank eagerly initialized a physical Tom")
 	}
-	if got := engine.physicalToms[tomTrackIndex].Param(physicalTomParamBatterTension); got != 0.8 {
+	if got := engine.physicalTomParams[tomTrackIndex][physicalTomParamBatterTension]; got != 0.8 {
 		t.Fatalf("physical batter tension position = %v, want 0.8", got)
 	}
-	if got := engine.physicalToms[tom2TrackIndex].Param(physicalTomParamBatterTension); got != 0.3 {
+	if got := engine.physicalTomParams[tom2TrackIndex][physicalTomParamBatterTension]; got != 0.3 {
 		t.Fatalf("physical Tom 2 batter tension position = %v, want 0.3", got)
+	}
+
+	engine.SetTomModel(tomTrackIndex, TomModelPhysical)
+	if got := engine.physicalToms[tomTrackIndex].Param(physicalTomParamBatterTension); got != 0.8 {
+		t.Fatalf("lazily constructed physical batter tension position = %v, want 0.8", got)
 	}
 	wantTension := physicalTomSpecs[physicalTomParamBatterTension].Map(0.8)
 	if got := engine.physicalToms[tomTrackIndex].config.Batter.TensionNPerM; got != wantTension {
 		t.Fatalf("physical batter tension = %v, want %v", got, wantTension)
 	}
 
-	engine.SetTomModel(tomTrackIndex, TomModelPhysical)
 	engine.SetTomModel(tomTrackIndex, TomModelProcedural)
 	if got := engine.physicalToms[tomTrackIndex].Param(physicalTomParamBatterTension); got != 0.8 {
 		t.Fatalf("physical parameter after A/B switch = %v, want 0.8", got)
@@ -1118,6 +1122,7 @@ func TestPhysicalTomAsymmetryParametersMapToBothHeads(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	engine.SetPhysicalTomParam(tomTrackIndex, physicalTomParamAsymmetry, 0.75)
 	engine.SetPhysicalTomParam(tomTrackIndex, physicalTomParamAsymmetryAxis, 0.25)
+	engine.SetTomModel(tomTrackIndex, TomModelPhysical)
 
 	config := engine.physicalToms[tomTrackIndex].config
 	wantSplit := physicalTomSpecs[physicalTomParamAsymmetry].Map(0.75) / 100
@@ -1156,7 +1161,7 @@ func TestPhysicalTomParameterRejectsInvalidInput(t *testing.T) {
 		engine.SetPhysicalTomParam(tomTrackIndex, physicalTomParamHardness, value)
 	}
 
-	if got := engine.physicalToms[tomTrackIndex].Param(physicalTomParamHardness); got != 0.4 {
+	if got := engine.physicalTomParams[tomTrackIndex][physicalTomParamHardness]; got != 0.4 {
 		t.Fatalf("invalid edit changed hardness to %v", got)
 	}
 }

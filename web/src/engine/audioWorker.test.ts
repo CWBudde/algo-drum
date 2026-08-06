@@ -8,6 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AlgoDrumApi, WorkerCommand, WorkerResponse } from "./audioWorker";
+import { createDefaultEngineState } from "./engineState";
 
 const CHUNK_SAMPLES = 512;
 
@@ -54,9 +55,10 @@ const OTHER_METHODS: (keyof AlgoDrumApi)[] = [
   "setStepCount",
   "setCell",
   "setPattern",
-  "getPattern",
+  "setState",
   "setVolume",
   "setDecay",
+  "setMuted",
   "setVoiceParam",
   "setPhysicalTomParam",
   "setTomModel",
@@ -90,6 +92,7 @@ function fakeEngine(): FakeEngine {
   const api = engine as unknown as Record<string, unknown>;
   api.currentStep = () => engine.step;
   api.isIdle = () => engine.idle;
+  api.getState = () => createDefaultEngineState();
   for (const name of OTHER_METHODS) api[name] = () => undefined;
 
   return engine;
@@ -277,5 +280,62 @@ describe("buffer recycling", () => {
     const reply = port.need();
     expect(reply.buffer).toBe(used);
     expect(new Float32Array(reply.buffer).some((v) => v !== 0)).toBe(false);
+  });
+});
+
+describe("state echoes", () => {
+  it.each([
+    ["setState", [createDefaultEngineState()]],
+    ["setTempo", [140]],
+    ["setSwing", [0.2]],
+    ["setStepCount", [12]],
+    ["setCell", [0, 0, 1]],
+    ["setPattern", [createDefaultEngineState().pattern]],
+    ["setVolume", [0, 0.5]],
+    ["setDecay", [0, 0.5]],
+    ["setMuted", [0, true]],
+    ["setVoiceParam", [0, 0, 0.5]],
+    ["setPhysicalTomParam", [3, 0, 0.5]],
+    ["setTomModel", [3, 1]],
+    ["setReverb", [0.5]],
+    ["setProbability", [0.5]],
+    ["setHumanize", [0.5]],
+  ] as const)("echoes one full state after %s", async (name, args) => {
+    const engine = fakeEngine();
+    await connect(engine);
+    responses = [];
+
+    dispatch({ type: "cmd", name, args: [...args] });
+
+    expect(responses).toHaveLength(1);
+    expect(responses[0]).toMatchObject({ type: "stateSync" });
+  });
+
+  it.each([
+    ["setRunning", [true]],
+    ["pause", []],
+    ["triggerVoice", [0, 1]],
+    ["render", [16]],
+  ] as const)("does not echo operational command %s", async (name, args) => {
+    const engine = fakeEngine();
+    await connect(engine);
+    responses = [];
+
+    dispatch({ type: "cmd", name, args: [...args] });
+
+    expect(responses).toEqual([]);
+  });
+
+  it("balances a mutation with an invalid sentinel when getState fails", async () => {
+    const engine = fakeEngine();
+    const api = engine as unknown as Record<string, unknown>;
+    api.getState = () => ({ tempoBpm: 120 });
+    await connect(engine);
+    responses = [];
+
+    dispatch({ type: "cmd", name: "setTempo", args: [140] });
+
+    expect(errors()).toEqual([expect.stringContaining("getState failed")]);
+    expect(responses).toContainEqual({ type: "stateSync", state: null });
   });
 });

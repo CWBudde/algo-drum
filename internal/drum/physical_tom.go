@@ -105,6 +105,25 @@ func (v *physicalTom) ParamSpecs() []ParamSpec {
 	return v.params.ParamSpecs()
 }
 
+// replaceParams atomically installs a complete normalized bank and performs a
+// single model reconfiguration. Callers validate the bank shape and values
+// before reaching this package-internal operation.
+func (v *physicalTom) replaceParams(values []float64) error {
+	config, err := tomparams.Config(values, v.decayAmount, v.config.SampleRateHz)
+	if err != nil {
+		return err
+	}
+
+	if err := v.model.Reconfigure(config); err != nil {
+		return err
+	}
+
+	copy(v.params.vals, values)
+	v.config = config
+
+	return nil
+}
+
 // reconfigure rebuilds the SI configuration from the current knob bank.
 //
 // tomparams.Config is the *only* correct spelling of this mapping — the

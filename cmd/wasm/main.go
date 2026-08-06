@@ -40,10 +40,27 @@ var (
 	jsFloats  js.Value // Float32Array returned to the caller
 
 	patternInput [drum.PatternSize]float64
-	patternBuf   [drum.PatternSize]float32
-	patternBytes js.Value
-	patternJS    js.Value
+
+	stateOut stateOutput
 )
+
+// stateOutput owns the reusable JS typed arrays returned by getState. The
+// worker structured-clones the object synchronously before the next update, so
+// reusing these views does not alias snapshots received on the main thread.
+type stateOutput struct {
+	value js.Value
+
+	pattern      []float32
+	patternBytes js.Value
+
+	tracks          js.Value
+	trackValues     [drum.TrackCount]js.Value
+	voiceParams     [drum.TrackCount][]float32
+	voiceParamBytes [drum.TrackCount]js.Value
+	tomValues       [drum.TrackCount]js.Value
+	physicalParams  [drum.TrackCount][]float32
+	physicalBytes   [drum.TrackCount]js.Value
+}
 
 func main() {
 	api := js.Global().Get("Object").New()
@@ -195,20 +212,31 @@ func main() {
 		return js.Null()
 	}))
 
-	// getPattern returns the pattern in a persistent JS-owned Float32Array.
-	// postMessage structured-clones it in audioWorker.ts; transferring it there
-	// would detach this reusable buffer and violate the allocation-free path.
-	api.Set("getPattern", export(func(args []js.Value) any {
+	api.Set("setState", export(func(args []js.Value) any {
 		if !ready() {
-			return js.Global().Get("Float32Array").New(0)
+			return js.Null()
 		}
 
-		ensurePatternBuffer()
-		engine.CopyPattern(&patternBuf)
-		bytes := unsafe.Slice((*byte)(unsafe.Pointer(&patternBuf[0])), drum.PatternSize*4)
-		js.CopyBytesToJS(patternBytes, bytes)
+		state, ok := readEngineState(args, 0)
+		if !ok {
+			warnBadArg("setState")
 
-		return patternJS
+			return js.Null()
+		}
+
+		if err := engine.ReplaceState(state); err != nil {
+			warnBadArg("setState")
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("getState", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		return writeEngineState(engine.State())
 	}))
 
 	api.Set("setVolume", export(func(args []js.Value) any {
@@ -221,6 +249,21 @@ func main() {
 
 		if trackOK && volOK {
 			engine.SetVolume(track, volume)
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("setMuted", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		track, trackOK := argInt(args, 0, "setMuted")
+
+		muted, mutedOK := argBool(args, 1, "setMuted")
+		if trackOK && mutedOK {
+			engine.SetMuted(track, muted)
 		}
 
 		return js.Null()
@@ -487,14 +530,256 @@ func ensureRenderBuffers(sampleCount int) {
 	jsFloats = js.Global().Get("Float32Array").New(arrayBuf)
 }
 
-func ensurePatternBuffer() {
-	if patternJS.Type() != js.TypeUndefined {
+func readEngineState(args []js.Value, index int) (drum.EngineState, bool) {
+	if index >= len(args) || args[index].Type() != js.TypeObject {
+		return drum.EngineState{}, false
+	}
+
+	value := args[index]
+	tempo, tempoOK := finiteJSNumber(value.Get("tempoBpm"))
+	swing, swingOK := finiteJSNumber(value.Get("swing"))
+	stepCount, stepsOK := integerJSNumber(value.Get("stepCount"))
+	reverbAmount, reverbOK := finiteJSNumber(value.Get("reverb"))
+	probability, probabilityOK := finiteJSNumber(value.Get("probability"))
+	humanize, humanizeOK := finiteJSNumber(value.Get("humanize"))
+	pattern, patternOK := readFloatArray(value.Get("pattern"), drum.PatternSize)
+
+	tracksValue := value.Get("tracks")
+	tracksOK := tracksValue.Type() == js.TypeObject &&
+		js.Global().Get("Array").Call("isArray", tracksValue).Bool() &&
+		tracksValue.Length() == drum.TrackCount
+
+	if !tempoOK || !swingOK || !stepsOK || !reverbOK || !probabilityOK || !humanizeOK ||
+		!patternOK || !tracksOK {
+		return drum.EngineState{}, false
+	}
+
+	state := drum.EngineState{
+		TempoBPM:    tempo,
+		Swing:       swing,
+		StepCount:   stepCount,
+		Reverb:      reverbAmount,
+		Probability: probability,
+		Humanize:    humanize,
+		Pattern:     pattern,
+		Tracks:      make([]drum.TrackState, drum.TrackCount),
+	}
+
+	for track := range state.Tracks {
+		trackValue := tracksValue.Index(track)
+		if trackValue.Type() != js.TypeObject {
+			return drum.EngineState{}, false
+		}
+
+		volume, volumeOK := finiteJSNumber(trackValue.Get("volume"))
+		decay, decayOK := finiteJSNumber(trackValue.Get("decay"))
+		mutedValue := trackValue.Get("muted")
+
+		params, paramsOK := readFloatArray(
+			trackValue.Get("voiceParams"), len(drum.SpecsForTrack(track)),
+		)
+		if !volumeOK || !decayOK || mutedValue.Type() != js.TypeBoolean || !paramsOK {
+			return drum.EngineState{}, false
+		}
+
+		state.Tracks[track] = drum.TrackState{
+			Volume:      volume,
+			Decay:       decay,
+			Muted:       mutedValue.Bool(),
+			VoiceParams: params,
+		}
+
+		tomValue := trackValue.Get("tom")
+
+		isTom := track == 3 || track == 5
+		if !isTom {
+			if tomValue.Type() != js.TypeUndefined && tomValue.Type() != js.TypeNull {
+				return drum.EngineState{}, false
+			}
+
+			continue
+		}
+
+		if tomValue.Type() != js.TypeObject {
+			return drum.EngineState{}, false
+		}
+
+		modelValue := tomValue.Get("model")
+		if modelValue.Type() != js.TypeString {
+			return drum.EngineState{}, false
+		}
+
+		var model drum.TomModel
+
+		switch modelValue.String() {
+		case "procedural":
+			model = drum.TomModelProcedural
+		case "physical":
+			model = drum.TomModelPhysical
+		default:
+			return drum.EngineState{}, false
+		}
+
+		physicalParams, paramsOK := readFloatArray(
+			tomValue.Get("physicalParams"), len(drum.PhysicalTomSpecs()),
+		)
+		if !paramsOK {
+			return drum.EngineState{}, false
+		}
+
+		state.Tracks[track].Tom = &drum.TomState{
+			Model:          model,
+			PhysicalParams: physicalParams,
+		}
+	}
+
+	return state, true
+}
+
+func finiteJSNumber(value js.Value) (float64, bool) {
+	if value.Type() != js.TypeNumber {
+		return 0, false
+	}
+
+	number := value.Float()
+
+	return number, !math.IsNaN(number) && !math.IsInf(number, 0)
+}
+
+func integerJSNumber(value js.Value) (int, bool) {
+	number, ok := finiteJSNumber(value)
+	if !ok || math.Trunc(number) != number || number < math.MinInt32 || number > math.MaxInt32 {
+		return 0, false
+	}
+
+	return int(number), true
+}
+
+func readFloatArray(value js.Value, expected int) ([]float64, bool) {
+	if value.Type() != js.TypeObject {
+		return nil, false
+	}
+
+	length := value.Get("length")
+
+	count, ok := integerJSNumber(length)
+	if !ok || count != expected {
+		return nil, false
+	}
+
+	result := make([]float64, expected)
+	for i := range result {
+		number, ok := finiteJSNumber(value.Index(i))
+		if !ok {
+			return nil, false
+		}
+
+		result[i] = number
+	}
+
+	return result, true
+}
+
+func writeEngineState(state drum.EngineState) js.Value {
+	ensureStateOutput(state)
+
+	stateOut.value.Set("tempoBpm", state.TempoBPM)
+	stateOut.value.Set("swing", state.Swing)
+	stateOut.value.Set("stepCount", state.StepCount)
+	stateOut.value.Set("reverb", state.Reverb)
+	stateOut.value.Set("probability", state.Probability)
+	stateOut.value.Set("humanize", state.Humanize)
+	copyFloatOutput(stateOut.pattern, stateOut.patternBytes, state.Pattern)
+
+	for track, trackState := range state.Tracks {
+		trackValue := stateOut.trackValues[track]
+		trackValue.Set("volume", trackState.Volume)
+		trackValue.Set("decay", trackState.Decay)
+		trackValue.Set("muted", trackState.Muted)
+		copyFloatOutput(
+			stateOut.voiceParams[track], stateOut.voiceParamBytes[track], trackState.VoiceParams,
+		)
+
+		if trackState.Tom == nil {
+			continue
+		}
+
+		tomValue := stateOut.tomValues[track]
+		if trackState.Tom.Model == drum.TomModelPhysical {
+			tomValue.Set("model", "physical")
+		} else {
+			tomValue.Set("model", "procedural")
+		}
+
+		copyFloatOutput(
+			stateOut.physicalParams[track], stateOut.physicalBytes[track],
+			trackState.Tom.PhysicalParams,
+		)
+	}
+
+	return stateOut.value
+}
+
+func ensureStateOutput(state drum.EngineState) {
+	if stateOut.value.Type() != js.TypeUndefined {
 		return
 	}
 
-	arrayBuf := js.Global().Get("ArrayBuffer").New(drum.PatternSize * 4)
-	patternBytes = js.Global().Get("Uint8Array").New(arrayBuf)
-	patternJS = js.Global().Get("Float32Array").New(arrayBuf)
+	stateOut.value = js.Global().Get("Object").New()
+
+	var patternView js.Value
+
+	stateOut.pattern, stateOut.patternBytes, patternView = newFloatOutput(len(state.Pattern))
+	stateOut.value.Set("pattern", patternView)
+
+	stateOut.tracks = js.Global().Get("Array").New(len(state.Tracks))
+	stateOut.value.Set("tracks", stateOut.tracks)
+
+	for track, trackState := range state.Tracks {
+		trackValue := js.Global().Get("Object").New()
+		stateOut.trackValues[track] = trackValue
+		stateOut.tracks.SetIndex(track, trackValue)
+
+		var paramsView js.Value
+
+		stateOut.voiceParams[track], stateOut.voiceParamBytes[track], paramsView = newFloatOutput(len(trackState.VoiceParams))
+		trackValue.Set("voiceParams", paramsView)
+
+		if trackState.Tom == nil {
+			continue
+		}
+
+		tomValue := js.Global().Get("Object").New()
+		stateOut.tomValues[track] = tomValue
+		trackValue.Set("tom", tomValue)
+
+		var physicalView js.Value
+
+		stateOut.physicalParams[track], stateOut.physicalBytes[track], physicalView = newFloatOutput(len(trackState.Tom.PhysicalParams))
+		tomValue.Set("physicalParams", physicalView)
+	}
+}
+
+func newFloatOutput(length int) ([]float32, js.Value, js.Value) {
+	values := make([]float32, length)
+	arrayBuf := js.Global().Get("ArrayBuffer").New(length * 4)
+	bytes := js.Global().Get("Uint8Array").New(arrayBuf)
+	floats := js.Global().Get("Float32Array").New(arrayBuf)
+
+	return values, bytes, floats
+}
+
+func copyFloatOutput(dst []float32, jsBytes js.Value, src []float64) {
+	for i, value := range src {
+		dst[i] = float32(value)
+	}
+
+	if len(dst) == 0 {
+		return
+	}
+
+	bytes := unsafe.Slice((*byte)(unsafe.Pointer(&dst[0])), len(dst)*4)
+	js.CopyBytesToJS(jsBytes, bytes)
 }
 
 func export(fn func([]js.Value) any) js.Func {

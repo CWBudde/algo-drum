@@ -120,6 +120,7 @@ type Engine struct {
 
 	pattern [TrackCount][MaxSteps]float64 // per-cell velocity in [0, 1], 0 = off
 	volumes [TrackCount]float64           // targets set by SetVolume
+	muted   [TrackCount]bool              // mutes do not overwrite the stored volumes
 	liveVol [TrackCount]float64           // smoothed volumes applied in Render
 	volCoef float64                       // per-sample one-pole ramp coefficient
 	decays  [TrackCount]float64
@@ -129,6 +130,11 @@ type Engine struct {
 	tomModels      [TrackCount]TomModel
 	proceduralToms [TrackCount]*Tom
 	physicalToms   [TrackCount]*physicalTom
+	// physicalTomParams is authoritative even before the comparatively heavy
+	// physical voice is constructed. State snapshots therefore preserve both
+	// Tom banks without turning a procedural-only session into two physical
+	// model allocations.
+	physicalTomParams [TrackCount][]float64
 
 	stepCount           int // active pattern length in [1, MaxSteps]
 	currentStep         int
@@ -185,10 +191,12 @@ func NewEngine(sr float64) *Engine {
 	e.voices[2] = NewHiHat(sr)
 	e.proceduralToms[tomTrackIndex] = NewTom(sr)
 	e.voices[tomTrackIndex] = e.proceduralToms[tomTrackIndex]
+	e.physicalTomParams[tomTrackIndex] = defaultParams(physicalTomSpecs)
 
 	e.voices[4] = NewCymbal(sr)
 	e.proceduralToms[tom2TrackIndex] = NewTom2(sr)
 	e.voices[tom2TrackIndex] = e.proceduralToms[tom2TrackIndex]
+	e.physicalTomParams[tom2TrackIndex] = defaultParams(physicalTomSpecs)
 
 	e.voices[6] = NewPercussion(sr)
 	for i := range e.voices {
@@ -485,6 +493,34 @@ func (e *Engine) SetVolume(track int, vol float64) {
 	e.volumes[track] = volume
 }
 
+// SetMuted changes one track's mute state without changing its stored volume.
+// Render ramps toward zero while muted and back toward the stored volume when
+// unmuted, so both transitions inherit the zipper-noise protection of the
+// volume control.
+func (e *Engine) SetMuted(track int, muted bool) {
+	if !validTrack(track) {
+		return
+	}
+
+	wasMuted := e.muted[track]
+
+	e.muted[track] = muted
+	if wasMuted && !muted {
+		// A muted tail may have taken the engine into its frozen idle path.
+		// Give it a chance to resume when its stored volume becomes audible.
+		e.wake()
+	}
+}
+
+// Muted reports one track's mute state. Invalid tracks report false.
+func (e *Engine) Muted(track int) bool {
+	if !validTrack(track) {
+		return false
+	}
+
+	return e.muted[track]
+}
+
 // SetDecay sets per-track decay amount, clamped to [0, 1]. An out-of-range
 // track or a non-finite amount is a silent no-op (see SetCell).
 func (e *Engine) SetDecay(track int, amount float64) {
@@ -531,16 +567,25 @@ func (e *Engine) SetPhysicalTomParam(track, index int, value01 float64) {
 		return
 	}
 
-	if _, ok := validFloat(value01, 0, 1); !ok {
-		return
-	}
-
-	physicalVoice, ok := e.ensurePhysicalTom(track)
+	value, ok := validFloat(value01, 0, 1)
 	if !ok {
 		return
 	}
 
-	physicalVoice.SetParam(index, value01)
+	// The shadow is sufficient while the physical bank is inactive. This is
+	// intentionally lazy: editing or restoring its controls must not construct
+	// a DoubleHead until the user selects it.
+	physicalVoice := e.physicalToms[track]
+	if physicalVoice == nil {
+		e.physicalTomParams[track][index] = value
+
+		return
+	}
+
+	physicalVoice.SetParam(index, value)
+	// SetParam rolls itself back if the derived physical configuration is not
+	// valid. Mirror what it actually accepted rather than assuming success.
+	e.physicalTomParams[track][index] = physicalVoice.Param(index)
 }
 
 func (e *Engine) ensurePhysicalTom(track int) (*physicalTom, bool) {
@@ -560,6 +605,13 @@ func (e *Engine) ensurePhysicalTom(track int) (*physicalTom, bool) {
 	}
 
 	physicalVoice.SetDecay(e.decays[track])
+
+	if err := physicalVoice.replaceParams(e.physicalTomParams[track]); err != nil {
+		logErr("physical Tom shadow parameters", err)
+
+		return nil, false
+	}
+
 	e.physicalToms[track] = physicalVoice
 
 	return physicalVoice, true
@@ -636,9 +688,10 @@ func (e *Engine) TriggerVoice(track int, velocity float64) {
 // wake cancels an in-progress (or reached) idle window. Every path that can
 // make a stopped engine loud again has to call it, because the idle fast path
 // in Render writes zeros without ticking the voices and so cannot notice the
-// new sound on its own. There are exactly two such paths — starting the
-// transport and auditioning a voice — since triggerStep and schedule only run
-// while the transport is playing, which holds the counter at zero anyway.
+// new sound on its own. Starting the transport, auditioning a voice and
+// unmuting a possibly frozen tail all pass through here; triggerStep and
+// schedule only run while the transport is playing, which holds the counter at
+// zero anyway.
 func (e *Engine) wake() {
 	e.silentRun = 0
 }
@@ -805,7 +858,12 @@ func (e *Engine) Render(buf []float32) {
 		for t, v := range e.voices {
 			// One-pole ramp toward the target volume so knob moves during
 			// playback do not step the gain per-sample (zipper noise).
-			e.liveVol[t] += (e.volumes[t] - e.liveVol[t]) * e.volCoef
+			targetVolume := e.volumes[t]
+			if e.muted[t] {
+				targetVolume = 0
+			}
+
+			e.liveVol[t] += (targetVolume - e.liveVol[t]) * e.volCoef
 			out += v.Tick() * e.liveVol[t]
 		}
 

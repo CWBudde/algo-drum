@@ -13,7 +13,7 @@ No plugins, no backend — just a `.wasm` file and a browser.
   pattern length (STEPS knob, 1–16)
 - Per-step velocity: click a cell to cycle off → hit → accent
 - Per-track volume (smoothed, zipper-free) and decay knobs, plus per-track mute
-- Tempo (BPM) and swing, with tap tempo
+- Tempo (30–300 BPM) and swing, with tap tempo
 - Trigger probability and humanize (timing jitter) knobs for less mechanical
   patterns
 - Pattern mutate (random-walk the current pattern) and 6 built-in presets
@@ -38,9 +38,9 @@ sequencer step back to the UI playhead.
 
 ```
 Go engine (WASM, in a Web Worker)  ──512-sample chunks──►  AudioWorklet  ──►  AudioContext  ──►  speakers
-     ▲                                                          │
-     │  setCell / setTempo / setSwing / setVolume / setReverb   │ audible step
-     │                                                          ▼
+     ▲       │                                                  │
+     │ edits │ authoritative EngineState snapshots              │ audible step
+     │       ▼                                                  ▼
 React UI (TypeScript) ◄─────────────────────────────────── playhead
 ```
 

@@ -73,6 +73,38 @@ test("cell edits survive the engine's authoritative pattern echo", async ({
   }
 });
 
+test("mixer and mute state survive authoritative echoes and persistence", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await expect(
+    page.getByRole("button", { name: "Play", exact: true }),
+  ).toBeEnabled({ timeout: 30_000 });
+
+  const volume = page.getByRole("slider", { name: "Bass volume" });
+  const mute = page.getByRole("button", { name: "Mute Bass" });
+  await volume.focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  const edited = await volume.getAttribute("aria-valuenow");
+
+  await mute.click();
+  await expect(mute).toHaveAttribute("aria-pressed", "true");
+  await page.waitForTimeout(500);
+
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Play", exact: true }),
+  ).toBeEnabled({ timeout: 30_000 });
+  await expect(
+    page.getByRole("slider", { name: "Bass volume" }),
+  ).toHaveAttribute("aria-valuenow", edited!);
+  await expect(page.getByRole("button", { name: "Mute Bass" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+});
+
 // The per-voice synthesis editor (PLAN.md G20): the modal opens from the strip,
 // its knobs drive the engine, Escape is shared with the knobs' reset-to-default,
 // audition must not start the transport, and edits must survive a reload

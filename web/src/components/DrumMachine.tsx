@@ -1,22 +1,29 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import Knob from "./Knob";
 import AlgoPanel from "./AlgoPanel";
 import VoiceEditor from "./VoiceEditor";
 import * as engine from "../engine/wasmEngine";
 import {
   defaultPhysicalTomParams,
-  defaultVoiceParams,
   PHYSICAL_TOM_PARAMS,
   VOICE_NAMES,
   VOICE_PARAMS,
 } from "../engine/voiceParams";
 import { DEFAULT_TOM_MODEL, type TomModel } from "../engine/tomModel";
+import { loadInitialState, saveLocal, shareUrl } from "../algo/persistence";
 import {
-  loadInitialState,
-  saveLocal,
-  shareUrl,
-  type PersistedState,
-} from "../algo/persistence";
+  DEFAULT_TEMPO_BPM,
+  defaultEngineState,
+  reduceDrumState,
+  type DrumStateAction,
+} from "./drumState";
 import "./DrumMachine.css";
 
 // Visual order: Cymbal on top, Bass on bottom.
@@ -46,20 +53,9 @@ function velocityName(velocity: number): string {
   return velocity < VEL_ACCENT ? "on" : "accent";
 }
 
-// visualToFlat / flatToVisual bridge the UI's reverse-ordered visual grid and
-// the engine-major flat pattern (index = engineTrack·COLS + step) used by the
-// bulk pattern API and every algo module.
-function visualToFlat(visual: number[][]): number[] {
-  const flat = new Array<number>(ROWS * COLS).fill(0);
-  for (let row = 0; row < ROWS; row++) {
-    for (let col = 0; col < COLS; col++) {
-      flat[TRACK_INDEX[row] * COLS + col] = visual[row][col];
-    }
-  }
-  return flat;
-}
-
-function flatToVisual(flat: number[]): number[][] {
+// This is the only place persistent engine-major state is reordered for the
+// UI's reverse-ordered grid.
+function flatToVisual(flat: ArrayLike<number>): number[][] {
   return TRACKS.map((_, row) =>
     Array.from(
       { length: COLS },
@@ -68,21 +64,11 @@ function flatToVisual(flat: number[]): number[][] {
   );
 }
 
-// snapVelocity undoes float32 rounding on velocities echoed back from the
-// engine (0.7 stored as float32 reads back as 0.699999988…) so the mirror
-// stays strictly equal to what the UI wrote.
-function snapVelocity(velocity: number): number {
-  return Math.round(velocity * 1000) / 1000;
-}
-
-function visualPatternsEqual(a: number[][], b: number[][]): boolean {
-  return a.every((row, r) => row.every((vel, c) => vel === b[r][c]));
-}
-
-// Tap tempo maps between BPM and the tempo knob position (see bpm below).
-const BPM_MIN = 60;
-const BPM_MAX = 200;
-const BPM_RANGE = 140; // BPM_MAX - BPM_MIN
+// The UI represents the complete range accepted by the authoritative engine,
+// so every clamped echo has an exact position on the tempo knob.
+const BPM_MIN = 30;
+const BPM_MAX = 300;
+const BPM_RANGE = BPM_MAX - BPM_MIN;
 const TAP_RESET_MS = 2000;
 const TAP_WINDOW = 4;
 
@@ -90,225 +76,156 @@ interface Props {
   wasmLoaded: boolean;
 }
 
+// One exhaustive action-to-command mapping replaces the former collection of
+// effects. Reducer replacement actions come only from authoritative echoes and
+// therefore deliberately send nothing back to the engine.
+function sendStateAction(action: DrumStateAction): void {
+  switch (action.type) {
+    case "replace":
+      return;
+    case "tempo":
+      engine.setTempo(action.value);
+      return;
+    case "swing":
+      engine.setSwing(action.value);
+      return;
+    case "stepCount":
+      engine.setStepCount(action.value);
+      return;
+    case "reverb":
+      engine.setReverb(action.value);
+      return;
+    case "probability":
+      engine.setProbability(action.value);
+      return;
+    case "humanize":
+      engine.setHumanize(action.value);
+      return;
+    case "cell":
+      engine.setCell(action.track, action.step, action.value);
+      return;
+    case "pattern":
+      engine.setPattern(action.value);
+      return;
+    case "volume":
+      engine.setVolume(action.track, action.value);
+      return;
+    case "decay":
+      engine.setDecay(action.track, action.value);
+      return;
+    case "muted":
+      engine.setMuted(action.track, action.value);
+      return;
+    case "voiceParam":
+      engine.setVoiceParam(action.track, action.index, action.value);
+      return;
+    case "voiceParams":
+      action.value.forEach((value, index) => {
+        engine.setVoiceParam(action.track, index, value);
+      });
+      return;
+    case "tomModel":
+      engine.setTomModel(action.track, action.value);
+      return;
+    case "physicalTomParam":
+      engine.setPhysicalTomParam(action.track, action.index, action.value);
+      return;
+    case "physicalTomParams":
+      action.value.forEach((value, index) => {
+        engine.setPhysicalTomParam(action.track, index, value);
+      });
+      return;
+  }
+
+  const exhaustive: never = action;
+  return exhaustive;
+}
+
 export default function DrumMachine({ wasmLoaded }: Props) {
   // Restore saved/shared state once on mount; a valid URL hash wins over
   // localStorage (see loadInitialState).
-  const initial = useMemo<PersistedState | null>(() => loadInitialState(), []);
-
-  const [pattern, setPattern] = useState<number[][]>(() =>
-    initial
-      ? flatToVisual(initial.pattern)
-      : Array.from({ length: ROWS }, () => Array<number>(COLS).fill(0)),
-  );
+  const initial = useMemo(() => loadInitialState() ?? defaultEngineState(), []);
+  const [drumState, dispatch] = useReducer(reduceDrumState, initial);
+  const applyStateAction = useCallback((action: DrumStateAction) => {
+    dispatch(action);
+    sendStateAction(action);
+  }, []);
   const [transport, setTransport] = useState<"stopped" | "playing" | "paused">(
     "stopped",
   );
-  const [tempo, setTempoState] = useState(initial?.tempo ?? 0.43); // ~120 BPM
-  const [swing, setSwingState] = useState(initial?.swing ?? 0.0);
-  const [steps, setStepsState] = useState(initial?.steps ?? 1.0); // 1.0 = 16 steps
-  const [reverb, setReverbState] = useState(initial?.reverb ?? 0.0);
-  const [prob, setProbState] = useState(initial?.prob ?? 1.0);
-  const [humanize, setHumanizeState] = useState(initial?.humanize ?? 0.0);
-  const [tomModel, setTomModel] = useState<TomModel>(
-    initial?.tomModel ?? DEFAULT_TOM_MODEL,
-  );
-  const [tom2Model, setTom2Model] = useState<TomModel>(
-    initial?.tom2Model ?? DEFAULT_TOM_MODEL,
-  );
-  const [volumes, setVolumes] = useState<number[]>(() =>
-    Array.from({ length: ROWS }, (_, row) => initial?.volumes?.[row] ?? 0.75),
-  );
-  const [decays, setDecays] = useState<number[]>(() =>
-    Array.from({ length: ROWS }, (_, row) => initial?.decays?.[row] ?? 0.5),
-  );
-  const [muted, setMuted] = useState<boolean[]>(() =>
-    Array.from({ length: ROWS }, (_, row) => initial?.muted?.[row] ?? false),
-  );
-  // Per-track state comes in two flavours; do not mix them up:
-  //   pattern / volumes / decays / muted — indexed by VISUAL ROW (0 = Cymbal … 6 = Bass)
-  //   voiceParamsByEngineTrack          — indexed by ENGINE TRACK (0 = Bass … 6 = Perc)
-  // TRACK_INDEX converts visual rows to engine tracks. Voice parameters follow
-  // engine order because the generated descriptor table, persisted tail and
-  // setVoiceParam all do.
-  const [voiceParamsByEngineTrack, setVoiceParams] = useState<number[][]>(
-    () => {
-      const defaults = defaultVoiceParams();
-      return defaults.map((row, track) =>
-        row.map((value, i) => initial?.voiceParams?.[track]?.[i] ?? value),
-      );
-    },
-  );
-  const [physicalTomParams, setPhysicalTomParams] = useState<number[]>(() => {
-    const defaults = defaultPhysicalTomParams();
-    return defaults.map((value, i) => initial?.physicalTomParams?.[i] ?? value);
-  });
-  const [physicalTom2Params, setPhysicalTom2Params] = useState<number[]>(() => {
-    const defaults = defaultPhysicalTomParams();
-    return defaults.map(
-      (value, i) => initial?.physicalTom2Params?.[i] ?? value,
-    );
-  });
   // Engine track whose editor is open, or null. Also used to hand the keyboard
   // over to the dialog (see the Space handler below).
   const [editorTrack, setEditorTrack] = useState<number | null>(null);
   const [currentStep, setCurrentStep] = useState(-1);
 
-  const bpm = Math.round(BPM_MIN + tempo * BPM_RANGE);
-  const stepCount = Math.round(1 + steps * (COLS - 1));
+  const pattern = useMemo(
+    () => flatToVisual(drumState.pattern),
+    [drumState.pattern],
+  );
+  const bpm = drumState.tempoBpm;
+  const tempo = (bpm - BPM_MIN) / BPM_RANGE;
+  const swing = drumState.swing / 0.5;
+  const stepCount = drumState.stepCount;
+  const steps = (stepCount - 1) / (COLS - 1);
+  const reverb = drumState.reverb;
+  const prob = drumState.probability;
+  const humanize = drumState.humanize;
+  const volumes = TRACK_INDEX.map((track) => drumState.tracks[track].volume);
+  const decays = TRACK_INDEX.map((track) => drumState.tracks[track].decay);
+  const muted = TRACK_INDEX.map((track) => drumState.tracks[track].muted);
+  const voiceParamsByEngineTrack = drumState.tracks.map(
+    (track) => track.voiceParams,
+  );
+  const tomModel = drumState.tracks[TOM_TRACK].tom?.model ?? DEFAULT_TOM_MODEL;
+  const tom2Model =
+    drumState.tracks[TOM2_TRACK].tom?.model ?? DEFAULT_TOM_MODEL;
+  const physicalTomParams =
+    drumState.tracks[TOM_TRACK].tom?.physicalParams ??
+    Float32Array.from(defaultPhysicalTomParams());
+  const physicalTom2Params =
+    drumState.tracks[TOM2_TRACK].tom?.physicalParams ??
+    Float32Array.from(defaultPhysicalTomParams());
 
-  // Push parameters to the engine (queued by the bridge until it's ready)
+  // Seed all restored/default configuration in one command. Later reducer
+  // actions use granular commands, while echoes reconcile the whole snapshot.
   useEffect(() => {
-    engine.setTempo(bpm);
-  }, [bpm]);
-  useEffect(() => {
-    engine.setSwing(swing * 0.5);
-  }, [swing]);
-  useEffect(() => {
-    engine.setStepCount(stepCount);
-  }, [stepCount]);
-  useEffect(() => {
-    engine.setReverb(reverb);
-  }, [reverb]);
-  useEffect(() => {
-    engine.setProbability(prob);
-  }, [prob]);
-  useEffect(() => {
-    engine.setHumanize(humanize);
-  }, [humanize]);
-  useEffect(() => {
-    engine.setTomModel(TOM_TRACK, tomModel);
-  }, [tomModel]);
-  useEffect(() => {
-    engine.setTomModel(TOM2_TRACK, tom2Model);
-  }, [tom2Model]);
-  useEffect(() => {
-    volumes.forEach((v, i) => {
-      engine.setVolume(TRACK_INDEX[i], muted[i] ? 0 : v);
-    });
-  }, [volumes, muted]);
-  useEffect(() => {
-    decays.forEach((d, i) => {
-      engine.setDecay(TRACK_INDEX[i], d);
-    });
-  }, [decays]);
-
-  // Push the (possibly restored) initial pattern to the engine once — per-cell
-  // edits sync in cycleCell, but a bulk restore needs one setPattern.
-  useEffect(() => {
-    engine.setPattern(Float32Array.from(visualToFlat(pattern)));
-    // Mount-only: intentionally seeds the engine with the initial pattern.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Same for a restored voice-parameter table. Skipped when there is nothing to
-  // restore: the engine already starts at exactly these defaults, and sending
-  // them would only risk re-quantising them.
-  useEffect(() => {
-    if (!initial?.voiceParams) return;
-
-    voiceParamsByEngineTrack.forEach((params, track) => {
-      params.forEach((value, i) => {
-        if (i < VOICE_PARAMS[track].length) {
-          engine.setVoiceParam(track, i, value);
-        }
-      });
-    });
-    // Mount-only: a bulk restore, mirroring the setPattern seed above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (!initial?.physicalTomParams) return;
-
-    physicalTomParams.forEach((value, index) => {
-      engine.setPhysicalTomParam(TOM_TRACK, index, value);
-    });
-    // Mount-only: restore the independent physical parameter bank.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (!initial?.physicalTom2Params) return;
-
-    physicalTom2Params.forEach((value, index) => {
-      engine.setPhysicalTomParam(TOM2_TRACK, index, value);
-    });
-    // Mount-only: restore Tom 2's independent physical parameter bank.
+    engine.setState(initial);
+    // Mount-only: intentionally seeds the engine with one complete state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Playhead follows the audible step reported by the audio worklet
   useEffect(() => engine.onStep(setCurrentStep), []);
 
-  // The engine owns the pattern: edits above apply optimistically for instant
-  // feedback, and the authoritative copy the engine echoes back after each
-  // edit replaces the mirror (once no newer edits are in flight). Bail out on
-  // equality so confirming echoes don't re-render the grid.
+  // Every configuration echo is a complete authoritative snapshot. The
+  // bridge suppresses stale intermediate echoes when newer edits are in flight.
   useEffect(
-    () =>
-      engine.onPattern((flat) => {
-        setPattern((prev) => {
-          const next = flatToVisual(Array.from(flat, snapVelocity));
-          return visualPatternsEqual(prev, next) ? prev : next;
-        });
-      }),
+    () => engine.onState((state) => dispatch({ type: "replace", state })),
     [],
-  );
-
-  // Snapshot the full serializable UI state for persistence + share links.
-  const buildState = useCallback(
-    (): PersistedState => ({
-      pattern: visualToFlat(pattern),
-      steps,
-      tempo,
-      swing,
-      reverb,
-      prob,
-      humanize,
-      tomModel,
-      tom2Model,
-      volumes,
-      decays,
-      muted,
-      voiceParams: voiceParamsByEngineTrack,
-      physicalTomParams,
-      physicalTom2Params,
-    }),
-    [
-      pattern,
-      steps,
-      tempo,
-      swing,
-      reverb,
-      prob,
-      humanize,
-      tomModel,
-      tom2Model,
-      volumes,
-      decays,
-      muted,
-      voiceParamsByEngineTrack,
-      physicalTomParams,
-      physicalTom2Params,
-    ],
   );
 
   // Auto-save to localStorage, debounced so a knob sweep writes once it settles.
   useEffect(() => {
-    const id = window.setTimeout(() => saveLocal(buildState()), 300);
+    const id = window.setTimeout(() => saveLocal(drumState), 300);
     return () => window.clearTimeout(id);
-  }, [buildState]);
+  }, [drumState]);
 
-  const getShareUrl = useCallback(() => shareUrl(buildState()), [buildState]);
+  const getShareUrl = useCallback(() => shareUrl(drumState), [drumState]);
 
-  const flatPattern = useMemo(() => visualToFlat(pattern), [pattern]);
+  const flatPattern = useMemo(
+    () => Array.from(drumState.pattern),
+    [drumState.pattern],
+  );
 
   // applyFlatPattern replaces the whole pattern (presets and mutation) in both
   // the UI and the engine.
-  const applyFlatPattern = useCallback((flat: number[]) => {
-    setPattern(flatToVisual(flat));
-    engine.setPattern(Float32Array.from(flat));
-  }, []);
+  const applyFlatPattern = useCallback(
+    (flat: number[]) => {
+      const value = Float32Array.from(flat);
+      applyStateAction({ type: "pattern", value });
+    },
+    [applyStateAction],
+  );
 
   // Tap tempo: average the intervals of the last few taps, reset after a gap.
   const tapTimes = useRef<number[]>([]);
@@ -326,9 +243,10 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       for (let i = 1; i < times.length; i++) sum += times[i] - times[i - 1];
       const avgMs = sum / (times.length - 1);
       const clampedBpm = Math.max(BPM_MIN, Math.min(BPM_MAX, 60000 / avgMs));
-      setTempoState((clampedBpm - BPM_MIN) / BPM_RANGE);
+      const value = Math.round(clampedBpm);
+      applyStateAction({ type: "tempo", value });
     }
-  }, []);
+  }, [applyStateAction]);
 
   // Mouse clicks blur the button so Space stays free for play/pause;
   // keyboard activation (detail === 0) keeps focus for grid navigation.
@@ -336,14 +254,14 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     if (e.detail > 0) e.currentTarget.blur();
   };
 
-  const cycleCell = useCallback((row: number, col: number) => {
-    setPattern((prev) => {
-      const next = prev.map((cells) => [...cells]);
-      next[row][col] = cycleVelocity(next[row][col]);
-      engine.setCell(TRACK_INDEX[row], col, next[row][col]);
-      return next;
-    });
-  }, []);
+  const cycleCell = useCallback(
+    (row: number, col: number) => {
+      const track = TRACK_INDEX[row];
+      const value = cycleVelocity(pattern[row][col]);
+      applyStateAction({ type: "cell", track, step: col, value });
+    },
+    [applyStateAction, pattern],
+  );
 
   const handlePlayPause = useCallback(async () => {
     if (!wasmLoaded) return;
@@ -379,24 +297,20 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handlePlayPause, editorTrack]);
 
-  const setTrackValue = (
-    setter: React.Dispatch<React.SetStateAction<number[]>>,
-    track: number,
-    value: number,
-  ) => {
-    setter((prev) => {
-      const next = [...prev];
-      next[track] = value;
-      return next;
-    });
+  const setTrackVolume = (visualRow: number, value: number) => {
+    const track = TRACK_INDEX[visualRow];
+    applyStateAction({ type: "volume", track, value });
   };
 
-  const toggleMute = (track: number) => {
-    setMuted((prev) => {
-      const next = [...prev];
-      next[track] = !next[track];
-      return next;
-    });
+  const setTrackDecay = (visualRow: number, value: number) => {
+    const track = TRACK_INDEX[visualRow];
+    applyStateAction({ type: "decay", track, value });
+  };
+
+  const toggleMute = (visualRow: number) => {
+    const track = TRACK_INDEX[visualRow];
+    const value = !drumState.tracks[track].muted;
+    applyStateAction({ type: "muted", track, value });
   };
 
   // ── Voice editor ──────────────────────────────────────────────────────────
@@ -426,61 +340,58 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   // would re-send all ~25 parameters on every pointermove of a knob drag.
   const setVoiceParam = useCallback(
     (engineTrack: number, index: number, value: number) => {
-      setVoiceParams((prev) => {
-        const next = prev.map((row) => [...row]);
-        next[engineTrack][index] = value;
-        return next;
+      applyStateAction({
+        type: "voiceParam",
+        track: engineTrack,
+        index,
+        value,
       });
-      engine.setVoiceParam(engineTrack, index, value);
     },
-    [],
+    [applyStateAction],
   );
 
-  const resetVoice = useCallback((engineTrack: number) => {
-    const specs = VOICE_PARAMS[engineTrack];
-
-    setVoiceParams((prev) => {
-      const next = prev.map((row) => [...row]);
-      specs.forEach((spec, i) => {
-        next[engineTrack][i] = spec.default;
+  const resetVoice = useCallback(
+    (engineTrack: number) => {
+      const specs = VOICE_PARAMS[engineTrack];
+      const values = Float32Array.from(specs, (spec) => spec.default);
+      applyStateAction({
+        type: "voiceParams",
+        track: engineTrack,
+        value: values,
       });
-      return next;
-    });
-
-    specs.forEach((spec, i) => {
-      engine.setVoiceParam(engineTrack, i, spec.default);
-    });
-  }, []);
+    },
+    [applyStateAction],
+  );
 
   const setPhysicalTomParam = useCallback(
-    (
-      engineTrack: number,
-      setter: React.Dispatch<React.SetStateAction<number[]>>,
-      index: number,
-      value: number,
-    ) => {
-      setter((prev) => {
-        const next = [...prev];
-        next[index] = value;
-        return next;
+    (engineTrack: number, index: number, value: number) => {
+      applyStateAction({
+        type: "physicalTomParam",
+        track: engineTrack,
+        index,
+        value,
       });
-      engine.setPhysicalTomParam(engineTrack, index, value);
     },
-    [],
+    [applyStateAction],
   );
 
   const resetPhysicalTom = useCallback(
-    (
-      engineTrack: number,
-      setter: React.Dispatch<React.SetStateAction<number[]>>,
-    ) => {
-      const defaults = defaultPhysicalTomParams();
-      setter(defaults);
-      defaults.forEach((value, index) => {
-        engine.setPhysicalTomParam(engineTrack, index, value);
+    (engineTrack: number) => {
+      const defaults = Float32Array.from(defaultPhysicalTomParams());
+      applyStateAction({
+        type: "physicalTomParams",
+        track: engineTrack,
+        value: defaults,
       });
     },
-    [],
+    [applyStateAction],
+  );
+
+  const setTomModel = useCallback(
+    (engineTrack: number, value: TomModel) => {
+      applyStateAction({ type: "tomModel", track: engineTrack, value });
+    },
+    [applyStateAction],
   );
 
   const editorTomModel =
@@ -492,8 +403,6 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   const editorUsesPhysical = editorTomModel === "physical";
   const editorPhysicalParams =
     editorTrack === TOM2_TRACK ? physicalTom2Params : physicalTomParams;
-  const editorPhysicalSetter =
-    editorTrack === TOM2_TRACK ? setPhysicalTom2Params : setPhysicalTomParams;
 
   return (
     <div className="dm-machine">
@@ -590,7 +499,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
             </button>
             <Knob
               value={volumes[row]}
-              onChange={(v) => setTrackValue(setVolumes, row, v)}
+              onChange={(v) => setTrackVolume(row, v)}
               label={name.slice(0, 3).toUpperCase()}
               ariaLabel={`${name} volume`}
               defaultValue={0.75}
@@ -599,7 +508,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
             />
             <Knob
               value={decays[row]}
-              onChange={(v) => setTrackValue(setDecays, row, v)}
+              onChange={(v) => setTrackDecay(row, v)}
               label="DEC"
               ariaLabel={`${name} decay`}
               defaultValue={0.5}
@@ -664,24 +573,19 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           model={editorTomModel}
           onModelChange={
             editorTrack === TOM_TRACK
-              ? setTomModel
+              ? (model) => setTomModel(TOM_TRACK, model)
               : editorTrack === TOM2_TRACK
-                ? setTom2Model
+                ? (model) => setTomModel(TOM2_TRACK, model)
                 : undefined
           }
           onChange={(index, value) =>
             editorUsesPhysical
-              ? setPhysicalTomParam(
-                  editorTrack,
-                  editorPhysicalSetter,
-                  index,
-                  value,
-                )
+              ? setPhysicalTomParam(editorTrack, index, value)
               : setVoiceParam(editorTrack, index, value)
           }
           onReset={() =>
             editorUsesPhysical
-              ? resetPhysicalTom(editorTrack, editorPhysicalSetter)
+              ? resetPhysicalTom(editorTrack)
               : resetVoice(editorTrack)
           }
           onAudition={(amount) => void engine.triggerVoice(editorTrack, amount)}
@@ -741,11 +645,14 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         <div className="dm-tempo-group">
           <Knob
             value={tempo}
-            onChange={setTempoState}
+            onChange={(position) => {
+              const value = Math.round(BPM_MIN + position * BPM_RANGE);
+              applyStateAction({ type: "tempo", value });
+            }}
             label={`${bpm} BPM`}
             ariaLabel="Tempo"
             valueText={() => `${bpm} BPM`}
-            defaultValue={0.43}
+            defaultValue={(DEFAULT_TEMPO_BPM - BPM_MIN) / BPM_RANGE}
             size={54}
             color={AMBER}
           />
@@ -762,7 +669,10 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         </div>
         <Knob
           value={swing}
-          onChange={setSwingState}
+          onChange={(position) => {
+            const value = position * 0.5;
+            applyStateAction({ type: "swing", value });
+          }}
           label="SWING"
           defaultValue={0}
           size={54}
@@ -770,7 +680,10 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         />
         <Knob
           value={steps}
-          onChange={setStepsState}
+          onChange={(position) => {
+            const value = Math.round(1 + position * (COLS - 1));
+            applyStateAction({ type: "stepCount", value });
+          }}
           label="STEPS"
           ariaLabel="Pattern length"
           valueText={() => `${stepCount} steps`}
@@ -780,7 +693,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         />
         <Knob
           value={prob}
-          onChange={setProbState}
+          onChange={(value) => {
+            applyStateAction({ type: "probability", value });
+          }}
           label="PROB"
           ariaLabel="Trigger probability"
           defaultValue={1}
@@ -789,7 +704,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         />
         <Knob
           value={humanize}
-          onChange={setHumanizeState}
+          onChange={(value) => {
+            applyStateAction({ type: "humanize", value });
+          }}
           label="HUMAN"
           ariaLabel="Humanize"
           defaultValue={0}
@@ -801,7 +718,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
 
         <Knob
           value={reverb}
-          onChange={setReverbState}
+          onChange={(value) => {
+            applyStateAction({ type: "reverb", value });
+          }}
           label="REVERB"
           defaultValue={0}
           size={54}

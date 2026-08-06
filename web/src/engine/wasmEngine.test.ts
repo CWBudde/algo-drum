@@ -4,8 +4,8 @@
 // the command queue and the pattern mirror).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PATTERN_SIZE } from "../algo/pattern";
 import type { WorkerCommand, WorkerResponse } from "./audioWorker";
+import { createDefaultEngineState } from "./engineState";
 
 class FakeWorker {
   static created: FakeWorker[] = [];
@@ -136,11 +136,10 @@ class FakeAudioContext {
   }
 }
 
-// A full-size pattern echo whose leading cells hold the given velocities.
-const pattern = (...values: number[]): Float32Array => {
-  const flat = new Float32Array(PATTERN_SIZE);
-  flat.set(values);
-  return flat;
+const state = (tempoBpm = 120) => {
+  const snapshot = createDefaultEngineState();
+  snapshot.tempoBpm = tempoBpm;
+  return snapshot;
 };
 
 const importEngine = async () => {
@@ -308,7 +307,7 @@ describe("command queue", () => {
   it("replays queued edits to the retry worker without reverting newer ones", async () => {
     const engine = await importEngine();
     const listener = vi.fn();
-    engine.onPattern(listener);
+    engine.onState(listener);
 
     // Edit A is queued against a worker that then fails to load.
     engine.setCell(0, 0, 0.7);
@@ -329,11 +328,62 @@ describe("command queue", () => {
     ]);
 
     // The echo for A alone must not be published: it predates B.
-    workers()[1].emit({ type: "patternSync", pattern: pattern(0.7) });
+    workers()[1].emit({ type: "stateSync", state: state(130) });
     expect(listener).not.toHaveBeenCalled();
 
-    workers()[1].emit({ type: "patternSync", pattern: pattern(0.7, 1.0) });
-    expect(listener).toHaveBeenCalledExactlyOnceWith(pattern(0.7, 1.0));
+    const current = state(140);
+    workers()[1].emit({ type: "stateSync", state: current });
+    expect(listener).toHaveBeenCalledExactlyOnceWith(current);
+  });
+
+  it("reconciles every configuration setter but not operational commands", async () => {
+    const engine = await loaded();
+    const listener = vi.fn();
+    engine.onState(listener);
+
+    engine.setTempo(999);
+    const clamped = state(300);
+    workers()[0].emit({ type: "stateSync", state: clamped });
+    expect(listener).toHaveBeenCalledExactlyOnceWith(clamped);
+
+    await engine.play();
+    workers()[0].emit({ type: "stateSync", state: state(200) });
+    // Play is operational and therefore does not create in-flight state that
+    // could suppress an unsolicited authoritative sync.
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects invalid bulk state before counting or queueing it", async () => {
+    const engine = await loaded();
+    const invalid = state();
+    invalid.pattern = new Float32Array(1);
+
+    expect(() => engine.setState(invalid)).toThrow(TypeError);
+    expect(workers()[0].commands()).toHaveLength(0);
+
+    const unsolicited = state(150);
+    const listener = vi.fn();
+    engine.onState(listener);
+    workers()[0].emit({ type: "stateSync", state: unsolicited });
+    expect(listener).toHaveBeenCalledExactlyOnceWith(unsolicited);
+  });
+
+  it("owns the typed arrays queued by setState", async () => {
+    const engine = await loaded();
+    const supplied = state();
+
+    engine.setState(supplied);
+    const posted = workers()[0].commands()[0];
+    const snapshot = posted.args[0] as typeof supplied;
+
+    expect(snapshot).not.toBe(supplied);
+    expect(snapshot.pattern).not.toBe(supplied.pattern);
+    expect(snapshot.tracks[0].voiceParams).not.toBe(
+      supplied.tracks[0].voiceParams,
+    );
+    expect(snapshot.tracks[3].tom.physicalParams).not.toBe(
+      supplied.tracks[3].tom.physicalParams,
+    );
   });
 
   it("maps the named Tom model to the WASM model code", async () => {

@@ -12,6 +12,10 @@ import {
   VOICE_PARAM_CAPACITY,
 } from "../engine/voiceParams";
 import {
+  createDefaultEngineState,
+  type EngineState,
+} from "../engine/engineState";
+import {
   PATTERN_SIZE,
   TRACK_COUNT,
   VEL_ACCENT,
@@ -34,7 +38,7 @@ import type { TomModel } from "../engine/tomModel";
 // attack level, whose range narrowed from 0–0.3 to 0–0.15 once the layer became
 // three bands instead of one. Older links still decode with values attached to
 // the same voices.
-const FORMAT_VERSION = 13;
+const FORMAT_VERSION = 14;
 
 // Byte layout: version, 6 scalar knobs, 5 volumes, 5 decays, 1 mute mask,
 // then the 80-cell pattern packed 2 bits per cell (20 bytes)...
@@ -105,12 +109,38 @@ const V12_BYTES =
   V7_EXTRA_BYTES +
   1 +
   V12_PHYSICAL_TOM_PARAM_CAPACITY;
-const TOTAL_BYTES =
+const V13_BYTES =
   V3_BYTES +
   PHYSICAL_TOM_PARAM_CAPACITY +
   V7_EXTRA_BYTES +
   1 +
   PHYSICAL_TOM_PARAM_CAPACITY;
+
+// V14 is the first canonical EngineState record. Unlike v1-v13, every field
+// is engine-major and scalar values carry their engine semantics rather than a
+// UI knob position. The fixed-width layout is:
+//
+//   byte 0       version
+//   bytes 1..2   tempo BPM, uint16 little-endian
+//   byte 3       step count, uint8
+//   bytes 4..7   swing (normalized over 0..0.5), reverb, probability, humanize
+//   bytes 8..35  pattern, four 2-bit cells per byte, engine-major
+//   bytes 36..49 volume/decay pairs for engine tracks 0..6
+//   byte 50      mute bitset, bit = engine track
+//   bytes 51..92 voice parameter rows, engine-major, padded to capacity
+//   byte 93      physical-model bitset: bit 0 = Tom (track 3), bit 1 = Tom 2 (5)
+//   bytes 94..   physical banks for tracks 3 then 5
+const V14_SCALAR_BYTES = 1 + 2 + 1 + 4;
+const V14_PATTERN_BYTES = PATTERN_SIZE / 4;
+const V14_MIXER_BYTES = TRACK_COUNT * 2 + 1;
+const V14_VOICE_PARAM_BYTES = TRACK_COUNT * VOICE_PARAM_CAPACITY;
+const V14_TOM_BYTES = 1 + 2 * PHYSICAL_TOM_PARAM_CAPACITY;
+const V14_BYTES =
+  V14_SCALAR_BYTES +
+  V14_PATTERN_BYTES +
+  V14_MIXER_BYTES +
+  V14_VOICE_PARAM_BYTES +
+  V14_TOM_BYTES;
 
 // migrateStrikeRadius moves the *exact* shipped strike-radius detent onto the
 // current default, twice over, and leaves every edited position alone.
@@ -195,9 +225,9 @@ const CENTRAL_PHYSICAL_STRIKE_RADIUS_DEFAULT =
 // every pattern users have saved, which is exactly what v2 avoids.
 export const STORAGE_KEY = "algo-drum.state.v1";
 
-// PersistedState mirrors the DrumMachine's serializable UI state. Scalar knob
-// values and per-track volumes/decays are normalized positions in [0, 1].
-export interface PersistedState {
+// Internal representation of a v1-v13 record before its historical UI
+// coordinates are migrated into the canonical EngineState.
+interface LegacyState {
   pattern: number[]; // flat, engine-major velocities, length PATTERN_SIZE
   steps: number;
   tempo: number;
@@ -278,32 +308,31 @@ function base64UrlToBytes(text: string): Uint8Array | null {
   }
 }
 
-// encodeState serializes state into a compact base64url string.
-export function encodeState(state: PersistedState): string {
-  const bytes = new Uint8Array(TOTAL_BYTES);
+// encodeState serializes the canonical engine-owned state into v14.
+export function encodeState(state: EngineState): string {
+  const bytes = new Uint8Array(V14_BYTES);
   let offset = 0;
 
   bytes[offset++] = FORMAT_VERSION;
-  bytes[offset++] = toByte(state.steps);
-  bytes[offset++] = toByte(state.tempo);
-  bytes[offset++] = toByte(state.swing);
+  const tempo = Math.round(
+    Math.min(
+      300,
+      Math.max(30, Number.isFinite(state.tempoBpm) ? state.tempoBpm : 30),
+    ),
+  );
+  bytes[offset++] = tempo & 0xff;
+  bytes[offset++] = tempo >>> 8;
+  const stepCount = Number.isFinite(state.stepCount)
+    ? Math.round(state.stepCount)
+    : 1;
+  bytes[offset++] = Math.min(16, Math.max(1, stepCount));
+  bytes[offset++] = toByte(state.swing / 0.5);
   bytes[offset++] = toByte(state.reverb);
-  bytes[offset++] = toByte(state.prob);
+  bytes[offset++] = toByte(state.probability);
   bytes[offset++] = toByte(state.humanize);
 
-  for (const visualIndex of LEGACY_VISUAL_TO_CURRENT)
-    bytes[offset++] = toByte(state.volumes[visualIndex] ?? 0);
-  for (const visualIndex of LEGACY_VISUAL_TO_CURRENT)
-    bytes[offset++] = toByte(state.decays[visualIndex] ?? 0);
-
-  let muteMask = 0;
-  for (let i = 0; i < LEGACY_TRACK_COUNT; i++) {
-    if (state.muted[LEGACY_VISUAL_TO_CURRENT[i]]) muteMask |= 1 << i;
-  }
-  bytes[offset++] = muteMask;
-
   // Pack four 2-bit cell codes into each pattern byte.
-  for (let i = 0; i < LEGACY_PATTERN_BYTES; i++) {
+  for (let i = 0; i < V14_PATTERN_BYTES; i++) {
     let packed = 0;
     for (let j = 0; j < 4; j++) {
       const code = velToCode(state.pattern[i * 4 + j] ?? VEL_OFF);
@@ -312,67 +341,156 @@ export function encodeState(state: PersistedState): string {
     bytes[offset++] = packed;
   }
 
-  // Rows are padded and truncated to the capacity so the record stays fixed
-  // width no matter how many parameters a voice actually exposes.
-  for (let track = 0; track < LEGACY_TRACK_COUNT; track++) {
+  let muteMask = 0;
+  for (let track = 0; track < TRACK_COUNT; track++) {
+    const trackState = state.tracks[track];
+    bytes[offset++] = toByte(trackState?.volume ?? 0);
+    bytes[offset++] = toByte(trackState?.decay ?? 0);
+    if (trackState?.muted) muteMask |= 1 << track;
+  }
+  bytes[offset++] = muteMask;
+
+  // Rows are padded and truncated to the generated capacity so the record
+  // stays fixed width when voices expose different parameter counts.
+  for (let track = 0; track < TRACK_COUNT; track++) {
     for (let i = 0; i < VOICE_PARAM_CAPACITY; i++) {
-      bytes[offset++] = toByte(state.voiceParams?.[track]?.[i] ?? 0);
+      bytes[offset++] = toByte(state.tracks[track]?.voiceParams[i] ?? 0);
     }
   }
 
-  bytes[offset++] = state.tomModel === "physical" ? 1 : 0;
+  const tom = state.tracks[3];
+  const tom2 = state.tracks[5];
+  let modelMask = 0;
+  if (tom.tom.model === "physical") modelMask |= 1;
+  if (tom2.tom.model === "physical") modelMask |= 2;
+  bytes[offset++] = modelMask;
 
   for (let i = 0; i < PHYSICAL_TOM_PARAM_CAPACITY; i++) {
-    bytes[offset++] = toByte(state.physicalTomParams?.[i] ?? 0);
+    bytes[offset++] = toByte(tom.tom.physicalParams[i] ?? 0);
   }
-
-  for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
-    bytes[offset++] = toByte(
-      state.volumes[visualIndexForEngineTrack(track)] ?? 0,
-    );
-  }
-  for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
-    bytes[offset++] = toByte(
-      state.decays[visualIndexForEngineTrack(track)] ?? 0,
-    );
-  }
-
-  let extraMuteMask = 0;
-  for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
-    if (state.muted[visualIndexForEngineTrack(track)])
-      extraMuteMask |= 1 << (track - LEGACY_TRACK_COUNT);
-  }
-  bytes[offset++] = extraMuteMask;
-
-  for (let i = 0; i < EXTRA_PATTERN_BYTES; i++) {
-    let packed = 0;
-    for (let j = 0; j < 4; j++) {
-      const patternIndex = LEGACY_PATTERN_SIZE + i * 4 + j;
-      packed |= velToCode(state.pattern[patternIndex] ?? VEL_OFF) << (j * 2);
-    }
-    bytes[offset++] = packed;
-  }
-
-  for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
-    for (let i = 0; i < VOICE_PARAM_CAPACITY; i++) {
-      bytes[offset++] = toByte(state.voiceParams?.[track]?.[i] ?? 0);
-    }
-  }
-
-  bytes[offset++] = state.tom2Model === "physical" ? 1 : 0;
   for (let i = 0; i < PHYSICAL_TOM_PARAM_CAPACITY; i++) {
-    bytes[offset++] = toByte(state.physicalTom2Params?.[i] ?? 0);
+    bytes[offset++] = toByte(tom2.tom.physicalParams[i] ?? 0);
   }
 
   return bytesToBase64Url(bytes);
 }
 
-// decodeState parses a base64url string back into state, returning null on any
-// version/length/garbage mismatch so callers can fall back to a fresh start.
-export function decodeState(text: string): PersistedState | null {
+// decodeState parses any supported blob into the canonical EngineState,
+// returning null on a version/length/garbage mismatch.
+export function decodeState(text: string): EngineState | null {
   const bytes = base64UrlToBytes(text);
   if (!bytes || bytes.length === 0) return null;
 
+  if (bytes[0] === FORMAT_VERSION) return decodeV14(bytes);
+
+  const legacy = decodeLegacyState(bytes);
+  return legacy ? canonicalizeLegacy(legacy) : null;
+}
+
+function decodeV14(bytes: Uint8Array): EngineState | null {
+  if (bytes.length !== V14_BYTES) return null;
+
+  let offset = 1;
+  const tempoBpm = bytes[offset++] | (bytes[offset++] << 8);
+  const stepCount = bytes[offset++];
+  if (tempoBpm < 30 || tempoBpm > 300 || stepCount < 1 || stepCount > 16)
+    return null;
+
+  const state = createDefaultEngineState();
+  state.tempoBpm = tempoBpm;
+  state.stepCount = stepCount;
+  state.swing = fromByte(bytes[offset++]) * 0.5;
+  state.reverb = fromByte(bytes[offset++]);
+  state.probability = fromByte(bytes[offset++]);
+  state.humanize = fromByte(bytes[offset++]);
+
+  for (let i = 0; i < V14_PATTERN_BYTES; i++) {
+    const packed = bytes[offset++];
+    for (let j = 0; j < 4; j++) {
+      const code = (packed >> (j * 2)) & 0b11;
+      // Code 3 has never represented a velocity. Treat it as corruption
+      // rather than silently turning a damaged accent into an off cell.
+      if (code === 3) return null;
+      state.pattern[i * 4 + j] = codeToVel(code);
+    }
+  }
+
+  for (let track = 0; track < TRACK_COUNT; track++) {
+    state.tracks[track].volume = fromByte(bytes[offset++]);
+    state.tracks[track].decay = fromByte(bytes[offset++]);
+  }
+
+  const muteMask = bytes[offset++];
+  if ((muteMask & 0x80) !== 0) return null;
+  for (let track = 0; track < TRACK_COUNT; track++) {
+    state.tracks[track].muted = (muteMask & (1 << track)) !== 0;
+  }
+
+  for (let track = 0; track < TRACK_COUNT; track++) {
+    for (let i = 0; i < VOICE_PARAM_CAPACITY; i++) {
+      const value = fromByte(bytes[offset++]);
+      if (i < state.tracks[track].voiceParams.length) {
+        state.tracks[track].voiceParams[i] = value;
+      }
+    }
+  }
+
+  const modelMask = bytes[offset++];
+  if ((modelMask & ~0b11) !== 0) return null;
+
+  const tom = state.tracks[3];
+  const tom2 = state.tracks[5];
+  tom.tom.model = (modelMask & 1) !== 0 ? "physical" : "procedural";
+  tom2.tom.model = (modelMask & 2) !== 0 ? "physical" : "procedural";
+  for (let i = 0; i < PHYSICAL_TOM_PARAM_CAPACITY; i++) {
+    tom.tom.physicalParams[i] = fromByte(bytes[offset++]);
+  }
+  for (let i = 0; i < PHYSICAL_TOM_PARAM_CAPACITY; i++) {
+    tom2.tom.physicalParams[i] = fromByte(bytes[offset++]);
+  }
+
+  return state;
+}
+
+function canonicalizeLegacy(legacy: LegacyState): EngineState {
+  const state = createDefaultEngineState();
+  state.tempoBpm = Math.round(60 + clamp01(legacy.tempo) * 140);
+  state.stepCount = Math.round(1 + clamp01(legacy.steps) * 15);
+  state.swing = clamp01(legacy.swing) * 0.5;
+  state.reverb = clamp01(legacy.reverb);
+  state.probability = clamp01(legacy.prob);
+  state.humanize = clamp01(legacy.humanize);
+  state.pattern.set(legacy.pattern);
+
+  for (let track = 0; track < TRACK_COUNT; track++) {
+    const visual = visualIndexForEngineTrack(track);
+    state.tracks[track].volume = legacy.volumes[visual];
+    state.tracks[track].decay = legacy.decays[visual];
+    state.tracks[track].muted = legacy.muted[visual];
+
+    const storedParams = legacy.voiceParams?.[track];
+    if (storedParams) {
+      const params = state.tracks[track].voiceParams;
+      for (let i = 0; i < Math.min(params.length, storedParams.length); i++) {
+        params[i] = storedParams[i];
+      }
+    }
+  }
+
+  const tom = state.tracks[3];
+  tom.tom.model = legacy.tomModel ?? "procedural";
+  if (legacy.physicalTomParams)
+    tom.tom.physicalParams.set(legacy.physicalTomParams);
+
+  const tom2 = state.tracks[5];
+  tom2.tom.model = legacy.tom2Model ?? "procedural";
+  if (legacy.physicalTom2Params)
+    tom2.tom.physicalParams.set(legacy.physicalTom2Params);
+
+  return state;
+}
+
+function decodeLegacyState(bytes: Uint8Array): LegacyState | null {
   // The expected length is version-specific: a v1 blob is not a truncated v2
   // blob, and a full-length blob claiming v1 is corrupt rather than v1 with
   // junk appended.
@@ -398,8 +516,8 @@ export function decodeState(text: string): PersistedState | null {
                       ? V11_BYTES
                       : version === 12
                         ? V12_BYTES
-                        : version === FORMAT_VERSION
-                          ? TOTAL_BYTES
+                        : version === 13
+                          ? V13_BYTES
                           : -1;
   if (bytes.length !== expected) return null;
 
@@ -443,7 +561,7 @@ export function decodeState(text: string): PersistedState | null {
     muted[visualIndex] = legacyMuted[i];
   }
 
-  const state: PersistedState = {
+  const state: LegacyState = {
     pattern,
     steps,
     tempo,
@@ -471,7 +589,7 @@ export function decodeState(text: string): PersistedState | null {
   const tomModelCode = bytes[offset++];
   if (tomModelCode > 1) return null;
 
-  const stateWithModel: PersistedState = {
+  const stateWithModel: LegacyState = {
     ...state,
     voiceParams,
     tomModel: tomModelCode === 1 ? "physical" : "procedural",
@@ -552,7 +670,7 @@ export function decodeState(text: string): PersistedState | null {
 // ── localStorage + URL hash glue (fail-soft) ────────────────────────────────
 
 // saveLocal persists state to localStorage; storage errors are swallowed.
-export function saveLocal(state: PersistedState): void {
+export function saveLocal(state: EngineState): void {
   try {
     localStorage.setItem(STORAGE_KEY, encodeState(state));
   } catch {
@@ -561,7 +679,7 @@ export function saveLocal(state: PersistedState): void {
 }
 
 // loadLocal restores state from localStorage, or null if absent/invalid.
-export function loadLocal(): PersistedState | null {
+export function loadLocal(): EngineState | null {
   try {
     const text = localStorage.getItem(STORAGE_KEY);
     return text ? decodeState(text) : null;
@@ -571,14 +689,14 @@ export function loadLocal(): PersistedState | null {
 }
 
 // readHash decodes state from the current URL hash (if present and valid).
-export function readHash(): PersistedState | null {
+export function readHash(): EngineState | null {
   const hash = window.location.hash.replace(/^#/, "");
   return hash ? decodeState(hash) : null;
 }
 
 // shareUrl encodes state into the URL hash, updates the address bar without a
 // navigation, and returns the full shareable link.
-export function shareUrl(state: PersistedState): string {
+export function shareUrl(state: EngineState): string {
   const encoded = encodeState(state);
   const url = `${window.location.origin}${window.location.pathname}${window.location.search}#${encoded}`;
   window.history.replaceState(null, "", url);
@@ -587,6 +705,6 @@ export function shareUrl(state: PersistedState): string {
 
 // loadInitialState prefers a valid URL hash over localStorage, so shared links
 // always win.
-export function loadInitialState(): PersistedState | null {
+export function loadInitialState(): EngineState | null {
   return readHash() ?? loadLocal();
 }

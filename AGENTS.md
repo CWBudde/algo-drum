@@ -89,6 +89,7 @@ Vite serves `web/public/` as static assets, so `algo_drum.wasm` and `wasm_exec.j
 ```
 cmd/wasm/main.go          — WASM entry point; registers the AlgoDrum JS API (worker global scope)
 internal/drum/engine.go   — Sequencer: velocity pattern grid (7×16), runtime step count, fixed-point tempo/swing clock, probability + humanize (allocation-free pending-trigger mask), smoothed per-track volumes, Render()
+internal/drum/state.go    — Engine-owned semantic snapshot/replacement contract: full pattern, controls, engine-major mixer/mute and voice/Tom parameter banks
 internal/drum/voices.go   — Drum synthesizer voices (BassDrum, Snare, HiHat, Tom, Cymbal, Tom 2, Percussion); all tuning is runtime-settable
 internal/drum/params.go   — Per-voice synthesis parameter specs (ranges, curves, defaults) + the normalized→engineering mapping
 internal/drum/validate.go — Engine.Validate(): every invariant Render relies on (step lengths, playhead, pending triggers, gains, voice params), joined into one error
@@ -96,9 +97,10 @@ internal/drum/assert.go   — assertValid(): a no-op in shipped builds; `-tags d
 cmd/gen-voiceparams/      — Generates web/src/engine/voiceParams.generated.ts from params.go (`just gen-params`; CI diffs it)
 internal/drum/*_test.go   — Go unit tests: sequencing, clamping, bit-exact render determinism, per-voice envelopes
 internal/drum/physical_tom.go — Adapter wrapping algo-tom's physical.DoubleHead as a Voice; the model itself lives in github.com/cwbudde/algo-tom → "The physical Tom voice"
-web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands, exposes onPattern (engine-owned pattern snapshots) and dispose() (tears the worker + audio graph down)
-web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; renders audio chunks on demand, echoes the authoritative pattern after each edit
-web/src/engine/patternMirror.ts — Reconciles the engine's pattern echoes with in-flight optimistic UI edits (engine = single source of truth)
+web/src/engine/engineState.ts — Canonical semantic EngineState shape shared by the bridge, React reducer and persistence; all tracks are engine-major
+web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands, exposes onState (authoritative full snapshots) and dispose()
+web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; renders audio chunks and echoes the complete authoritative state after every configuration edit
+web/src/engine/stateMirror.ts — Reconciles full engine snapshots with in-flight optimistic UI edits (Go engine = single source of truth)
 web/src/engine/voiceParams.ts   — Curve renderer + readout formatting over voiceParams.generated.ts (the committed mirror of internal/drum/params.go)
 web/public/worklet.js         — AudioWorkletProcessor: consumes chunks, reports the audible step
 web/src/components/DrumMachine.tsx — Main UI: 7×16 step grid (DOM/CSS; clicking a cell cycles off → on → accent) mirroring the engine-owned pattern, transport (play/pause/stop, tempo + TAP, swing, STEPS, PROB, HUMAN, reverb), per-track volume/decay knobs + mute LEDs + a per-voice editor button; persistence/share wiring
@@ -110,11 +112,11 @@ web/src/components/ErrorBoundary.tsx — App-wide React error boundary; a render
 web/src/algo/euclid.ts     — Pure Bjorklund/Euclidean E(pulses, steps) rhythm generator with rotation
 web/src/algo/mutate.ts     — Pure musical random-walk mutation of a flat pattern
 web/src/algo/presets.ts    — Classic 16-step preset patterns (rock, house, breakbeat, hip-hop, techno, funk) + Clear
-web/src/algo/persistence.ts — Pure versioned encode/decode of full state → base64url (v2 appends the voice parameters; v1 blobs still decode); localStorage + URL-hash glue
+web/src/algo/persistence.ts — Pure versioned EngineState encode/decode → base64url (v14 is semantic + engine-major; v1–v13 still decode); localStorage + URL-hash glue
 web/src/algo/pattern.ts    — Shared pattern constants (dims, velocities, flat-index helper) for the algo modules
 web/src/App.tsx           — Root: loads WASM on mount, renders DrumMachine inside the ErrorBoundary, shows a retryable fault panel if the engine fails
 web/src/main.tsx          — Browser entry: mounts App and registers the service worker (production builds only)
-web/src/**/*.test.ts      — Vitest unit tests, colocated with the pure modules they cover (algo/, knobMath, patternMirror)
+web/src/**/*.test.ts      — Vitest unit tests, colocated with the pure modules they cover (algo/, knobMath, stateMirror, worker bridge)
 web/e2e/smoke.spec.ts     — Playwright smoke test against the production build: engine ready, cell toggles, Space plays, playhead advances
 web/public/sw.js          — Service worker: precaches the app shell + WASM, network-first for algo_drum.wasm / wasm_exec.js and navigations
 web/public/site.webmanifest — PWA manifest (name, icons, standalone display, relative start_url/scope)
@@ -154,9 +156,11 @@ UI displays Cymbal, Percussion, Tom 2, Tom, Hi-Hat, Snare, Bass from top to bott
 | `setStepCount(n)`              | Set active pattern length (clamped to 1–16); steps are 16th notes                  |
 | `setCell(track, step, 0–1)`    | Set cell velocity (0 = off; UI uses 0.7 = normal, 1.0 = accent)                    |
 | `setPattern(Float32Array)`     | Atomically replace the full flat track-major 7×16 pattern (`track*16+step`)        |
-| `getPattern()`                 | Returns the pattern in the same flat Float32Array layout                           |
+| `setState(EngineState)`        | Validate/clamp and replace every persistent sound/configuration value              |
+| `getState()`                   | Return the complete authoritative semantic state snapshot                          |
 | `setVolume(track, 0–1)`        | Set track volume (ramped over ~8 ms to avoid zipper noise)                         |
 | `setDecay(track, 0–1)`         | Trim the track's base decay time by 0.5×–1.5×                                      |
+| `setMuted(track, bool)`        | Ramp a track to/from silence without overwriting its stored volume                 |
 | `setVoiceParam(track, i, 0–1)` | Set one per-voice synthesis parameter (tables in `docs/voices.md`)                 |
 | `triggerVoice(track, 0–1)`     | Fire one voice immediately, independent of the sequencer (audition)                |
 | `setReverb(0–1)`               | Set the smoothed global reverb amount                                               |

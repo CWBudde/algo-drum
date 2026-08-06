@@ -75,6 +75,15 @@ func newParamBank(specs []ParamSpec) paramBank {
 	return bank
 }
 
+func defaultParams(specs []ParamSpec) []float64 {
+	values := make([]float64, len(specs))
+	for index, spec := range specs {
+		values[index] = spec.Default
+	}
+
+	return values
+}
+
 // ParamSpecs returns the voice's parameter descriptors, in index order.
 func (b *paramBank) ParamSpecs() []ParamSpec { return b.specs }
 

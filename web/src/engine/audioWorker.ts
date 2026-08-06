@@ -4,6 +4,13 @@
 // AudioWorklet requests chunks over a direct MessagePort, and UI parameter
 // changes arrive as command messages from the main thread.
 
+import {
+  CONFIGURATION_METHODS,
+  isConfigurationMethod,
+  validateEngineState,
+  type EngineState,
+} from "./engineState";
+
 // The engine's JS surface. Exported so the main-thread bridge can type its
 // command sender against it (method name and argument tuple) instead of
 // casting into the wire format.
@@ -16,9 +23,11 @@ export interface AlgoDrumApi {
   setStepCount: (steps: number) => void;
   setCell: (track: number, step: number, velocity: number) => void;
   setPattern: (pattern: Float32Array) => void;
-  getPattern: () => Float32Array;
+  setState: (state: EngineState) => void;
+  getState: () => EngineState;
   setVolume: (track: number, vol: number) => void;
   setDecay: (track: number, amount: number) => void;
+  setMuted: (track: number, muted: boolean) => void;
   setVoiceParam: (track: number, index: number, value: number) => void;
   setPhysicalTomParam: (track: number, index: number, value: number) => void;
   setTomModel: (track: number, model: number) => void;
@@ -47,9 +56,11 @@ const REQUIRED_METHODS = [
   "setStepCount",
   "setCell",
   "setPattern",
-  "getPattern",
+  "setState",
+  "getState",
   "setVolume",
   "setDecay",
+  "setMuted",
   "setVoiceParam",
   "setPhysicalTomParam",
   "setTomModel",
@@ -67,6 +78,26 @@ const REQUIRED_METHODS = [
 type AssertNever<T extends never> = T;
 export type _AllMethodsListed = AssertNever<
   Exclude<keyof AlgoDrumApi, (typeof REQUIRED_METHODS)[number]>
+>;
+
+export const OPERATIONAL_METHODS = [
+  "init",
+  "getState",
+  "setRunning",
+  "pause",
+  "triggerVoice",
+  "render",
+  "currentStep",
+  "isIdle",
+] as const satisfies readonly (keyof AlgoDrumApi)[];
+
+type ClassifiedMethod =
+  (typeof CONFIGURATION_METHODS)[number] | (typeof OPERATIONAL_METHODS)[number];
+export type _ConfigurationMethodsExist = AssertNever<
+  Exclude<(typeof CONFIGURATION_METHODS)[number], keyof AlgoDrumApi>
+>;
+export type _AllMethodsClassified = AssertNever<
+  Exclude<keyof AlgoDrumApi, ClassifiedMethod>
 >;
 
 // assertEngineApi fails the load when the instantiated WASM does not expose
@@ -105,7 +136,7 @@ export type WorkerCommand =
 export type WorkerResponse =
   | { type: "ready" }
   | { type: "error"; error: string }
-  | { type: "patternSync"; pattern: Float32Array };
+  | { type: "stateSync"; state: unknown };
 
 const workerScope = globalThis as unknown as {
   Go: new () => GoRuntime;
@@ -283,21 +314,17 @@ function invokeEngine(name: keyof AlgoDrumApi, args: unknown[]): void {
   }
 }
 
-// readPattern reads the engine's authoritative pattern for an echo, falling
-// back to an empty array if it cannot. The mirror counts exactly one echo per
-// edit, so a swallowed echo would stall it permanently; an empty one is
-// ignored by the mirror but still balances the books. The catch also covers
-// the engine not being ready (AlgoDrum undefined), which the main thread's
-// command queue already prevents.
-function readPattern(): Float32Array {
+// A failed read still returns an invalid sentinel: the mirror spends one
+// in-flight mutation per echo, so swallowing it would gate every later state.
+function readState(): unknown {
   try {
-    return workerScope.AlgoDrum.getPattern();
+    return validateEngineState(workerScope.AlgoDrum.getState());
   } catch (error) {
     respond({
       type: "error",
-      error: `AlgoDrum.getPattern failed: ${String(error)}`,
+      error: `AlgoDrum.getState failed: ${String(error)}`,
     });
-    return new Float32Array(0);
+    return null;
   }
 }
 
@@ -318,12 +345,10 @@ workerScope.onmessage = (event: MessageEvent<WorkerCommand>) => {
     case "cmd":
       if (engineReady) invokeEngine(message.name, message.args);
 
-      // The engine owns the pattern: after every pattern edit, echo its
-      // authoritative copy so the main-thread mirror can reconcile. Exactly
-      // one echo per edit, so the mirror's in-flight accounting stays
-      // balanced even when the read fails.
-      if (message.name === "setCell" || message.name === "setPattern") {
-        respond({ type: "patternSync", pattern: readPattern() });
+      // One full authoritative echo follows every configuration mutation.
+      // Transport, audition and audio rendering deliberately do not echo.
+      if (isConfigurationMethod(message.name)) {
+        respond({ type: "stateSync", state: readState() });
       }
       break;
   }

@@ -151,7 +151,21 @@ func (e *Engine) checkMix(problems []error) []error {
 
 	for _, track := range [...]int{tomTrackIndex, tom2TrackIndex} {
 		model := e.tomModels[track]
-		if model != TomModelProcedural && model != TomModelPhysical {
+		switch model {
+		case TomModelProcedural:
+			if e.voices[track] != e.proceduralToms[track] {
+				problems = append(problems,
+					fmt.Errorf("procedural Tom track %d does not own its active voice", track))
+			}
+		case TomModelPhysical:
+			if e.physicalToms[track] == nil {
+				problems = append(problems,
+					fmt.Errorf("physical Tom track %d has no physical voice", track))
+			} else if e.voices[track] != e.physicalToms[track] {
+				problems = append(problems,
+					fmt.Errorf("physical Tom track %d does not own its active voice", track))
+			}
+		default:
 			problems = append(problems,
 				fmt.Errorf("invalid Tom model on track %d: %d", track, model))
 		}
@@ -191,6 +205,20 @@ func (e *Engine) checkMix(problems []error) []error {
 			continue
 		}
 
+		if validTomTrack(track) {
+			// The procedural bank is part of state even while the physical
+			// implementation is active, so validate it independently of the
+			// currently selected Voice.
+			procedural := e.proceduralToms[track]
+			if procedural == nil {
+				problems = append(problems, fmt.Errorf("Tom track %d has no procedural voice", track))
+
+				continue
+			}
+
+			voice = procedural
+		}
+
 		for index := range voice.ParamSpecs() {
 			if param := voice.Param(index); !inRange(param, 0, 1) {
 				problems = append(problems,
@@ -200,16 +228,38 @@ func (e *Engine) checkMix(problems []error) []error {
 	}
 
 	for _, track := range [...]int{tomTrackIndex, tom2TrackIndex} {
+		shadow := e.physicalTomParams[track]
+		if len(shadow) != len(physicalTomSpecs) {
+			problems = append(problems,
+				fmt.Errorf("physical Tom track %d shadow parameter count %d, want %d",
+					track, len(shadow), len(physicalTomSpecs)))
+		} else {
+			for index, param := range shadow {
+				if !inRange(param, 0, 1) {
+					problems = append(problems,
+						fmt.Errorf("physical Tom track %d shadow param %d out of contract: %v",
+							track, index, param))
+				}
+			}
+		}
+
 		physicalTom := e.physicalToms[track]
 		if physicalTom == nil {
 			continue
 		}
 
 		for index := range physicalTom.ParamSpecs() {
-			if param := physicalTom.Param(index); !inRange(param, 0, 1) {
+			param := physicalTom.Param(index)
+			if !inRange(param, 0, 1) {
 				problems = append(problems,
 					fmt.Errorf("physical Tom track %d param %d out of contract: %v",
 						track, index, param))
+			}
+
+			if index < len(shadow) && param != shadow[index] {
+				problems = append(problems,
+					fmt.Errorf("physical Tom track %d param %d = %v, shadow = %v",
+						track, index, param, shadow[index]))
 			}
 		}
 	}
