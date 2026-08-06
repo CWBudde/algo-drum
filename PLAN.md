@@ -307,9 +307,11 @@ the important exception: A7/A16 still track its three views separately.
       URL construction is now pure and independently tested; the address-bar
       replacement is a fail-soft, explicitly named share action that preserves
       the existing history state.
-- [ ] **A11: a load error unmounts the whole machine.** `App.tsx:57` renders
+- [x] **A11: a load error unmounts the whole machine.** `App.tsx:57` renders
       `DrumMachine` only when `status !== "error"`, so Retry discards all UI state and
       re-reads persistence, losing up to 300 ms of debounced edits.
+      The machine now remains mounted in a hidden, inert shell while the load-fault
+      panel is active, so Retry reuses its reducer state and pending engine commands.
 - [x] **A12: `startAudio` has no error handling** (`wasmEngine.ts:146`); a rejecting
       `addModule` propagates into `handlePlayStop` (`DrumMachine.tsx:249`, no catch) with
       nothing shown to the user.

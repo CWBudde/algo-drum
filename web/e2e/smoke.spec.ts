@@ -73,6 +73,90 @@ test("cell edits survive the engine's authoritative pattern echo", async ({
   }
 });
 
+test.describe("engine load retry", () => {
+  // The production service worker precaches algo_drum.wasm and can issue a
+  // second, unrelated request while this test is controlling the worker's
+  // streaming/fallback pair. Blocking it keeps the failure deterministic.
+  test.use({ serviceWorkers: "block" });
+
+  test("retains in-memory machine state across a failed load and retry", async ({
+    page,
+  }) => {
+    let releaseFirstRequest!: () => void;
+    let reportFirstRequest!: () => void;
+    const firstRequestHeld = new Promise<void>((resolve) => {
+      releaseFirstRequest = resolve;
+    });
+    const firstRequestSeen = new Promise<void>((resolve) => {
+      reportFirstRequest = resolve;
+    });
+    let failAttempt = true;
+    let failedRequests = 0;
+
+    await page.route("**/algo_drum.wasm", async (route) => {
+      if (!failAttempt) {
+        await route.continue();
+        return;
+      }
+
+      failedRequests++;
+      if (failedRequests === 1) {
+        reportFirstRequest();
+        await firstRequestHeld;
+      }
+
+      await route.abort("failed");
+    });
+
+    await page.goto("./");
+    await firstRequestSeen;
+
+    // The machine mounts while the engine loads, so an edit can exist only in
+    // React and the bridge's pending command queue when the worker fails.
+    const shell = page.locator(".app-machine");
+    const cell = page.getByRole("button", { name: /^Cymbal step 16:/ });
+    await expect(shell).toBeVisible();
+    await expect(cell).toHaveAccessibleName("Cymbal step 16: off");
+    await cell.click();
+    await expect(cell).toHaveAccessibleName("Cymbal step 16: on");
+
+    // A DOM sentinel proves Retry kept the same mounted subtree rather than
+    // reconstructing an equivalent-looking machine from persistence.
+    await shell.evaluate((element) => {
+      element.setAttribute("data-retry-sentinel", "retained");
+    });
+
+    // Abort the held streaming request. The worker retries with arrayBuffer,
+    // and the route aborts that fallback too before App enters its error UI.
+    releaseFirstRequest();
+    const fault = page.locator(".app-fault");
+    await expect(fault).toBeVisible({ timeout: 30_000 });
+    await expect(
+      fault.getByRole("heading", { name: "Audio engine failed to load" }),
+    ).toBeVisible();
+    expect(failedRequests).toBeGreaterThanOrEqual(2);
+
+    // The failed machine is unavailable to users but remains mounted, keeping
+    // reducer state and the bridge's queued edits alive for Retry.
+    await expect(shell).toBeAttached();
+    await expect(shell).toBeHidden();
+    await expect(shell).toHaveAttribute("inert", "");
+    await expect(shell).toHaveAttribute("data-retry-sentinel", "retained");
+
+    failAttempt = false;
+    await page.getByRole("button", { name: "Retry" }).click();
+    const play = page.getByRole("button", { name: "Play", exact: true });
+    await expect(play).toBeEnabled({ timeout: 30_000 });
+    await expect(shell).toBeVisible();
+    await expect(shell).toHaveAttribute("data-retry-sentinel", "retained");
+
+    // Let setState + setCell flush and both authoritative state echoes settle.
+    // The final snapshot must still contain the edit made before the failure.
+    await page.waitForTimeout(250);
+    await expect(cell).toHaveAccessibleName("Cymbal step 16: on");
+  });
+});
+
 test("mixer and mute state survive authoritative echoes and persistence", async ({
   page,
 }) => {

@@ -62,13 +62,19 @@ export default function App() {
         </div>
       )}
       {load.status === "loading" && (
-        <p className="app-loading">Loading engine…</p>
+        <p className="app-loading" role="status">
+          Loading engine…
+        </p>
       )}
-      {load.status !== "error" && (
+      <div
+        className="app-machine"
+        hidden={load.status === "error"}
+        inert={load.status === "error"}
+      >
         <ErrorBoundary onError={handleCrash}>
           <DrumMachine wasmLoaded={load.status === "ready"} />
         </ErrorBoundary>
-      )}
+      </div>
     </main>
   );
 }
