@@ -8,7 +8,7 @@ require (
 )
 
 require (
-	github.com/cwbudde/algo-fft v0.7.3 // indirect
+	github.com/cwbudde/algo-fft v0.7.4 // indirect
 	github.com/cwbudde/algo-vecmath v0.1.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 )
