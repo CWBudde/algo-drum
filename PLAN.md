@@ -733,12 +733,14 @@ radiation weight and a stochastic attack layer above the modal ceiling.
 > offline tooling, its reference recordings and its fourteen design documents
 > were extracted to [github.com/cwbudde/algo-tom](https://github.com/cwbudde/algo-tom),
 > which algo-drum now consumes as a module dependency. The items below are kept
-> verbatim as the record of work done **here**, at the time it was done. Every
-> `internal/physical/...`, `cmd/fit-physical`, `docs/physical-*.md` and
-> `reference/...` path in them now resolves in that repository instead — they
-> have deliberately not been rewritten, because a backlog entry that cites a
-> path the change did not touch is a worse record than one that cites where the
-> work actually happened.
+> verbatim as the record of work done **here**, at the time it was done.
+>
+> Prose paths — `internal/physical/...`, `cmd/fit-physical`, `reference/...` —
+> have deliberately **not** been rewritten: a backlog entry that cites a path the
+> change did not touch is a worse record than one that cites where the work
+> actually happened. Read them as resolving in algo-tom. Markdown *links* were
+> retargeted to that repository, because a link that 404s is not a record of
+> anything.
 
 **This section is the forward backlog.** The phases that built the model are
 closed; what they established lives in `docs/physical-*.md`, and each phase below
@@ -746,20 +748,20 @@ points at the document that holds its evidence. Numbers are not repeated here �
 if a figure appears in both places, the document is the one to trust.
 
 Research record and primary sources:
-[`docs/physical-model-research.md`](docs/physical-model-research.md).
+[`docs/physical-model-research.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-model-research.md).
 
 ### Where it stands
 
 | Phase                                           | What it settled                                                                                                                                                                                                                                               | Record                                                                                                       |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| **P0–P2** contracts, modal bank, loss/radiation | Parameter structs, quality tiers, allocation-free `Render`, Fourier–Bessel modes, exact state transitions, the frequency-dependent loss law and the radiation weight.                                                                                         | [`physical-calibration.md`](docs/physical-calibration.md)                                                    |
-| **P3** resonant head + cavity                   | Passive rank-one pressure coupling, validated against an offline frequency-domain solve.                                                                                                                                                                      | [`physical-cavity.md`](docs/physical-cavity.md)                                                              |
-| **P4** nonlinear hit behaviour                  | Bounded Berger potential, discrete-gradient passivity, anti-alias bound, measured glide.                                                                                                                                                                      | [`physical-nonlinearity.md`](docs/physical-nonlinearity.md)                                                  |
-| **P5** product integration                      | Generated control bank, A/B against the procedural path, versioned persistence and share links.                                                                                                                                                               | [`physical-product-integration.md`](docs/physical-product-integration.md)                                    |
-| **P6** real-instrument departures               | Deterministic degenerate splitting and a rotated tension axis. Shell/edge/vent corrections were **refused** for want of a measurement, and the acceptance gate written down.                                                                                  | [`physical-real-instrument-departures.md`](docs/physical-real-instrument-departures.md)                      |
-| **P8** sound correction (S1–S10)                | The voice stopped sounding like a ringing sine: the `d₁k` loss term and constant Q, the damped (0,1), the fitted cavity split, the corrected radiated sum, the audible glide, the hybrid attack layer, and the retune that made tuning stop changing sustain. | [`physical-tom-review.md`](docs/physical-tom-review.md), [`physical-hybrid.md`](docs/physical-hybrid.md)     |
-| **P9** model-structure gaps (M1–M7)             | Nonlinear mode-to-mode coupling (M1) and a modal cavity (M2) — the latter being **the first externally checkable prediction this model made and had come true**, a rigid-cylinder air mode confirmed against sound speed, radius, depth and head tension.     | [`physical-nonlinearity.md`](docs/physical-nonlinearity.md), [`physical-cavity.md`](docs/physical-cavity.md) |
-| **P10** the objective itself                    | The instrument used to judge P8 and P9 **cannot resolve most of what it reports**. Gates re-derived from measured reproducibility; the reference replaced with a licensed one of known geometry.                                                              | [`physical-objective-validation.md`](docs/physical-objective-validation.md)                                  |
+| **P0–P2** contracts, modal bank, loss/radiation | Parameter structs, quality tiers, allocation-free `Render`, Fourier–Bessel modes, exact state transitions, the frequency-dependent loss law and the radiation weight.                                                                                         | [`physical-calibration.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-calibration.md)                                                    |
+| **P3** resonant head + cavity                   | Passive rank-one pressure coupling, validated against an offline frequency-domain solve.                                                                                                                                                                      | [`physical-cavity.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-cavity.md)                                                              |
+| **P4** nonlinear hit behaviour                  | Bounded Berger potential, discrete-gradient passivity, anti-alias bound, measured glide.                                                                                                                                                                      | [`physical-nonlinearity.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-nonlinearity.md)                                                  |
+| **P5** product integration                      | Generated control bank, A/B against the procedural path, versioned persistence and share links.                                                                                                                                                               | [`physical-product-integration.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-product-integration.md)                                    |
+| **P6** real-instrument departures               | Deterministic degenerate splitting and a rotated tension axis. Shell/edge/vent corrections were **refused** for want of a measurement, and the acceptance gate written down.                                                                                  | [`physical-real-instrument-departures.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-real-instrument-departures.md)                      |
+| **P8** sound correction (S1–S10)                | The voice stopped sounding like a ringing sine: the `d₁k` loss term and constant Q, the damped (0,1), the fitted cavity split, the corrected radiated sum, the audible glide, the hybrid attack layer, and the retune that made tuning stop changing sustain. | [`physical-tom-review.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-tom-review.md), [`physical-hybrid.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-hybrid.md)     |
+| **P9** model-structure gaps (M1–M7)             | Nonlinear mode-to-mode coupling (M1) and a modal cavity (M2) — the latter being **the first externally checkable prediction this model made and had come true**, a rigid-cylinder air mode confirmed against sound speed, radius, depth and head tension.     | [`physical-nonlinearity.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-nonlinearity.md), [`physical-cavity.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-cavity.md) |
+| **P10** the objective itself                    | The instrument used to judge P8 and P9 **cannot resolve most of what it reports**. Gates re-derived from measured reproducibility; the reference replaced with a licensed one of known geometry.                                                              | [`physical-objective-validation.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-objective-validation.md)                                  |
 
 Two things from that history are worth restating because they constrain
 everything after them:
@@ -828,7 +830,7 @@ measurement to re-scope it.
 
 - [x] **N2: repair the partial and decay estimators.** _Done 2026-08-01._ Evidence
       and every number below:
-      [`physical-objective-validation.md`](docs/physical-objective-validation.md)
+      [`physical-objective-validation.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-objective-validation.md)
       §Result 5 and §Result 7.
 
       Subband ESPRIT with a stabilisation sweep exists beside the fast estimator
@@ -907,7 +909,7 @@ measurement to re-scope it.
 - [ ] **N3: fix the damping distribution — the one real model defect.**
       _Re-scoped 2026-08-01; the item as previously written named the wrong mode
       and prescribed a fix that cannot reach it._ Evidence:
-      [`physical-objective-validation.md`](docs/physical-objective-validation.md)
+      [`physical-objective-validation.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-objective-validation.md)
       §Result 8.
 
       What was wrong with it. The instance — "a mode at 186 Hz with T60 1.81 s,
@@ -956,7 +958,7 @@ measurement to re-scope it.
     So the threads are now:
 
   - ~~**Find what the pairwise splitting actually is.**~~ **Answered 2026-08-01;
-    it is the drum.** Evidence: [`physical-objective-validation.md`](docs/physical-objective-validation.md)
+    it is the drum.** Evidence: [`physical-objective-validation.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-objective-validation.md)
     §Result 9. Pairs were synthesised at the frequencies and splits the resolved
     pairs actually had, with the upper member 0/3/6 dB down, and **both members
     given identical damping**: the estimator reports a mean ratio of **1.001**,
@@ -982,7 +984,7 @@ measurement to re-scope it.
     is honest only if it is labelled as fitted.
 
     **Re-aimed 2026-08-01, before that experiment was run.** Evidence:
-    [`physical-objective-validation.md`](docs/physical-objective-validation.md)
+    [`physical-objective-validation.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-objective-validation.md)
     §Result 10, and **re-measured post-N17 as §Result 11a — use that one**. The
     committed reference's ring time was measured across all sixteen takes and it
     falls as **T60 ∝ f^-0.70** (f^-0.52 through the old truncating window), between
@@ -1251,7 +1253,7 @@ measurement to re-scope it.
 
 - [ ] **N17: re-size the analysis and decay windows for the new reference.**
       _Opened 2026-08-01, when the reference became `tt08x08/lp/hd`._ Evidence:
-      [`physical-objective-validation.md`](docs/physical-objective-validation.md)
+      [`physical-objective-validation.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-objective-validation.md)
       §Result 10. `match.Options` ships `analysisSeconds` 1.2 and
       `decayFitEndSeconds` 0.6. Those were sized against the medium-pitch set —
       1.25 s files whose fundamental rang for 0.28 s — and the set that replaced
@@ -1296,7 +1298,7 @@ measurement to re-scope it.
       `Cavity.StiffnessScale` ships at 0.083, a factor of twelve below its physical
       ceiling of 1 — and there is **no factor of twelve to explain**: all four
       candidate mechanisms are eliminated in
-      [`physical-cavity.md`](docs/physical-cavity.md), and 0.083 was fitted to a
+      [`physical-cavity.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-cavity.md), and 0.083 was fitted to a
       doublet ratio of 1.16 **measured on a snare**, which is a leakier enclosure
       than a tom. The ceiling was right and the target was wrong.
 
@@ -1412,7 +1414,7 @@ measurement to re-scope it.
 
       What the stated gauges give, at 1390 kg/m² for biaxially-oriented PET and
       before any allowance for the Ambassador's coating, which
-      [`reference/CREDITS.md`](reference/CREDITS.md) already says is unaccounted
+      [`reference/CREDITS.md`](https://github.com/cwbudde/algo-tom/blob/main/reference/CREDITS.md) already says is unaccounted
       for: **batter 10 mil → 0.3531** against the shipped 0.35, **resonant 7.5 mil
       → 0.2648** against the shipped 0.25. A part in a hundred and six in a
       hundred.
@@ -1660,7 +1662,7 @@ measurement to re-scope it.
   - the figures and totals in `docs/paper/` → N7;
   - `contactReferenceHz` = 118 Hz, this recording's fundamental rather than the
     model's 150.08 Hz, still normalising every dB figure in
-    [`physical-contact.md`](docs/physical-contact.md) →
+    [`physical-contact.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-contact.md) →
     **N8a** below.
 
 - [x] **N8a: re-point `contactReferenceHz` at the model's own fundamental.**
@@ -1669,9 +1671,9 @@ measurement to re-scope it.
       of `generateHeadModes` — through the same selection path the renderer
       walks, so a bank that stops containing the (0,1) fails loudly instead of
       being normalised by a frequency it does not carry. 150.10 Hz on the
-      default. Every table in [`physical-contact.md`](docs/physical-contact.md)
+      default. Every table in [`physical-contact.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-contact.md)
       and the derived figures in
-      [`physical-nonlinearity.md`](docs/physical-nonlinearity.md) were re-derived
+      [`physical-nonlinearity.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-nonlinearity.md) were re-derived
       by running the test and reading its own log, never by adding an offset.
 
       Three things came out of it that the item did not anticipate:
@@ -1705,7 +1707,7 @@ measurement to re-scope it.
     analytic force-pulse spectrum rather than a render, so their tables did not
     move; `reference/CREDITS.md` and this item's own prose above still describe
     the constant as 118 Hz; and
-    [`physical-objective-validation.md`](docs/physical-objective-validation.md)
+    [`physical-objective-validation.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-objective-validation.md)
     §Result 1 still divides `MinSeparationHz = 15` by 118 Hz to call it 207
     cents, where the current reference drum's fundamental is 240 Hz and the same
     guard is **105** cents (this line said 108, which is the figure for 233 Hz).
@@ -1727,7 +1729,7 @@ measurement to re-scope it.
       `accel[column]` remains a scatter with a per-entry branch — and the
       per-iteration rebuild is still real. And "128 coefficients costs 0.4 dB"
       is the **pumps-only** measurement
-      ([`physical-nonlinearity.md`](docs/physical-nonlinearity.md) §Cost:
+      ([`physical-nonlinearity.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-nonlinearity.md) §Cost:
       −28.79 dB at 128 against −28.43 at 256). `config.go`'s own comment on
       `MaxCoefficients: 256` says **4.2 dB**, measured on the radiated spectrum
       of a velocity-1 hit, and neither place says which excitation it used. The
@@ -2119,7 +2121,7 @@ than the item described. The number is kept because things point at it.
     which the `runs` partition had already made false. See N9.
 
     One thing found and deliberately **not** written into the bibliography:
-    [`physical-cavity.md`](docs/physical-cavity.md) attributes "+28.5 % on a 14"
+    [`physical-cavity.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-cavity.md) attributes "+28.5 % on a 14"
     tom and +37.2 % on a 15"" to Gärder, and those percentages **are not in the
     thesis** — they are this repository's own arithmetic over his spectra. The
     `note` records only what he printed. → **N18**.
@@ -2165,12 +2167,12 @@ than the item described. The number is kept because things point at it.
       a drum of known geometry (Result 10's 239.9/378.8 Hz, ratio 1.579 against
       the ideal 1.594) and by `cmd/fit-physical` through the real objective.
 
-  - [`physical-cavity.md`](docs/physical-cavity.md) presents "+28.5 % / +37.2 %"
+  - [`physical-cavity.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-cavity.md) presents "+28.5 % / +37.2 %"
     as Gärder's measurements. They are computed here from his spectra. Re-word to
     say so, as `physical-tom-review.md` already does about its own derived
     percentages. A computed number attributed to a source as a measured one is
     the same class of error as quoting a total across two weight sets.
-  - [`physical-objective-validation.md`](docs/physical-objective-validation.md)
+  - [`physical-objective-validation.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-objective-validation.md)
     §Result 1 divides `MinSeparationHz = 15` by **118 Hz** — the deleted
     recording's fundamental — to call it 207 cents. Against the current
     reference's 240 Hz the same guard is 108 cents, so the argument that it is an
@@ -2179,7 +2181,7 @@ than the item described. The number is kept because things point at it.
     `fundamental = 118.0` constants carry the same stale anchor; the latter
     normalise an analytic force-pulse spectrum rather than a render, so their
     tables did not move under N8a, but the number means nothing now.
-  - [`physical-contact.md`](docs/physical-contact.md) says the gap's two zeros go
+  - [`physical-contact.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-contact.md) says the gap's two zeros go
     to **−26.4 and −28.6 dB** and that the worst dip is **−51.2 dB at 465 Hz**,
     while `TestHertzianContactShallowsAndMovesTheComb` currently logs −27.5 /
     −24.9 and −55.8 dB at **808 Hz**. This is independent of N8a's
@@ -2207,7 +2209,7 @@ than the item described. The number is kept because things point at it.
       measures a band, not a mode, so the first job is to identify *which* cavity
       mode carries it and at what rate. And whether a real drum does this — a
       shell cavity with two heads on it is not an undamped Helmholtz resonator,
-      and [`physical-cavity.md`](docs/physical-cavity.md) is where the answer
+      and [`physical-cavity.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-cavity.md) is where the answer
       would have to come from. Do not tune the number to flatten the band: the
       band is evidence, and N11's tolerance does not move to accommodate a fix.
 
@@ -2351,14 +2353,14 @@ than the item described. The number is kept because things point at it.
 
       **Step 3 is untouched and is a decision, not a measurement.** Nothing has
       been smoothed, no weight has moved, no committed total has changed. Evidence:
-      [physical-objective-validation.md](docs/physical-objective-validation.md)
+      [physical-objective-validation.md](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-objective-validation.md)
       §12a.
 
 - [ ] **N14: the doublet pair, by physical capture.** The one measurement the
       sample pack cannot supply. Ten centre hits with the resonant head removed, ten
       with it refitted, batter tuning untouched; Fischer's protocol on a tom.
       Capture **three** frequencies, not two — `f_single`, `f_lower`, `f_upper` —
-      because [`physical-cavity.md`](docs/physical-cavity.md) reads Fischer's
+      because [`physical-cavity.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-cavity.md) reads Fischer's
       186 → 215 as `f_upper/f_lower` while its own interlacing argument says the
       lower branch is pinned and cannot carry the shift. `T = σc²` must be applied to
       the **uncoupled** fundamental or the air spring is baked into the tension.
@@ -2368,7 +2370,7 @@ than the item described. The number is kept because things point at it.
 - [ ] **N16: re-measure the objective-validation results on the reference the fit
       now aims at.** The reference moved from `tt08x08/mp/hd` to `tt08x08/lp/hd` on
       2026-08-01, chosen on the sound.
-      [`physical-objective-validation.md`](docs/physical-objective-validation.md)
+      [`physical-objective-validation.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-objective-validation.md)
       Result 1 has been redone on the new set and the shipped gates come from it;
       **Results 2 onward have not**. They remain true statements about the
       medium-pitch drum, with working reproduction commands, and each needs
@@ -2383,7 +2385,7 @@ than the item described. The number is kept because things point at it.
       statement about the estimator is now suspect in the same way, and the two
       candidates worth doing first are the residual budget and Result 10's decay-shape
       finding, which
-      [`physical-calibration.md`](docs/physical-calibration.md) currently cites as
+      [`physical-calibration.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-calibration.md) currently cites as
       the reason to doubt the constant-\(\zeta\) loss law.
 
       **Results 5, 8 and 10 are now done**, on 2026-08-01, as objective-validation
@@ -2491,8 +2493,8 @@ implementation.
 
 Each was proposed, tested and refuted. Recorded so the work is not repeated;
 detail and citations in
-[`physical-objective-validation.md`](docs/physical-objective-validation.md) and
-[`physical-model-research.md`](docs/physical-model-research.md).
+[`physical-objective-validation.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-objective-validation.md) and
+[`physical-model-research.md`](https://github.com/cwbudde/algo-tom/blob/main/docs/physical-model-research.md).
 
 - **Exterior air loading to harmonicise the mode ratios.** Rejected in P8, argued
   back in P9 on the model's (1,1)/(0,1) being pinned at 1.588 against a recording's
