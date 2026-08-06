@@ -30,6 +30,20 @@ const (
 	// instant on a knob but is long enough to avoid zipper noise.
 	volSmoothTauS = 0.008
 
+	// engineSilence is the output magnitude at or below which a rendered sample
+	// counts as silence for idle detection. 1e-6 is about −120 dBFS: two orders
+	// of magnitude below the ±1 LSB of 16-bit audio and far below anything a
+	// listener or an output device can resolve, so treating it as zero is
+	// inaudible rather than merely quiet.
+	engineSilence = 1e-6
+
+	// idleConfirmS is how long the output must stay below engineSilence before
+	// Render takes its idle path. 50 ms is long enough that a waveform passing
+	// through a zero crossing, or a voice envelope dipping between partials,
+	// cannot be mistaken for a decayed tail, and short enough that the CPU wakes
+	// only for the tail end of a stop.
+	idleConfirmS = 0.05
+
 	// engineSeed seeds the probability/humanize randomness so renders stay
 	// reproducible run-to-run (the voices are seeded the same way).
 	engineSeed = 0x5eed
@@ -134,6 +148,12 @@ type Engine struct {
 	liveReverbAmount float64
 	limiter          *peakLimiter
 	hardClipCount    uint64
+
+	// silentRun counts consecutive rendered samples that were below
+	// engineSilence while nothing could make the engine loud again; it
+	// saturates at idleSamples, which is all IsIdle needs to know.
+	silentRun   int64
+	idleSamples int64 // idleConfirmS in samples, the confirm window for IsIdle
 }
 
 // NewEngine creates a drum engine at the given sample rate. A non-finite or
@@ -147,9 +167,12 @@ func NewEngine(sr float64) *Engine {
 		bpm:       120,
 		stepCount: MaxSteps,
 		volCoef:   1 - math.Exp(-1.0/(sr*volSmoothTauS)),
-		prob:      1,
-		humanize:  0,
-		rng:       rand.New(rand.NewPCG(engineSeed, engineSeed)),
+		// At the clamped rate floor this is still 400 samples, so the window
+		// can never degenerate to "idle on the first quiet sample".
+		idleSamples: int64(math.Round(sr * idleConfirmS)),
+		prob:        1,
+		humanize:    0,
+		rng:         rand.New(rand.NewPCG(engineSeed, engineSeed)),
 	}
 	for i := range e.volumes {
 		e.volumes[i] = 1.0
@@ -294,6 +317,7 @@ func (e *Engine) recomputeStepDurations() {
 func (e *Engine) SetRunning(running bool) {
 	if running {
 		e.transport = transportPlaying
+		e.wake()
 
 		return
 	}
@@ -605,7 +629,39 @@ func (e *Engine) TriggerVoice(track int, velocity float64) {
 		return
 	}
 
+	e.wake()
 	e.voices[track].Trigger(vel)
+}
+
+// wake cancels an in-progress (or reached) idle window. Every path that can
+// make a stopped engine loud again has to call it, because the idle fast path
+// in Render writes zeros without ticking the voices and so cannot notice the
+// new sound on its own. There are exactly two such paths — starting the
+// transport and auditioning a voice — since triggerStep and schedule only run
+// while the transport is playing, which holds the counter at zero anyway.
+func (e *Engine) wake() {
+	e.silentRun = 0
+}
+
+// IsIdle reports whether Render is producing nothing but silence and can be
+// stopped being called: the output has stayed below engineSilence for
+// idleConfirmS while the transport was not playing and no humanize-delayed hit
+// was armed. It is the engine's half of the "stop the audio graph when there is
+// nothing to hear" contract — the worklet/worker side decides what to do with
+// it.
+//
+// This truncates a decaying tail rather than rendering it to the last denormal:
+// the reverb and the voice envelopes are exponential and never reach exactly
+// zero, so waiting for a bit-exact zero would mean never idling at all. What is
+// discarded is everything below −120 dBFS, which is over two orders of magnitude
+// under the quantisation step of the 16-bit output it eventually reaches and far
+// under the noise floor of any playback chain, so the cut is inaudible by
+// construction. The consequence to be aware of is that renders are no longer
+// bit-identical to a build without idling once a tail crosses the threshold —
+// hence the tests hold idling to "nothing above engineSilence was lost" rather
+// than to sample equality.
+func (e *Engine) IsIdle() bool {
+	return e.silentRun >= e.idleSamples
 }
 
 // SetReverb sets the target reverb amount in [0, 1]. Render smooths the wet
@@ -732,6 +788,18 @@ func (e *Engine) Render(buf []float32) {
 			e.firePending()
 		}
 
+		// Idle fast path: with the transport stopped and the tail decayed away
+		// there is nothing for the voices, the reverb or the limiter to compute,
+		// and running them anyway is what kept the CPU busy forever (PLAN.md
+		// B10). Their state is left frozen rather than reset, so a later hit
+		// resumes from exactly where the silence began. The check is per sample
+		// so a buffer that goes idle halfway stops working halfway.
+		if e.IsIdle() {
+			buf[i] = 0
+
+			continue
+		}
+
 		var out float64
 
 		for t, v := range e.voices {
@@ -778,6 +846,20 @@ func (e *Engine) Render(buf []float32) {
 			e.hardClipCount++
 		case math.IsNaN(out):
 			out = 0
+		}
+
+		// Silence accounting, on the same value that reaches the buffer. A
+		// playing transport or an armed pending hit means audio is coming
+		// regardless of how quiet this sample is, so neither can be allowed to
+		// accumulate a window. The counter saturates at the window length: it
+		// has nothing left to prove past that point, and not growing keeps it
+		// from running away over a long idle.
+		if e.transport != transportPlaying && e.pendingMask == 0 && math.Abs(out) < engineSilence {
+			if e.silentRun < e.idleSamples {
+				e.silentRun++
+			}
+		} else {
+			e.silentRun = 0
 		}
 
 		buf[i] = float32(out)

@@ -271,3 +271,110 @@ func TestHumanizedRenderIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// hatTrackIndex is the shortest tail in the bank, and at its minimum decay it
+// crosses engineSilence in about a quarter of a second. The idle tests use it
+// so they measure the mechanism rather than a voice's release: the bass drum's
+// resonant tail alone takes some six seconds to fall that far.
+const hatTrackIndex = 2
+
+func TestRenderIdlesAfterTailDecays(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetDecay(hatTrackIndex, 0)
+	engine.TriggerVoice(hatTrackIndex, 1)
+
+	const chunk = 512
+
+	buf := make([]float32, chunk)
+	limit := int(2*testSampleRate) / chunk // the hat tail is an order shorter
+
+	idleAfter := -1
+
+	for i := range limit {
+		engine.Render(buf)
+
+		if engine.IsIdle() {
+			idleAfter = i
+
+			break
+		}
+	}
+
+	if idleAfter < 0 {
+		t.Fatal("engine never idled after a hit decayed away while stopped")
+	}
+
+	// The window is only confirmed at its end, so the first idle chunk still
+	// contains the samples that filled it; the next one is the first that the
+	// fast path wrote in full.
+	engine.Render(buf)
+
+	for i, sample := range buf {
+		if sample != 0 {
+			t.Fatalf("idle render wrote %v at sample %d, want exact silence", sample, i)
+		}
+	}
+
+	if !engine.IsIdle() {
+		t.Fatal("engine left the idle state while rendering its own silence")
+	}
+}
+
+func TestIdleDoesNotTruncateAudibleTail(t *testing.T) {
+	idling := NewEngine(testSampleRate)
+
+	// The reference is the same engine with the idle window pushed out of
+	// reach, which is exactly the pre-B10 always-render behaviour: silentRun
+	// still counts, IsIdle is simply never satisfied.
+	reference := NewEngine(testSampleRate)
+	reference.idleSamples = math.MaxInt64
+
+	for _, engine := range []*Engine{idling, reference} {
+		engine.SetDecay(hatTrackIndex, 0)
+		engine.TriggerVoice(hatTrackIndex, 1)
+	}
+
+	// Long enough to contain the whole tail and the idling that follows it.
+	const renderSeconds = 1
+
+	want := renderTotal(reference, int(renderSeconds*testSampleRate))
+	got := renderTotal(idling, int(renderSeconds*testSampleRate))
+
+	// The audible tail is everything up to the last sample the reference put
+	// above the threshold; that is the part idling is not allowed to touch.
+	lastAudible := -1
+
+	for i, sample := range want {
+		if math.Abs(float64(sample)) >= engineSilence {
+			lastAudible = i
+		}
+	}
+
+	if lastAudible <= 0 {
+		t.Fatal("reference render produced no audible tail, so this proves nothing")
+	}
+
+	for i := 0; i <= lastAudible; i++ {
+		if got[i] != want[i] {
+			t.Fatalf("idling changed audible sample %d: got %v want %v (tail ends at %d)",
+				i, got[i], want[i], lastAudible)
+		}
+	}
+
+	// Past that point idling may only ever remove signal, never add any.
+	for i := lastAudible + 1; i < len(got); i++ {
+		if math.Abs(float64(got[i])) >= engineSilence {
+			t.Fatalf("idle render emitted %v at sample %d, above the silence threshold %v",
+				got[i], i, engineSilence)
+		}
+	}
+
+	if !idling.IsIdle() {
+		t.Fatalf("engine never idled in %d seconds; audible tail ended at sample %d",
+			renderSeconds, lastAudible)
+	}
+
+	if reference.IsIdle() {
+		t.Fatal("reference engine idled despite an unreachable confirm window")
+	}
+}

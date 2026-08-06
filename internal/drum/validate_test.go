@@ -147,6 +147,21 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 			want:    "reverb amount",
 		},
 		{
+			name:    "silent run past the confirm window",
+			corrupt: func(engine *Engine) { engine.silentRun = engine.idleSamples + 1 },
+			want:    "silent run",
+		},
+		{
+			name:    "negative silent run",
+			corrupt: func(engine *Engine) { engine.silentRun = -1 },
+			want:    "silent run -1",
+		},
+		{
+			name:    "idle confirm window of zero samples",
+			corrupt: func(engine *Engine) { engine.idleSamples = 0 },
+			want:    "idle confirm window",
+		},
+		{
 			name:    "missing voice",
 			corrupt: func(engine *Engine) { engine.voices[4] = nil },
 			want:    "track 4 has no voice",

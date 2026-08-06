@@ -363,6 +363,21 @@ other track. The fixed `percSeed` keeps renders reproducible.
 Once triggered, a voice's `Tick()` output travels through `Engine.Render`
 (`internal/drum/engine.go`) once per sample, in this order:
 
+0. **Idle fast path.** Before any of the below, `Render` checks `IsIdle()`: once
+   the output has stayed under `engineSilence` (`1e-6`, ≈ −120 dBFS) for
+   `idleConfirmS` (50 ms) with the transport not playing and no humanize-delayed
+   hit armed, the sample is written as a plain zero and every stage below is
+   skipped. Voice, reverb and limiter state is frozen rather than reset, so a
+   later hit resumes from where the silence began, and `SetRunning(true)` /
+   `TriggerVoice` clear the counter. This is what lets the browser side suspend
+   the `AudioContext` instead of rendering silence forever (PLAN.md **B10**).
+   It truncates a decaying tail below −120 dBFS, so renders are not bit-identical
+   to a build without idling — the tests assert "nothing above `engineSilence`
+   was lost" rather than sample equality. How long a stop takes to reach idle is
+   set by the voice envelopes, not by the threshold: measured at 48 kHz, hi-hat
+   0.4 s, snare 1.7 s, bass 4.2 s, cymbal 11.1 s, and a full kit at reverb 1
+   about 11.9 s. Raising the threshold barely moves those numbers (the cymbal is
+   still 10.5 s at −80 dBFS), which is why it is set where it is.
 1. **Per-voice `Tick()`.** Each of the 7 voices produces one sample (0 if
    inactive).
 2. **Volume smoothing.** Each track's live gain (`liveVol[t]`) ramps toward

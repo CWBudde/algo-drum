@@ -133,6 +133,22 @@ func (e *Engine) checkMix(problems []error) []error {
 		problems = append(problems, fmt.Errorf("volume ramp coefficient out of contract: %v", e.volCoef))
 	}
 
+	// The idle window is derived from the sample rate in NewEngine and never
+	// written again; a zero or negative one would make IsIdle true forever and
+	// mute the engine. Both counters are whole samples, so "finite" is inherent
+	// in the int64.
+	if e.idleSamples < 1 {
+		problems = append(problems, fmt.Errorf("idle confirm window %d below one sample", e.idleSamples))
+	}
+
+	// Render only ever increments silentRun toward the window and clears it
+	// otherwise, so anything outside [0, idleSamples] means the counter was
+	// corrupted rather than counted.
+	if e.silentRun < 0 || e.silentRun > e.idleSamples {
+		problems = append(problems,
+			fmt.Errorf("silent run %d outside [0, %d]", e.silentRun, e.idleSamples))
+	}
+
 	for _, track := range [...]int{tomTrackIndex, tom2TrackIndex} {
 		model := e.tomModels[track]
 		if model != TomModelProcedural && model != TomModelPhysical {

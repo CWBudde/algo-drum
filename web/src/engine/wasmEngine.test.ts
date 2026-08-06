@@ -79,12 +79,17 @@ class FakeWorkletNode {
     this.disconnected++;
   }
 
-  // step delivers one audible-step report from the worklet.
-  step(step: number): void {
-    this.port.onmessage?.({ data: { type: "step", step } } as MessageEvent<{
+  // emit delivers one worklet report to the bridge.
+  emit(data: unknown): void {
+    this.port.onmessage?.({ data } as MessageEvent<{
       type: string;
       step: number;
     }>);
+  }
+
+  // step delivers one audible-step report from the worklet.
+  step(step: number): void {
+    this.emit({ type: "step", step });
   }
 }
 
@@ -93,6 +98,8 @@ class FakeAudioContext {
 
   state = "running";
   closed = false;
+  suspends = 0;
+  resumes = 0;
   readonly destination = {};
   readonly audioWorklet = { addModule: () => Promise.resolve() };
 
@@ -101,7 +108,26 @@ class FakeAudioContext {
   }
 
   resume(): Promise<void> {
+    this.resumes++;
+    this.state = "running";
     return Promise.resolve();
+  }
+
+  // Suspension takes effect when the promise settles, not when it is asked
+  // for — that gap is exactly what a resume racing it has to survive.
+  suspend(): Promise<void> {
+    this.suspends++;
+
+    // Several ticks deep on purpose: a resume that merely reads .state
+    // without waiting the suspend out still sees "running", skips the
+    // resume, and is then overtaken by the suspension.
+    return Promise.resolve()
+      .then(() => undefined)
+      .then(() => undefined)
+      .then(() => undefined)
+      .then(() => {
+        this.state = "suspended";
+      });
   }
 
   close(): Promise<void> {
@@ -417,6 +443,106 @@ describe("playhead", () => {
     node().step(1);
 
     expect(steps).toEqual([-1, 4, -1, 0, 1]);
+  });
+});
+
+const ctx = () => FakeAudioContext.created[0];
+
+// flush lets the suspend/resume promise chains settle.
+const flush = async () => {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+};
+
+describe("idle suspend", () => {
+  it("suspends the context once the engine has gone quiet", async () => {
+    const engine = await loaded();
+    await engine.play();
+    engine.stop();
+
+    // The engine only reports idle after its output has actually fallen
+    // silent, so the reverb and voice tails are already through the worklet
+    // by the time this arrives.
+    node().emit({ type: "idle", idle: true });
+    await flush();
+
+    expect(ctx().suspends).toBe(1);
+    expect(ctx().state).toBe("suspended");
+  });
+
+  it("keeps the context awake while the transport is running", async () => {
+    const engine = await loaded();
+    await engine.play();
+
+    // A silent passage mid-pattern must not stop the pull loop: the playhead
+    // would freeze with it.
+    node().emit({ type: "idle", idle: true });
+    await flush();
+
+    expect(ctx().suspends).toBe(0);
+  });
+
+  it("resumes on the next play", async () => {
+    const engine = await loaded();
+    await engine.play();
+    engine.stop();
+    node().emit({ type: "idle", idle: true });
+    await flush();
+
+    await engine.play();
+
+    expect(ctx().state).toBe("running");
+    expect(ctx().resumes).toBe(1);
+  });
+
+  it("resumes for an audition", async () => {
+    const engine = await loaded();
+    await engine.play();
+    engine.stop();
+    node().emit({ type: "idle", idle: true });
+    await flush();
+
+    await engine.triggerVoice(0, 1);
+
+    expect(ctx().state).toBe("running");
+    expect(workers()[0].commands().slice(-1)).toEqual([
+      {
+        type: "cmd",
+        name: "triggerVoice",
+        args: [0, 1],
+      },
+    ]);
+  });
+
+  it("does not let an in-flight suspend outlive the play that resumes it", async () => {
+    const engine = await loaded();
+    await engine.play();
+    engine.stop();
+
+    // Idle report and Play in the same tick: without waiting the suspend out,
+    // the resume can land first and leave a suspended context that nothing
+    // will ever wake — the worklet is not called while suspended.
+    node().emit({ type: "idle", idle: true });
+    await engine.play();
+
+    // Let the suspend land wherever it was going to: a resume that skipped
+    // it because the state still read "running" is overtaken right here.
+    await flush();
+
+    expect(ctx().state).toBe("running");
+  });
+});
+
+describe("underruns", () => {
+  it("publishes dropout reports to subscribers", async () => {
+    const engine = await loaded();
+    const reports: { samples: number; count: number }[] = [];
+    engine.onUnderrun((report) => reports.push(report));
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await engine.play();
+    node().emit({ type: "underrun", samples: 384, count: 3 });
+
+    expect(reports).toEqual([{ samples: 384, count: 3 }]);
   });
 });
 

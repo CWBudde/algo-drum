@@ -28,6 +28,7 @@ export interface AlgoDrumApi {
   setHumanize: (h: number) => void;
   render: (n: number) => Float32Array;
   currentStep: () => number;
+  isIdle: () => boolean;
 }
 
 // Every method this worker calls on the engine. AlgoDrumApi is only a
@@ -58,6 +59,7 @@ const REQUIRED_METHODS = [
   "setHumanize",
   "render",
   "currentStep",
+  "isIdle",
 ] as const satisfies readonly (keyof AlgoDrumApi)[];
 
 // Compile error if a method is added to AlgoDrumApi but not to
@@ -156,17 +158,105 @@ async function load(
   respond({ type: "ready" });
 }
 
-function handleWorkletPort(port: MessagePort): void {
-  port.onmessage = (event: MessageEvent<{ type: string; samples: number }>) => {
-    if (event.data.type !== "need" || !engineReady) return;
+// Messages the worklet sends over the direct audio port: a pull request, and
+// the storage of a chunk it has finished playing.
+type WorkletRequest =
+  { type: "need"; samples: number } | { type: "recycle"; buffer: ArrayBuffer };
 
+// Free pool of spent chunk buffers returned by the worklet. Without it the
+// worker allocates a fresh ~2 KB Float32Array per chunk (~94/s at 48 kHz) and
+// transfers its storage away, so every one of them is garbage. The bound is
+// small on purpose: the worklet only ever holds TARGET_QUEUE_SAMPLES /
+// CHUNK_SAMPLES chunks plus the ones in flight, so a deeper pool would only
+// retain memory nothing is going to ask for.
+//
+// The zero-message alternative — a SharedArrayBuffer ring — is deliberately
+// rejected: SAB requires cross-origin isolation (COOP/COEP headers), which
+// this repository removed on purpose and GitHub Pages cannot set. Do not
+// relitigate it without bringing those headers back first.
+const MAX_POOLED_BUFFERS = 8;
+const bufferPool: ArrayBuffer[] = [];
+
+function recycleBuffer(buffer: ArrayBuffer): void {
+  if (bufferPool.length >= MAX_POOLED_BUFFERS) return;
+
+  bufferPool.push(buffer);
+}
+
+// takeChunk returns a Float32Array of the requested length, reusing a pooled
+// buffer when one of exactly the right size is available. Pooled storage holds
+// the previous chunk's samples, so every caller must fill it completely.
+function takeChunk(length: number): Float32Array {
+  const bytes = length * Float32Array.BYTES_PER_ELEMENT;
+
+  for (let i = bufferPool.length - 1; i >= 0; i--) {
+    if (bufferPool[i].byteLength !== bytes) continue;
+
+    return new Float32Array(bufferPool.splice(i, 1)[0]);
+  }
+
+  return new Float32Array(length);
+}
+
+// True while render is failing. The worklet keeps pulling at ~94 chunks/s, so
+// reporting per chunk would flood the main thread with the same message; only
+// the transition into a failing state is worth an error response.
+let renderFaulted = false;
+
+// fillChunk renders one chunk's worth of audio into buf and returns the step
+// it starts on plus the engine's idle state. It never throws: the worklet
+// spends a request credit per pull and only gets it back when a chunk
+// arrives, so a pull that returns nothing leaks a credit — four of those and
+// the request condition is false forever and audio stops permanently, with no
+// error anywhere. Silence is the failure mode, not starvation.
+function fillChunk(buf: Float32Array): { step: number; idle: boolean } {
+  if (!engineReady) {
+    buf.fill(0);
+    // Not idle: the main thread suspends the AudioContext on idle, and a
+    // context that never runs cannot recover on its own.
+    return { step: -1, idle: false };
+  }
+
+  try {
     // Capture the step BEFORE rendering: it's the step this chunk starts on.
     const step = workerScope.AlgoDrum.currentStep();
-    const rendered = workerScope.AlgoDrum.render(event.data.samples);
 
-    // Copy out of the engine's reused buffer into a transferable chunk.
-    const chunk = new Float32Array(rendered);
-    port.postMessage({ buffer: chunk.buffer, step }, [chunk.buffer]);
+    // Copy out of the engine's reused buffer into the transferable chunk.
+    const rendered = workerScope.AlgoDrum.render(buf.length);
+    buf.set(rendered.subarray(0, Math.min(rendered.length, buf.length)));
+    if (rendered.length < buf.length) buf.fill(0, rendered.length);
+
+    const idle = workerScope.AlgoDrum.isIdle();
+    renderFaulted = false;
+    return { step, idle };
+  } catch (error) {
+    buf.fill(0);
+
+    if (!renderFaulted) {
+      renderFaulted = true;
+      respond({
+        type: "error",
+        error: `Audio rendering failed: ${String(error)}`,
+      });
+    }
+
+    return { step: -1, idle: false };
+  }
+}
+
+function handleWorkletPort(port: MessagePort): void {
+  port.onmessage = (event: MessageEvent<WorkletRequest>) => {
+    const request = event.data;
+
+    if (request.type === "recycle") {
+      recycleBuffer(request.buffer);
+      return;
+    }
+
+    // Exactly one reply per request, always — see fillChunk.
+    const chunk = takeChunk(request.samples);
+    const { step, idle } = fillChunk(chunk);
+    port.postMessage({ buffer: chunk.buffer, step, idle }, [chunk.buffer]);
   };
 }
 

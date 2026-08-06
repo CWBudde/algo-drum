@@ -126,6 +126,8 @@ PLAN.md                   — Point-in-time review backlog (numbered items); ref
 
 `Engine.Render(buf)` → Go voices mix mono samples → continuously advancing FDN reverb (smoothed wet/dry mix, so the knob does not raise the master level) → true lookahead peak limiter + safety clamp → `Float32Array` → 512-sample chunks posted from the Web Worker to the `AudioWorklet` over a direct `MessageChannel` → `AudioContext` at 48 kHz (~2048 samples buffered). Each chunk carries the sequencer step it starts on; the worklet reports it back so the UI playhead tracks the audible step.
 
+The worklet pulls with a credit counter (four outstanding `need` requests), which is self-healing at both ends: the worker replies to **every** request — silence with `step: -1` if the engine is not ready or a render throws — and the worklet writes off credit that goes unanswered for ~133 ms and re-requests, so no dropped message can deadlock audio. Chunks also carry the engine's `isIdle()` state; once the output has been below −120 dBFS for 50 ms with the transport stopped, the main thread suspends the `AudioContext` (Play or an audition resumes it), and `Engine.Render` takes a zero-fill fast path instead of running seven voices, the reverb and the limiter forever. Underruns are counted in the worklet and reported to the main thread (`onUnderrun`); the queue target is fixed, so latency does not drift. Drained chunk buffers are transferred back to the worker and reused rather than reallocated ~94×/s.
+
 ### Track Order (index 0–6)
 
 | Index | Voice           |
@@ -162,6 +164,7 @@ UI displays Cymbal, Percussion, Tom 2, Tom, Hi-Hat, Snare, Bass from top to bott
 | `setHumanize(0–1)`             | Timing/velocity randomization (delay ≤ h·15 ms, velocity ±h·20%; 0 = mechanical)   |
 | `render(n)`                    | Render n samples → Float32Array                                                    |
 | `currentStep()`                | Returns active/paused step index (-1 if stopped)                                   |
+| `isIdle()`                     | True once output has stayed below −120 dBFS for 50 ms and nothing can wake it      |
 
 ## The physical Tom voice
 

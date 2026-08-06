@@ -27,6 +27,17 @@ let audibleStep = -1;
 // already buffered when the stop was issued. See stop() and reportAudibleStep.
 let awaitingStopDrain = false;
 
+// Whether the transport is meant to be running. Only used to keep an idle
+// report from suspending a context the sequencer is still driving — see
+// reportIdle.
+let transportRunning = false;
+
+// Messages the worklet posts to the main thread over the node's port.
+type WorkletMessage =
+  | { type: "step"; step: number }
+  | { type: "underrun"; samples: number; count: number }
+  | { type: "idle"; idle: boolean };
+
 type StepListener = (step: number) => void;
 
 const stepListeners = new Set<StepListener>();
@@ -60,6 +71,77 @@ function reportAudibleStep(step: number): void {
   if (step === audibleStep) return;
 
   notifyStep(step);
+}
+
+type UnderrunListener = (report: { samples: number; count: number }) => void;
+
+const underrunListeners = new Set<UnderrunListener>();
+
+// Timestamp of the last underrun warning, so a sustained dropout does not
+// bury the console. The worklet already throttles its reports; this only
+// guards against a second source of noise on top of them.
+let lastUnderrunLog = 0;
+const UNDERRUN_LOG_INTERVAL_MS = 2000;
+
+// onUnderrun subscribes to audio dropout reports: the worklet ran out of
+// rendered samples and emitted silence for `samples` frames across `count`
+// render quanta since the previous report. Diagnostic only — nothing in the
+// UI reacts to it, and the queue depth is deliberately not adaptive, so the
+// documented ~43 ms of output latency stays put.
+export function onUnderrun(listener: UnderrunListener): () => void {
+  underrunListeners.add(listener);
+
+  return () => underrunListeners.delete(listener);
+}
+
+function reportUnderrun(samples: number, count: number): void {
+  const now = Date.now();
+  if (now - lastUnderrunLog >= UNDERRUN_LOG_INTERVAL_MS) {
+    lastUnderrunLog = now;
+    console.warn(
+      `Audio underrun: ${samples} samples of silence across ${count} render quanta.`,
+    );
+  }
+
+  underrunListeners.forEach((listener) => listener({ samples, count }));
+}
+
+// reportIdle acts on the engine going quiet: with nothing left ringing there
+// is no reason to keep the audio hardware and the render pull loop awake, so
+// the context is suspended until the next play() or audition resumes it.
+//
+// The engine only reports idle once its output has actually gone silent, well
+// after a Stop, so suspending here can never cut a tail short. The transport
+// check is a second belt: a running sequencer must keep pulling even through a
+// silent passage, or the playhead would freeze.
+function reportIdle(idle: boolean): void {
+  if (!idle || transportRunning || !audioCtx) return;
+
+  // A context that refuses to suspend simply keeps running, which is the
+  // pre-existing behaviour. The promise is kept so resumeAudio can wait it
+  // out rather than race it — see there.
+  const pending = audioCtx.suspend().catch(() => undefined);
+  suspending = pending;
+  void pending.finally(() => {
+    if (suspending === pending) suspending = null;
+  });
+}
+
+// An idle suspend that has not resolved yet. resume() on a context whose
+// suspend() is still in flight is not reliably ordered, and losing that race
+// leaves a suspended context nothing will wake: the worklet is not called
+// while suspended, so it cannot even notice.
+let suspending: Promise<void> | null = null;
+
+// resumeAudio undoes an idle suspend, and equally the suspended state
+// autoplay policies (notably iOS Safari) leave a freshly created context in.
+// Both callers reach it from a user gesture, which is what the policy wants.
+async function resumeAudio(): Promise<void> {
+  await suspending;
+
+  if (audioCtx && audioCtx.state === "suspended") {
+    await audioCtx.resume();
+  }
 }
 
 // The engine owns the pattern: the worker echoes the authoritative copy back
@@ -270,6 +352,9 @@ function teardownAudio(): void {
   // context that refuses to close is being dropped anyway.
   void audioCtx?.close().catch(() => undefined);
   audioCtx = null;
+
+  // Any pending suspend belongs to the context that just went away.
+  suspending = null;
 }
 
 // dispose tears the whole bridge down — audio graph, worker, and every piece
@@ -295,6 +380,7 @@ export function dispose(): void {
 
   wasmReady = false;
   awaitingStopDrain = false;
+  transportRunning = false;
   notifyStep(-1);
 }
 
@@ -320,10 +406,21 @@ async function startAudio(): Promise<void> {
 
     // The worklet reports the step each playing chunk starts on, so the UI
     // playhead follows what is audible rather than what was rendered ahead.
-    node.port.onmessage = (
-      event: MessageEvent<{ type: string; step: number }>,
-    ) => {
-      if (event.data.type === "step") reportAudibleStep(event.data.step);
+    // Idle edges and dropouts come back over the same port.
+    node.port.onmessage = (event: MessageEvent<WorkletMessage>) => {
+      const message = event.data;
+
+      switch (message.type) {
+        case "step":
+          reportAudibleStep(message.step);
+          break;
+        case "underrun":
+          reportUnderrun(message.samples, message.count);
+          break;
+        case "idle":
+          reportIdle(message.idle);
+          break;
+      }
     };
 
     node.connect(ctx.destination);
@@ -346,13 +443,12 @@ async function startAudio(): Promise<void> {
 }
 
 export async function play(): Promise<void> {
-  await startAudio();
+  // Set before the awaits below: an idle report delivered while they are
+  // pending would otherwise suspend the context we are about to resume.
+  transportRunning = true;
 
-  // Autoplay policies (notably iOS Safari) can leave a freshly created
-  // context suspended; without an explicit resume there is no sound.
-  if (audioCtx && audioCtx.state === "suspended") {
-    await audioCtx.resume();
-  }
+  await startAudio();
+  await resumeAudio();
 
   // A Play that beat the previous Stop's drain ends it here: the stopped
   // engine may never render the -1 chunk reportAudibleStep is waiting for,
@@ -365,10 +461,12 @@ export async function play(): Promise<void> {
 // ring out. Unlike stop(), the engine keeps reporting the held step and a
 // later play() resumes from the same fractional position.
 export function pause(): void {
+  transportRunning = false;
   command("pause");
 }
 
 export function stop(): void {
+  transportRunning = false;
   command("setRunning", false);
 
   // The worklet still holds ~2048 already-rendered samples (~43 ms) tagged
@@ -455,10 +553,7 @@ export async function triggerVoice(
   velocity: number,
 ): Promise<void> {
   await startAudio();
-
-  if (audioCtx && audioCtx.state === "suspended") {
-    await audioCtx.resume();
-  }
+  await resumeAudio();
 
   command("triggerVoice", track, velocity);
 }

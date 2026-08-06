@@ -376,6 +376,18 @@ func main() {
 		return engine.CurrentStep()
 	}))
 
+	// isIdle reports that the engine has nothing left to render, so the caller
+	// can stop pulling chunks (and suspend the AudioContext) instead of paying
+	// for silence. An uninitialized engine has produced nothing at all, which
+	// is the most idle state there is.
+	api.Set("isIdle", export(func(args []js.Value) any {
+		if !ready() {
+			return true
+		}
+
+		return engine.IsIdle()
+	}))
+
 	js.Global().Set("AlgoDrum", api)
 
 	select {} // keep Go runtime alive

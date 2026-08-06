@@ -15,7 +15,7 @@ Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pa
 | #   | Category                  |  Score   | Δ   | Verdict                                                                                     |
 | --- | ------------------------- | :------: | --- | ------------------------------------------------------------------------------------------- |
 | 1   | Correctness & robustness  | **8/10** | +2  | Non-finite input rejected, swing fixed at every step count, bridge load recoverable         |
-| 2   | Audio pipeline & WASM     | **7/10** | —   | Right architecture, ~43 ms latency; the pull protocol still has no recovery path            |
+| 2   | Audio pipeline & WASM     | **9/10** | +2  | Self-healing pull protocol, reported underruns, recycled buffers, idle suspends the graph   |
 | 3   | Go engine / DSP           | **9/10** | +2  | True peak limiting, drift-free timing, explicit pause, continuous reverb, lean hot paths    |
 | 4   | Architecture & state      | **7/10** | +1  | Command layer fully typed and echoes validated; nine parameters still UI-owned              |
 | 5   | Frontend code quality     | **7/10** | —   | Dead bridge plumbing gone; the 502-line component and missing CSS tokens remain             |
@@ -28,9 +28,10 @@ Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pa
 | 12  | PWA & deployment          | **6/10** | —   | Stamp verified and deploy no longer races CI; the bundle is still never precached           |
 | 13  | Feature depth vs the name | **6/10** | —   | The "algo" arrived — but every algorithmic control is global and one-shot                   |
 
-**Overall: 7.4/10** (was 6.6 at re-review, 4.0 at first review). The hardening pass closed
-the correctness and tooling gaps; what is left is mostly reach — mobile layout, offline,
-accessibility depth, and the per-step algorithms the name promises.
+**Overall: 7.5/10** (was 6.6 at re-review, 4.0 at first review). The hardening, engine and
+pipeline passes closed the correctness, DSP and transport-plumbing gaps; what is left is
+mostly reach — mobile layout, offline, accessibility depth, and the per-step algorithms
+the name promises.
 
 ### Verified after the hardening pass
 
@@ -132,31 +133,63 @@ structure, not just the ten instances.
       and finite, `currentStep < stepCount`, no active pending trigger past its deadline
       — turns silent corruption like C11 into a loud failure.
 
-## 2. Audio pipeline & WASM bridge — 7/10
+## 2. Audio pipeline & WASM bridge — 9/10
 
 The architecture is right and the 07-09 migration holds up: engine in a dedicated Worker,
 AudioWorklet pulling over a direct `MessageChannel`, ~43 ms latency, `js.CopyBytesToJS`
 instead of per-sample `SetIndex`, reused render buffers, an `instantiateStreaming`
 fallback, and a genuinely nice `REQUIRED_METHODS` runtime assertion against a stale
-`.wasm`. The weakness is that the pull protocol is a bare credit counter.
+`.wasm`. The pull protocol is no longer a bare credit counter: it is answered at both
+ends, reports its own dropouts, recycles its buffers, and stops entirely when there is
+nothing to hear. The pipeline pass closed every item below.
 
-- [ ] **B7 (high): a dropped `need` deadlocks audio permanently.** `audioWorker.ts:150`
+- [x] **B7 (high): a dropped `need` deadlocks audio permanently.** `audioWorker.ts:150`
       returns early and silently when `!engineReady`, while `worklet.js:45` only requests
       more when `queued + pendingRequests*512 < 2048`. Four lost requests pin
       `pendingRequests` at 4, the condition never becomes true again, and audio stops
       forever with no error. Same outcome if the render call throws — there is no
       `try`/`finally` decrement and no timeout.
-- [ ] **B8: underruns are invisible.** `worklet.js:83` fills the tail with silence (the
+      Closed at both ends, because each covers a failure the other cannot. The worker now
+      answers **every** request through a `fillChunk` that cannot throw — silence with
+      `step: -1` when the engine is not ready or a render fails, with the error reported
+      once on the transition into the failing state rather than per chunk. The worklet
+      writes off credit that goes unanswered for 50 quanta (~133 ms) and re-requests, so
+      recovery is bounded even against a worker that stops replying entirely.
+      Reproduced end-to-end before believing it: with a 5 % reply-drop injected into the
+      worker and the watchdog disabled, a hi-hat pattern measured **peak 0.000, 0/80
+      windows audible** over the second half of an 8 s run — dead exactly as described.
+      With the watchdog, the same injection gives **peak 0.614, 54/80 audible**.
+- [x] **B8: underruns are invisible.** `worklet.js:83` fills the tail with silence (the
       comment is honest) but there is no counter, no message to the main thread and no
       adaptive queue growth, so a Go GC pause is an unreported audible dropout.
-- [ ] **B9: per-chunk garbage.** `audioWorker.ts:157` allocates a fresh 2 KB
+      Counted and posted to the main thread as `{type:"underrun", samples, count}` behind
+      a leading-edge throttle (first dropout immediate, the rest aggregated to ~3/s), with
+      an `onUnderrun` subscription and a throttled console warning beside `onStep`.
+      Deliberately **report-only**: `TARGET_QUEUE_SAMPLES` stays 2048, so the documented
+      ~43 ms latency does not drift. Adaptive growth can be argued for once there is a
+      measurement to argue from — which is the point of counting.
+- [x] **B9: per-chunk garbage.** `audioWorker.ts:157` allocates a fresh 2 KB
       `Float32Array` per chunk (~94/s) to have something transferable and never recycles
       the transferred buffer back. A return pool — or a SharedArrayBuffer ring, which
       would delete the credit protocol entirely — is the obvious next step.
-- [ ] **B10: rendering never stops.** Stop only sets `running=false` (`engine.go:155`);
+      The worklet transfers each drained chunk's storage back and the worker refills it
+      from a bounded 8-buffer pool. The SharedArrayBuffer alternative is rejected in a
+      comment rather than left to be rediscovered: SAB needs cross-origin isolation
+      (COOP/COEP), which this repository removed on purpose and GitHub Pages cannot set.
+- [x] **B10: rendering never stops.** Stop only sets `running=false` (`engine.go:155`);
       the worklet keeps pulling and the engine keeps running all five voices + reverb +
       limiter forever. Nothing suspends the AudioContext. Continuous idle CPU/battery.
-- [ ] **B11: stale comment** — `worklet.js:12` claims `CHUNK_SAMPLES` "must match the
+      Closed on both sides. `Engine.IsIdle()` reports the output having stayed below
+      `engineSilence` (1e-6, ≈ −120 dBFS) for 50 ms with the transport not playing and no
+      delayed hit armed; `Render` then writes zeros and skips voices, reverb and limiter,
+      freezing rather than resetting their state. Each chunk carries that flag, and the
+      main thread suspends the `AudioContext` on it. Note the payoff is on a machine left
+      sitting, not on every Stop: time-to-idle is set by the voice envelopes, measured at
+      48 kHz as hi-hat 0.4 s, snare 1.7 s, bass 4.2 s, **cymbal 11.1 s**, full kit at
+      reverb 1 ~11.9 s. Raising the threshold barely moves that (cymbal 10.5 s at
+      −80 dBFS), so it stays where it is. Verified in a real production build: playing →
+      `running`, after Stop → `suspended`, after Play → `running` with audio restored.
+- [x] **B11: stale comment** — `worklet.js:12` claims `CHUNK_SAMPLES` "must match the
       worker's render chunk size"; the worker renders whatever `samples` says.
 
 ## 3. Go engine / DSP — 9/10
@@ -488,10 +521,19 @@ main-thread bridge. The remaining island is the UI itself.
 - [ ] **T8: no golden render test.** `engine_test.go:608` builds two engines in the same
       process and compares them, which proves determinism but not stability — any DSP
       change passes silently. Commit a reference checksum/RMS-per-step-window instead.
-- [ ] **T9: the bridge is untested** — `wasmEngine.ts` (258 lines) and `audioWorker.ts`
+- [x] **T9: the bridge is untested** — `wasmEngine.ts` (258 lines) and `audioWorker.ts`
       (206 lines): worker spawn, MessageChannel wiring, command dispatch, chunking, step
       tagging, echo-after-edit and the new API-compat checks have no unit test. C14–C16
       all live here.
+      Closed by the pipeline pass: `audioWorker.test.ts` drives the worker's real load
+      handshake with a stubbed `Go`/`fetch`/`WebAssembly` and covers the pull path
+      (reply before readiness, one error per fault across repeated pulls, step captured
+      before rendering, buffer reuse and its size-mismatch fallback), and
+      `worklet.test.ts` stubs `AudioWorkletProcessor` to cover the credit watchdog,
+      underrun throttling and buffer return. `wasmEngine.test.ts` gained idle-suspend and
+      underrun coverage. 171 frontend tests across 11 files, up from 148.
+      Left open by design: `worklet.js` is reached from a test by URL import because it
+      must stay in `public/` to be addressable by `addModule`.
 - [ ] **T10: no component tests at all**, and currently impossible: `vitest.config.ts:9`
       sets `environment: "node"` with no jsdom/happy-dom or Testing Library in
       `package.json`. Adding them would let X5–X8 be regression-tested.
@@ -739,12 +781,13 @@ closes P5/P7-partial/P8, A13 closes A4/A8, and so on.
 
 **P3 — hardening.** ✔ Done 2026-07-26: C20 (one validated boundary, closing C10/C12), C11
 (odd-step swing), C13/C19 (JS arg validation), C14–C16 (bridge lifecycle), A5/A6/A12,
-F10, C21 (fuzz), CI5–CI12, P7/P11, H6, D4–D11.
-Still open from this phase: **E7** (re-opened — gain staging still lets an ordinary
-pattern hard-clip 16 samples per 3 s; fix it and add a no-clipping test that can actually
-fail), **B7** (a dropped `need` message deadlocks audio permanently), **T7/T9**
-(`cmd/wasm` is still never compiled by `go test`; `audioWorker.ts` still has no direct
-test). C17/C18 closed 2026-07-26 (stop-drain suppression + `dispose()`).
+F10, C21 (fuzz), CI5–CI12, P7/P11, H6, D4–D11. C17/C18 closed the same day (stop-drain
+suppression + `dispose()`).
+The three items this phase left behind are now closed too: **E7** and the rest of
+section 3 by the engine pass, then **B7** and the rest of section 2 — plus **T9** — by
+the pipeline pass. Only **T7** survives from here: `cmd/wasm/main.go` is `js && wasm`, so
+`go test ./...` still never compiles it, and its arg marshalling and `unsafe` buffer
+reuse remain 0 % covered.
 
 **P4 — reach:** U7/U8 (mobile grid, with U21's scale lever), X14 (a11y enforcement first,
 so the rest stays fixed), X5/X17 (roving tabindex + skip link), X7/X8/X15 (playhead and
