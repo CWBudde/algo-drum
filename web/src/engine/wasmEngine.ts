@@ -5,6 +5,7 @@
 // direct MessageChannel. This module only sends control commands and mirrors
 // the audible sequencer step reported back by the worklet.
 
+import { PROTOCOL_VERSION } from "./audioWorker";
 import type {
   AlgoDrumApi,
   TransportSnapshot,
@@ -528,7 +529,13 @@ async function startAudio(): Promise<void> {
     const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
     audioCtx = ctx;
 
-    await ctx.audioWorklet.addModule(import.meta.env.BASE_URL + "worklet.js");
+    // worklet.js is copied from public/ without a content hash and can still
+    // be served by the previous service worker on the first load after a
+    // deploy. Its message shape is part of the live protocol, so version the
+    // URL just like the WASM handshake rather than pairing incompatible code.
+    await ctx.audioWorklet.addModule(
+      `${import.meta.env.BASE_URL}worklet.js?v=${PROTOCOL_VERSION}`,
+    );
 
     const node = new AudioWorkletNode(ctx, "algo-drum", {
       numberOfInputs: 0,

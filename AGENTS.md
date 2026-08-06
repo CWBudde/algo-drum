@@ -175,15 +175,18 @@ UI displays Cymbal, Percussion, Tom 2, Tom, Hi-Hat, Snare, Bass from top to bott
 | `isIdle()`                     | True once output has stayed below −120 dBFS for 50 ms and nothing can wake it      |
 | `protocolVersion`              | Number (not a method): the API semantics this engine speaks (`internal/drum/protocol.go`) |
 
-`protocolVersion` is the gate on everything above it. `algo_drum.wasm` is an
-unhashed artifact that caches independently of the hashed JS bundle, so the two
+`protocolVersion` is the gate on everything above it, including the transport
+snapshot carried through `worklet.js`. `algo_drum.wasm` and `worklet.js` are
+unhashed artifacts that cache independently of the hashed JS bundle, so they
 can drift in a user's browser; `REQUIRED_METHODS` in `audioWorker.ts` catches a
 *missing* method, but only the version catches an existing one whose argument
 order, units or `EngineState` shape changed — the failure mode otherwise being a
 silently wrong-sounding engine. The worker refuses to load a mismatching engine
-and the app shows its fault panel. Bump `drum.ProtocolVersion` and the worker's
-`PROTOCOL_VERSION` together whenever an entry point changes meaning rather than
-merely appearing; `TestProtocolVersionAgreesWithWorker` asserts they match.
+and the app shows its fault panel; the same version cache-busts the worklet URL.
+Bump `drum.ProtocolVersion`, the worker's `PROTOCOL_VERSION` and the service
+worker's worklet precache query together whenever an entry point or audio-chunk
+message changes meaning; `TestProtocolVersionAgreesWithWorker` asserts all three
+match.
 
 ## The physical Tom voice
 

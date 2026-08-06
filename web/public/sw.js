@@ -24,7 +24,10 @@ const PRECACHE_PATHS = [
   "pwa-192x192.png",
   "pwa-512x512.png",
   "wasm_exec.js",
-  "worklet.js",
+  // Keep this query in lockstep with audioWorker.ts's PROTOCOL_VERSION. It
+  // makes the current worklet available offline while preventing an old
+  // controlling service worker from satisfying the request with stale code.
+  "worklet.js?v=2",
   "algo_drum.wasm",
 ];
 

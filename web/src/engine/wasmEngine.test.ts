@@ -113,14 +113,20 @@ function sync(
 
 class FakeAudioContext {
   static created: FakeAudioContext[] = [];
-  static addModule: () => Promise<void> = () => Promise.resolve();
+  static modules: string[] = [];
+  static addModule: (_url: string) => Promise<void> = () => Promise.resolve();
 
   state = "running";
   closed = false;
   suspends = 0;
   resumes = 0;
   readonly destination = {};
-  readonly audioWorklet = { addModule: () => FakeAudioContext.addModule() };
+  readonly audioWorklet = {
+    addModule: (url: string) => {
+      FakeAudioContext.modules.push(url);
+      return FakeAudioContext.addModule(url);
+    },
+  };
 
   constructor() {
     FakeAudioContext.created.push(this);
@@ -172,6 +178,7 @@ beforeEach(() => {
   FakeWorker.created = [];
   FakeWorkletNode.created = [];
   FakeAudioContext.created = [];
+  FakeAudioContext.modules = [];
   FakeAudioContext.addModule = () => Promise.resolve();
   vi.stubGlobal("Worker", FakeWorker);
   vi.stubGlobal("AudioContext", FakeAudioContext);
@@ -441,6 +448,17 @@ const loaded = async () => {
 const node = () => FakeWorkletNode.created[0];
 
 describe("transport", () => {
+  it("loads the worklet under the live protocol version", async () => {
+    const engine = await loaded();
+
+    await engine.play();
+
+    expect(FakeAudioContext.modules).toHaveLength(1);
+    expect(FakeAudioContext.modules[0]).toMatch(
+      new RegExp(`worklet\\.js\\?v=${PROTOCOL_VERSION}$`),
+    );
+  });
+
   it("publishes the engine-owned starting and confirmed transport states", async () => {
     const engine = await loaded();
     const states: string[] = [];
