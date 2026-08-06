@@ -38,6 +38,11 @@ var (
 	renderBuf []float32
 	jsBytes   js.Value // Uint8Array over the same allocation as jsFloats
 	jsFloats  js.Value // Float32Array returned to the caller
+
+	patternInput [drum.PatternSize]float64
+	patternBuf   [drum.PatternSize]float32
+	patternBytes js.Value
+	patternJS    js.Value
 )
 
 func main() {
@@ -66,6 +71,14 @@ func main() {
 
 		if running, ok := argBool(args, 0, "setRunning"); ok {
 			engine.SetRunning(running)
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("pause", export(func(args []js.Value) any {
+		if ready() {
+			engine.Pause()
 		}
 
 		return js.Null()
@@ -153,13 +166,13 @@ func main() {
 			return js.Null()
 		}
 
-		if count > drum.TrackCount*drum.MaxSteps {
-			count = drum.TrackCount * drum.MaxSteps
+		if count != drum.PatternSize {
+			warnBadArg("setPattern")
+
+			return js.Null()
 		}
 
-		velocities := make([]float64, count)
-
-		for i := range velocities {
+		for i := range patternInput {
 			elem := arr.Index(i)
 			if elem.Type() != js.TypeNumber {
 				warnBadArg("setPattern")
@@ -174,30 +187,28 @@ func main() {
 				return js.Null()
 			}
 
-			velocities[i] = vel
+			patternInput[i] = vel
 		}
 
-		engine.SetPattern(velocities)
+		engine.SetPattern(patternInput[:])
 
 		return js.Null()
 	}))
 
-	// getPattern returns the pattern in the same flat Float32Array layout
-	// that setPattern accepts. Called rarely (state sync), so the per-call
-	// allocation and element-wise copy are fine.
+	// getPattern returns the pattern in a persistent JS-owned Float32Array.
+	// postMessage structured-clones it in audioWorker.ts; transferring it there
+	// would detach this reusable buffer and violate the allocation-free path.
 	api.Set("getPattern", export(func(args []js.Value) any {
 		if !ready() {
 			return js.Global().Get("Float32Array").New(0)
 		}
 
-		pattern := engine.Pattern()
+		ensurePatternBuffer()
+		engine.CopyPattern(&patternBuf)
+		bytes := unsafe.Slice((*byte)(unsafe.Pointer(&patternBuf[0])), drum.PatternSize*4)
+		js.CopyBytesToJS(patternBytes, bytes)
 
-		out := js.Global().Get("Float32Array").New(len(pattern))
-		for i, vel := range pattern {
-			out.SetIndex(i, vel)
-		}
-
-		return out
+		return patternJS
 	}))
 
 	api.Set("setVolume", export(func(args []js.Value) any {
@@ -462,6 +473,16 @@ func ensureRenderBuffers(sampleCount int) {
 	arrayBuf := js.Global().Get("ArrayBuffer").New(sampleCount * 4)
 	jsBytes = js.Global().Get("Uint8Array").New(arrayBuf)
 	jsFloats = js.Global().Get("Float32Array").New(arrayBuf)
+}
+
+func ensurePatternBuffer() {
+	if patternJS.Type() != js.TypeUndefined {
+		return
+	}
+
+	arrayBuf := js.Global().Get("ArrayBuffer").New(drum.PatternSize * 4)
+	patternBytes = js.Global().Get("Uint8Array").New(arrayBuf)
+	patternJS = js.Global().Get("Float32Array").New(arrayBuf)
 }
 
 func export(fn func([]js.Value) any) js.Func {

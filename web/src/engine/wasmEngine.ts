@@ -361,6 +361,13 @@ export async function play(): Promise<void> {
   command("setRunning", true);
 }
 
+// pause freezes sequencer time while allowing active voices and reverb to
+// ring out. Unlike stop(), the engine keeps reporting the held step and a
+// later play() resumes from the same fractional position.
+export function pause(): void {
+  command("pause");
+}
+
 export function stop(): void {
   command("setRunning", false);
 

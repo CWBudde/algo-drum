@@ -21,7 +21,7 @@ No plugins, no backend — just a `.wasm` file and a browser.
 - Shareable patterns: state round-trips through a URL hash and
   `localStorage`, so reloading or sending a link restores the pattern, tempo,
   and knobs
-- Keyboard-accessible: Space toggles play/stop, every grid cell and button is
+- Keyboard-accessible: Space toggles play/pause, every grid cell and button is
   focusable and activates with Enter/Space, and the knobs are ARIA sliders that
   respond to arrow keys, Page Up/Down, Home/End, and Escape to reset
 - Installable as a PWA: a web app manifest plus a service worker that caches

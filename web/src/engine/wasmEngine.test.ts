@@ -370,6 +370,22 @@ describe("playhead", () => {
     expect(steps).toEqual([-1, 0, 1, -1]);
   });
 
+  it("pauses without entering the stop-drain state", async () => {
+    const engine = await loaded();
+    const steps = record(engine);
+
+    await engine.play();
+    node().step(2);
+    engine.pause();
+    node().step(3);
+
+    expect(workers()[0].commands().slice(-2)).toEqual([
+      { type: "cmd", name: "setRunning", args: [true] },
+      { type: "cmd", name: "pause", args: [] },
+    ]);
+    expect(steps).toEqual([-1, 2, 3]);
+  });
+
   it("resumes reporting after the engine's first stopped chunk", async () => {
     const engine = await loaded();
     const steps = record(engine);

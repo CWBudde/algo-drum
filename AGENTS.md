@@ -88,8 +88,8 @@ Vite serves `web/public/` as static assets, so `algo_drum.wasm` and `wasm_exec.j
 
 ```
 cmd/wasm/main.go          — WASM entry point; registers the AlgoDrum JS API (worker global scope)
-internal/drum/engine.go   — Sequencer: velocity pattern grid (5×16), runtime step count, tempo/swing, probability + humanize (allocation-free pending-trigger list), smoothed per-track volumes, Render()
-internal/drum/voices.go   — Drum synthesizer voices (BassDrum, Snare, HiHat, Tom, Cymbal); all tuning is runtime-settable
+internal/drum/engine.go   — Sequencer: velocity pattern grid (7×16), runtime step count, fixed-point tempo/swing clock, probability + humanize (allocation-free pending-trigger mask), smoothed per-track volumes, Render()
+internal/drum/voices.go   — Drum synthesizer voices (BassDrum, Snare, HiHat, Tom, Cymbal, Tom 2, Percussion); all tuning is runtime-settable
 internal/drum/params.go   — Per-voice synthesis parameter specs (ranges, curves, defaults) + the normalized→engineering mapping
 internal/drum/validate.go — Engine.Validate(): every invariant Render relies on (step lengths, playhead, pending triggers, gains, voice params), joined into one error
 internal/drum/assert.go   — assertValid(): a no-op in shipped builds; `-tags drumassert` (assert_debug.go) makes Render panic on a broken invariant (`just test-assert`)
@@ -101,7 +101,7 @@ web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; renders au
 web/src/engine/patternMirror.ts — Reconciles the engine's pattern echoes with in-flight optimistic UI edits (engine = single source of truth)
 web/src/engine/voiceParams.ts   — Curve renderer + readout formatting over voiceParams.generated.ts (the committed mirror of internal/drum/params.go)
 web/public/worklet.js         — AudioWorkletProcessor: consumes chunks, reports the audible step
-web/src/components/DrumMachine.tsx — Main UI: 5×16 step grid (DOM/CSS; clicking a cell cycles off → on → accent) mirroring the engine-owned pattern, transport (play, tempo + TAP, swing, STEPS, PROB, HUMAN, reverb), per-track volume/decay knobs + mute LEDs + a per-voice editor button; persistence/share wiring
+web/src/components/DrumMachine.tsx — Main UI: 7×16 step grid (DOM/CSS; clicking a cell cycles off → on → accent) mirroring the engine-owned pattern, transport (play/pause/stop, tempo + TAP, swing, STEPS, PROB, HUMAN, reverb), per-track volume/decay knobs + mute LEDs + a per-voice editor button; persistence/share wiring
 web/src/components/AlgoPanel.tsx    — Algorithmic tools panel: preset selector, CLEAR, MUTATE, per-track Euclidean fill (E(k,n) + rotation), SHARE (copy link)
 web/src/components/VoiceEditor.tsx — Per-voice synthesis editor: native <dialog> modal of knobs driven by the generated parameter table, plus AUDITION and RESET
 web/src/components/Knob.tsx        — Reusable rotary knob (SVG; drag, wheel, and keyboard accessible)
@@ -124,9 +124,9 @@ PLAN.md                   — Point-in-time review backlog (numbered items); ref
 
 ### Audio Signal Flow
 
-`Engine.Render(buf)` → Go voices mix mono samples → FDN reverb (wet amount) → lookahead limiter + hard clamp → `Float32Array` → 512-sample chunks posted from the Web Worker to the `AudioWorklet` over a direct `MessageChannel` → `AudioContext` at 48 kHz (~2048 samples buffered). Each chunk carries the sequencer step it starts on; the worklet reports it back so the UI playhead tracks the audible step.
+`Engine.Render(buf)` → Go voices mix mono samples → continuously advancing FDN reverb (smoothed wet amount) → true lookahead peak limiter + safety clamp → `Float32Array` → 512-sample chunks posted from the Web Worker to the `AudioWorklet` over a direct `MessageChannel` → `AudioContext` at 48 kHz (~2048 samples buffered). Each chunk carries the sequencer step it starts on; the worklet reports it back so the UI playhead tracks the audible step.
 
-### Track Order (index 0–4)
+### Track Order (index 0–6)
 
 | Index | Voice           |
 | ----- | --------------- |
@@ -135,8 +135,10 @@ PLAN.md                   — Point-in-time review backlog (numbered items); ref
 | 2     | Hi-Hat (closed) |
 | 3     | Tom             |
 | 4     | Cymbal          |
+| 5     | Tom 2           |
+| 6     | Percussion      |
 
-UI displays tracks in **reverse order** (Cymbal on top, Bass on bottom).
+UI displays Cymbal, Percussion, Tom 2, Tom, Hi-Hat, Snare, Bass from top to bottom.
 
 ### WASM JS API (`AlgoDrum` on the worker's global scope)
 
@@ -144,21 +146,22 @@ UI displays tracks in **reverse order** (Cymbal on top, Bass on bottom).
 | ------------------------------ | ---------------------------------------------------------------------------------- |
 | `init(sampleRate)`             | Initialize engine (called once at WASM load)                                       |
 | `setRunning(bool)`             | Play / stop (stop resets to step 0)                                                |
+| `pause()`                      | Freeze sequencer time and pending hits; active voice/effect tails keep ringing     |
 | `setTempo(bpm)`                | Set tempo in BPM (clamped to 30–300)                                               |
 | `setSwing(0–0.5)`              | Set swing amount (0.5 = full shuffle)                                              |
 | `setStepCount(n)`              | Set active pattern length (clamped to 1–16); steps are 16th notes                  |
 | `setCell(track, step, 0–1)`    | Set cell velocity (0 = off; UI uses 0.7 = normal, 1.0 = accent)                    |
-| `setPattern(Float32Array)`     | Replace pattern from a flat track-major array of 5×16 velocities (`track*16+step`) |
+| `setPattern(Float32Array)`     | Atomically replace the full flat track-major 7×16 pattern (`track*16+step`)        |
 | `getPattern()`                 | Returns the pattern in the same flat Float32Array layout                           |
 | `setVolume(track, 0–1)`        | Set track volume (ramped over ~8 ms to avoid zipper noise)                         |
 | `setDecay(track, 0–1)`         | Trim the track's base decay time by 0.5×–1.5×                                      |
 | `setVoiceParam(track, i, 0–1)` | Set one per-voice synthesis parameter (tables in `docs/voices.md`)                 |
 | `triggerVoice(track, 0–1)`     | Fire one voice immediately, independent of the sequencer (audition)                |
-| `setReverb(0–1)`               | Set global reverb amount                                                           |
+| `setReverb(0–1)`               | Set the smoothed global reverb amount                                               |
 | `setProbability(0–1)`          | Per-hit trigger chance (1 = every hit fires, default; 0 = silence)                 |
 | `setHumanize(0–1)`             | Timing/velocity randomization (delay ≤ h·15 ms, velocity ±h·20%; 0 = mechanical)   |
 | `render(n)`                    | Render n samples → Float32Array                                                    |
-| `currentStep()`                | Returns active step index (-1 if stopped)                                          |
+| `currentStep()`                | Returns active/paused step index (-1 if stopped)                                   |
 
 ## The physical Tom voice
 

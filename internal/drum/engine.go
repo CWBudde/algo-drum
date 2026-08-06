@@ -2,9 +2,9 @@ package drum
 
 import (
 	"math"
+	"math/bits"
 	"math/rand/v2"
 
-	"github.com/cwbudde/algo-dsp/dsp/effects/dynamics"
 	"github.com/cwbudde/algo-dsp/dsp/effects/reverb"
 )
 
@@ -43,7 +43,7 @@ const (
 	maxPending = 32
 
 	// Tempo bounds in BPM. The lower bound also bounds a step's length, which
-	// keeps the swing arithmetic in recomputeStepLengths well away from
+	// keeps the swing arithmetic in recomputeStepDurations well away from
 	// degenerate (sub-sample) steps.
 	minTempoBPM = 30.0
 	maxTempoBPM = 300.0
@@ -66,6 +66,7 @@ const (
 	// steps are 16th notes, so there are four per quarter-note beat.
 	secondsPerMinute = 60.0
 	stepsPerBeat     = 4.0
+	stepPhaseUnit    = uint64(1) << 32
 
 	// Reverb mapping: SetReverb(1) means a 0.45 wet mix and a 4 s RT60.
 	reverbMaxWet     = 0.45
@@ -80,15 +81,22 @@ type pendingTrigger struct {
 	countdown int     // samples remaining until the voice fires
 	track     int     // voice index to trigger
 	velocity  float64 // humanized velocity to trigger at
-	active    bool    // slot in use
 }
+
+type transportState uint8
+
+const (
+	transportStopped transportState = iota
+	transportPlaying
+	transportPaused
+)
 
 // Engine is the drum machine sequencer and mixer.
 type Engine struct {
-	sr      float64
-	running bool
-	bpm     float64
-	swing   float64 // 0.0 = no swing, 0.5 = full shuffle
+	sr        float64
+	transport transportState
+	bpm       float64
+	swing     float64 // 0.0 = no swing, 0.5 = full shuffle
 
 	pattern [TrackCount][MaxSteps]float64 // per-cell velocity in [0, 1], 0 = off
 	volumes [TrackCount]float64           // targets set by SetVolume
@@ -102,19 +110,24 @@ type Engine struct {
 	proceduralToms [TrackCount]*Tom
 	physicalToms   [TrackCount]*physicalTom
 
-	stepCount   int // active pattern length in [1, MaxSteps]
-	currentStep int
-	stepSamples int64
-	stepLen     [MaxSteps]int64 // pre-computed step lengths
+	stepCount           int // active pattern length in [1, MaxSteps]
+	currentStep         int
+	stepPhase           uint64 // elapsed Q32.32 samples in the current step
+	currentStepDuration uint64 // latched Q32.32 duration of the current step
+	stepDuration        [MaxSteps]uint64
+	stepTriggered       bool
 
-	prob     float64 // per-hit trigger probability in [0, 1]
-	humanize float64 // timing/velocity randomization amount in [0, 1]
-	rng      *rand.Rand
-	pending  [maxPending]pendingTrigger
+	prob        float64 // per-hit trigger probability in [0, 1]
+	humanize    float64 // timing/velocity randomization amount in [0, 1]
+	rng         *rand.Rand
+	pending     [maxPending]pendingTrigger
+	pendingMask uint32
 
-	reverb       *reverb.FDNReverb
-	reverbAmount float64
-	limiter      *dynamics.LookaheadLimiter
+	reverb           *reverb.FDNReverb
+	reverbAmount     float64
+	liveReverbAmount float64
+	limiter          *peakLimiter
+	hardClipCount    uint64
 }
 
 // NewEngine creates a drum engine at the given sample rate. A non-finite or
@@ -153,7 +166,7 @@ func NewEngine(sr float64) *Engine {
 		e.voices[i].SetDecay(e.decays[i])
 	}
 
-	e.recomputeStepLengths()
+	e.recomputeStepDurations()
 
 	// The DSP constructors return (nil, err) for a rate they cannot work
 	// with, so both handles stay nil-checked: a broken effect degrades to a
@@ -167,18 +180,10 @@ func NewEngine(sr float64) *Engine {
 
 	e.reverb = rev
 
-	// Lookahead limiter controls the sustained level (dense patterns, long
-	// reverb tails). Its smoothed detector still under-reacts to
-	// single-sample noise transients, so the hard clamp in Render is the
-	// actual brick wall for those rare (~inaudible) peaks.
-	lim, err := dynamics.NewLookaheadLimiter(sr)
-	logErr("NewLookaheadLimiter", err)
-
-	if lim != nil {
-		logErr("limiter.SetThreshold", lim.SetThreshold(-1.0))
-	}
-
-	e.limiter = lim
+	// The master limiter uses a peak-max lookahead detector, so even isolated
+	// noise transients are held below the ceiling. The final clamp in Render is
+	// retained only as a last-resort finite-output contract.
+	e.limiter = newPeakLimiter(sr)
 
 	return e
 }
@@ -242,49 +247,68 @@ func validStep(step int) bool {
 	return step >= 0 && step < MaxSteps
 }
 
-// recomputeStepLengths recalculates step durations accounting for swing.
+// recomputeStepDurations recalculates Q32.32 step durations accounting for swing.
 // Swing lengthens a step and shortens the one after it by the same amount, so
 // each (long, short) pair still spans exactly two base steps and the loop
-// keeps its tempo: sum(stepLen[0:stepCount]) == stepCount·base for any swing.
+// keeps its tempo exactly in fixed point. The retained fractional phase crosses
+// step and loop boundaries, so a non-integer samples-per-step value cannot
+// accumulate tempo drift.
 // An odd step count leaves the final step unpaired, so it keeps the plain base
 // length rather than stretching the loop. Steps past the active length never
 // play and are held at the base length too.
-func (e *Engine) recomputeStepLengths() {
+func (e *Engine) recomputeStepDurations() {
 	base := e.sr * secondsPerMinute / e.bpm / stepsPerBeat // samples per 16th note
-
-	// The short step is derived by subtraction, not by scaling with (1-swing),
-	// so truncation to whole samples cannot make a pair drift off 2·base.
-	plain := int64(base)
-	long := int64(base * (1.0 + e.swing))
-	short := 2*plain - long
+	plain := uint64(math.Round(base * float64(stepPhaseUnit)))
+	delta := uint64(math.Round(base * e.swing * float64(stepPhaseUnit)))
+	long := plain + delta
+	short := plain - delta
 	last := e.stepCount - 1
 
-	for i := range e.stepLen {
+	for i := range e.stepDuration {
 		unpaired := i > last || (i == last && e.stepCount%2 == 1)
 
 		switch {
 		case unpaired:
-			e.stepLen[i] = plain
+			e.stepDuration[i] = plain
 		case i%2 == 0:
-			e.stepLen[i] = long
+			e.stepDuration[i] = long
 		default:
-			e.stepLen[i] = short
+			e.stepDuration[i] = short
 		}
+	}
+
+	// Parameter edits are latched at the next boundary while playing or
+	// paused, avoiding a shortened step suddenly ending mid-buffer. A stopped
+	// transport starts with the newly configured duration immediately.
+	if e.transport == transportStopped || e.currentStepDuration == 0 {
+		e.currentStepDuration = e.stepDuration[e.currentStep]
 	}
 }
 
 func (e *Engine) SetRunning(running bool) {
-	if !running {
-		e.currentStep = 0
-		e.stepSamples = 0
+	if running {
+		e.transport = transportPlaying
 
-		// Drop any humanize-delayed hits so they don't fire after restart.
-		for i := range e.pending {
-			e.pending[i].active = false
-		}
+		return
 	}
 
-	e.running = running
+	e.transport = transportStopped
+	e.currentStep = 0
+	e.stepPhase = 0
+	e.currentStepDuration = e.stepDuration[0]
+	e.stepTriggered = false
+
+	// Drop any humanize-delayed hits so they don't fire after restart.
+	e.pendingMask = 0
+}
+
+// Pause freezes sequencer time and delayed humanized hits while allowing
+// already-triggered voices and effects to ring out. SetRunning(true) resumes
+// from the held fractional position; SetRunning(false) performs a full stop.
+func (e *Engine) Pause() {
+	if e.transport == transportPlaying {
+		e.transport = transportPaused
+	}
 }
 
 // SetProbability sets the chance each scheduled hit actually fires, clamped to
@@ -321,7 +345,7 @@ func (e *Engine) SetTempo(bpm float64) {
 	}
 
 	e.bpm = tempo
-	e.recomputeStepLengths()
+	e.recomputeStepDurations()
 }
 
 // SetSwing sets the swing amount, clamped to [0, maxSwing]. A non-finite value
@@ -333,11 +357,11 @@ func (e *Engine) SetSwing(swing float64) {
 	}
 
 	e.swing = amount
-	e.recomputeStepLengths()
+	e.recomputeStepDurations()
 }
 
 // SetStepCount sets the active pattern length, clamped to [1, MaxSteps].
-// Cells beyond the new length keep their contents (see SetCell). Step lengths
+// Cells beyond the new length keep their contents (see SetCell). Step durations
 // are recomputed because swing pairs steps within the active loop.
 func (e *Engine) SetStepCount(count int) {
 	if count < 1 {
@@ -354,10 +378,12 @@ func (e *Engine) SetStepCount(count int) {
 		// it plays out with its own length instead of inheriting the elapsed
 		// samples of the step it replaced.
 		e.currentStep %= count
-		e.stepSamples = 0
+		e.stepPhase = 0
+		e.stepTriggered = false
+		e.currentStepDuration = 0
 	}
 
-	e.recomputeStepLengths()
+	e.recomputeStepDurations()
 }
 
 // SetCell sets a cell's velocity, clamped to [0, 1] (0 = off). Steps are
@@ -381,35 +407,36 @@ func (e *Engine) SetCell(track, step int, velocity float64) {
 	e.pattern[track][step] = vel
 }
 
-// SetPattern replaces cells from a flat track-major slice (index =
-// track*MaxSteps + step) of velocities, each clamped to [0, 1]. Values past
-// TrackCount×MaxSteps are ignored; a shorter slice leaves the rest untouched.
-// Per the SetCell contract a non-finite entry is skipped, leaving that one
-// cell unchanged while the rest of the slice still applies.
+const PatternSize = TrackCount * MaxSteps
+
+// SetPattern atomically replaces the full flat track-major pattern (index =
+// track*MaxSteps + step). A wrong-sized snapshot or any non-finite entry is
+// rejected as a whole; finite velocities are clamped to [0, 1].
 func (e *Engine) SetPattern(velocities []float64) {
-	for i, velocity := range velocities {
-		if i >= TrackCount*MaxSteps {
+	if len(velocities) != PatternSize {
+		return
+	}
+
+	for _, velocity := range velocities {
+		if _, ok := validFloat(velocity, 0, 1); !ok {
 			return
 		}
+	}
 
-		vel, ok := validFloat(velocity, 0, 1)
-		if !ok {
-			continue
-		}
-
+	for i, velocity := range velocities {
+		vel, _ := validFloat(velocity, 0, 1)
 		e.pattern[i/MaxSteps][i%MaxSteps] = vel
 	}
 }
 
-// Pattern returns a flat track-major copy of the full pattern (see
-// SetPattern for the layout).
-func (e *Engine) Pattern() []float64 {
-	out := make([]float64, 0, TrackCount*MaxSteps)
-	for t := range e.pattern {
-		out = append(out, e.pattern[t][:]...)
+// CopyPattern writes the full pattern into caller-owned storage without
+// allocating. float32 matches the WASM wire format.
+func (e *Engine) CopyPattern(dst *[PatternSize]float32) {
+	for track := range e.pattern {
+		for step, velocity := range e.pattern[track] {
+			dst[track*MaxSteps+step] = float32(velocity)
+		}
 	}
-
-	return out
 }
 
 // SetVolume sets per-track volume, clamped to [0, 1]. The change ramps in
@@ -575,9 +602,9 @@ func (e *Engine) TriggerVoice(track int, velocity float64) {
 	e.voices[track].Trigger(vel)
 }
 
-// SetReverb sets the reverb amount in [0, 1]. 0 = fully dry, 1 = maximum
-// reverb (wet=reverbMaxWet, RT60=4 s). A non-finite amount is rejected and
-// leaves the current setting unchanged.
+// SetReverb sets the target reverb amount in [0, 1]. Render smooths the wet
+// gain to that target; 0 = fully dry, 1 = maximum (wet=reverbMaxWet, RT60=4 s).
+// A non-finite amount is rejected and leaves the current setting unchanged.
 func (e *Engine) SetReverb(amount float64) {
 	wet, ok := validFloat(amount, 0, 1)
 	if !ok {
@@ -591,17 +618,14 @@ func (e *Engine) SetReverb(amount float64) {
 	}
 
 	if wet <= 0 {
-		logErr("reverb.SetWet", e.reverb.SetWet(0))
-
 		return
 	}
 
-	logErr("reverb.SetWet", e.reverb.SetWet(wet*reverbMaxWet))
 	logErr("reverb.SetRT60", e.reverb.SetRT60(reverbMinRT60S+wet*reverbRangeRT60S))
 }
 
 func (e *Engine) CurrentStep() int {
-	if !e.running {
+	if e.transport == transportStopped {
 		return -1
 	}
 
@@ -645,41 +669,39 @@ func (e *Engine) triggerStep() {
 // schedule queues a delayed voice trigger; if the fixed pending buffer is full
 // the hit fires immediately rather than being dropped.
 func (e *Engine) schedule(track int, velocity float64, delay int) {
-	for i := range e.pending {
-		if !e.pending[i].active {
-			e.pending[i] = pendingTrigger{
-				countdown: delay,
-				track:     track,
-				velocity:  velocity,
-				active:    true,
-			}
+	free := ^e.pendingMask
+	if free == 0 {
+		e.voices[track].Trigger(velocity)
 
-			return
-		}
+		return
 	}
 
-	e.voices[track].Trigger(velocity)
+	slot := bits.TrailingZeros32(free)
+	e.pending[slot] = pendingTrigger{countdown: delay, track: track, velocity: velocity}
+	e.pendingMask |= uint32(1) << slot
 }
 
 // firePending advances every queued trigger by one sample and fires those that
 // have reached their scheduled time.
 func (e *Engine) firePending() {
-	for i := range e.pending {
-		if !e.pending[i].active {
-			continue
-		}
+	for active := e.pendingMask; active != 0; {
+		slot := bits.TrailingZeros32(active)
+		bit := uint32(1) << slot
+		active &^= bit
 
-		e.pending[i].countdown--
-		if e.pending[i].countdown <= 0 {
-			e.voices[e.pending[i].track].Trigger(e.pending[i].velocity)
-			e.pending[i].active = false
+		trigger := &e.pending[slot]
+
+		trigger.countdown--
+		if trigger.countdown <= 0 {
+			e.voices[trigger.track].Trigger(trigger.velocity)
+			e.pendingMask &^= bit
 		}
 	}
 }
 
 // Render fills buf with mono audio samples.
 //
-// The invariants the loop relies on — a positive length for every step, the
+// The invariants the loop relies on — a positive duration for every step, the
 // playhead inside the loop, no pending trigger past its deadline — are checked
 // per buffer, on entry and on exit, only in builds tagged `drumassert`; the
 // shipped build compiles assertValid away to nothing (see assert.go).
@@ -687,19 +709,22 @@ func (e *Engine) Render(buf []float32) {
 	e.assertValid()
 
 	for i := range buf {
-		if e.running {
-			if e.stepSamples == 0 {
+		if e.transport == transportPlaying {
+			if !e.stepTriggered {
 				e.triggerStep()
+				e.stepTriggered = true
 			}
 
-			e.stepSamples++
-			if e.stepSamples >= e.stepLen[e.currentStep] {
-				e.stepSamples = 0
+			e.stepPhase += stepPhaseUnit
+			if e.stepPhase >= e.currentStepDuration {
+				e.stepPhase -= e.currentStepDuration
 				e.currentStep = (e.currentStep + 1) % e.stepCount
+				e.currentStepDuration = e.stepDuration[e.currentStep]
+				e.stepTriggered = false
 			}
-		}
 
-		e.firePending()
+			e.firePending()
+		}
 
 		var out float64
 
@@ -712,7 +737,9 @@ func (e *Engine) Render(buf []float32) {
 
 		out *= mixHeadroom
 
-		if e.reverbAmount > 0 && e.reverb != nil {
+		if e.reverb != nil {
+			e.liveReverbAmount += (e.reverbAmount - e.liveReverbAmount) * e.volCoef
+			logErr("reverb.SetWet", e.reverb.SetWet(e.liveReverbAmount*reverbMaxWet))
 			out = e.reverb.ProcessSample(out)
 		}
 
@@ -729,8 +756,10 @@ func (e *Engine) Render(buf []float32) {
 		switch {
 		case out > 1:
 			out = 1
+			e.hardClipCount++
 		case out < -1:
 			out = -1
+			e.hardClipCount++
 		case math.IsNaN(out):
 			out = 0
 		}

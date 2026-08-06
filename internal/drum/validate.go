@@ -3,6 +3,7 @@ package drum
 import (
 	"errors"
 	"fmt"
+	"math/bits"
 )
 
 // Validate reports every engine invariant that is currently broken, joined
@@ -55,6 +56,10 @@ func (e *Engine) checkTransport(problems []error) []error {
 		problems = append(problems, fmt.Errorf("humanize out of contract: %v", e.humanize))
 	}
 
+	if e.transport > transportPaused {
+		problems = append(problems, fmt.Errorf("invalid transport state: %d", e.transport))
+	}
+
 	if e.stepCount < 1 || e.stepCount > MaxSteps {
 		problems = append(problems, fmt.Errorf("step count %d outside [1, %d]", e.stepCount, MaxSteps))
 	}
@@ -66,15 +71,18 @@ func (e *Engine) checkTransport(problems []error) []error {
 			fmt.Errorf("playhead %d outside loop of %d steps", e.currentStep, e.stepCount))
 	}
 
-	if e.stepSamples < 0 {
-		problems = append(problems, fmt.Errorf("elapsed step samples %d is negative", e.stepSamples))
+	if e.currentStepDuration == 0 {
+		problems = append(problems, errors.New("current step duration is zero"))
+	} else if e.stepPhase >= e.currentStepDuration {
+		problems = append(problems,
+			fmt.Errorf("step phase %d outside current duration %d", e.stepPhase, e.currentStepDuration))
 	}
 
 	// A non-positive length makes Render advance a step per sample; lengths
 	// are whole samples, so "finite" is inherent in the int64.
-	for step, length := range e.stepLen {
-		if length <= 0 {
-			problems = append(problems, fmt.Errorf("step %d length %d is not positive", step, length))
+	for step, duration := range e.stepDuration {
+		if duration == 0 {
+			problems = append(problems, fmt.Errorf("step %d duration is zero", step))
 		}
 	}
 
@@ -85,10 +93,10 @@ func (e *Engine) checkTransport(problems []error) []error {
 // must still be counting down toward a real voice, since firePending clears it
 // the moment it fires.
 func (e *Engine) checkPending(problems []error) []error {
-	for slot, trigger := range e.pending {
-		if !trigger.active {
-			continue
-		}
+	for active := e.pendingMask; active != 0; {
+		slot := bits.TrailingZeros32(active)
+		active &^= uint32(1) << slot
+		trigger := e.pending[slot]
 
 		if trigger.countdown <= 0 {
 			problems = append(problems,
@@ -114,6 +122,11 @@ func (e *Engine) checkPending(problems []error) []error {
 func (e *Engine) checkMix(problems []error) []error {
 	if !inRange(e.reverbAmount, 0, 1) {
 		problems = append(problems, fmt.Errorf("reverb amount out of contract: %v", e.reverbAmount))
+	}
+
+	if !inRange(e.liveReverbAmount, 0, 1) {
+		problems = append(problems,
+			fmt.Errorf("live reverb amount out of contract: %v", e.liveReverbAmount))
 	}
 
 	if !inRange(e.volCoef, 0, 1) {

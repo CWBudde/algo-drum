@@ -32,17 +32,21 @@ test("loads, plays, and responds to input", async ({ page }) => {
 
   // Space starts playback (focus is on the body after the cell click blur).
   await page.keyboard.press("Space");
+  const pause = page.getByRole("button", { name: "Pause", exact: true });
   const stop = page.getByRole("button", { name: "Stop", exact: true });
-  await expect(stop).toBeVisible({ timeout: 10_000 });
+  await expect(pause).toBeVisible({ timeout: 10_000 });
 
   // The playhead should land on a column within a couple of steps.
   await expect(page.locator(".dm-cell[data-playhead]")).not.toHaveCount(0, {
     timeout: 6_000,
   });
 
-  // Space again stops playback and clears the playhead.
+  // Space again pauses at the held step; Stop is the distinct reset action
+  // that returns to step 1 and clears the playhead.
   await page.keyboard.press("Space");
   await expect(play).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".dm-cell[data-playhead]")).not.toHaveCount(0);
+  await stop.click();
   await expect(page.locator(".dm-cell[data-playhead]")).toHaveCount(0, {
     timeout: 4_000,
   });

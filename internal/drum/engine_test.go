@@ -26,13 +26,18 @@ func peakOf(buf []float32) float64 {
 	return peak
 }
 
+func samplesForStep(engine *Engine, step int) int {
+	return int((engine.stepDuration[step] + stepPhaseUnit - 1) / stepPhaseUnit)
+}
+
 func TestStepLengthsNoSwingAreEqual(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	engine.SetSwing(0)
 
 	for step := 1; step < MaxSteps; step++ {
-		if engine.stepLen[step] != engine.stepLen[0] {
-			t.Fatalf("step %d length %d != step 0 length %d", step, engine.stepLen[step], engine.stepLen[0])
+		if engine.stepDuration[step] != engine.stepDuration[0] {
+			t.Fatalf("step %d duration %d != step 0 duration %d",
+				step, engine.stepDuration[step], engine.stepDuration[0])
 		}
 	}
 }
@@ -43,8 +48,8 @@ func TestStepLengthsFullSwingRatio(t *testing.T) {
 
 	// swing=0.5 must give even steps 1.5× base and odd steps 0.5× base,
 	// i.e. a 3:1 ratio — this was previously halved by double scaling.
-	longStep := float64(engine.stepLen[0])
-	shortStep := float64(engine.stepLen[1])
+	longStep := float64(engine.stepDuration[0])
+	shortStep := float64(engine.stepDuration[1])
 
 	ratio := longStep / shortStep
 	if math.Abs(ratio-3.0) > 0.01 {
@@ -57,24 +62,23 @@ func TestStepLengthsSwingPreservesBarLength(t *testing.T) {
 
 	engine.SetSwing(0)
 
-	var straight int64
+	var straight uint64
 
-	for _, length := range engine.stepLen {
+	for _, length := range engine.stepDuration {
 		straight += length
 	}
 
 	for _, swing := range []float64{0.1, 0.25, 0.5} {
 		engine.SetSwing(swing)
 
-		var swung int64
+		var swung uint64
 
-		for _, length := range engine.stepLen {
+		for _, length := range engine.stepDuration {
 			swung += length
 		}
 
-		// Rounding may cost at most one sample per step.
-		if diff := straight - swung; diff < 0 || diff > MaxSteps {
-			t.Fatalf("swing %.2f changed bar length by %d samples", swing, diff)
+		if swung != straight {
+			t.Fatalf("swing %.2f changed fixed-point bar length from %d to %d", swing, straight, swung)
 		}
 	}
 }
@@ -85,14 +89,14 @@ func TestSixteenStepsSpanOneBar(t *testing.T) {
 
 	// Steps are 16th notes: 16 of them must add up to one 4/4 bar
 	// (4 beats = 2 s at 120 BPM), give or take rounding per step.
-	var total int64
+	var total uint64
 
-	for _, length := range engine.stepLen {
+	for _, length := range engine.stepDuration {
 		total += length
 	}
 
-	wantBar := int64(testSampleRate * 60.0 / 120.0 * 4.0)
-	if diff := wantBar - total; diff < 0 || diff > MaxSteps {
+	wantBar := uint64(testSampleRate*60.0/120.0*4.0) * stepPhaseUnit
+	if total != wantBar {
 		t.Fatalf("16 steps span %d samples, want one bar = %d", total, wantBar)
 	}
 }
@@ -148,7 +152,7 @@ func TestStepAdvanceWrapsAtStepCount(t *testing.T) {
 			t.Fatalf("after %d steps CurrentStep() = %d, want %d", i, got, i%4)
 		}
 
-		renderTotal(engine, int(engine.stepLen[0]))
+		renderTotal(engine, samplesForStep(engine, 0))
 	}
 }
 
@@ -173,9 +177,9 @@ func TestSetTempoClamps(t *testing.T) {
 		t.Fatalf("SetTempo(10000): bpm = %v, want clamp to 300", engine.bpm)
 	}
 
-	for step, length := range engine.stepLen {
-		if length <= 0 {
-			t.Fatalf("step %d has non-positive length %d after clamped tempi", step, length)
+	for step, duration := range engine.stepDuration {
+		if duration == 0 {
+			t.Fatalf("step %d has zero duration after clamped tempi", step)
 		}
 	}
 }
@@ -298,42 +302,43 @@ func TestSetPatternPatternRoundtrip(t *testing.T) {
 
 	engine.SetPattern(in)
 
-	out := engine.Pattern()
+	var out [PatternSize]float32
+	engine.CopyPattern(&out)
 	if len(out) != TrackCount*MaxSteps {
-		t.Fatalf("Pattern() length = %d, want %d", len(out), TrackCount*MaxSteps)
+		t.Fatalf("CopyPattern length = %d, want %d", len(out), PatternSize)
 	}
 
 	for i := range in {
-		if out[i] != in[i] {
+		if float64(out[i]) != in[i] {
 			t.Fatalf("pattern[%d] = %v after roundtrip, want %v", i, out[i], in[i])
 		}
 	}
 }
 
-func TestSetPatternClampsAndTolerantLengths(t *testing.T) {
+func TestSetPatternClampsAndRejectsWrongLengths(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 
-	// Out-of-range velocities clamp; over-long input must not panic.
-	over := make([]float64, TrackCount*MaxSteps+7)
-	for i := range over {
-		over[i] = 5
+	full := make([]float64, PatternSize)
+	for i := range full {
+		full[i] = 5
 	}
 
-	engine.SetPattern(over)
+	engine.SetPattern(full)
 
 	if engine.pattern[0][0] != 1 || engine.pattern[TrackCount-1][MaxSteps-1] != 1 {
 		t.Fatal("SetPattern did not clamp velocities to 1")
 	}
 
-	// A short slice updates only the cells it covers.
+	// A partial or version-skewed snapshot is rejected atomically rather than
+	// being merged into or erasing part of the current pattern.
 	engine.SetPattern([]float64{0.5})
-
-	if engine.pattern[0][0] != 0.5 {
-		t.Fatalf("short SetPattern: cell (0,0) = %v, want 0.5", engine.pattern[0][0])
-	}
-
-	if engine.pattern[0][1] != 1 {
-		t.Fatalf("short SetPattern touched cell (0,1): %v, want untouched 1", engine.pattern[0][1])
+	engine.SetPattern(make([]float64, PatternSize+1))
+	for track := range engine.pattern {
+		for step, velocity := range engine.pattern[track] {
+			if velocity != 1 {
+				t.Fatalf("wrong-sized snapshot changed cell (%d,%d) to %v", track, step, velocity)
+			}
+		}
 	}
 }
 
@@ -351,7 +356,7 @@ func TestCurrentStepLifecycle(t *testing.T) {
 	}
 
 	// Render slightly more than one step; the step index must advance.
-	renderTotal(engine, int(engine.stepLen[0])+1)
+	renderTotal(engine, samplesForStep(engine, 0)+1)
 
 	if got := engine.CurrentStep(); got != 1 {
 		t.Fatalf("after one step of audio CurrentStep() = %d, want 1", got)
@@ -388,7 +393,7 @@ func TestRenderPlaysPatternSetBeforeStart(t *testing.T) {
 	engine.SetCell(0, 0, 1)
 	engine.SetRunning(true)
 
-	buf := renderTotal(engine, int(engine.stepLen[0]))
+	buf := renderTotal(engine, samplesForStep(engine, 0))
 
 	if peak := peakOf(buf); peak < 0.05 {
 		t.Fatalf("pattern set before start rendered peak %v, want audible output", peak)
@@ -401,7 +406,7 @@ func TestRenderVelocityScalesOutput(t *testing.T) {
 		engine.SetCell(0, 0, velocity)
 		engine.SetRunning(true)
 
-		return peakOf(renderTotal(engine, int(engine.stepLen[0])))
+		return peakOf(renderTotal(engine, samplesForStep(engine, 0)))
 	}
 
 	full := renderHit(1.0)
@@ -494,7 +499,7 @@ func TestProbabilityOneAlwaysTriggers(t *testing.T) {
 	engine.SetRunning(true)
 
 	// Every step must produce an onset near its boundary.
-	stepLen := int(engine.stepLen[0])
+	stepLen := samplesForStep(engine, 0)
 	for step := 0; step < 8; step++ {
 		buf := renderTotal(engine, stepLen)
 		if firstOnset(buf) < 0 {
@@ -625,8 +630,8 @@ type engineState struct {
 	decay    float64
 	cell     float64
 	// voiceParam must stay a plain float64: engineState is compared with !=.
-	voiceParam float64
-	stepLen    [MaxSteps]int64
+	voiceParam   float64
+	stepDuration [MaxSteps]uint64
 }
 
 func snapshotState(engine *Engine) engineState {
@@ -640,8 +645,8 @@ func snapshotState(engine *Engine) engineState {
 		decay:    engine.decays[1],
 		cell:     engine.pattern[1][3],
 		// Snare param 0 is snare.toneHz; see params.go.
-		voiceParam: engine.voices[1].Param(0),
-		stepLen:    engine.stepLen,
+		voiceParam:   engine.voices[1].Param(0),
+		stepDuration: engine.stepDuration,
 	}
 }
 
@@ -711,7 +716,7 @@ func TestNonFiniteTempoKeepsStepLengthsSane(t *testing.T) {
 		engine := NewEngine(testSampleRate)
 		engine.SetTempo(120)
 
-		want := engine.stepLen
+		want := engine.stepDuration
 
 		engine.SetTempo(bad)
 
@@ -719,34 +724,36 @@ func TestNonFiniteTempoKeepsStepLengthsSane(t *testing.T) {
 			t.Fatalf("%s tempo stored as %v, want 120 kept", name, engine.bpm)
 		}
 
-		if engine.stepLen != want {
-			t.Fatalf("%s tempo rewrote step lengths: %v", name, engine.stepLen)
+		if engine.stepDuration != want {
+			t.Fatalf("%s tempo rewrote step durations: %v", name, engine.stepDuration)
 		}
 
-		for step, length := range engine.stepLen {
-			if length <= 0 {
-				t.Fatalf("%s tempo: step %d length %d, want positive", name, step, length)
+		for step, duration := range engine.stepDuration {
+			if duration == 0 {
+				t.Fatalf("%s tempo: step %d duration is zero", name, step)
 			}
 		}
 	}
 }
 
-func TestSetPatternSkipsNonFiniteEntries(t *testing.T) {
+func TestSetPatternRejectsNonFiniteSnapshotAtomically(t *testing.T) {
 	engine := NewEngine(testSampleRate)
-	engine.SetPattern([]float64{0.5, 0.5, 0.5})
-
-	engine.SetPattern([]float64{math.NaN(), 1, math.Inf(-1)})
-
-	if engine.pattern[0][0] != 0.5 {
-		t.Fatalf("NaN entry overwrote cell 0: %v, want 0.5", engine.pattern[0][0])
+	initial := make([]float64, PatternSize)
+	for i := range initial {
+		initial[i] = 0.5
 	}
+	engine.SetPattern(initial)
 
-	if engine.pattern[0][1] != 1 {
-		t.Fatalf("valid entry after a NaN was dropped: cell 1 = %v, want 1", engine.pattern[0][1])
-	}
+	invalid := make([]float64, PatternSize)
+	invalid[0], invalid[1], invalid[2] = math.NaN(), 1, math.Inf(-1)
+	engine.SetPattern(invalid)
 
-	if engine.pattern[0][2] != 0.5 {
-		t.Fatalf("-Inf entry overwrote cell 2: %v, want 0.5", engine.pattern[0][2])
+	for track := range engine.pattern {
+		for step, velocity := range engine.pattern[track] {
+			if velocity != 0.5 {
+				t.Fatalf("invalid snapshot changed cell (%d,%d) to %v", track, step, velocity)
+			}
+		}
 	}
 }
 
@@ -784,34 +791,34 @@ func TestSwingPreservesLoopLengthForEveryStepCount(t *testing.T) {
 	for _, bpm := range []float64{60, 120, 137, 300} {
 		engine.SetTempo(bpm)
 
-		base := int64(testSampleRate * 60.0 / bpm / 4.0)
+		base := uint64(math.Round(testSampleRate * 60.0 / bpm / 4.0 * float64(stepPhaseUnit)))
 
 		for count := 1; count <= MaxSteps; count++ {
 			for _, swing := range []float64{0, 0.1, 0.25, 0.5} {
 				engine.SetStepCount(count)
 				engine.SetSwing(swing)
 
-				var total int64
+				var total uint64
 
-				for step, length := range engine.stepLen[:count] {
-					if length <= 0 {
-						t.Fatalf("bpm %v swing %v count %d: step %d length %d, want positive",
-							bpm, swing, count, step, length)
+				for step, duration := range engine.stepDuration[:count] {
+					if duration == 0 {
+						t.Fatalf("bpm %v swing %v count %d: step %d duration is zero",
+							bpm, swing, count, step)
 					}
 
-					total += length
+					total += duration
 				}
 
-				if want := int64(count) * base; total != want {
-					t.Fatalf("bpm %v swing %v count %d: loop spans %d samples, want %d",
+				if want := uint64(count) * base; total != want {
+					t.Fatalf("bpm %v swing %v count %d: loop spans %d fixed-point samples, want %d",
 						bpm, swing, count, total, want)
 				}
 
 				// An odd loop cannot pair its final step, so that step must
 				// keep the plain base length instead of doubling up on long.
-				if count%2 == 1 && engine.stepLen[count-1] != base {
+				if count%2 == 1 && engine.stepDuration[count-1] != base {
 					t.Fatalf("bpm %v swing %v count %d: unpaired final step is %d, want base %d",
-						bpm, swing, count, engine.stepLen[count-1], base)
+						bpm, swing, count, engine.stepDuration[count-1], base)
 				}
 			}
 		}
@@ -824,15 +831,15 @@ func TestSevenStepLoopAtFullSwingKeepsTempo(t *testing.T) {
 	engine.SetSwing(0.5)
 	engine.SetStepCount(7)
 
-	var total int64
+	var total uint64
 
-	for _, length := range engine.stepLen[:7] {
+	for _, length := range engine.stepDuration[:7] {
 		total += length
 	}
 
 	// 120 BPM at 48 kHz = 6000 samples per 16th note; seven of them = 42000.
-	if total != 42000 {
-		t.Fatalf("7-step loop at full swing spans %d samples, want 42000", total)
+	if want := uint64(42000) * stepPhaseUnit; total != want {
+		t.Fatalf("7-step loop at full swing spans %d fixed-point samples, want %d", total, want)
 	}
 }
 
@@ -843,12 +850,13 @@ func TestSetStepCountRestartsWrappedStep(t *testing.T) {
 
 	// Part-way through step 10, shrink the loop under the playhead.
 	engine.currentStep = 10
-	engine.stepSamples = engine.stepLen[10] - 1
+	engine.currentStepDuration = engine.stepDuration[10]
+	engine.stepPhase = engine.currentStepDuration - stepPhaseUnit
 
 	engine.SetStepCount(4)
 
-	if engine.stepSamples != 0 {
-		t.Fatalf("wrapping the playhead left stepSamples = %d, want 0", engine.stepSamples)
+	if engine.stepPhase != 0 {
+		t.Fatalf("wrapping the playhead left stepPhase = %d, want 0", engine.stepPhase)
 	}
 
 	if got := engine.CurrentStep(); got != 10%4 {
@@ -857,7 +865,7 @@ func TestSetStepCountRestartsWrappedStep(t *testing.T) {
 
 	// The step it landed on must play out in full rather than ending after
 	// the single sample the old step had left.
-	renderTotal(engine, int(engine.stepLen[2])-1)
+	renderTotal(engine, samplesForStep(engine, 2)-1)
 
 	if got := engine.CurrentStep(); got != 2 {
 		t.Fatalf("wrapped step ended early: CurrentStep() = %d, want 2", got)

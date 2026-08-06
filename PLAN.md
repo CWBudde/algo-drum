@@ -1,6 +1,6 @@
 # algo-drum — Repository Review & Improvement Plan
 
-Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pass: **2026-07-26**.
+Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pass: **2026-07-26** · Go engine pass: **2026-08-06**.
 
 > The 2026-07-09 review drove three implementation passes; its items are closed and
 > removed (`git log` is the record). The 07-26 re-review below replaced it, and a
@@ -16,7 +16,7 @@ Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pa
 | --- | ------------------------- | :------: | --- | ------------------------------------------------------------------------------------------- |
 | 1   | Correctness & robustness  | **8/10** | +2  | Non-finite input rejected, swing fixed at every step count, bridge load recoverable         |
 | 2   | Audio pipeline & WASM     | **7/10** | —   | Right architecture, ~43 ms latency; the pull protocol still has no recovery path            |
-| 3   | Go engine / DSP           | **7/10** | —   | Idiomatic, tested, allocation-free render; gain staging still lets transients hit the clamp |
+| 3   | Go engine / DSP           | **9/10** | +2  | True peak limiting, drift-free timing, explicit pause, continuous reverb, lean hot paths    |
 | 4   | Architecture & state      | **7/10** | +1  | Command layer fully typed and echoes validated; nine parameters still UI-owned              |
 | 5   | Frontend code quality     | **7/10** | —   | Dead bridge plumbing gone; the 502-line component and missing CSS tokens remain             |
 | 6   | UI / UX                   | **6/10** | —   | Good knob and playhead mechanics; the grid is still unusable below ~725 px                  |
@@ -28,7 +28,7 @@ Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pa
 | 12  | PWA & deployment          | **6/10** | —   | Stamp verified and deploy no longer races CI; the bundle is still never precached           |
 | 13  | Feature depth vs the name | **6/10** | —   | The "algo" arrived — but every algorithmic control is global and one-shot                   |
 
-**Overall: 7.2/10** (was 6.6 at re-review, 4.0 at first review). The hardening pass closed
+**Overall: 7.4/10** (was 6.6 at re-review, 4.0 at first review). The hardening pass closed
 the correctness and tooling gaps; what is left is mostly reach — mobile layout, offline,
 accessibility depth, and the per-step algorithms the name promises.
 
@@ -49,8 +49,9 @@ probes rather than the implementation's own tests:
 | `bun run test:e2e` (real production build)    | 2 passing                      | **2 passing**                    |
 | `treefmt --fail-on-change` · `tsc` · `eslint` | clean                          | **clean (0 warnings)**           |
 
-Still measured open: an ordinary 3 s pattern hard-clips **16 samples** at ±1.0, so the
-clamp rather than the limiter is enforcing the ceiling (**E7**).
+The Go engine pass replaced the attack-smoothed compressor with a true lookahead peak
+limiter; both an isolated 2.0 impulse and a dense all-track render stay below −1 dBFS
+without invoking the final safety clamp (**E7**).
 
 ---
 
@@ -156,18 +157,21 @@ fallback, and a genuinely nice `REQUIRED_METHODS` runtime assertion against a st
 - [ ] **B11: stale comment** — `worklet.js:12` claims `CHUNK_SAMPLES` "must match the
       worker's render chunk size"; the worker renders whatever `samples` says.
 
-## 3. Go engine / DSP — 7/10
+## 3. Go engine / DSP — 9/10
 
 The strongest area: idiomatic, well-commented, magic numbers lifted into documented
 constants (`voices.go:22-79`), `math/rand/v2` with fixed per-voice seeds, an
 allocation-free `Render` with a test asserting it, and coverage of clamping, swing
-bar-length, velocity and humanize bounds. Gain staging is the outstanding problem.
+bar-length, velocity and humanize bounds. The engine pass closed every item below.
 
-- [ ] **E6: stop vs. pause semantics.** Still open and unchanged. `SetRunning(false)`
+- [x] **E6: stop vs. pause semantics.** `SetRunning(false)`
       (`engine.go:155`) resets `currentStep`/`stepSamples` and clears pending triggers;
       there is no `Pause()` in Go, no `pause()` in `wasmEngine.ts`, and
       `DrumMachine.tsx:249` is a binary toggle. Voices and reverb _do_ ring on after stop.
-- [ ] **E7 (re-opened): the limiter still isn't limiting.** Previously marked closed.
+      Closed with an explicit stopped/playing/paused transport: pause freezes fixed-point
+      sequencer time and delayed hits while tails ring, Play resumes, and a separate Stop
+      resets to step 0.
+- [x] **E7 (re-opened): the limiter still isn't limiting.** Previously marked closed.
       Output is now _guaranteed_ bounded by the hard clamp (`engine.go:410`), but that
       clamp — not the limiter — is doing the work: verified **16 samples clipped in 3 s**
       on an ordinary bass/snare/hat pattern at reverb 0.3, with the pre-limiter mix
@@ -175,23 +179,41 @@ bar-length, velocity and humanize bounds. Gain staging is the outstanding proble
       threshold (`engine.go:124`). `TestRenderOutputBoundedAndFinite` only asserts the
       clamp works, so it can never fail. Fix the gain staging (`hatGain 1.5`,
       `cymGain 1.2`) or the limiter usage, and add a test that asserts _no clipping_.
-- [ ] **E8: reverb bypass is a discontinuity.** `engine.go:402` skips `ProcessSample`
+      Closed with an allocation-free monotonic-queue lookahead limiter whose instantaneous
+      gain reduction mathematically bounds isolated transients as well as sustained peaks;
+      tests assert the semantic hard-clamp counter stays at zero.
+- [x] **E8: reverb bypass is a discontinuity.** `engine.go:402` skips `ProcessSample`
       entirely at `reverbAmount == 0`, truncating the tail with a click and later dumping
       stale delay-line contents back out. `SetWet(0)` (`:288`) already mutes correctly.
-- [ ] **E9: `firePending` is O(32) per sample** (`engine.go:360`) ≈ 1.5 M iterations/s,
+      The FDN now advances at every wet setting, while its wet amount follows a short
+      one-pole ramp; zero wet remains bit-exactly transparent and cannot preserve a stale
+      tail to resurrect later.
+- [x] **E9: `firePending` is O(32) per sample** (`engine.go:360`) ≈ 1.5 M iterations/s,
       almost always all-inactive. An active count or free-list head makes it near-free.
-- [ ] **E10: `Pattern()` allocates per call and is not rare.** `engine.go:253` allocates a
+      A 32-bit active-slot mask makes the empty case O(1) and visits only live slots,
+      preserving lowest-slot scheduling and deterministic simultaneous-trigger order.
+- [x] **E10: `Pattern()` allocates per call and is not rare.** `engine.go:253` allocates a
       fresh slice and `cmd/wasm/main.go:108` a `Float32Array` plus 80 `SetIndex` calls.
       The "called rarely (state sync)" comment (`main.go:106`) is stale — the pattern echo
       calls it on **every cell click** (`audioWorker.ts:188`). Reuse a persistent buffer.
-- [ ] **E11: `SetPattern` is asymmetric** — a short slice leaves untouched cells alone
+      `CopyPattern` writes into caller-owned `[112]float32` storage; the WASM bridge bulk-
+      copies it into one persistent JS-owned typed array. Allocation tests cover both the
+      snapshot and setter paths.
+- [x] **E11: `SetPattern` is asymmetric** — a short slice leaves untouched cells alone
       (`engine.go:241`) while `getPattern` always returns 80, so partial set + get is a
       merge, not a replace.
-- [ ] **E12: `Voice.IsActive()` is dead outside tests** (`voices.go:17`). Either use it to
+      The setter now accepts exactly one complete 112-cell snapshot and applies it
+      atomically; wrong lengths or any non-finite entry reject the whole replacement.
+- [x] **E12: `Voice.IsActive()` is dead outside tests** (`voices.go:17`). Either use it to
       skip `Tick()` on inactive voices — a real saving — or drop it from the interface.
-- [ ] **E13: `stepLen` truncation has no error accumulator** (`engine.go:148`), dropping
+      Dropped from the production interface; concrete voice lifecycle methods remain for
+      the test-only `activeVoice` contract without adding a second virtual call in Render.
+- [x] **E13: `stepLen` truncation has no error accumulator** (`engine.go:148`), dropping
       up to ~0.5 samples/step at non-integer BPM. Irrelevant standalone; matters the
       moment anything external syncs to it.
+      Step durations and elapsed phase now use Q32.32 samples. Fractional residual crosses
+      every step and loop boundary, swing pairs sum exactly, odd loops keep their final
+      unpaired base step, and long-run tests pin the cumulative error below one sample.
 
 ## 4. Architecture & state management — 7/10
 

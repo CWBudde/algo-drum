@@ -394,10 +394,16 @@
   outline-offset: 2px;
 }
 
+.dm-transport-buttons {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 3px;
+}
+
 .dm-play {
   width: 48px;
   height: 48px;
-  margin-top: 3px;
   border-radius: 50%;
   border: none;
   outline: 1.5px solid rgba(0, 200, 120, 0.35);
@@ -432,6 +438,36 @@
     0 0 18px rgba(220, 50, 50, 0.5),
     0 4px 10px rgba(0, 0, 0, 0.6),
     inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.dm-stop {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 7px;
+  background: linear-gradient(145deg, #33333d, #1d1d25);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.dm-stop span {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: #dadade;
+}
+
+.dm-stop:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.dm-stop:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  outline-offset: 3px;
 }
 
 /* ── Small screens ──────────────────────────────────────────────────────── */

@@ -10,6 +10,7 @@
 export interface AlgoDrumApi {
   init: (sampleRate: number) => void;
   setRunning: (playing: boolean) => void;
+  pause: () => void;
   setTempo: (bpm: number) => void;
   setSwing: (swing: number) => void;
   setStepCount: (steps: number) => void;
@@ -39,6 +40,7 @@ export interface AlgoDrumApi {
 const REQUIRED_METHODS = [
   "init",
   "setRunning",
+  "pause",
   "setTempo",
   "setSwing",
   "setStepCount",

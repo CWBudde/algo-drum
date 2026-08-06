@@ -34,7 +34,7 @@ func TestValidateAcceptsEngineAfterUse(t *testing.T) {
 
 	// Long enough to wrap the odd-length loop several times, so pending
 	// humanize triggers are in flight when the render stops.
-	renderTotal(engine, int(engine.stepLen[0])*20)
+	renderTotal(engine, samplesForStep(engine, 0)*20)
 
 	if err := engine.Validate(); err != nil {
 		t.Fatalf("engine invalid after playback: %v", err)
@@ -48,14 +48,9 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 		want    string
 	}{
 		{
-			name:    "zero step length",
-			corrupt: func(engine *Engine) { engine.stepLen[3] = 0 },
-			want:    "step 3 length 0",
-		},
-		{
-			name:    "negative step length",
-			corrupt: func(engine *Engine) { engine.stepLen[0] = -1 },
-			want:    "step 0 length -1",
+			name:    "zero step duration",
+			corrupt: func(engine *Engine) { engine.stepDuration[3] = 0 },
+			want:    "step 3 duration is zero",
 		},
 		{
 			name:    "playhead past the loop end",
@@ -66,11 +61,6 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 			name:    "negative playhead",
 			corrupt: func(engine *Engine) { engine.currentStep = -1 },
 			want:    "playhead -1",
-		},
-		{
-			name:    "negative elapsed samples",
-			corrupt: func(engine *Engine) { engine.stepSamples = -1 },
-			want:    "elapsed step samples -1",
 		},
 		{
 			name:    "step count below one",
@@ -85,21 +75,24 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 		{
 			name: "pending trigger past its deadline",
 			corrupt: func(engine *Engine) {
-				engine.pending[2] = pendingTrigger{countdown: 0, track: 1, velocity: 0.7, active: true}
+				engine.pending[2] = pendingTrigger{countdown: 0, track: 1, velocity: 0.7}
+				engine.pendingMask = 1 << 2
 			},
 			want: "pending trigger 2 past its deadline",
 		},
 		{
 			name: "pending trigger on an unknown track",
 			corrupt: func(engine *Engine) {
-				engine.pending[0] = pendingTrigger{countdown: 10, track: TrackCount, velocity: 0.7, active: true}
+				engine.pending[0] = pendingTrigger{countdown: 10, track: TrackCount, velocity: 0.7}
+				engine.pendingMask = 1
 			},
 			want: "pending trigger 0 targets invalid track 7",
 		},
 		{
 			name: "pending trigger with a non-finite velocity",
 			corrupt: func(engine *Engine) {
-				engine.pending[0] = pendingTrigger{countdown: 10, track: 0, velocity: math.NaN(), active: true}
+				engine.pending[0] = pendingTrigger{countdown: 10, track: 0, velocity: math.NaN()}
+				engine.pendingMask = 1
 			},
 			want: "pending trigger 0 velocity",
 		},
@@ -179,7 +172,7 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 
 func TestValidateReportsEveryViolation(t *testing.T) {
 	engine := NewEngine(testSampleRate)
-	engine.stepLen[0] = 0
+	engine.stepDuration[0] = 0
 	engine.currentStep = MaxSteps
 
 	err := engine.Validate()
@@ -187,7 +180,7 @@ func TestValidateReportsEveryViolation(t *testing.T) {
 		t.Fatal("Validate accepted a broken engine")
 	}
 
-	for _, want := range []string{"step 0 length 0", "playhead 16"} {
+	for _, want := range []string{"step 0 duration is zero", "playhead 16"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("Validate reported %q, want it to mention %q too", err, want)
 		}

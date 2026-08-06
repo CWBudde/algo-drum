@@ -100,7 +100,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       ? flatToVisual(initial.pattern)
       : Array.from({ length: ROWS }, () => Array<number>(COLS).fill(0)),
   );
-  const [playing, setPlaying] = useState(false);
+  const [transport, setTransport] = useState<"stopped" | "playing" | "paused">(
+    "stopped",
+  );
   const [tempo, setTempoState] = useState(initial?.tempo ?? 0.43); // ~120 BPM
   const [swing, setSwingState] = useState(initial?.swing ?? 0.0);
   const [steps, setStepsState] = useState(initial?.steps ?? 1.0); // 1.0 = 16 steps
@@ -328,7 +330,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     }
   }, []);
 
-  // Mouse clicks blur the button so Space stays free for play/stop;
+  // Mouse clicks blur the button so Space stays free for play/pause;
   // keyboard activation (detail === 0) keeps focus for grid navigation.
   const blurOnMouseClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (e.detail > 0) e.currentTarget.blur();
@@ -343,18 +345,24 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     });
   }, []);
 
-  const handlePlayStop = useCallback(async () => {
+  const handlePlayPause = useCallback(async () => {
     if (!wasmLoaded) return;
-    if (!playing) {
+    if (transport !== "playing") {
       await engine.play();
-      setPlaying(true);
+      setTransport("playing");
     } else {
-      engine.stop();
-      setPlaying(false);
+      engine.pause();
+      setTransport("paused");
     }
-  }, [playing, wasmLoaded]);
+  }, [transport, wasmLoaded]);
 
-  // Space toggles play/stop unless a control is focused
+  const handleStop = useCallback(() => {
+    if (!wasmLoaded || transport === "stopped") return;
+    engine.stop();
+    setTransport("stopped");
+  }, [transport, wasmLoaded]);
+
+  // Space toggles play/pause unless a control is focused
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code !== "Space") return;
@@ -365,11 +373,11 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       const target = e.target as HTMLElement;
       if (target.closest("button, [role='slider'], input, textarea")) return;
       e.preventDefault();
-      void handlePlayStop();
+      void handlePlayPause();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handlePlayStop, editorTrack]);
+  }, [handlePlayPause, editorTrack]);
 
   const setTrackValue = (
     setter: React.Dispatch<React.SetStateAction<number[]>>,
@@ -682,25 +690,53 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       )}
 
       <footer className="dm-transport">
-        <button
-          type="button"
-          className={`dm-play ${playing ? "dm-play-active" : ""}`}
-          onClick={() => void handlePlayStop()}
-          disabled={!wasmLoaded}
-          aria-label={playing ? "Stop" : "Play"}
-          title={`${playing ? "Stop" : "Play"} (Space)`}
-        >
-          {playing ? (
-            <svg width={16} height={16} viewBox="0 0 18 18" aria-hidden="true">
-              <rect x={3} y={3} width={4} height={12} fill="white" rx={1} />
-              <rect x={11} y={3} width={4} height={12} fill="white" rx={1} />
-            </svg>
-          ) : (
-            <svg width={16} height={16} viewBox="0 0 18 18" aria-hidden="true">
-              <polygon points="5,3 15,9 5,15" fill="white" />
-            </svg>
-          )}
-        </button>
+        <div className="dm-transport-buttons">
+          <button
+            type="button"
+            className={`dm-play ${transport === "playing" ? "dm-play-active" : ""}`}
+            onClick={(e) => {
+              blurOnMouseClick(e);
+              void handlePlayPause();
+            }}
+            disabled={!wasmLoaded}
+            aria-label={transport === "playing" ? "Pause" : "Play"}
+            title={`${transport === "playing" ? "Pause" : "Play"} (Space)`}
+          >
+            {transport === "playing" ? (
+              <svg
+                width={16}
+                height={16}
+                viewBox="0 0 18 18"
+                aria-hidden="true"
+              >
+                <rect x={3} y={3} width={4} height={12} fill="white" rx={1} />
+                <rect x={11} y={3} width={4} height={12} fill="white" rx={1} />
+              </svg>
+            ) : (
+              <svg
+                width={16}
+                height={16}
+                viewBox="0 0 18 18"
+                aria-hidden="true"
+              >
+                <polygon points="5,3 15,9 5,15" fill="white" />
+              </svg>
+            )}
+          </button>
+          <button
+            type="button"
+            className="dm-stop"
+            onClick={(e) => {
+              blurOnMouseClick(e);
+              handleStop();
+            }}
+            disabled={!wasmLoaded || transport === "stopped"}
+            aria-label="Stop"
+            title="Stop and return to step 1"
+          >
+            <span aria-hidden="true" />
+          </button>
+        </div>
 
         <div className="dm-tempo-group">
           <Knob
