@@ -70,9 +70,17 @@ and how far it can be trusted is over there: the modal solve, the nine-term
 matching objective, the offline fitting and measurement commands, the committed
 reference recordings, the working paper, and the evidence record in its `docs/`.
 It also has [its own web demo](https://cwbudde.github.io/algo-tom/), which draws
-the matching rather than describing it.
+the matching rather than describing it, and
+[its own backlog](https://github.com/cwbudde/algo-tom/blob/main/PLAN.md) — the
+open work on the model and on the objective is planned there, not in
+[PLAN.md](PLAN.md).
 
-What is in this repository is the adapter that makes it a drum-machine voice.
+What is in this repository is the adapter that makes it a drum-machine voice:
+`internal/drum/physical_tom.go`, the knob bank's binding to `tomparams`, the UI
+that exposes the eighteen parameters, and `TestPhysicalTomRenderIsBitExact` —
+the digest that is the only assertion here that _hears_ a change to the
+calibration. Bumping the algo-tom dependency is a change to the shipped sound
+until that test says otherwise.
 
 ## Browser requirements
 
