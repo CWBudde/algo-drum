@@ -5,9 +5,10 @@
 // directly over a MessagePort (handed over via this.port at setup), so no
 // audio data ever touches the main thread.
 //
-// Each chunk carries the sequencer step it starts on; when playback reaches a
-// chunk with a new step we notify the main thread, so the UI playhead tracks
-// what is audible instead of what has been rendered ahead. Chunks also carry
+// Each chunk carries an engine-owned transport snapshot; when playback reaches
+// a new revision or step we notify the main thread, so the UI playhead tracks
+// what is audible and can reject pre-transition chunks still in this queue.
+// Chunks also carry
 // the engine's idle flag, and reaching a chunk whose flag differs from the one
 // playing is what tells the main thread to suspend (or stop suspending) the
 // AudioContext — again keyed on audibility, so a tail still ringing in the
@@ -47,11 +48,11 @@ const UNDERRUN_REPORT_QUANTA = 128;
 class AlgoDrumProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.chunks = []; // { samples: Float32Array, step: number, idle: boolean }
+    this.chunks = []; // { samples, transport: { state, step, revision }, idle }
     this.readOffset = 0;
     this.pendingRequests = 0;
     this.workerPort = null;
-    this.lastStep = -2;
+    this.lastTransport = null;
 
     // null, not a boolean: the first chunk must always report its idle state,
     // whichever way it points.
@@ -74,7 +75,7 @@ class AlgoDrumProcessor extends AudioWorkletProcessor {
           this.starvedQuanta = 0;
           this.chunks.push({
             samples: new Float32Array(msg.data.buffer),
-            step: msg.data.step,
+            transport: msg.data.transport,
             idle: msg.data.idle === true,
           });
         };
@@ -156,9 +157,15 @@ class AlgoDrumProcessor extends AudioWorkletProcessor {
       const chunk = this.chunks[0];
 
       if (this.readOffset === 0) {
-        if (chunk.step !== this.lastStep) {
-          this.lastStep = chunk.step;
-          this.port.postMessage({ type: "step", step: chunk.step });
+        const transport = chunk.transport;
+        if (
+          !this.lastTransport ||
+          transport.state !== this.lastTransport.state ||
+          transport.step !== this.lastTransport.step ||
+          transport.revision !== this.lastTransport.revision
+        ) {
+          this.lastTransport = transport;
+          this.port.postMessage({ type: "transport", transport });
         }
 
         // Changes only: every chunk carries the flag, but the main thread

@@ -107,16 +107,43 @@ type transportState uint8
 
 const (
 	transportStopped transportState = iota
+	transportStarting
 	transportPlaying
 	transportPaused
 )
+
+// TransportState is the semantic transport state exposed at the WASM
+// boundary. The sequencer remains the authority for this value; the worker and
+// UI only mirror snapshots returned by TransportSnapshot.
+type TransportState string
+
+const (
+	TransportStopped  TransportState = "stopped"
+	TransportStarting TransportState = "starting"
+	TransportPlaying  TransportState = "playing"
+	TransportPaused   TransportState = "paused"
+)
+
+// TransportSnapshot identifies one transport epoch and its playhead. Revision
+// changes at every state transition, which lets the main thread reject chunks
+// rendered before a Stop, Pause or restart even when they reach the speakers
+// later from the worklet's queue.
+type TransportSnapshot struct {
+	State    TransportState
+	Step     int
+	Revision uint64
+}
 
 // Engine is the drum machine sequencer and mixer.
 type Engine struct {
 	sr        float64
 	transport transportState
-	bpm       float64
-	swing     float64 // 0.0 = no swing, 0.5 = full shuffle
+	// transportRevision is monotonic for the lifetime of an engine. It is
+	// deliberately runtime-only: loading a preset must not make buffered audio
+	// from the current transport epoch stale.
+	transportRevision uint64
+	bpm               float64
+	swing             float64 // 0.0 = no swing, 0.5 = full shuffle
 
 	pattern [TrackCount][MaxSteps]float64 // per-cell velocity in [0, 1], 0 = off
 	volumes [TrackCount]float64           // targets set by SetVolume
@@ -322,15 +349,35 @@ func (e *Engine) recomputeStepDurations() {
 	}
 }
 
+func (e *Engine) setTransport(state transportState) {
+	if e.transport == state {
+		return
+	}
+
+	e.transport = state
+	e.transportRevision++
+}
+
+// BeginStart records a requested start before the browser's asynchronous
+// audio graph is ready. Render does not advance the sequencer in this state;
+// SetRunning(true) commits the transition once audio output has resumed.
+func (e *Engine) BeginStart() {
+	if e.transport == transportPlaying || e.transport == transportStarting {
+		return
+	}
+
+	e.setTransport(transportStarting)
+}
+
 func (e *Engine) SetRunning(running bool) {
 	if running {
-		e.transport = transportPlaying
+		e.setTransport(transportPlaying)
 		e.wake()
 
 		return
 	}
 
-	e.transport = transportStopped
+	e.setTransport(transportStopped)
 	e.currentStep = 0
 	e.stepPhase = 0
 	e.currentStepDuration = e.stepDuration[0]
@@ -345,7 +392,7 @@ func (e *Engine) SetRunning(running bool) {
 // from the held fractional position; SetRunning(false) performs a full stop.
 func (e *Engine) Pause() {
 	if e.transport == transportPlaying {
-		e.transport = transportPaused
+		e.setTransport(transportPaused)
 	}
 }
 
@@ -740,11 +787,32 @@ func (e *Engine) SetReverb(amount float64) {
 }
 
 func (e *Engine) CurrentStep() int {
-	if e.transport == transportStopped {
+	if e.transport == transportStopped || e.transport == transportStarting {
 		return -1
 	}
 
 	return e.currentStep
+}
+
+// TransportSnapshot returns the engine-owned transport state, its logical
+// playhead and a revision that identifies the current transport epoch.
+func (e *Engine) TransportSnapshot() TransportSnapshot {
+	state := TransportStopped
+
+	switch e.transport {
+	case transportStarting:
+		state = TransportStarting
+	case transportPlaying:
+		state = TransportPlaying
+	case transportPaused:
+		state = TransportPaused
+	}
+
+	return TransportSnapshot{
+		State:    state,
+		Step:     e.CurrentStep(),
+		Revision: e.transportRevision,
+	}
 }
 
 // triggerStep fires (or schedules) the voices whose cell is active on the

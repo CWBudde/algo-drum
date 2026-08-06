@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import DrumMachine from "./components/DrumMachine";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { dispose, loadWasm } from "./engine/wasmEngine";
+import { dispose, loadWasm, onFailure } from "./engine/wasmEngine";
 import "./App.css";
 
 type LoadState =
@@ -27,6 +27,14 @@ export default function App() {
         setLoad({ status: "error", message: describeError(e) }),
       );
   }, []);
+
+  useEffect(
+    () =>
+      onFailure((error) => {
+        setLoad({ status: "error", message: describeError(error) });
+      }),
+    [],
+  );
 
   useEffect(() => {
     attemptLoad();

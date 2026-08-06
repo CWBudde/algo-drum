@@ -52,6 +52,65 @@ test("loads, plays, and responds to input", async ({ page }) => {
   });
 });
 
+test("stops and can retry after a ready worker crashes", async ({ page }) => {
+  await page.addInitScript(() => {
+    const scope = window as typeof window & { __algoDrumWorker?: Worker };
+    const NativeWorker = window.Worker;
+
+    class TrackedWorker extends NativeWorker {
+      constructor(scriptURL: string | URL, options?: WorkerOptions) {
+        super(scriptURL, options);
+        scope.__algoDrumWorker = this;
+      }
+    }
+
+    Object.defineProperty(window, "Worker", {
+      configurable: true,
+      writable: true,
+      value: TrackedWorker,
+    });
+  });
+
+  await page.goto("./");
+  const play = page.getByRole("button", { name: "Play", exact: true });
+  await expect(play).toBeEnabled({ timeout: 30_000 });
+
+  const retainedCell = page.getByRole("button", { name: /^Bass step 16:/ });
+  await retainedCell.click();
+  await expect(retainedCell).toHaveAccessibleName("Bass step 16: on");
+
+  await play.click();
+  await expect(
+    page.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible({ timeout: 10_000 });
+
+  await page.evaluate(() => {
+    const worker = (window as typeof window & { __algoDrumWorker?: Worker })
+      .__algoDrumWorker;
+    if (!worker) throw new Error("audio worker was not captured");
+
+    worker.dispatchEvent(
+      new ErrorEvent("error", { message: "injected worker crash" }),
+    );
+  });
+
+  const shell = page.locator(".app-machine");
+  const fault = page.locator(".app-fault");
+  await expect(fault).toContainText("injected worker crash");
+  await expect(shell).toBeAttached();
+  await expect(shell).toBeHidden();
+
+  await fault.getByRole("button", { name: "Retry" }).click();
+  await expect(play).toBeEnabled({ timeout: 30_000 });
+  await expect(shell).toBeVisible();
+
+  // Retry keeps React's state and seeds the replacement engine from it. Let
+  // that authoritative echo settle before checking the edit survived.
+  await page.waitForTimeout(250);
+  await expect(retainedCell).toHaveAccessibleName("Bass step 16: on");
+  await expect(page.locator(".dm-cell[data-playhead]")).toHaveCount(0);
+});
+
 // The engine owns the pattern: every edit is echoed back as the engine's
 // authoritative copy and reconciled into the UI mirror. Cycle a cell through
 // all three velocity states and check each one still holds after the echo

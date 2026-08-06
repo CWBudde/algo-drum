@@ -156,6 +156,49 @@ func TestPauseFreezesTransportAndPendingHits(t *testing.T) {
 	}
 }
 
+func TestTransportSnapshotOwnsTransitionsAndRevisions(t *testing.T) {
+	engine := NewEngine(48000)
+
+	assertTransport := func(wantState TransportState, wantStep int, wantRevision uint64) {
+		t.Helper()
+
+		got := engine.TransportSnapshot()
+		if got.State != wantState || got.Step != wantStep || got.Revision != wantRevision {
+			t.Fatalf("TransportSnapshot() = %+v, want state=%q step=%d revision=%d",
+				got, wantState, wantStep, wantRevision)
+		}
+	}
+
+	assertTransport(TransportStopped, -1, 0)
+
+	engine.BeginStart()
+	assertTransport(TransportStarting, -1, 1)
+
+	// Repeating a state request is not a new epoch.
+	engine.BeginStart()
+	assertTransport(TransportStarting, -1, 1)
+
+	engine.SetRunning(true)
+	assertTransport(TransportPlaying, 0, 2)
+
+	engine.Pause()
+	assertTransport(TransportPaused, 0, 3)
+
+	engine.BeginStart()
+	assertTransport(TransportStarting, -1, 4)
+
+	engine.SetRunning(true)
+	assertTransport(TransportPlaying, 0, 5)
+
+	engine.SetRunning(false)
+	assertTransport(TransportStopped, -1, 6)
+
+	// Stop still resets position when repeated, but the already-stopped epoch
+	// remains valid for chunks rendered after the first Stop.
+	engine.SetRunning(false)
+	assertTransport(TransportStopped, -1, 6)
+}
+
 func TestStopResetsTransportButLeavesVoiceTail(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	engine.limiter = nil

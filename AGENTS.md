@@ -93,16 +93,17 @@ internal/drum/state.go    — Engine-owned semantic snapshot/replacement contrac
 internal/drum/voices.go   — Drum synthesizer voices (BassDrum, Snare, HiHat, Tom, Cymbal, Tom 2, Percussion); all tuning is runtime-settable
 internal/drum/params.go   — Per-voice synthesis parameter specs (ranges, curves, defaults) + the normalized→engineering mapping
 internal/drum/validate.go — Engine.Validate(): every invariant Render relies on (step lengths, playhead, pending triggers, gains, voice params), joined into one error
+internal/drum/protocol.go — ProtocolVersion: the semantics of the AlgoDrum JS API, pinned again in audioWorker.ts and asserted equal by protocol_test.go
 internal/drum/assert.go   — assertValid(): a no-op in shipped builds; `-tags drumassert` (assert_debug.go) makes Render panic on a broken invariant (`just test-assert`)
 cmd/gen-voiceparams/      — Generates web/src/engine/voiceParams.generated.ts from params.go (`just gen-params`; CI diffs it)
 internal/drum/*_test.go   — Go unit tests: sequencing, clamping, bit-exact render determinism, per-voice envelopes
 internal/drum/physical_tom.go — Adapter wrapping algo-tom's physical.DoubleHead as a Voice; the model itself lives in github.com/cwbudde/algo-tom → "The physical Tom voice"
 web/src/engine/engineState.ts — Canonical semantic EngineState shape shared by the bridge, React reducer and persistence; all tracks are engine-major
-web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands, exposes onState (authoritative full snapshots) and dispose()
-web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; renders audio chunks and echoes the complete authoritative state after every configuration edit
+web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands, exposes authoritative configuration/transport snapshots and dispose()
+web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; gates the load on the engine's protocol version and method list, renders audio chunks and echoes the complete authoritative state after every configuration edit
 web/src/engine/stateMirror.ts — Reconciles full engine snapshots with in-flight optimistic UI edits (Go engine = single source of truth)
 web/src/engine/voiceParams.ts   — Curve renderer + readout formatting over voiceParams.generated.ts (the committed mirror of internal/drum/params.go)
-web/public/worklet.js         — AudioWorkletProcessor: consumes chunks, reports the audible step
+web/public/worklet.js         — AudioWorkletProcessor: consumes chunks, reports the audible engine transport snapshot
 web/src/components/DrumMachine.tsx — Main UI: 7×16 step grid (DOM/CSS; clicking a cell cycles off → on → accent) mirroring the engine-owned pattern, transport (play/pause/stop, tempo + TAP, swing, STEPS, PROB, HUMAN, reverb), per-track volume/decay knobs + mute LEDs + a per-voice editor button; persistence/share wiring
 web/src/components/AlgoPanel.tsx    — Algorithmic tools panel: preset selector, CLEAR, MUTATE, per-track Euclidean fill (E(k,n) + rotation), SHARE (copy link)
 web/src/components/VoiceEditor.tsx — Per-voice synthesis editor: native <dialog> modal of knobs driven by the generated parameter table, plus AUDITION and RESET
@@ -126,9 +127,9 @@ PLAN.md                   — Point-in-time review backlog (numbered items); ref
 
 ### Audio Signal Flow
 
-`Engine.Render(buf)` → Go voices mix mono samples → continuously advancing FDN reverb (smoothed wet/dry mix, so the knob does not raise the master level) → true lookahead peak limiter + safety clamp → `Float32Array` → 512-sample chunks posted from the Web Worker to the `AudioWorklet` over a direct `MessageChannel` → `AudioContext` at 48 kHz (~2048 samples buffered). Each chunk carries the sequencer step it starts on; the worklet reports it back so the UI playhead tracks the audible step.
+`Engine.Render(buf)` → Go voices mix mono samples → continuously advancing FDN reverb (smoothed wet/dry mix, so the knob does not raise the master level) → true lookahead peak limiter + safety clamp → `Float32Array` → 512-sample chunks posted from the Web Worker to the `AudioWorklet` over a direct `MessageChannel` → `AudioContext` at 48 kHz (~2048 samples buffered). Each chunk carries the engine-owned transport state, step and transition revision from its first sample; the worklet reports that snapshot when it becomes audible, so the UI rejects stale buffered epochs and follows the audible step.
 
-The worklet pulls with a credit counter (four outstanding `need` requests), which is self-healing at both ends: the worker replies to **every** request — silence with `step: -1` if the engine is not ready or a render throws — and the worklet writes off credit that goes unanswered for ~133 ms and re-requests, so no dropped message can deadlock audio. Chunks also carry the engine's `isIdle()` state; once the output has been below −120 dBFS for 50 ms with the transport stopped, the main thread suspends the `AudioContext` (Play or an audition resumes it), and `Engine.Render` takes a zero-fill fast path instead of running seven voices, the reverb and the limiter forever. Underruns are counted in the worklet and reported to the main thread (`onUnderrun`); the queue target is fixed, so latency does not drift. Drained chunk buffers are transferred back to the worker and reused rather than reallocated ~94×/s.
+The worklet pulls with a credit counter (four outstanding `need` requests), which is self-healing at both ends: the worker replies to **every** request — silence with a stopped transport snapshot if the engine is not ready or a render throws — and the worklet writes off credit that goes unanswered for ~133 ms and re-requests, so no dropped message can deadlock audio. Chunks also carry the engine's `isIdle()` state; once the output has been below −120 dBFS for 50 ms with the transport stopped, the main thread suspends the `AudioContext` (Play or an audition resumes it), and `Engine.Render` takes a zero-fill fast path instead of running seven voices, the reverb and the limiter forever. Underruns are counted in the worklet and reported to the main thread (`onUnderrun`); the queue target is fixed, so latency does not drift. Drained chunk buffers are transferred back to the worker and reused rather than reallocated ~94×/s.
 
 ### Track Order (index 0–6)
 
@@ -150,6 +151,7 @@ UI displays Cymbal, Percussion, Tom 2, Tom, Hi-Hat, Snare, Bass from top to bott
 | ------------------------------ | ---------------------------------------------------------------------------------- |
 | `init(sampleRate)`             | Initialize engine (called once at WASM load)                                       |
 | `setRunning(bool)`             | Play / stop (stop resets to step 0)                                                |
+| `beginStart()`                 | Enter the non-advancing starting state while browser audio output resumes         |
 | `pause()`                      | Freeze sequencer time and pending hits; active voice/effect tails keep ringing     |
 | `setTempo(bpm)`                | Set tempo in BPM (clamped to 30–300)                                               |
 | `setSwing(0–0.5)`              | Set swing amount (0.5 = full shuffle)                                              |
@@ -167,8 +169,21 @@ UI displays Cymbal, Percussion, Tom 2, Tom, Hi-Hat, Snare, Bass from top to bott
 | `setProbability(0–1)`          | Per-hit trigger chance (1 = every hit fires, default; 0 = silence)                 |
 | `setHumanize(0–1)`             | Timing/velocity randomization (delay ≤ h·15 ms, velocity ±h·20%; 0 = mechanical)   |
 | `render(n)`                    | Render n samples → Float32Array                                                    |
-| `currentStep()`                | Returns active/paused step index (-1 if stopped)                                   |
+| `currentStep()`                | Returns active/paused step index (-1 if stopped or starting)                       |
+| `transportState()`             | Engine-owned `stopped` / `starting` / `playing` / `paused` state                   |
+| `transportRevision()`          | Monotonic state-transition revision used to reject stale buffered chunks           |
 | `isIdle()`                     | True once output has stayed below −120 dBFS for 50 ms and nothing can wake it      |
+| `protocolVersion`              | Number (not a method): the API semantics this engine speaks (`internal/drum/protocol.go`) |
+
+`protocolVersion` is the gate on everything above it. `algo_drum.wasm` is an
+unhashed artifact that caches independently of the hashed JS bundle, so the two
+can drift in a user's browser; `REQUIRED_METHODS` in `audioWorker.ts` catches a
+*missing* method, but only the version catches an existing one whose argument
+order, units or `EngineState` shape changed — the failure mode otherwise being a
+silently wrong-sounding engine. The worker refuses to load a mismatching engine
+and the app shows its fault panel. Bump `drum.ProtocolVersion` and the worker's
+`PROTOCOL_VERSION` together whenever an entry point changes meaning rather than
+merely appearing; `TestProtocolVersionAgreesWithWorker` asserts they match.
 
 ## The physical Tom voice
 

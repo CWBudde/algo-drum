@@ -17,7 +17,7 @@ Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pa
 | 1   | Correctness & robustness  | **8/10** | +2  | Non-finite input rejected, swing fixed at every step count, bridge load recoverable         |
 | 2   | Audio pipeline & WASM     | **9/10** | +2  | Self-healing pull protocol, reported underruns, recycled buffers, idle suspends the graph   |
 | 3   | Go engine / DSP           | **9/10** | +2  | True peak limiting, drift-free timing, explicit pause, continuous reverb, lean hot paths    |
-| 4   | Architecture & state      | **8/10** | +2  | One semantic EngineState now spans Go, worker reconciliation, React and persistence          |
+| 4   | Architecture & state      | **9/10** | +3  | Engine-owned snapshots now arbitrate configuration, transport and the audible playhead       |
 | 5   | Frontend code quality     | **7/10** | —   | Dead bridge plumbing gone; the 502-line component and missing CSS tokens remain             |
 | 6   | UI / UX                   | **6/10** | —   | Good knob and playhead mechanics; the grid is still unusable below ~725 px                  |
 | 7   | Accessibility             | **6/10** | —   | Real buttons, real sliders, AA text contrast; 80 flat tab stops and no AT playhead          |
@@ -28,10 +28,10 @@ Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pa
 | 12  | PWA & deployment          | **6/10** | —   | Stamp verified and deploy no longer races CI; the bundle is still never precached           |
 | 13  | Feature depth vs the name | **6/10** | —   | The "algo" arrived — but every algorithmic control is global and one-shot                   |
 
-**Overall: 7.6/10** (was 6.6 at re-review, 4.0 at first review). The hardening, engine,
+**Overall: 7.7/10** (was 6.6 at re-review, 4.0 at first review). The hardening, engine,
 pipeline and state passes closed the correctness, DSP, transport-plumbing and split-state
-gaps; what is left is mostly reach — mobile layout, offline, accessibility depth, explicit
-transport ownership and the per-step algorithms the name promises.
+gaps; what is left is mostly reach — mobile layout, offline, accessibility depth and the
+per-step algorithms the name promises.
 
 ### Verified after the hardening pass
 
@@ -265,13 +265,15 @@ bar-length, velocity and humanize bounds. The engine pass closed every item belo
       every step and loop boundary, swing pairs sum exactly, odd loops keep their final
       unpaired base step, and long-run tests pin the cumulative error below one sample.
 
-## 4. Architecture & state management — 8/10
+## 4. Architecture & state management — 9/10
 
 `EngineState` now gives the Go engine, worker protocol, React reducer and v14 persistence
 one semantic, engine-major description of every persistent sound/configuration value.
 The UI remains optimistic, but `StateMirror` publishes the engine's complete clamped
-snapshot after every configuration edit once newer edits have drained. Transport remains
-the important exception: A7/A16 still track its three views separately.
+snapshot after every configuration edit once newer edits have drained. Transport now
+follows the same ownership rule: Go snapshots its state, logical step and a monotonic
+revision; both immediate control echoes and audible worklet reports carry that revision,
+so the bridge rejects pre-transition chunks without inferring state from a `-1` step.
 
 - [x] **A4 (high): only the pattern is engine-owned.** Tempo, swing, step count, reverb,
       probability, humanize, volumes, decays and mute are still UI-owned and fired
@@ -288,9 +290,12 @@ the important exception: A7/A16 still track its three views separately.
 - [x] **A6: echo length is never validated.** `patternMirror.ts:35` rejects only
       `length === 0`, and `flatToVisual` pads with `?? 0`, so a version-skewed engine
       returning a short array silently wipes tracks.
-- [ ] **A7: `playing` has no owner** — set optimistically (`DrumMachine.tsx:253`), faked
+- [x] **A7: `playing` has no owner** — set optimistically (`DrumMachine.tsx:253`), faked
       locally (`wasmEngine.ts:189`), with no `onRunning`. A dead worker leaves the UI
       showing "playing".
+      Transport commands now produce worker-confirmed `stopped | playing | paused`
+      acknowledgements. React subscribes to that mirror instead of changing transport
+      optimistically, and worker/render failures force it back to `stopped`.
 - [x] **A8: persistence mixes two coordinate systems.** `buildState`
       (`DrumMachine.tsx:170`) converts the pattern to engine-major but writes
       `volumes`/`decays`/`muted` in **visual** order, documented only as "length 5"
@@ -335,15 +340,20 @@ describe it differently. One type fixes the category rather than the instances.
       is the precondition for F7's component split.
       `DrumMachine` now uses one reducer and an exhaustive action-to-command switch;
       authoritative replacement actions never feed commands back to the engine.
-- [ ] **A15: version the worker protocol, not just its method list.** `REQUIRED_METHODS`
+- [x] **A15: version the worker protocol, not just its method list.** `REQUIRED_METHODS`
       checks that method _names_ exist; it cannot detect changed semantics or argument
       order. Send a `protocolVersion` in the `ready` message and refuse to run on
       mismatch — the failure mode today is a silently wrong-sounding engine.
-- [ ] **A16: give the transport a single owner.** `playing` (UI), `currentStep` (worklet)
+- [x] **A16: give the transport a single owner.** `playing` (UI), `currentStep` (worklet)
       and `running` (Go) are three views of one state machine with no arbiter. Model it
       explicitly — `stopped | starting | playing` owned by the engine and echoed like the
       pattern — which subsumes A7 and C17's stop-drain suppression (fixed pointwise in
       `wasmEngine.ts`, but only because the bridge knows -1 means "stopped").
+      Go now owns `stopped | starting | playing | paused` plus a monotonic transition
+      revision. The worker reads that snapshot back after every command and attaches it
+      to every rendered chunk; the main-thread arbiter accepts audible steps only from
+      the current revision. Stop → Play races therefore cannot relight the playhead from
+      old queued audio, and browser audio startup is an explicit non-advancing state.
 
 ## 5. Frontend code quality — 7/10
 
@@ -807,8 +817,8 @@ so the rest stays fixed), X5/X17 (roving tabindex + skip link), X7/X8/X15 (playh
 live regions), X9 (targets), P12 (generated SW → closes P5/P8) and P13 (update UX),
 T10 (a DOM test environment — the precondition for testing any of the above).
 
-**P5 — depth:** ✔ A13/A14 (one persistent state shape and owner → closed A4/A8/A9);
-next A16 (transport ownership → closes A7), then
+**P5 — depth:** ✔ A13/A14 (one persistent state shape and owner → closed A4/A8/A9),
+✔ A16 (engine-owned transport arbitration); next
 G8 (per-step probability), G16 (conditional trigs), G9 (per-track length), G10 (pattern
 banks), G11 (undo), G18 (continuous velocity — already in the engine), F7 (split
 `DrumMachine.tsx` once its state model settles).

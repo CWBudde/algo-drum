@@ -52,7 +52,12 @@ interface Harness {
   worker: FakePort; // to the audio worker
 
   // deliver hands the processor one rendered chunk, as the worker would.
-  deliver(step: number, idle?: boolean): ArrayBuffer;
+  deliver(
+    step: number,
+    idle?: boolean,
+    state?: "stopped" | "starting" | "playing" | "paused",
+    revision?: number,
+  ): ArrayBuffer;
 
   // run calls process() the given number of times and returns the last
   // output block.
@@ -96,11 +101,18 @@ async function harness(): Promise<Harness> {
     proc,
     node,
     worker,
-    deliver(step: number, idle = false): ArrayBuffer {
+    deliver(
+      step: number,
+      idle = false,
+      state: "stopped" | "starting" | "playing" | "paused" = step < 0
+        ? "stopped"
+        : "playing",
+      revision = state === "stopped" ? 0 : 1,
+    ): ArrayBuffer {
       const buffer = new ArrayBuffer(CHUNK_SAMPLES * 4);
       new Float32Array(buffer).fill(0.25);
       worker.onmessage?.({
-        data: { buffer, step, idle },
+        data: { buffer, transport: { state, step, revision }, idle },
       } as unknown as MessageEvent);
       return buffer;
     },
@@ -237,8 +249,8 @@ describe("buffer recycling", () => {
   });
 });
 
-describe("step and idle reporting", () => {
-  it("reports each new step as it becomes audible", async () => {
+describe("transport and idle reporting", () => {
+  it("reports each new transport snapshot as it becomes audible", async () => {
     const h = await harness();
     h.deliver(0);
     h.deliver(0);
@@ -246,9 +258,34 @@ describe("step and idle reporting", () => {
 
     h.run(12);
 
-    expect(h.node.of("step")).toEqual([
-      { type: "step", step: 0 },
-      { type: "step", step: 1 },
+    expect(h.node.of("transport")).toEqual([
+      {
+        type: "transport",
+        transport: { state: "playing", step: 0, revision: 1 },
+      },
+      {
+        type: "transport",
+        transport: { state: "playing", step: 1, revision: 1 },
+      },
+    ]);
+  });
+
+  it("reports a revision change even when state and step repeat", async () => {
+    const h = await harness();
+    h.deliver(0, false, "playing", 1);
+    h.deliver(0, false, "playing", 3);
+
+    h.run(8);
+
+    expect(h.node.of("transport")).toEqual([
+      {
+        type: "transport",
+        transport: { state: "playing", step: 0, revision: 1 },
+      },
+      {
+        type: "transport",
+        transport: { state: "playing", step: 0, revision: 3 },
+      },
     ]);
   });
 

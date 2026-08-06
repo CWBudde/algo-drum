@@ -93,6 +93,14 @@ func main() {
 		return js.Null()
 	}))
 
+	api.Set("beginStart", export(func(args []js.Value) any {
+		if ready() {
+			engine.BeginStart()
+		}
+
+		return js.Null()
+	}))
+
 	api.Set("pause", export(func(args []js.Value) any {
 		if ready() {
 			engine.Pause()
@@ -419,6 +427,25 @@ func main() {
 		return engine.CurrentStep()
 	}))
 
+	api.Set("transportState", export(func(args []js.Value) any {
+		if !ready() {
+			return string(drum.TransportStopped)
+		}
+
+		return string(engine.TransportSnapshot().State)
+	}))
+
+	api.Set("transportRevision", export(func(args []js.Value) any {
+		if !ready() {
+			return 0
+		}
+
+		// JavaScript numbers exactly represent integers through 2^53. A browser
+		// session cannot produce enough user transport transitions to approach
+		// that boundary, and float64 is an explicitly supported syscall/js value.
+		return float64(engine.TransportSnapshot().Revision)
+	}))
+
 	// isIdle reports that the engine has nothing left to render, so the caller
 	// can stop pulling chunks (and suspend the AudioContext) instead of paying
 	// for silence. An uninitialized engine has produced nothing at all, which
@@ -430,6 +457,10 @@ func main() {
 
 		return engine.IsIdle()
 	}))
+
+	// A plain data property, not an exported func: the worker reads it
+	// during the load handshake and refuses to run on a mismatch.
+	api.Set("protocolVersion", drum.ProtocolVersion)
 
 	js.Global().Set("AlgoDrum", api)
 

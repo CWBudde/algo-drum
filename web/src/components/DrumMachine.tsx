@@ -150,13 +150,13 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   // localStorage (see loadInitialState).
   const initial = useMemo(() => loadInitialState() ?? defaultEngineState(), []);
   const [drumState, dispatch] = useReducer(reduceDrumState, initial);
+  const currentState = useRef(drumState);
+  currentState.current = drumState;
   const applyStateAction = useCallback((action: DrumStateAction) => {
     dispatch(action);
     sendStateAction(action);
   }, []);
-  const [transport, setTransport] = useState<"stopped" | "playing" | "paused">(
-    "stopped",
-  );
+  const [transport, setTransport] = useState<engine.TransportState>("stopped");
   // Engine track whose editor is open, or null. Also used to hand the keyboard
   // over to the dialog (see the Space handler below).
   const [editorTrack, setEditorTrack] = useState<number | null>(null);
@@ -198,8 +198,23 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A fatal worker error leaves this React tree mounted (App's fault shell is
+  // hidden/inert). When Retry makes a replacement engine ready, seed it from
+  // the retained current state rather than the mount-time persistence value.
+  const hasLoaded = useRef(false);
+  useEffect(() => {
+    if (!wasmLoaded) return;
+
+    if (hasLoaded.current) engine.setState(currentState.current);
+    hasLoaded.current = true;
+  }, [wasmLoaded]);
+
   // Playhead follows the audible step reported by the audio worklet
   useEffect(() => engine.onStep(setCurrentStep), []);
+
+  // Transport changes only after the worker has successfully applied the
+  // corresponding Go command. Worker failure also resets this view to Stop.
+  useEffect(() => engine.onTransport(setTransport), []);
 
   // Every configuration echo is a complete authoritative snapshot. The
   // bridge suppresses stale intermediate echoes when newer edits are in flight.
@@ -272,19 +287,16 @@ export default function DrumMachine({ wasmLoaded }: Props) {
 
   const handlePlayPause = useCallback(async () => {
     if (!wasmLoaded) return;
-    if (transport !== "playing") {
+    if (transport === "stopped" || transport === "paused") {
       await engine.play();
-      setTransport("playing");
-    } else {
+    } else if (transport === "playing") {
       engine.pause();
-      setTransport("paused");
     }
   }, [transport, wasmLoaded]);
 
   const handleStop = useCallback(() => {
     if (!wasmLoaded || transport === "stopped") return;
     engine.stop();
-    setTransport("stopped");
   }, [transport, wasmLoaded]);
 
   // Space toggles play/pause unless a control is focused
@@ -609,9 +621,15 @@ export default function DrumMachine({ wasmLoaded }: Props) {
               blurOnMouseClick(e);
               void handlePlayPause();
             }}
-            disabled={!wasmLoaded}
-            aria-label={transport === "playing" ? "Pause" : "Play"}
-            title={`${transport === "playing" ? "Pause" : "Play"} (Space)`}
+            disabled={!wasmLoaded || transport === "starting"}
+            aria-label={
+              transport === "starting"
+                ? "Starting"
+                : transport === "playing"
+                  ? "Pause"
+                  : "Play"
+            }
+            title={`${transport === "playing" ? "Pause" : transport === "starting" ? "Starting" : "Play"} (Space)`}
           >
             {transport === "playing" ? (
               <svg
