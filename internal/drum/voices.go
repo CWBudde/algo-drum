@@ -14,7 +14,6 @@ type Voice interface {
 	// the level of the whole hit.
 	Trigger(velocity float64)
 	Tick() float64
-	IsActive() bool
 	// SetDecay trims the voice's base decay time by decayScaleMin + amount.
 	// The base itself is a synthesis parameter (see params.go), so the
 	// effective decay is base × (decayScaleMin + amount).

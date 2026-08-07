@@ -32,20 +32,83 @@ test("loads, plays, and responds to input", async ({ page }) => {
 
   // Space starts playback (focus is on the body after the cell click blur).
   await page.keyboard.press("Space");
+  const pause = page.getByRole("button", { name: "Pause", exact: true });
   const stop = page.getByRole("button", { name: "Stop", exact: true });
-  await expect(stop).toBeVisible({ timeout: 10_000 });
+  await expect(pause).toBeVisible({ timeout: 10_000 });
 
   // The playhead should land on a column within a couple of steps.
   await expect(page.locator(".dm-cell[data-playhead]")).not.toHaveCount(0, {
     timeout: 6_000,
   });
 
-  // Space again stops playback and clears the playhead.
+  // Space again pauses at the held step; Stop is the distinct reset action
+  // that returns to step 1 and clears the playhead.
   await page.keyboard.press("Space");
   await expect(play).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".dm-cell[data-playhead]")).not.toHaveCount(0);
+  await stop.click();
   await expect(page.locator(".dm-cell[data-playhead]")).toHaveCount(0, {
     timeout: 4_000,
   });
+});
+
+test("stops and can retry after a ready worker crashes", async ({ page }) => {
+  await page.addInitScript(() => {
+    const scope = window as typeof window & { __algoDrumWorker?: Worker };
+    const NativeWorker = window.Worker;
+
+    class TrackedWorker extends NativeWorker {
+      constructor(scriptURL: string | URL, options?: WorkerOptions) {
+        super(scriptURL, options);
+        scope.__algoDrumWorker = this;
+      }
+    }
+
+    Object.defineProperty(window, "Worker", {
+      configurable: true,
+      writable: true,
+      value: TrackedWorker,
+    });
+  });
+
+  await page.goto("./");
+  const play = page.getByRole("button", { name: "Play", exact: true });
+  await expect(play).toBeEnabled({ timeout: 30_000 });
+
+  const retainedCell = page.getByRole("button", { name: /^Bass step 16:/ });
+  await retainedCell.click();
+  await expect(retainedCell).toHaveAccessibleName("Bass step 16: on");
+
+  await play.click();
+  await expect(
+    page.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible({ timeout: 10_000 });
+
+  await page.evaluate(() => {
+    const worker = (window as typeof window & { __algoDrumWorker?: Worker })
+      .__algoDrumWorker;
+    if (!worker) throw new Error("audio worker was not captured");
+
+    worker.dispatchEvent(
+      new ErrorEvent("error", { message: "injected worker crash" }),
+    );
+  });
+
+  const shell = page.locator(".app-machine");
+  const fault = page.locator(".app-fault");
+  await expect(fault).toContainText("injected worker crash");
+  await expect(shell).toBeAttached();
+  await expect(shell).toBeHidden();
+
+  await fault.getByRole("button", { name: "Retry" }).click();
+  await expect(play).toBeEnabled({ timeout: 30_000 });
+  await expect(shell).toBeVisible();
+
+  // Retry keeps React's state and seeds the replacement engine from it. Let
+  // that authoritative echo settle before checking the edit survived.
+  await page.waitForTimeout(250);
+  await expect(retainedCell).toHaveAccessibleName("Bass step 16: on");
+  await expect(page.locator(".dm-cell[data-playhead]")).toHaveCount(0);
 });
 
 // The engine owns the pattern: every edit is echoed back as the engine's
@@ -67,6 +130,122 @@ test("cell edits survive the engine's authoritative pattern echo", async ({
     await page.waitForTimeout(150); // worker echo round-trip
     await expect(cell).toHaveAccessibleName(`Snare step 5: ${state}`);
   }
+});
+
+test.describe("engine load retry", () => {
+  // The production service worker precaches algo_drum.wasm and can issue a
+  // second, unrelated request while this test is controlling the worker's
+  // streaming/fallback pair. Blocking it keeps the failure deterministic.
+  test.use({ serviceWorkers: "block" });
+
+  test("retains in-memory machine state across a failed load and retry", async ({
+    page,
+  }) => {
+    let releaseFirstRequest!: () => void;
+    let reportFirstRequest!: () => void;
+    const firstRequestHeld = new Promise<void>((resolve) => {
+      releaseFirstRequest = resolve;
+    });
+    const firstRequestSeen = new Promise<void>((resolve) => {
+      reportFirstRequest = resolve;
+    });
+    let failAttempt = true;
+    let failedRequests = 0;
+
+    await page.route("**/algo_drum.wasm", async (route) => {
+      if (!failAttempt) {
+        await route.continue();
+        return;
+      }
+
+      failedRequests++;
+      if (failedRequests === 1) {
+        reportFirstRequest();
+        await firstRequestHeld;
+      }
+
+      await route.abort("failed");
+    });
+
+    await page.goto("./");
+    await firstRequestSeen;
+
+    // The machine mounts while the engine loads, so an edit can exist only in
+    // React and the bridge's pending command queue when the worker fails.
+    const shell = page.locator(".app-machine");
+    const cell = page.getByRole("button", { name: /^Cymbal step 16:/ });
+    await expect(shell).toBeVisible();
+    await expect(cell).toHaveAccessibleName("Cymbal step 16: off");
+    await cell.click();
+    await expect(cell).toHaveAccessibleName("Cymbal step 16: on");
+
+    // A DOM sentinel proves Retry kept the same mounted subtree rather than
+    // reconstructing an equivalent-looking machine from persistence.
+    await shell.evaluate((element) => {
+      element.setAttribute("data-retry-sentinel", "retained");
+    });
+
+    // Abort the held streaming request. The worker retries with arrayBuffer,
+    // and the route aborts that fallback too before App enters its error UI.
+    releaseFirstRequest();
+    const fault = page.locator(".app-fault");
+    await expect(fault).toBeVisible({ timeout: 30_000 });
+    await expect(
+      fault.getByRole("heading", { name: "Audio engine failed to load" }),
+    ).toBeVisible();
+    expect(failedRequests).toBeGreaterThanOrEqual(2);
+
+    // The failed machine is unavailable to users but remains mounted, keeping
+    // reducer state and the bridge's queued edits alive for Retry.
+    await expect(shell).toBeAttached();
+    await expect(shell).toBeHidden();
+    await expect(shell).toHaveAttribute("inert", "");
+    await expect(shell).toHaveAttribute("data-retry-sentinel", "retained");
+
+    failAttempt = false;
+    await page.getByRole("button", { name: "Retry" }).click();
+    const play = page.getByRole("button", { name: "Play", exact: true });
+    await expect(play).toBeEnabled({ timeout: 30_000 });
+    await expect(shell).toBeVisible();
+    await expect(shell).toHaveAttribute("data-retry-sentinel", "retained");
+
+    // Let setState + setCell flush and both authoritative state echoes settle.
+    // The final snapshot must still contain the edit made before the failure.
+    await page.waitForTimeout(250);
+    await expect(cell).toHaveAccessibleName("Cymbal step 16: on");
+  });
+});
+
+test("mixer and mute state survive authoritative echoes and persistence", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await expect(
+    page.getByRole("button", { name: "Play", exact: true }),
+  ).toBeEnabled({ timeout: 30_000 });
+
+  const volume = page.getByRole("slider", { name: "Bass volume" });
+  const mute = page.getByRole("button", { name: "Mute Bass" });
+  await volume.focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  const edited = await volume.getAttribute("aria-valuenow");
+
+  await mute.click();
+  await expect(mute).toHaveAttribute("aria-pressed", "true");
+  await page.waitForTimeout(500);
+
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Play", exact: true }),
+  ).toBeEnabled({ timeout: 30_000 });
+  await expect(
+    page.getByRole("slider", { name: "Bass volume" }),
+  ).toHaveAttribute("aria-valuenow", edited!);
+  await expect(page.getByRole("button", { name: "Mute Bass" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 });
 
 // The per-voice synthesis editor (PLAN.md G20): the modal opens from the strip,

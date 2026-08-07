@@ -10,157 +10,49 @@ package drum
 // The const blocks in voices.go stay: they are now the specs' Shipped values,
 // which is exactly what pins today's sound as the default.
 
-import "math"
+import "github.com/cwbudde/algo-tom/tomparams"
 
 // maxVoiceParams bounds a voice's parameter list so the per-voice store is a
 // fixed array (Render must not allocate, see TestHumanizeRenderDoesNotAllocate)
 // and the persisted record has a fixed width. The widest voice is the Snare.
 const maxVoiceParams = 6
 
-// byteStep is one step of the UI's 8-bit persistence quantisation. Map snaps
-// to Shipped within half a step of Default; see Map.
-const byteStep = 1.0 / 255.0
-
-type paramKind uint8
+// The spec type and its normalized→engineering mapping live in
+// github.com/cwbudde/algo-tom/tomparams, because the physical Tom's mapping had
+// to move there — an offline fitter that reused a copy would measure a different
+// instrument than the one that ships — and the five procedural voices are
+// described by the very same curve machinery.
+//
+// These are deliberately *aliases*, not defined types. A defined type would give
+// this package its own Map, its own byte-step snap and its own Default
+// derivation, and a drift between the two copies would silently retune the
+// shipped sound with nothing but ears to catch it. As aliases there is exactly
+// one of each in existence, cmd/gen-voiceparams needs no source change, and
+// web/src/engine/voiceParams.generated.ts comes out byte-identical.
+type ParamSpec = tomparams.Spec
 
 const (
-	paramLinear paramKind = iota
-	paramExp
+	paramExp = tomparams.KindExp
+
+	// byteStep is one step of the UI's 8-bit persistence quantisation. Map
+	// snaps to Shipped within half a step of Default; see tomparams.Spec.Map.
+	byteStep = tomparams.ByteStep
 )
 
-func (k paramKind) String() string {
-	if k == paramExp {
-		return "exp"
-	}
-
-	return "lin"
-}
-
-// ParamSpec describes one tweakable synthesis parameter.
-//
-// Shipped is the constant the voice has always used and Default is its
-// normalized position, derived by inverting the curve rather than typed by
-// hand — so the table cannot drift from the sound it describes.
-type ParamSpec struct {
-	ID      string // stable persistence key; append-only, never reordered
-	Label   string // knob face, kept short
-	Name    string // accessible-name fragment, e.g. "pitch sweep start"
-	Unit    string // "Hz", "s", "" …
-	Choices []string
-	Kind    paramKind
-	Min     float64
-	Max     float64
-	Shipped float64
-	Default float64
-	Digits  int // display precision
-}
-
-// Map converts a normalized knob position to engineering units.
-//
-// Within half a persistence byte step of Default it returns Shipped exactly.
-// Persistence quantises every scalar to one byte, so a default of 0.4648
-// round-trips as 0.4667 — without this snap, saving and reloading would
-// retune a 200 Hz body to 205 Hz on every untouched voice. The dead zone is
-// ±0.2 %, i.e. sub-pixel on the Knob's 150 px full sweep, and reads as a
-// detent at the default position.
-func (s ParamSpec) Map(value01 float64) float64 {
-	val := clamp01(value01)
-
-	if math.Abs(val-s.Default) < byteStep/2 {
-		return s.Shipped
-	}
-
-	if len(s.Choices) > 0 {
-		return math.Round(val * float64(len(s.Choices)-1))
-	}
-
-	if s.Kind == paramExp {
-		return s.Min * math.Pow(s.Max/s.Min, val)
-	}
-
-	return s.Min + (s.Max-s.Min)*val
-}
-
-// Unmap is Map's inverse: the normalized position at which this spec reads the
-// given engineering value. Out-of-range values clamp to the ends of the range.
-//
-// It exists so that a caller who knows a value in the unit the instrument is
-// actually described in — a head diameter in metres, a tension in N/m — can
-// state it without hand-inverting the curve. cmd/fit-physical's -set does
-// exactly that, and getting the exponential inversion wrong by hand is a silent
-// error: 0.2032 m on SIZE is normalized 0.2098, and a plausible-looking 0.2032
-// typed into -fix is 0.2027 m of *normalized position*, i.e. 0.203 m — which
-// happens to be close enough to look right and is a coincidence of this one
-// parameter's range.
-//
-// Round-tripping is exact except across Map's default snap: Map returns Shipped
-// verbatim within half a persistence byte of Default, so Unmap(Map(x)) can
-// differ from x inside that dead zone. Unmap(Shipped) is Default, which is the
-// direction that matters here.
-func (s ParamSpec) Unmap(value float64) float64 {
-	if math.IsNaN(value) {
-		return s.Default
-	}
-
-	if value == s.Shipped {
-		return s.Default
-	}
-
-	if len(s.Choices) > 0 {
-		if len(s.Choices) == 1 {
-			return 0
-		}
-
-		return clamp01(value / float64(len(s.Choices)-1))
-	}
-
-	if s.Kind == paramExp {
-		// Min and Max are both positive on every exponential spec — a ratio
-		// curve through zero has no meaning — but a caller can still ask for
-		// zero or less, and log would return -Inf rather than an error.
-		if value <= 0 {
-			return 0
-		}
-
-		return clamp01(math.Log(value/s.Min) / math.Log(s.Max/s.Min))
-	}
-
-	if s.Max == s.Min {
-		return 0
-	}
-
-	return clamp01((value - s.Min) / (s.Max - s.Min))
-}
-
-// choiceSpec builds a discrete selector rendered by the same normalized Knob
-// as continuous parameters. Shipped is the zero-based selected choice.
-func choiceSpec(id, label, name string, choices []string, shipped int) ParamSpec {
-	return ParamSpec{
-		ID: id, Label: label, Name: name, Choices: choices,
-		Kind: paramLinear, Min: 0, Max: float64(len(choices) - 1),
-		Shipped: float64(shipped), Default: float64(shipped) / float64(len(choices)-1),
-	}
-}
+// tomparams.Choice has no wrapper here on purpose: the physical Tom's QUAL
+// selector was the only discrete parameter this package ever built, and it moved
+// with the rest of the bank. A voice that needs one should call tomparams.Choice
+// directly rather than reviving a forwarder for a single caller.
 
 // expSpec builds an exponentially mapped parameter. Frequencies and times are
 // always exponential: the ear hears ratios, not differences.
 func expSpec(id, label, name, unit string, minVal, maxVal, shipped float64, digits int) ParamSpec {
-	return ParamSpec{
-		ID: id, Label: label, Name: name, Unit: unit,
-		Kind: paramExp, Min: minVal, Max: maxVal, Shipped: shipped,
-		Default: math.Log(shipped/minVal) / math.Log(maxVal/minVal),
-		Digits:  digits,
-	}
+	return tomparams.Exp(id, label, name, unit, minVal, maxVal, shipped, digits)
 }
 
 // linSpec builds a linearly mapped parameter, used for levels and mixes.
 func linSpec(id, label, name, unit string, minVal, maxVal, shipped float64, digits int) ParamSpec {
-	return ParamSpec{
-		ID: id, Label: label, Name: name, Unit: unit,
-		Kind: paramLinear, Min: minVal, Max: maxVal, Shipped: shipped,
-		Default: (shipped - minVal) / (maxVal - minVal),
-		Digits:  digits,
-	}
+	return tomparams.Lin(id, label, name, unit, minVal, maxVal, shipped, digits)
 }
 
 // paramBank is the shared per-voice parameter store, embedded by every voice.
@@ -181,6 +73,15 @@ func newParamBank(specs []ParamSpec) paramBank {
 	}
 
 	return bank
+}
+
+func defaultParams(specs []ParamSpec) []float64 {
+	values := make([]float64, len(specs))
+	for index, spec := range specs {
+		values[index] = spec.Default
+	}
+
+	return values
 }
 
 // ParamSpecs returns the voice's parameter descriptors, in index order.
@@ -346,58 +247,37 @@ var percSpecs = []ParamSpec{
 	percParamGain:  linSpec("perc.gain", "LVL", "output level", "", 0, 2, percGain, 2),
 }
 
-// Physical Tom parameters use their own persistence bank, separate from the
-// procedural Tom table above. The application can therefore A/B models
-// without one model reinterpreting or overwriting the other's settings.
+// The physical Tom's parameter table and index constants come from tomparams,
+// which owns them along with the normalized→SI mapping they address. They are
+// bound to local names here so the rest of this package — and its tests — read
+// the same way as the procedural voices around them.
 //
-// Damping takes two controls because it needs two degrees of freedom. DAMP
-// scales every loss rate at once, and D.TILT redistributes them across
-// frequency: at 0 the decay law is flat (every mode rings for the same time,
-// which is what the model used to do), at 1 it is the calibrated constant-Q
-// law, and above that the high modes die progressively sooner. One knob could
-// only ever move the whole envelope up and down, never change its shape, and
-// the shape was the defect.
-const (
-	physicalTomParamDiameter = iota
-	physicalTomParamBatterTension
-	physicalTomParamResonantTension
-	physicalTomParamDamping
-	physicalTomParamStrikeRadius
-	physicalTomParamStrikeAngle
-	physicalTomParamHardness
-	physicalTomParamShellDepth
-	physicalTomParamCavityCoupling
-	physicalTomParamNonlinearity
-	physicalTomParamPickupRadius
-	physicalTomParamPickupAngle
-	physicalTomParamQuality
-	physicalTomParamAsymmetry
-	physicalTomParamAsymmetryAxis
-	physicalTomParamDampingTilt
-	physicalTomParamAttackLevel
-	physicalTomParamAttackTone
-)
+// The indices are persistence and WASM command addresses, so params_test.go
+// pins both the width and the ID list. Those assertions now guard an *imported*
+// table, which is the point: they are what would catch algo-tom reordering the
+// bank underneath a stored preset.
+var physicalTomSpecs = tomparams.Specs()
 
-var physicalTomSpecs = []ParamSpec{
-	physicalTomParamDiameter:        expSpec("physicalTom.diameter", "SIZE", "head diameter", "m", 0.16, 0.50, 0.3048, 3),
-	physicalTomParamBatterTension:   expSpec("physicalTom.batterTension", "B.TUNE", "batter head tension", "N/m", 300, 3500, 1250, 0),
-	physicalTomParamResonantTension: expSpec("physicalTom.resonantTension", "R.TUNE", "resonant head tension", "N/m", 300, 3500, 1040, 0),
-	physicalTomParamDamping:         expSpec("physicalTom.damping", "DAMP", "head damping scale", "", 0.25, 4, 1, 2),
-	physicalTomParamStrikeRadius:    linSpec("physicalTom.strikeRadius", "HIT.R", "strike radius", "", 0, 0.95, 0.30, 2),
-	physicalTomParamStrikeAngle:     linSpec("physicalTom.strikeAngle", "HIT.A", "strike angle", "°", -180, 180, 0.2*180/math.Pi, 0),
-	physicalTomParamHardness:        linSpec("physicalTom.hardness", "HARD", "mallet hardness", "", 0, 1, 0.7, 2),
-	physicalTomParamShellDepth:      expSpec("physicalTom.shellDepth", "DEPTH", "shell depth", "m", 0.05, 0.60, 0.20, 3),
-	physicalTomParamCavityCoupling:  linSpec("physicalTom.cavityCoupling", "AIR", "cavity coupling", "", 0, 1, 1, 2),
-	physicalTomParamNonlinearity:    linSpec("physicalTom.nonlinearity", "NLIN", "nonlinear tension amount", "", 0, 2, 1, 2),
-	physicalTomParamPickupRadius:    linSpec("physicalTom.pickupRadius", "MIC.R", "pickup radius", "", 0, 0.95, 0.32, 2),
-	physicalTomParamPickupAngle:     linSpec("physicalTom.pickupAngle", "MIC.A", "pickup angle", "°", -180, 180, 0.6*180/math.Pi, 0),
-	physicalTomParamQuality:         choiceSpec("physicalTom.quality", "QUAL", "quality tier", []string{"Draft", "Standard", "High"}, 1),
-	physicalTomParamAsymmetry:       linSpec("physicalTom.asymmetry", "ASYM", "degenerate mode split", "%", 0, 2, 0.4, 2),
-	physicalTomParamAsymmetryAxis:   linSpec("physicalTom.asymmetryAxis", "AXIS", "tension asymmetry axis", "°", -90, 90, 0, 0),
-	physicalTomParamDampingTilt:     linSpec("physicalTom.dampingTilt", "D.TILT", "damping frequency tilt", "", 0, 3, 1, 2),
-	physicalTomParamAttackLevel:     linSpec("physicalTom.attackLevel", "ATK.L", "attack layer level", "", 0, 0.15, 0.05, 3),
-	physicalTomParamAttackTone:      expSpec("physicalTom.attackTone", "ATK.T", "attack layer centre", "Hz", 500, 8000, 4000, 0),
-}
+const (
+	physicalTomParamDiameter        = tomparams.ParamDiameter
+	physicalTomParamBatterTension   = tomparams.ParamBatterTension
+	physicalTomParamResonantTension = tomparams.ParamResonantTension
+	physicalTomParamDamping         = tomparams.ParamDamping
+	physicalTomParamStrikeRadius    = tomparams.ParamStrikeRadius
+	physicalTomParamStrikeAngle     = tomparams.ParamStrikeAngle
+	physicalTomParamHardness        = tomparams.ParamHardness
+	physicalTomParamShellDepth      = tomparams.ParamShellDepth
+	physicalTomParamCavityCoupling  = tomparams.ParamCavityCoupling
+	physicalTomParamNonlinearity    = tomparams.ParamNonlinearity
+	physicalTomParamPickupRadius    = tomparams.ParamPickupRadius
+	physicalTomParamPickupAngle     = tomparams.ParamPickupAngle
+	physicalTomParamQuality         = tomparams.ParamQuality
+	physicalTomParamAsymmetry       = tomparams.ParamAsymmetry
+	physicalTomParamAsymmetryAxis   = tomparams.ParamAsymmetryAxis
+	physicalTomParamDampingTilt     = tomparams.ParamDampingTilt
+	physicalTomParamAttackLevel     = tomparams.ParamAttackLevel
+	physicalTomParamAttackTone      = tomparams.ParamAttackTone
+)
 
 // voiceNames labels each track for the editor UI, in engine track order.
 var voiceNames = [TrackCount]string{

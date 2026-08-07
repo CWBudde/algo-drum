@@ -14,7 +14,7 @@ import (
 func TestRenderPanicsOnBrokenInvariant(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	engine.SetRunning(true)
-	engine.stepLen[0] = 0
+	engine.stepDuration[0] = 0
 
 	defer func() {
 		recovered := recover()
@@ -22,7 +22,7 @@ func TestRenderPanicsOnBrokenInvariant(t *testing.T) {
 			t.Fatal("Render accepted a broken engine under the drumassert tag")
 		}
 
-		if msg, ok := recovered.(string); !ok || !strings.Contains(msg, "step 0 length 0") {
+		if msg, ok := recovered.(string); !ok || !strings.Contains(msg, "step 0 duration is zero") {
 			t.Fatalf("panic value %v does not name the broken invariant", recovered)
 		}
 	}()
@@ -38,5 +38,5 @@ func TestRenderDoesNotPanicOnSoundEngine(t *testing.T) {
 	engine.SetCell(0, 0, 1)
 	engine.SetRunning(true)
 
-	renderTotal(engine, int(engine.stepLen[0])*20)
+	renderTotal(engine, samplesForStep(engine, 0)*20)
 }

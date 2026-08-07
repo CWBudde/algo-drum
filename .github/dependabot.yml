@@ -18,7 +18,7 @@ updates:
   # deliberately included: the frontend has drifted several majors behind in
   # the past (vite, @vitejs/plugin-react, typescript) and this is what keeps
   # that from recurring.
-  - package-ecosystem: npm
+  - package-ecosystem: bun
     directory: /web
     schedule:
       interval: weekly

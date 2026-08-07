@@ -3,7 +3,33 @@ package drum
 import (
 	"math"
 	"testing"
+
+	"github.com/cwbudde/algo-tom/tomparams"
 )
+
+// TestDecayScaleMinAgreesWithTomparams is the one constant that genuinely exists
+// twice, and it has to.
+//
+// decayScaleMin defines what the persisted setDecay byte means for all seven
+// procedural voices, so it cannot leave this package; tomparams needs the same
+// number because the physical Tom's DEC trim composes with DAMP inside
+// tomparams.Config, which this package no longer performs. Two copies of a
+// calibration constant in two modules is exactly the drift AGENTS.md warns
+// about — so it is asserted rather than hoped for.
+//
+// If this fails after an algo-tom bump, do not "fix" it by editing either
+// constant: changing it silently reinterprets every existing share link.
+func TestDecayScaleMinAgreesWithTomparams(t *testing.T) {
+	t.Parallel()
+
+	if decayScaleMin != tomparams.DecayScaleMin {
+		t.Fatalf(
+			"decayScaleMin = %v, tomparams.DecayScaleMin = %v: the physical Tom's "+
+				"DEC trim and the procedural voices' would no longer mean the same thing",
+			decayScaleMin, tomparams.DecayScaleMin,
+		)
+	}
+}
 
 func TestParamSpecsWellFormed(t *testing.T) {
 	seen := map[string]string{}
@@ -187,9 +213,9 @@ func TestParamSpecMapEndpointsAndMonotonicity(t *testing.T) {
 
 // TestParamSpecUnmapInvertsMap covers every spec in the product, because Unmap
 // is what lets a caller state a value in the unit the thing is measured in —
-// cmd/fit-physical's -set pins an 8" tom's head at 0.2032 m through it — and an
-// inversion that is wrong for one curve kind would be wrong silently, producing
-// a plausible number for the wrong drum.
+// algo-tom's cmd/fit-physical -set pins an 8" tom's head at 0.2032 m through
+// it — and an inversion that is wrong for one curve kind would be wrong
+// silently, producing a plausible number for the wrong drum.
 func TestParamSpecUnmapInvertsMap(t *testing.T) {
 	for track := range TrackCount {
 		for _, spec := range SpecsForTrack(track) {
@@ -225,9 +251,9 @@ func TestParamSpecUnmapInvertsMap(t *testing.T) {
 }
 
 // TestParamSpecUnmapClampsBadInput keeps the inverse total. Callers are expected
-// to range-check first — cmd/fit-physical refuses an out-of-range -set rather
-// than clamping it — but Unmap itself must not return NaN or an infinity into a
-// position that then indexes the search space.
+// to range-check first — algo-tom's cmd/fit-physical refuses an out-of-range
+// -set rather than clamping it — but Unmap itself must not return NaN or an
+// infinity into a position that then indexes the search space.
 func TestParamSpecUnmapClampsBadInput(t *testing.T) {
 	for track := range TrackCount {
 		for _, spec := range SpecsForTrack(track) {

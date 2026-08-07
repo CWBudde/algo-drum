@@ -5,8 +5,23 @@
 // direct MessageChannel. This module only sends control commands and mirrors
 // the audible sequencer step reported back by the worklet.
 
-import type { AlgoDrumApi, WorkerCommand, WorkerResponse } from "./audioWorker";
-import { PatternMirror } from "./patternMirror";
+import { PROTOCOL_VERSION } from "./audioWorker";
+import type {
+  AlgoDrumApi,
+  TransportSnapshot,
+  TransportState,
+  WorkerCommand,
+  WorkerResponse,
+} from "./audioWorker";
+export type { TransportState } from "./audioWorker";
+import {
+  cloneEngineState,
+  isConfigurationMethod,
+  validateEngineState,
+  type ConfigurationMethod,
+  type EngineState,
+} from "./engineState";
+import { StateMirror } from "./stateMirror";
 import type { TomModel } from "./tomModel";
 
 const SAMPLE_RATE = 48000;
@@ -23,9 +38,53 @@ let workletNode: AudioWorkletNode | null = null;
 let wasmReady = false;
 let audibleStep = -1;
 
-// Set by stop() and cleared once the worklet has drained the samples it had
-// already buffered when the stop was issued. See stop() and reportAudibleStep.
-let awaitingStopDrain = false;
+// Audio-lifecycle guard for a Play that is awaiting context startup or a
+// worker acknowledgement. This is deliberately not exposed as transport
+// state; only a successful worker acknowledgement may update that view.
+let keepAudioAwake = false;
+
+type TransportListener = (state: TransportState) => void;
+
+let transportState: TransportState = "stopped";
+let transportRevision = 0;
+let playAttempt = 0;
+const transportListeners = new Set<TransportListener>();
+
+type FailureListener = (error: Error) => void;
+
+const failureListeners = new Set<FailureListener>();
+
+// onFailure reports faults that invalidate a ready engine. Load failures are
+// still returned by loadWasm(); this channel lets App offer the same Retry UI
+// when an already-running worker or renderer dies.
+export function onFailure(listener: FailureListener): () => void {
+  failureListeners.add(listener);
+  return () => failureListeners.delete(listener);
+}
+
+// onTransport subscribes to worker-confirmed transport changes and immediately
+// replays the current state. The worker acknowledgement, not the button
+// handler, is the authority for whether playback actually started.
+export function onTransport(listener: TransportListener): () => void {
+  transportListeners.add(listener);
+  listener(transportState);
+
+  return () => transportListeners.delete(listener);
+}
+
+function notifyTransport(state: TransportState): void {
+  keepAudioAwake = state === "starting" || state === "playing";
+  if (state === transportState) return;
+
+  transportState = state;
+  transportListeners.forEach((listener) => listener(state));
+}
+
+// Messages the worklet posts to the main thread over the node's port.
+type WorkletMessage =
+  | { type: "transport"; transport: TransportSnapshot }
+  | { type: "underrun"; samples: number; count: number }
+  | { type: "idle"; idle: boolean };
 
 type StepListener = (step: number) => void;
 
@@ -45,34 +104,139 @@ function notifyStep(step: number): void {
   stepListeners.forEach((listener) => listener(step));
 }
 
-// reportAudibleStep publishes a step the worklet says has become audible,
-// unless it belongs to a chunk rendered before a Stop that is still draining.
-// The engine reports -1 for everything it renders while stopped, so the first
-// such chunk is exactly the end of the drain.
-function reportAudibleStep(step: number): void {
-  if (awaitingStopDrain) {
-    if (step !== -1) return;
-
-    awaitingStopDrain = false;
-  }
-
-  // The -1 that ends a drain repeats the one stop() already published.
-  if (step === audibleStep) return;
-
-  notifyStep(step);
+function validTransportSnapshot(value: TransportSnapshot): boolean {
+  const inactive = value.state === "stopped" || value.state === "starting";
+  return (
+    (inactive || value.state === "playing" || value.state === "paused") &&
+    Number.isSafeInteger(value.revision) &&
+    value.revision >= 0 &&
+    Number.isInteger(value.step) &&
+    value.step >= -1 &&
+    ((inactive && value.step === -1) || (!inactive && value.step >= 0))
+  );
 }
 
-// The engine owns the pattern: the worker echoes the authoritative copy back
-// after every edit, and the mirror reconciles those echoes with edits still
-// in flight before notifying the UI.
-const patternMirror = new PatternMirror();
+// acceptTransport arbitrates the worker's immediate engine snapshot and the
+// same snapshot carried by audio that reaches the speakers later. Revisions
+// make old queued chunks unambiguously stale, including a rapid Stop -> Play
+// where both the old and new audio say "playing".
+function acceptTransport(
+  transport: TransportSnapshot,
+  source: "engine" | "audible",
+): void {
+  if (!validTransportSnapshot(transport)) {
+    console.error("Audio engine returned an invalid transport snapshot");
+    return;
+  }
 
-// onPattern subscribes to authoritative pattern snapshots (flat track-major
-// Float32Array, see setPattern) and returns an unsubscribe function.
-export function onPattern(
-  listener: (pattern: Float32Array) => void,
-): () => void {
-  return patternMirror.subscribe(listener);
+  if (transport.revision < transportRevision) return;
+
+  if (transport.revision > transportRevision) {
+    transportRevision = transport.revision;
+
+    // Starting and stopped have no active playhead. This is an explicit
+    // engine-state rule, not an inference from currentStep's -1 sentinel.
+    if (transport.state === "starting" || transport.state === "stopped") {
+      if (audibleStep !== -1) notifyStep(-1);
+    }
+  } else if (transport.state !== transportState) {
+    console.error("Audio engine reused a transport revision for a new state");
+    return;
+  }
+
+  // Also refresh lifecycle guards when a failed command reads back the same
+  // state and revision (notably a rejected Play returning stopped@0).
+  notifyTransport(transport.state);
+
+  if (source === "audible" && transport.step !== audibleStep) {
+    notifyStep(transport.step);
+  }
+}
+
+type UnderrunListener = (report: { samples: number; count: number }) => void;
+
+const underrunListeners = new Set<UnderrunListener>();
+
+// Timestamp of the last underrun warning, so a sustained dropout does not
+// bury the console. The worklet already throttles its reports; this only
+// guards against a second source of noise on top of them.
+let lastUnderrunLog = 0;
+const UNDERRUN_LOG_INTERVAL_MS = 2000;
+
+// onUnderrun subscribes to audio dropout reports: the worklet ran out of
+// rendered samples and emitted silence for `samples` frames across `count`
+// render quanta since the previous report. Diagnostic only — nothing in the
+// UI reacts to it, and the queue depth is deliberately not adaptive, so the
+// documented ~43 ms of output latency stays put.
+export function onUnderrun(listener: UnderrunListener): () => void {
+  underrunListeners.add(listener);
+
+  return () => underrunListeners.delete(listener);
+}
+
+function reportUnderrun(samples: number, count: number): void {
+  const now = Date.now();
+  if (now - lastUnderrunLog >= UNDERRUN_LOG_INTERVAL_MS) {
+    lastUnderrunLog = now;
+    console.warn(
+      `Audio underrun: ${samples} samples of silence across ${count} render quanta.`,
+    );
+  }
+
+  underrunListeners.forEach((listener) => listener({ samples, count }));
+}
+
+// reportIdle acts on the engine going quiet: with nothing left ringing there
+// is no reason to keep the audio hardware and the render pull loop awake, so
+// the context is suspended until the next play() or audition resumes it.
+//
+// The engine only reports idle once its output has actually gone silent, well
+// after a Stop, so suspending here can never cut a tail short. The transport
+// check is a second belt: a running sequencer must keep pulling even through a
+// silent passage, or the playhead would freeze.
+function reportIdle(idle: boolean): void {
+  if (
+    !idle ||
+    keepAudioAwake ||
+    transportState === "starting" ||
+    transportState === "playing" ||
+    !audioCtx
+  )
+    return;
+
+  // A context that refuses to suspend simply keeps running, which is the
+  // pre-existing behaviour. The promise is kept so resumeAudio can wait it
+  // out rather than race it — see there.
+  const pending = audioCtx.suspend().catch(() => undefined);
+  suspending = pending;
+  void pending.finally(() => {
+    if (suspending === pending) suspending = null;
+  });
+}
+
+// An idle suspend that has not resolved yet. resume() on a context whose
+// suspend() is still in flight is not reliably ordered, and losing that race
+// leaves a suspended context nothing will wake: the worklet is not called
+// while suspended, so it cannot even notice.
+let suspending: Promise<void> | null = null;
+
+// resumeAudio undoes an idle suspend, and equally the suspended state
+// autoplay policies (notably iOS Safari) leave a freshly created context in.
+// Both callers reach it from a user gesture, which is what the policy wants.
+async function resumeAudio(): Promise<void> {
+  await suspending;
+
+  if (audioCtx && audioCtx.state === "suspended") {
+    await audioCtx.resume();
+  }
+}
+
+// The Go engine owns all configuration. Full snapshots reconcile its clamps
+// and cross-field semantics with optimistic edits still in flight.
+const stateMirror = new StateMirror();
+
+export function onState(listener: (state: EngineState) => void): () => void {
+  return stateMirror.subscribe(listener);
 }
 
 function send(command: WorkerCommand, transfer: Transferable[] = []): void {
@@ -102,12 +266,16 @@ function command<K extends keyof AlgoDrumApi>(
   post({ type: "cmd", name, args });
 }
 
-// isPatternEdit reports whether a queued command mutates the engine's pattern
-// and will therefore be echoed back once it is finally sent.
-function isPatternEdit(cmd: WorkerCommand): boolean {
-  return (
-    cmd.type === "cmd" && (cmd.name === "setCell" || cmd.name === "setPattern")
-  );
+function configurationCommand<K extends ConfigurationMethod>(
+  name: K,
+  ...args: Parameters<AlgoDrumApi[K]>
+): void {
+  stateMirror.beginMutation();
+  command(name, ...args);
+}
+
+function isConfigurationCommand(cmd: WorkerCommand): boolean {
+  return cmd.type === "cmd" && isConfigurationMethod(cmd.name);
 }
 
 // teardownWorker drops a worker from a failed attempt so a retry starts clean
@@ -122,7 +290,7 @@ function teardownWorker(): void {
   // still queued here will be replayed to the replacement worker. Re-base the
   // mirror on that count: any mismatch makes it publish a stale echo as
   // authoritative and revert newer edits.
-  patternMirror.reset(pendingCommands.filter(isPatternEdit).length);
+  stateMirror.reset(pendingCommands.filter(isConfigurationCommand).length);
 }
 
 // One shared load attempt. React StrictMode invokes the mount effect twice and
@@ -167,23 +335,41 @@ async function attemptLoad(): Promise<void> {
   worker = active;
 
   let timeout: ReturnType<typeof setTimeout> | undefined;
+  let readyReported = false;
 
   const ready = new Promise<void>((resolve, reject) => {
     active.onmessage = (event: MessageEvent<WorkerResponse>) => {
+      // terminate() cannot retract a message already queued on the main
+      // thread. Never let a superseded worker overwrite its replacement's
+      // transport or configuration mirror.
+      if (worker !== active) return;
+
       const data = event.data;
       switch (data.type) {
         case "ready":
+          readyReported = true;
           resolve();
           break;
         case "error":
           // Before readiness this settles the load and the app renders the
-          // message. Afterwards it is a per-command failure and this reject
-          // is a no-op, so log it or it would vanish silently.
-          if (wasmReady) console.error("Audio engine error:", data.error);
-          reject(new Error(data.error));
+          // message. Afterwards ordinary command failures are diagnostic,
+          // while a fatal render fault invalidates the whole engine.
+          if (readyReported) {
+            const error = new Error(data.error);
+            if (data.fatal) {
+              reportWorkerUnavailable(active, error);
+            } else {
+              console.error("Audio engine error:", data.error);
+            }
+          } else {
+            reject(new Error(data.error));
+          }
           break;
-        case "patternSync":
-          patternMirror.receiveSync(data.pattern);
+        case "stateSync":
+          stateMirror.receiveSync(data.state);
+          break;
+        case "transportSync":
+          acceptTransport(data.transport, "engine");
           break;
       }
     };
@@ -193,10 +379,24 @@ async function attemptLoad(): Promise<void> {
     // promise would never settle and the UI would hang on "Loading engine…".
     active.onerror = (event) => {
       // message is empty for cross-origin failures.
-      reject(new Error(event.message || "Audio engine worker failed to start"));
+      const error = new Error(
+        event.message || "Audio engine worker failed to start",
+      );
+      if (readyReported) {
+        reportWorkerUnavailable(active, error);
+      } else {
+        reject(error);
+      }
     };
     active.onmessageerror = () => {
-      reject(new Error("Audio engine worker sent an undeliverable message"));
+      const error = new Error(
+        "Audio engine worker sent an undeliverable message",
+      );
+      if (readyReported) {
+        reportWorkerUnavailable(active, error);
+      } else {
+        reject(error);
+      }
     };
 
     cancelLoad = reject;
@@ -254,6 +454,24 @@ function describeError(error: unknown): string {
     : String(error);
 }
 
+// A worker-level error after readiness means the confirmed transport can no
+// longer advance or answer commands. Force the public mirror back to Stop;
+// late events from a superseded worker must not overwrite its replacement.
+function reportWorkerUnavailable(active: Worker, error: Error): void {
+  if (worker !== active) return;
+
+  console.error("Audio engine worker failed:", error);
+  teardownAudio();
+  teardownWorker();
+  wasmReady = false;
+  playAttempt++;
+  keepAudioAwake = false;
+  notifyTransport("stopped");
+  transportRevision = 0;
+  notifyStep(-1);
+  failureListeners.forEach((listener) => listener(error));
+}
+
 // teardownAudio tears the audio graph down so the next play() can rebuild it.
 function teardownAudio(): void {
   if (workletNode) {
@@ -270,6 +488,9 @@ function teardownAudio(): void {
   // context that refuses to close is being dropped anyway.
   void audioCtx?.close().catch(() => undefined);
   audioCtx = null;
+
+  // Any pending suspend belongs to the context that just went away.
+  suspending = null;
 }
 
 // dispose tears the whole bridge down — audio graph, worker, and every piece
@@ -286,7 +507,7 @@ export function dispose(): void {
   // the mirror on edits that will never be replayed.
   pendingCommands.length = 0;
   teardownWorker();
-  patternMirror.reset();
+  stateMirror.reset();
 
   // An in-flight load is waiting on a worker that no longer exists.
   cancelLoad?.(new Error("Audio engine was disposed"));
@@ -294,7 +515,10 @@ export function dispose(): void {
   loadAttempt = null;
 
   wasmReady = false;
-  awaitingStopDrain = false;
+  playAttempt++;
+  keepAudioAwake = false;
+  notifyTransport("stopped");
+  transportRevision = 0;
   notifyStep(-1);
 }
 
@@ -305,7 +529,13 @@ async function startAudio(): Promise<void> {
     const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
     audioCtx = ctx;
 
-    await ctx.audioWorklet.addModule(import.meta.env.BASE_URL + "worklet.js");
+    // worklet.js is copied from public/ without a content hash and can still
+    // be served by the previous service worker on the first load after a
+    // deploy. Its message shape is part of the live protocol, so version the
+    // URL just like the WASM handshake rather than pairing incompatible code.
+    await ctx.audioWorklet.addModule(
+      `${import.meta.env.BASE_URL}worklet.js?v=${PROTOCOL_VERSION}`,
+    );
 
     const node = new AudioWorkletNode(ctx, "algo-drum", {
       numberOfInputs: 0,
@@ -320,10 +550,21 @@ async function startAudio(): Promise<void> {
 
     // The worklet reports the step each playing chunk starts on, so the UI
     // playhead follows what is audible rather than what was rendered ahead.
-    node.port.onmessage = (
-      event: MessageEvent<{ type: string; step: number }>,
-    ) => {
-      if (event.data.type === "step") reportAudibleStep(event.data.step);
+    // Idle edges and dropouts come back over the same port.
+    node.port.onmessage = (event: MessageEvent<WorkletMessage>) => {
+      const message = event.data;
+
+      switch (message.type) {
+        case "transport":
+          acceptTransport(message.transport, "audible");
+          break;
+        case "underrun":
+          reportUnderrun(message.samples, message.count);
+          break;
+        case "idle":
+          reportIdle(message.idle);
+          break;
+      }
     };
 
     node.connect(ctx.destination);
@@ -346,67 +587,112 @@ async function startAudio(): Promise<void> {
 }
 
 export async function play(): Promise<void> {
-  await startAudio();
+  const attempt = ++playAttempt;
 
-  // Autoplay policies (notably iOS Safari) can leave a freshly created
-  // context suspended; without an explicit resume there is no sound.
-  if (audioCtx && audioCtx.state === "suspended") {
-    await audioCtx.resume();
+  // Set before the awaits below: an idle report delivered while they are
+  // pending would otherwise suspend the context we are about to resume.
+  keepAudioAwake = true;
+  command("beginStart");
+
+  try {
+    await startAudio();
+    await resumeAudio();
+  } catch (error) {
+    if (playAttempt === attempt) {
+      keepAudioAwake = false;
+      command("setRunning", false);
+    }
+    throw error;
   }
 
-  // A Play that beat the previous Stop's drain ends it here: the stopped
-  // engine may never render the -1 chunk reportAudibleStep is waiting for,
-  // and the playhead would then stay dark for the whole next pass.
-  awaitingStopDrain = false;
+  // Stop or a newer Play issued while the browser was awaiting its audio graph
+  // supersedes this attempt. Its engine-owned starting epoch has already been
+  // replaced by the later command, so it must not commit Playing now.
+  if (playAttempt !== attempt) return;
+
   command("setRunning", true);
 }
 
-export function stop(): void {
-  command("setRunning", false);
+// pause freezes sequencer time while allowing active voices and reverb to
+// ring out. Unlike stop(), the engine keeps reporting the held step and a
+// later play() resumes from the same fractional position.
+export function pause(): void {
+  playAttempt++;
+  keepAudioAwake = false;
+  command("pause");
+}
 
-  // The worklet still holds ~2048 already-rendered samples (~43 ms) tagged
-  // with the steps they were rendered on. Darkening the playhead now and
-  // letting those chunks report would flash it backwards through the last
-  // steps, so suppress them until the engine's first stopped chunk arrives.
-  awaitingStopDrain = true;
-  notifyStep(-1);
+export function stop(): void {
+  playAttempt++;
+  keepAudioAwake = false;
+  command("setRunning", false);
 }
 
 export function setTempo(bpm: number): void {
-  command("setTempo", bpm);
+  configurationCommand("setTempo", bpm);
 }
 
 export function setSwing(swing: number): void {
-  command("setSwing", swing);
+  configurationCommand("setSwing", swing);
 }
 
 // setStepCount sets the active pattern length (clamped to 1–16 in the
 // engine); cells beyond it are kept, just not played.
 export function setStepCount(steps: number): void {
-  command("setStepCount", steps);
+  configurationCommand("setStepCount", steps);
 }
 
-// setCell sets one cell's velocity in [0, 1]; 0 turns the cell off. The
-// engine echoes its authoritative pattern back to onPattern subscribers.
 export function setCell(track: number, step: number, velocity: number): void {
-  patternMirror.beginMutation();
-  command("setCell", track, step, velocity);
+  configurationCommand("setCell", track, step, velocity);
+}
+
+export function setCellProbability(
+  track: number,
+  step: number,
+  probability: number,
+): void {
+  configurationCommand("setCellProbability", track, step, probability);
+}
+
+export function setCellCondition(
+  track: number,
+  step: number,
+  condition: number,
+): void {
+  configurationCommand("setCellCondition", track, step, condition);
+}
+
+export function setTrackLength(track: number, length: number): void {
+  configurationCommand("setTrackLength", track, length);
+}
+
+export function setFillMode(enabled: boolean): void {
+  configurationCommand("setFillMode", enabled);
 }
 
 // setPattern replaces the whole pattern: a flat track-major Float32Array of
 // TrackCount×MaxSteps (7×16) velocities in [0, 1], index = track*16 + step.
-// The engine echoes its authoritative pattern back to onPattern subscribers.
 export function setPattern(pattern: Float32Array): void {
-  patternMirror.beginMutation();
-  command("setPattern", pattern);
+  configurationCommand("setPattern", pattern);
+}
+
+// setState atomically seeds every configurable field. Clone before queueing so
+// a caller cannot mutate typed-array storage while a worker is still loading.
+export function setState(state: EngineState): void {
+  const snapshot = cloneEngineState(validateEngineState(state));
+  configurationCommand("setState", snapshot);
 }
 
 export function setVolume(track: number, vol: number): void {
-  command("setVolume", track, vol);
+  configurationCommand("setVolume", track, vol);
 }
 
 export function setDecay(track: number, amount: number): void {
-  command("setDecay", track, amount);
+  configurationCommand("setDecay", track, amount);
+}
+
+export function setMuted(track: number, muted: boolean): void {
+  configurationCommand("setMuted", track, muted);
 }
 
 // setVoiceParam sets one of a voice's synthesis parameters from a normalized
@@ -417,7 +703,7 @@ export function setVoiceParam(
   index: number,
   value: number,
 ): void {
-  command("setVoiceParam", track, index, value);
+  configurationCommand("setVoiceParam", track, index, value);
 }
 
 // setPhysicalTomParam addresses one Tom track's independent generated
@@ -427,13 +713,13 @@ export function setPhysicalTomParam(
   index: number,
   value: number,
 ): void {
-  command("setPhysicalTomParam", track, index, value);
+  configurationCommand("setPhysicalTomParam", track, index, value);
 }
 
 // setTomModel switches either Tom track between its procedural voice and an
 // independent experimental physical modal implementation.
 export function setTomModel(track: number, model: TomModel): void {
-  command("setTomModel", track, model === "physical" ? 1 : 0);
+  configurationCommand("setTomModel", track, model === "physical" ? 1 : 0);
 }
 
 // triggerVoice fires one voice immediately, independent of the sequencer, so
@@ -448,26 +734,23 @@ export async function triggerVoice(
   velocity: number,
 ): Promise<void> {
   await startAudio();
-
-  if (audioCtx && audioCtx.state === "suspended") {
-    await audioCtx.resume();
-  }
+  await resumeAudio();
 
   command("triggerVoice", track, velocity);
 }
 
 export function setReverb(amount: number): void {
-  command("setReverb", amount);
+  configurationCommand("setReverb", amount);
 }
 
 // setProbability sets the per-hit trigger chance in [0, 1] (1 = every hit).
 export function setProbability(p: number): void {
-  command("setProbability", p);
+  configurationCommand("setProbability", p);
 }
 
 // setHumanize sets the timing/velocity randomization amount in [0, 1].
 export function setHumanize(h: number): void {
-  command("setHumanize", h);
+  configurationCommand("setHumanize", h);
 }
 
 // Vite swaps this module on save without unloading the old one, so every edit

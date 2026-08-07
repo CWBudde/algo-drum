@@ -38,88 +38,25 @@ Thumbs.db
 *.out
 *.test
 
-# Fitting inputs and outputs (cmd/fit-physical, cmd/render-physical).
-#
-# reference/ holds recordings used as timbre-match targets. Most are not the
-# repository's to redistribute and nothing in the test suite may depend on
-# them — see docs/physical-measured-fit.md. The exception is the CC BY 4.0
-# subset re-included at the bottom of this file, which is committed precisely
-# so a fit can be reproduced from the repository alone; reference/CREDITS.md
-# carries its licence and provenance. The pattern is reference/* rather than
-# reference/ because git cannot re-include a file whose parent directory is
-# itself excluded.
-#
-# fits/ holds everything a run leaves in writing — its report, its checkpoint
-# and its progress log — and renders/ holds the audio. Both are ignored
-# wholesale, and the tools create them on demand, so a run's artifacts never
-# land in the project root again. One set per run when several are compared
-# side by side: fits/fit-hertzian.{json,checkpoint,log} beside
-# renders/fit-hertzian.wav. The log is a shell redirect of stderr rather than
-# anything the tool opens, so keeping it next to the report is a convention the
-# justfile documents and nothing enforces. A report is derived from a recording
-# the repository does not contain, so it cannot be committed as evidence
-# anyway — quote its numbers in docs/ and commit the figures.
-reference/*
-fits/
-renders/
-# Belt and braces for a run pointed somewhere else by hand: a checkpoint is
-# never a source file, whatever it ends up being called, no WAV in this
-# repository is either, and a stray fit log in the root is still a fit log.
-*.checkpoint
-*.wav
-fit-*.log
-fit-summary.txt
-fit-progress.txt
-
-# The committed reference subset. These negations must come after *.wav above,
-# because the last matching pattern wins. Only the 8"x8" drum's low-pitch head
-# strikes are carried: they are the set the fit uses, and the three packs
-# together are 863 files and ~320 MB against 9.6 MB for these sixteen. Licence
-# and provenance in reference/CREDITS.md.
-#
-# Every directory on the path has to be re-included one level at a time, and each
-# re-inclusion immediately re-excluded at the next level down. `reference/*`
-# above excludes the directory itself, and git does not look inside an excluded
-# directory at all — a negation for a file underneath one never gets the chance
-# to match. Hence the ladder rather than a single `!reference/tt08x08/lp/hd/*`.
-!reference/CREDITS.md
-!reference/tt08x08/
-reference/tt08x08/*
-!reference/tt08x08/lp/
-reference/tt08x08/lp/*
-!reference/tt08x08/lp/hd/
-!reference/tt08x08/lp/hd/v[0-9][0-9].wav
-
-# The two later packs ship a per-sound licence manifest and a generated map from
-# it to the reorganised paths. No audio from them is committed, but those two
-# text files are the only record of which Freesound upload each renamed file came
-# from, and they are small.
-!reference/tt10x08/
-reference/tt10x08/*
-!reference/tt10x08/SOURCES.tsv
-!reference/tt10x08/_readme_and_license.txt
-!reference/tt12x08/
-reference/tt12x08/*
-!reference/tt12x08/SOURCES.tsv
-!reference/tt12x08/_readme_and_license.txt
-
 # Compiled binaries land in the project root whenever someone runs a bare
-# `go build ./cmd/<name>` (and `go build ./...` inside tools/paper-figures, its
-# own module, drops its binary here rather than beside its source).
+# `go build ./cmd/<name>`.
 #
-# This list is every directory under cmd/ plus the figure tool, enumerated
-# rather than globbed, because a glob wide enough to catch an extensionless
-# binary also catches directories and stray scripts. Enumerating has one failure
-# mode and it has already fired twice: a *new* command is not on the list, so
-# its binary is committable, and a 13 MB `paper-figures` and a 6 MB
-# `compare-fits` duly reached published history and had to be rewritten out of
-# it on 2026-08-02. **Add the entry in the same change that adds the command.**
+# This list is every directory under cmd/, enumerated rather than globbed,
+# because a glob wide enough to catch an extensionless binary also catches
+# directories and stray scripts. Enumerating has one failure mode and it has
+# already fired twice: a *new* command is not on the list, so its binary is
+# committable, and a 13 MB `paper-figures` and a 6 MB `compare-fits` duly
+# reached published history and had to be rewritten out of it on 2026-08-02.
+# **Add the entry in the same change that adds the command.**
+#
+# The physical model's six commands, the fit/render output directories and the
+# reference-recording re-inclusion ladder all moved to
+# github.com/cwbudde/algo-tom with the model they serve.
 /algo_drum.wasm
-/analyze-physical
-/compare-fits
-/fit-physical
 /gen-voiceparams
-/measure-objective
-/measure-tom
-/paper-figures
-/render-physical
+
+# Local cross-repo development against a sibling algo-tom checkout. Never
+# committed: check-tidy diffs go.mod/go.sum, and a workspace that resolves
+# algo-tom from ../algo-tom passes here and fails on every clean checkout.
+go.work
+go.work.sum
