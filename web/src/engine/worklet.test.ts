@@ -57,6 +57,11 @@ interface Harness {
     idle?: boolean,
     state?: "stopped" | "starting" | "playing" | "paused",
     revision?: number,
+    banks?: {
+      activeBank: number;
+      queuedBank: number;
+      chainPosition: number;
+    },
   ): ArrayBuffer;
 
   // run calls process() the given number of times and returns the last
@@ -108,11 +113,12 @@ async function harness(): Promise<Harness> {
         ? "stopped"
         : "playing",
       revision = state === "stopped" ? 0 : 1,
+      banks = { activeBank: 0, queuedBank: -1, chainPosition: -1 },
     ): ArrayBuffer {
       const buffer = new ArrayBuffer(CHUNK_SAMPLES * 4);
       new Float32Array(buffer).fill(0.25);
       worker.onmessage?.({
-        data: { buffer, transport: { state, step, revision }, idle },
+        data: { buffer, transport: { state, step, revision, ...banks }, idle },
       } as unknown as MessageEvent);
       return buffer;
     },
@@ -261,11 +267,25 @@ describe("transport and idle reporting", () => {
     expect(h.node.of("transport")).toEqual([
       {
         type: "transport",
-        transport: { state: "playing", step: 0, revision: 1 },
+        transport: {
+          state: "playing",
+          step: 0,
+          revision: 1,
+          activeBank: 0,
+          queuedBank: -1,
+          chainPosition: -1,
+        },
       },
       {
         type: "transport",
-        transport: { state: "playing", step: 1, revision: 1 },
+        transport: {
+          state: "playing",
+          step: 1,
+          revision: 1,
+          activeBank: 0,
+          queuedBank: -1,
+          chainPosition: -1,
+        },
       },
     ]);
   });
@@ -280,13 +300,52 @@ describe("transport and idle reporting", () => {
     expect(h.node.of("transport")).toEqual([
       {
         type: "transport",
-        transport: { state: "playing", step: 0, revision: 1 },
+        transport: {
+          state: "playing",
+          step: 0,
+          revision: 1,
+          activeBank: 0,
+          queuedBank: -1,
+          chainPosition: -1,
+        },
       },
       {
         type: "transport",
-        transport: { state: "playing", step: 0, revision: 3 },
+        transport: {
+          state: "playing",
+          step: 0,
+          revision: 3,
+          activeBank: 0,
+          queuedBank: -1,
+          chainPosition: -1,
+        },
       },
     ]);
+  });
+
+  it("reports bank playback changes even when state and step repeat", async () => {
+    const h = await harness();
+    h.deliver(0, false, "playing", 1);
+    h.deliver(0, false, "playing", 1, {
+      activeBank: 1,
+      queuedBank: 2,
+      chainPosition: 3,
+    });
+
+    h.run(8);
+
+    expect(h.node.of("transport")).toHaveLength(2);
+    expect(h.node.of("transport")[1]).toEqual({
+      type: "transport",
+      transport: {
+        state: "playing",
+        step: 0,
+        revision: 1,
+        activeBank: 1,
+        queuedBank: 2,
+        chainPosition: 3,
+      },
+    });
   });
 
   it("reports idle edges only", async () => {

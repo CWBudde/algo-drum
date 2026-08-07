@@ -13,6 +13,7 @@ interface Props {
   transport: TransportState;
   bpm: number;
   swing: number;
+  bank: number;
   stepCount: number;
   probability: number;
   humanize: number;
@@ -29,6 +30,7 @@ export default function Transport({
   transport,
   bpm,
   swing,
+  bank,
   stepCount,
   probability,
   humanize,
@@ -133,6 +135,7 @@ export default function Transport({
         onChange={(position) =>
           onAction({
             type: "stepCount",
+            bank,
             value: Math.round(1 + position * (STEP_CAPACITY - 1)),
           })
         }

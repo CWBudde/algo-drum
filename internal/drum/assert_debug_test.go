@@ -32,10 +32,10 @@ func TestRenderPanicsOnBrokenInvariant(t *testing.T) {
 
 func TestRenderDoesNotPanicOnSoundEngine(t *testing.T) {
 	engine := NewEngine(testSampleRate)
-	engine.SetStepCount(7)
+	engine.SetStepCount(0, 7)
 	engine.SetSwing(maxSwing)
 	engine.SetHumanize(1)
-	engine.SetCell(0, 0, 1)
+	engine.SetCell(0, 0, 0, 1)
 	engine.SetRunning(true)
 
 	renderTotal(engine, samplesForStep(engine, 0)*20)

@@ -56,6 +56,49 @@ func (e *Engine) checkTransport(problems []error) []error {
 		problems = append(problems, fmt.Errorf("humanize out of contract: %v", e.humanize))
 	}
 
+	if e.humanizeLookahead < 1 {
+		problems = append(problems, fmt.Errorf("humanize lookahead %d below one sample", e.humanizeLookahead))
+	}
+
+	if !validBank(e.activeBank) {
+		problems = append(problems, fmt.Errorf("active bank out of contract: %d", e.activeBank))
+	}
+
+	if !validBank(e.standaloneBank) {
+		problems = append(problems, fmt.Errorf("standalone bank out of contract: %d", e.standaloneBank))
+	}
+
+	if e.queuedBank != NoBank && !validBank(e.queuedBank) {
+		problems = append(problems, fmt.Errorf("queued bank out of contract: %d", e.queuedBank))
+	}
+
+	if e.chainLength < 1 || e.chainLength > MaxChainLength {
+		problems = append(problems, fmt.Errorf("chain length %d outside [1, %d]", e.chainLength, MaxChainLength))
+	} else {
+		for position, bank := range e.chain[:e.chainLength] {
+			if !validBank(bank) {
+				problems = append(problems,
+					fmt.Errorf("chain position %d has invalid bank %d", position, bank))
+			}
+		}
+
+		if e.chainPosition < 0 || e.chainPosition >= e.chainLength {
+			problems = append(problems,
+				fmt.Errorf("chain position %d outside chain length %d", e.chainPosition, e.chainLength))
+		}
+	}
+
+	if e.nextStepScheduled && !validBank(e.nextBank) {
+		problems = append(problems, fmt.Errorf("scheduled bank out of contract: %d", e.nextBank))
+	}
+
+	if e.nextStepScheduled && e.chainEnabled &&
+		(e.nextChainPosition < 0 || e.nextChainPosition >= e.chainLength) {
+		problems = append(problems,
+			fmt.Errorf("scheduled chain position %d outside chain length %d",
+				e.nextChainPosition, e.chainLength))
+	}
+
 	if e.transport > transportPaused {
 		problems = append(problems, fmt.Errorf("invalid transport state: %d", e.transport))
 	}
@@ -200,11 +243,64 @@ func (e *Engine) checkMix(problems []error) []error {
 						track, step, probability))
 			}
 
+			if humanize := e.cellHumanize[track][step]; !inRange(humanize, 0, 1) {
+				problems = append(problems,
+					fmt.Errorf("cell (%d, %d) humanize out of contract: %v",
+						track, step, humanize))
+			}
+
 			if condition := e.cellCondition[track][step]; condition >= triggerConditionCount {
 				problems = append(problems,
 					fmt.Errorf("cell (%d, %d) condition out of contract: %d",
 						track, step, condition))
 			}
+		}
+	}
+
+	for bank := range PatternBankCount {
+		stored := &e.banks[bank]
+		if stored.stepCount < 1 || stored.stepCount > MaxSteps {
+			problems = append(problems,
+				fmt.Errorf("bank %d step count %d outside [1, %d]", bank, stored.stepCount, MaxSteps))
+		}
+
+		for track := range TrackCount {
+			if length := stored.trackLength[track]; length < 1 || length > MaxSteps {
+				problems = append(problems,
+					fmt.Errorf("bank %d track %d length %d outside [1, %d]",
+						bank, track, length, MaxSteps))
+			}
+
+			for step := range MaxSteps {
+				if !inRange(stored.pattern[track][step], 0, 1) {
+					problems = append(problems,
+						fmt.Errorf("bank %d cell (%d, %d) velocity out of contract", bank, track, step))
+				}
+
+				if !inRange(stored.cellProbability[track][step], 0, 1) {
+					problems = append(problems,
+						fmt.Errorf("bank %d cell (%d, %d) probability out of contract", bank, track, step))
+				}
+
+				if !inRange(stored.cellHumanize[track][step], 0, 1) {
+					problems = append(problems,
+						fmt.Errorf("bank %d cell (%d, %d) humanize out of contract", bank, track, step))
+				}
+
+				if stored.cellCondition[track][step] >= triggerConditionCount {
+					problems = append(problems,
+						fmt.Errorf("bank %d cell (%d, %d) condition out of contract", bank, track, step))
+				}
+			}
+		}
+	}
+
+	if validBank(e.activeBank) {
+		active := &e.banks[e.activeBank]
+		if e.stepCount != active.stepCount || e.pattern != active.pattern ||
+			e.cellProbability != active.cellProbability || e.cellHumanize != active.cellHumanize ||
+			e.cellCondition != active.cellCondition || e.trackLength != active.trackLength {
+			problems = append(problems, errors.New("active rhythmic mirror diverges from its bank"))
 		}
 	}
 

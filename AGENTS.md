@@ -88,7 +88,7 @@ Vite serves `web/public/` as static assets, so `algo_drum.wasm` and `wasm_exec.j
 
 ```
 cmd/wasm/main.go          — WASM entry point; registers the AlgoDrum JS API (worker global scope)
-internal/drum/engine.go   — Sequencer: velocity pattern grid (7×16), runtime step count, fixed-point tempo/swing clock, probability + humanize (allocation-free pending-trigger mask), smoothed per-track volumes, Render()
+internal/drum/engine.go   — Sequencer: four rhythm banks (7×16 each), queued/chain switching, fixed-point tempo/swing clock, probability + centered per-cell humanize (allocation-free pending-trigger mask), smoothed per-track volumes, Render()
 internal/drum/state.go    — Engine-owned semantic snapshot/replacement contract: full pattern, controls, engine-major mixer/mute and voice/Tom parameter banks
 internal/drum/voices.go   — Drum synthesizer voices (BassDrum, Snare, HiHat, Tom, Cymbal, Tom 2, Percussion); all tuning is runtime-settable
 internal/drum/params.go   — Per-voice synthesis parameter specs (ranges, curves, defaults) + the normalized→engineering mapping
@@ -98,7 +98,7 @@ internal/drum/assert.go   — assertValid(): a no-op in shipped builds; `-tags d
 cmd/gen-voiceparams/      — Generates web/src/engine/voiceParams.generated.ts from params.go (`just gen-params`; CI diffs it)
 internal/drum/*_test.go   — Go unit tests: sequencing, clamping, bit-exact render determinism, per-voice envelopes
 internal/drum/physical_tom.go — Adapter wrapping algo-tom's physical.DoubleHead as a Voice; the model itself lives in github.com/cwbudde/algo-tom → "The physical Tom voice"
-web/src/engine/engineState.ts — Canonical semantic EngineState shape shared by the bridge, React reducer and persistence; includes velocity/probability/condition grids and per-track lengths, all engine-major
+web/src/engine/engineState.ts — Canonical semantic EngineState shape shared by the bridge, React reducer and persistence; includes four engine-major rhythm banks, per-cell velocity/probability/humanize/condition grids, per-track lengths and chain configuration
 web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands, exposes authoritative configuration/transport snapshots and dispose()
 web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; gates the load on the engine's protocol version and method list, renders audio chunks and echoes the complete authoritative state after every configuration edit
 web/src/engine/stateMirror.ts — Reconciles full engine snapshots with in-flight optimistic UI edits (Go engine = single source of truth)
@@ -113,7 +113,7 @@ web/src/components/ErrorBoundary.tsx — App-wide React error boundary; a render
 web/src/algo/euclid.ts     — Pure Bjorklund/Euclidean E(pulses, steps) rhythm generator with rotation
 web/src/algo/mutate.ts     — Pure musical random-walk mutation of a flat pattern
 web/src/algo/presets.ts    — Classic 16-step preset patterns (rock, house, breakbeat, hip-hop, techno, funk) + Clear
-web/src/algo/persistence.ts — Pure versioned EngineState encode/decode → base64url (v15 appends byte-precision velocities, cell probability/conditions and track lengths; v1–v14 still decode); localStorage + URL-hash glue
+web/src/algo/persistence.ts — Pure versioned EngineState encode/decode → base64url (v16 preserves v15 as Bank A and appends per-cell humanize, Banks B–D and chain configuration; v1–v15 still decode); localStorage + URL-hash glue
 web/src/algo/pattern.ts    — Shared pattern constants (dims, velocities, flat-index helper) for the algo modules
 web/src/App.tsx           — Root: loads WASM on mount, renders DrumMachine inside the ErrorBoundary, shows a retryable fault panel if the engine fails
 web/src/main.tsx          — Browser entry: mounts App and registers the service worker (production builds only)
@@ -155,13 +155,18 @@ UI displays Cymbal, Percussion, Tom 2, Tom, Hi-Hat, Snare, Bass from top to bott
 | `pause()`                      | Freeze sequencer time and pending hits; active voice/effect tails keep ringing     |
 | `setTempo(bpm)`                | Set tempo in BPM (clamped to 30–300)                                               |
 | `setSwing(0–0.5)`              | Set swing amount (0.5 = full shuffle)                                              |
-| `setStepCount(n)`              | Set master length and reset every track length to it (clamped to 1–16)             |
-| `setCell(track, step, 0–1)`    | Set cell velocity (0 = off; UI uses 0.7 = normal, 1.0 = accent)                    |
-| `setCellProbability(t,s,0–1)`  | Set one cell's probability multiplier                                              |
-| `setCellCondition(t,s,0–6)`    | Set one cell's always/loop/fill/previous-step condition                            |
-| `setTrackLength(track,n)`      | Set one track's independent loop length (clamped to 1–16)                          |
+| `setStepCount(bank,n)`         | Set one bank's master length and reset that bank's track lengths (clamped 1–16)    |
+| `setCell(bank,t,s,0–1)`        | Set cell velocity (0 = off; UI uses 0.7 = normal, 1.0 = accent)                    |
+| `setCellProbability(b,t,s,p)`  | Set one cell's probability multiplier                                              |
+| `setCellHumanize(b,t,s,h)`     | Set one cell's timing/velocity humanize multiplier                                 |
+| `setCellCondition(b,t,s,0–6)`  | Set one cell's always/loop/fill/previous-step condition                            |
+| `setTrackLength(bank,track,n)` | Set one track's independent loop length within a bank (clamped to 1–16)            |
 | `setFillMode(bool)`            | Enable or disable cells carrying the fill-only condition                           |
-| `setPattern(Float32Array)`     | Atomically replace the full flat track-major 7×16 pattern (`track*16+step`)        |
+| `setPattern(bank,Float32Array)` | Atomically replace one bank's flat track-major 7×16 velocity pattern              |
+| `setPatternBank(bank,state)`   | Atomically replace a complete rhythm bank                                          |
+| `requestBank(bank)`            | Select immediately while stopped or queue the bank for the next loop boundary      |
+| `setChain(Uint8Array)`         | Set the stopped-only 1–16-entry A–D bank chain                                     |
+| `setChainEnabled(bool)`        | Enable/disable chain playback while stopped                                        |
 | `setState(EngineState)`        | Validate/clamp and replace every persistent sound/configuration value              |
 | `getState()`                   | Return the complete authoritative semantic state snapshot                          |
 | `setVolume(track, 0–1)`        | Set track volume (ramped over ~8 ms to avoid zipper noise)                         |
@@ -171,16 +176,20 @@ UI displays Cymbal, Percussion, Tom 2, Tom, Hi-Hat, Snare, Bass from top to bott
 | `triggerVoice(track, 0–1)`     | Fire one voice immediately, independent of the sequencer (audition)                |
 | `setReverb(0–1)`               | Set the smoothed global reverb amount                                               |
 | `setProbability(0–1)`          | Global probability multiplier (1 = unchanged, default; 0 = silence)               |
-| `setHumanize(0–1)`             | Timing/velocity randomization (delay ≤ h·15 ms, velocity ±h·20%; 0 = mechanical)   |
+| `setHumanize(0–1)`             | Master timing/velocity randomization (steady-state timing ±h·7.5 ms)               |
 | `render(n)`                    | Render n samples → Float32Array                                                    |
 | `currentStep()`                | Returns active/paused step index (-1 if stopped or starting)                       |
 | `transportState()`             | Engine-owned `stopped` / `starting` / `playing` / `paused` state                   |
 | `transportRevision()`          | Monotonic state-transition revision used to reject stale buffered chunks           |
+| `activeBank()`                 | Runtime bank currently driving the sequencer                                       |
+| `queuedBank()`                 | Pending standalone bank, or -1 when no manual switch is queued                     |
+| `chainPosition()`              | Runtime chain entry, or -1 while chain mode is disabled                            |
 | `isIdle()`                     | True once output has stayed below −120 dBFS for 50 ms and nothing can wake it      |
 | `protocolVersion`              | Number (not a method): the API semantics this engine speaks (`internal/drum/protocol.go`) |
 
-`protocolVersion` is the gate on everything above it, including the transport
-snapshot carried through `worklet.js`. `algo_drum.wasm` and `worklet.js` are
+`protocolVersion` is the gate on everything above it, including the transport,
+active/queued-bank and chain-position snapshot carried through `worklet.js`.
+`algo_drum.wasm` and `worklet.js` are
 unhashed artifacts that cache independently of the hashed JS bundle, so they
 can drift in a user's browser; `REQUIRED_METHODS` in `audioWorker.ts` catches a
 *missing* method, but only the version catches an existing one whose argument

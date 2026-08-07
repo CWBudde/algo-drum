@@ -19,14 +19,16 @@ describe("reduceDrumState", () => {
     const state = defaultEngineState();
     const next = reduceDrumState(state, {
       type: "cell",
+      bank: 1,
       track: 1,
       step: 3,
       value: 0.7,
     });
 
-    expect(next.pattern[19]).toBeCloseTo(0.7);
-    expect(state.pattern[19]).toBe(0);
-    expect(next.pattern).not.toBe(state.pattern);
+    expect(next.banks[1].pattern[19]).toBeCloseTo(0.7);
+    expect(state.banks[1].pattern[19]).toBe(0);
+    expect(next.banks[1].pattern).not.toBe(state.banks[1].pattern);
+    expect(next.banks[0]).toBe(state.banks[0]);
   });
 
   it("keeps the physical parameter banks attached to their Tom track", () => {
@@ -56,35 +58,65 @@ describe("reduceDrumState", () => {
     const state = defaultEngineState();
     const probability = reduceDrumState(state, {
       type: "cellProbability",
+      bank: 2,
       track: 2,
       step: 4,
       value: 0.35,
     });
     const condition = reduceDrumState(probability, {
       type: "cellCondition",
+      bank: 2,
       track: 2,
       step: 4,
       value: 3,
     });
     const length = reduceDrumState(condition, {
       type: "trackLength",
+      bank: 2,
       track: 2,
       value: 7,
     });
     const fill = reduceDrumState(length, { type: "fillMode", value: true });
 
-    expect(fill.cellProbabilities[36]).toBeCloseTo(0.35);
-    expect(fill.cellConditions[36]).toBe(3);
-    expect(fill.trackLengths[2]).toBe(7);
+    expect(fill.banks[2].cellProbabilities[36]).toBeCloseTo(0.35);
+    expect(fill.banks[2].cellConditions[36]).toBe(3);
+    expect(fill.banks[2].trackLengths[2]).toBe(7);
     expect(fill.fillMode).toBe(true);
-    expect(state.cellProbabilities[36]).toBe(1);
+    expect(state.banks[2].cellProbabilities[36]).toBe(1);
   });
 
   it("keeps per-track lengths aligned when the master length changes", () => {
     const state = defaultEngineState();
-    const next = reduceDrumState(state, { type: "stepCount", value: 9 });
+    const next = reduceDrumState(state, {
+      type: "stepCount",
+      bank: 3,
+      value: 9,
+    });
 
-    expect(next.stepCount).toBe(9);
-    expect(Array.from(next.trackLengths)).toEqual(new Array(7).fill(9));
+    expect(next.banks[3].stepCount).toBe(9);
+    expect(Array.from(next.banks[3].trackLengths)).toEqual(
+      new Array(7).fill(9),
+    );
+    expect(next.banks[0].stepCount).toBe(16);
+  });
+
+  it("updates local humanize and chain state without aliasing", () => {
+    const state = defaultEngineState();
+    const humanized = reduceDrumState(state, {
+      type: "cellHumanize",
+      bank: 1,
+      track: 0,
+      step: 2,
+      value: 0.4,
+    });
+    const chained = reduceDrumState(humanized, {
+      type: "chain",
+      value: Uint8Array.from([0, 1, 1, 3]),
+    });
+
+    expect(humanized.banks[1].cellHumanize[2]).toBeCloseTo(0.4);
+    expect(state.banks[1].cellHumanize[2]).toBe(1);
+    expect(Array.from(chained.chain)).toEqual([0, 1, 1, 3]);
+    expect(chained.chain).not.toBe(state.chain);
   });
 });

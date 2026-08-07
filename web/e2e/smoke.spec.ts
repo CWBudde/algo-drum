@@ -482,3 +482,95 @@ test("Tom 2 has an independent physical model and parameter bank", async ({
     dialog.getByRole("slider", { name: "Tom 2 batter head tension" }),
   ).toHaveAttribute("aria-valuenow", edited!);
 });
+
+test("pattern banks copy, diverge, and persist independently", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await expect(
+    page.getByRole("button", { name: "Play", exact: true }),
+  ).toBeEnabled({ timeout: 30_000 });
+
+  const bankA = page.getByRole("button", { name: "A", exact: true });
+  const bankB = page.getByRole("button", { name: "B", exact: true });
+  const bass = page.getByRole("button", { name: /^Bass step 1:/ });
+  await bass.click();
+  await expect(bass).toHaveAccessibleName("Bass step 1: on");
+
+  await page.getByText("COPY", { exact: true }).click();
+  await page.getByRole("button", { name: "Copy bank A to bank B" }).click();
+  await bankB.click();
+  await expect(bass).toHaveAccessibleName("Bass step 1: on");
+  await bass.click();
+  await expect(bass).toHaveAccessibleName("Bass step 1: accent");
+
+  await bankA.click();
+  await expect(bass).toHaveAccessibleName("Bass step 1: on");
+  await page.waitForTimeout(500);
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Play", exact: true }),
+  ).toBeEnabled({ timeout: 30_000 });
+  await expect(bass).toHaveAccessibleName("Bass step 1: on");
+  await bankB.click();
+  await expect(bass).toHaveAccessibleName("Bass step 1: accent");
+});
+
+test("per-cell humanize survives a share link", async ({ page }) => {
+  await page.goto("./");
+  await expect(
+    page.getByRole("button", { name: "Play", exact: true }),
+  ).toBeEnabled({ timeout: 30_000 });
+
+  const cell = page.getByRole("button", { name: /^Snare step 5:/ });
+  await cell.focus();
+  await page.keyboard.press("F2");
+  const humanize = page.getByRole("slider", {
+    name: "HUMANIZE",
+    exact: true,
+  });
+  await humanize.focus();
+  await page.keyboard.press("Home");
+  for (let index = 0; index < 37; index++)
+    await page.keyboard.press("ArrowRight");
+  await expect(humanize).toHaveValue("37");
+
+  await page.getByRole("button", { name: "Close step settings" }).click();
+  await page.getByRole("button", { name: /Copy shareable link/i }).click();
+  const shared = page.url();
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(shared);
+  await expect(
+    page.getByRole("button", { name: "Play", exact: true }),
+  ).toBeEnabled({ timeout: 30_000 });
+  await cell.focus();
+  await page.keyboard.press("F2");
+  await expect(
+    page.getByRole("slider", { name: "HUMANIZE", exact: true }),
+  ).toHaveValue("37");
+});
+
+test("a two-bank chain advances and wraps on audible boundaries", async ({
+  page,
+}) => {
+  await page.goto("./");
+  const play = page.getByRole("button", { name: "Play", exact: true });
+  await expect(play).toBeEnabled({ timeout: 30_000 });
+
+  await page.getByText("EDIT CHAIN", { exact: true }).click();
+  await page.getByRole("button", { name: "ADD ENTRY" }).click();
+  await page.getByRole("combobox", { name: "Chain entry 2" }).selectOption("1");
+  await page.getByText("EDIT CHAIN", { exact: true }).click();
+  await page.getByRole("checkbox", { name: "CHAIN" }).check();
+
+  const bankA = page.getByRole("button", { name: "A", exact: true });
+  const bankB = page.getByRole("button", { name: "B", exact: true });
+  await expect(bankA).toHaveAttribute("aria-current", "true");
+  await play.click();
+  await expect(bankB).toHaveAttribute("aria-current", "true", {
+    timeout: 4_000,
+  });
+  await expect(bankA).toHaveAttribute("aria-current", "true", {
+    timeout: 4_000,
+  });
+});

@@ -94,8 +94,16 @@ class FakeWorkletNode {
   }
 
   // transport delivers the engine snapshot attached to an audible chunk.
-  transport(state: TransportState, step: number, revision: number): void {
-    this.emit({ type: "transport", transport: { state, step, revision } });
+  transport(
+    state: TransportState,
+    step: number,
+    revision: number,
+    banks = { activeBank: 0, queuedBank: -1, chainPosition: -1 },
+  ): void {
+    this.emit({
+      type: "transport",
+      transport: { state, step, revision, ...banks },
+    });
   }
 }
 
@@ -104,10 +112,11 @@ function sync(
   state: TransportState,
   step: number,
   revision: number,
+  banks = { activeBank: 0, queuedBank: -1, chainPosition: -1 },
 ): void {
   worker.emit({
     type: "transportSync",
-    transport: { state, step, revision },
+    transport: { state, step, revision, ...banks },
   });
 }
 
@@ -337,21 +346,21 @@ describe("command queue", () => {
     engine.onState(listener);
 
     // Edit A is queued against a worker that then fails to load.
-    engine.setCell(0, 0, 0.7);
+    engine.setCell(0, 0, 0, 0.7);
     const failed = engine.loadWasm();
     workers()[0].emit({ type: "error", error: "boom" });
     await expect(failed).rejects.toThrow("boom");
 
     // Retry, then edit B before the replacement worker is ready.
     const retry = engine.loadWasm();
-    engine.setCell(1, 1, 1.0);
+    engine.setCell(0, 1, 1, 1.0);
     workers()[1].ready();
     await retry;
 
     // Both edits are replayed, so both are echoed exactly once.
     expect(workers()[1].commands()).toEqual([
-      { type: "cmd", name: "setCell", args: [0, 0, 0.7] },
-      { type: "cmd", name: "setCell", args: [1, 1, 1.0] },
+      { type: "cmd", name: "setCell", args: [0, 0, 0, 0.7] },
+      { type: "cmd", name: "setCell", args: [0, 1, 1, 1.0] },
     ]);
 
     // The echo for A alone must not be published: it predates B.
@@ -383,7 +392,7 @@ describe("command queue", () => {
   it("rejects invalid bulk state before counting or queueing it", async () => {
     const engine = await loaded();
     const invalid = state();
-    invalid.pattern = new Float32Array(1);
+    invalid.banks[0].pattern = new Float32Array(1);
 
     expect(() => engine.setState(invalid)).toThrow(TypeError);
     expect(workers()[0].commands()).toHaveLength(0);
@@ -404,7 +413,10 @@ describe("command queue", () => {
     const snapshot = posted.args[0] as typeof supplied;
 
     expect(snapshot).not.toBe(supplied);
-    expect(snapshot.pattern).not.toBe(supplied.pattern);
+    expect(snapshot.banks[0].pattern).not.toBe(supplied.banks[0].pattern);
+    expect(snapshot.banks[0].cellHumanize).not.toBe(
+      supplied.banks[0].cellHumanize,
+    );
     expect(snapshot.tracks[0].voiceParams).not.toBe(
       supplied.tracks[0].voiceParams,
     );
@@ -433,6 +445,62 @@ describe("command queue", () => {
     expect(workers()[0].commands()).toEqual([
       { type: "cmd", name: "setPhysicalTomParam", args: [5, 4, 0.625] },
     ]);
+  });
+
+  it("sends bank-indexed rhythmic edits and chain controls", async () => {
+    const engine = await loaded();
+    const bank = state().banks[2];
+
+    engine.setStepCount(2, 8);
+    engine.setCell(2, 1, 3, 0.75);
+    engine.setCellProbability(2, 1, 3, 0.5);
+    engine.setCellHumanize(2, 1, 3, 0.25);
+    engine.setCellCondition(2, 1, 3, 4);
+    engine.setTrackLength(2, 1, 7);
+    engine.setPattern(2, bank.pattern);
+    engine.setPatternBank(2, bank);
+    engine.requestBank(2);
+    engine.setChain(new Uint8Array([0, 2, 1]));
+    engine.setChainEnabled(true);
+
+    expect(
+      workers()[0]
+        .commands()
+        .map(({ name, args }) => [name, args]),
+    ).toEqual([
+      ["setStepCount", [2, 8]],
+      ["setCell", [2, 1, 3, 0.75]],
+      ["setCellProbability", [2, 1, 3, 0.5]],
+      ["setCellHumanize", [2, 1, 3, 0.25]],
+      ["setCellCondition", [2, 1, 3, 4]],
+      ["setTrackLength", [2, 1, 7]],
+      ["setPattern", [2, expect.any(Float32Array)]],
+      ["setPatternBank", [2, expect.any(Object)]],
+      ["requestBank", [2]],
+      ["setChain", [new Uint8Array([0, 2, 1])]],
+      ["setChainEnabled", [true]],
+    ]);
+  });
+
+  it("owns typed arrays queued by bank replacement commands", async () => {
+    const engine = await loaded();
+    const bank = state().banks[1];
+    const chain = new Uint8Array([1, 3]);
+
+    engine.setPattern(1, bank.pattern);
+    engine.setPatternBank(1, bank);
+    engine.setChain(chain);
+
+    const commands = workers()[0].commands();
+    expect(commands[0].args[1]).not.toBe(bank.pattern);
+    const snapshot = commands[1].args[1] as typeof bank;
+    expect(snapshot).not.toBe(bank);
+    expect(snapshot.pattern).not.toBe(bank.pattern);
+    expect(snapshot.cellProbabilities).not.toBe(bank.cellProbabilities);
+    expect(snapshot.cellHumanize).not.toBe(bank.cellHumanize);
+    expect(snapshot.cellConditions).not.toBe(bank.cellConditions);
+    expect(snapshot.trackLengths).not.toBe(bank.trackLengths);
+    expect(commands[2].args[0]).not.toBe(chain);
   });
 });
 
@@ -486,6 +554,46 @@ describe("transport", () => {
       "paused",
       "stopped",
     ]);
+  });
+
+  it("publishes queued banks immediately and active banks when audible", async () => {
+    const engine = await loaded();
+    const snapshots: {
+      activeBank: number;
+      queuedBank: number;
+      chainPosition: number;
+    }[] = [];
+    engine.onBankPlayback((snapshot) => snapshots.push(snapshot));
+
+    sync(workers()[0], "playing", 0, 1, {
+      activeBank: 2,
+      queuedBank: 3,
+      chainPosition: -1,
+    });
+    expect(snapshots[snapshots.length - 1]).toEqual({
+      activeBank: 0,
+      queuedBank: 3,
+      chainPosition: -1,
+    });
+
+    await engine.play();
+    node().transport("playing", 0, 1, {
+      activeBank: 0,
+      queuedBank: -1,
+      chainPosition: -1,
+    });
+    expect(snapshots[snapshots.length - 1].queuedBank).toBe(3);
+
+    node().transport("playing", 0, 1, {
+      activeBank: 2,
+      queuedBank: -1,
+      chainPosition: 1,
+    });
+    expect(snapshots[snapshots.length - 1]).toEqual({
+      activeBank: 2,
+      queuedBank: -1,
+      chainPosition: 1,
+    });
   });
 
   it.each([

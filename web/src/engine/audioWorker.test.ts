@@ -59,10 +59,12 @@ const OTHER_METHODS: (keyof AlgoDrumApi)[] = [
   "setStepCount",
   "setCell",
   "setCellProbability",
+  "setCellHumanize",
   "setCellCondition",
   "setTrackLength",
   "setFillMode",
   "setPattern",
+  "setPatternBank",
   "setState",
   "setVolume",
   "setDecay",
@@ -80,6 +82,9 @@ interface FakeEngine {
   step: number;
   state: TransportState;
   revision: number;
+  activeBankValue: number;
+  queuedBankValue: number;
+  chainPositionValue: number;
   idle: boolean;
   renders: number;
   render: (n: number) => Float32Array;
@@ -90,6 +95,9 @@ function fakeEngine(): FakeEngine {
     step: 0,
     state: "stopped",
     revision: 0,
+    activeBankValue: 0,
+    queuedBankValue: -1,
+    chainPositionValue: -1,
     idle: false,
     renders: 0,
     render(n: number) {
@@ -123,6 +131,16 @@ function fakeEngine(): FakeEngine {
       : engine.step;
   api.transportState = () => engine.state;
   api.transportRevision = () => engine.revision;
+  api.activeBank = () => engine.activeBankValue;
+  api.queuedBank = () => engine.queuedBankValue;
+  api.chainPosition = () => engine.chainPositionValue;
+  api.requestBank = (bank: number) => {
+    engine.queuedBankValue = bank;
+  };
+  api.setChain = () => undefined;
+  api.setChainEnabled = (enabled: boolean) => {
+    engine.chainPositionValue = enabled ? 0 : -1;
+  };
   api.isIdle = () => engine.idle;
   api.getState = () => createDefaultEngineState();
   for (const name of OTHER_METHODS) api[name] = () => undefined;
@@ -313,6 +331,9 @@ describe("chunk requests", () => {
       state: "stopped",
       step: -1,
       revision: 0,
+      activeBank: 0,
+      queuedBank: -1,
+      chainPosition: -1,
     });
     // Idle would suspend the AudioContext, and the worklet is not called
     // while suspended, so nothing could wake it again.
@@ -341,7 +362,14 @@ describe("chunk requests", () => {
     ]);
     expect(responses).toContainEqual({
       type: "transportSync",
-      transport: { state: "stopped", step: -1, revision: 0 },
+      transport: {
+        state: "stopped",
+        step: -1,
+        revision: 0,
+        activeBank: 0,
+        queuedBank: -1,
+        chainPosition: -1,
+      },
     });
   });
 
@@ -356,6 +384,9 @@ describe("chunk requests", () => {
       state: "playing",
       step: 3,
       revision: 1,
+      activeBank: 0,
+      queuedBank: -1,
+      chainPosition: -1,
     });
     expect(port.need().transport.step).toBe(4);
   });
@@ -419,13 +450,15 @@ describe("state echoes", () => {
     ["setState", [createDefaultEngineState()]],
     ["setTempo", [140]],
     ["setSwing", [0.2]],
-    ["setStepCount", [12]],
-    ["setCell", [0, 0, 1]],
-    ["setCellProbability", [0, 0, 0.5]],
-    ["setCellCondition", [0, 0, 2]],
-    ["setTrackLength", [0, 7]],
+    ["setStepCount", [0, 12]],
+    ["setCell", [0, 0, 0, 1]],
+    ["setCellProbability", [0, 0, 0, 0.5]],
+    ["setCellHumanize", [0, 0, 0, 0.5]],
+    ["setCellCondition", [0, 0, 0, 2]],
+    ["setTrackLength", [0, 0, 7]],
     ["setFillMode", [true]],
-    ["setPattern", [createDefaultEngineState().pattern]],
+    ["setPattern", [0, createDefaultEngineState().banks[0].pattern]],
+    ["setPatternBank", [0, createDefaultEngineState().banks[0]]],
     ["setVolume", [0, 0.5]],
     ["setDecay", [0, 0.5]],
     ["setMuted", [0, true]],
@@ -444,6 +477,22 @@ describe("state echoes", () => {
 
     expect(responses).toHaveLength(1);
     expect(responses[0]).toMatchObject({ type: "stateSync" });
+  });
+
+  it.each([
+    ["requestBank", [1]],
+    ["setChain", [new Uint8Array([0, 1])]],
+    ["setChainEnabled", [true]],
+  ] as const)("echoes state and transport after %s", async (name, args) => {
+    const engine = fakeEngine();
+    await connect(engine);
+    responses = [];
+
+    dispatch({ type: "cmd", name, args: [...args] });
+
+    expect(responses).toHaveLength(2);
+    expect(responses[0]).toMatchObject({ type: "transportSync" });
+    expect(responses[1]).toMatchObject({ type: "stateSync" });
   });
 
   it.each([
@@ -488,23 +537,58 @@ describe("transport acknowledgements", () => {
     expect(responses).toEqual([
       {
         type: "transportSync",
-        transport: { state: "stopped", step: -1, revision: 0 },
+        transport: {
+          state: "stopped",
+          step: -1,
+          revision: 0,
+          activeBank: 0,
+          queuedBank: -1,
+          chainPosition: -1,
+        },
       },
       {
         type: "transportSync",
-        transport: { state: "starting", step: -1, revision: 1 },
+        transport: {
+          state: "starting",
+          step: -1,
+          revision: 1,
+          activeBank: 0,
+          queuedBank: -1,
+          chainPosition: -1,
+        },
       },
       {
         type: "transportSync",
-        transport: { state: "playing", step: 0, revision: 2 },
+        transport: {
+          state: "playing",
+          step: 0,
+          revision: 2,
+          activeBank: 0,
+          queuedBank: -1,
+          chainPosition: -1,
+        },
       },
       {
         type: "transportSync",
-        transport: { state: "paused", step: 0, revision: 3 },
+        transport: {
+          state: "paused",
+          step: 0,
+          revision: 3,
+          activeBank: 0,
+          queuedBank: -1,
+          chainPosition: -1,
+        },
       },
       {
         type: "transportSync",
-        transport: { state: "stopped", step: -1, revision: 4 },
+        transport: {
+          state: "stopped",
+          step: -1,
+          revision: 4,
+          activeBank: 0,
+          queuedBank: -1,
+          chainPosition: -1,
+        },
       },
     ]);
   });
@@ -523,7 +607,14 @@ describe("transport acknowledgements", () => {
     expect(errors()).toEqual([expect.stringContaining("transport failed")]);
     expect(responses).toContainEqual({
       type: "transportSync",
-      transport: { state: "stopped", step: -1, revision: 0 },
+      transport: {
+        state: "stopped",
+        step: -1,
+        revision: 0,
+        activeBank: 0,
+        queuedBank: -1,
+        chainPosition: -1,
+      },
     });
   });
 });

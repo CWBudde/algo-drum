@@ -31,7 +31,7 @@ func TestDensePatternDoesNotReachHardClamp(t *testing.T) {
 	for track := range TrackCount {
 		engine.SetDecay(track, 1)
 		for step := range MaxSteps {
-			engine.SetCell(track, step, 1)
+			engine.SetCell(0, track, step, 1)
 		}
 	}
 	engine.SetTempo(300)
@@ -123,7 +123,7 @@ func TestPauseFreezesTransportAndPendingHits(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	engine.limiter = nil
 	engine.reverb = nil
-	engine.SetCell(0, 0, 1)
+	engine.SetCell(0, 0, 0, 1)
 	engine.SetRunning(true)
 	renderTotal(engine, 100)
 	engine.schedule(1, 1, 10)
@@ -203,7 +203,7 @@ func TestStopResetsTransportButLeavesVoiceTail(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	engine.limiter = nil
 	engine.reverb = nil
-	engine.SetCell(0, 0, 1)
+	engine.SetCell(0, 0, 0, 1)
 	engine.SetRunning(true)
 	renderTotal(engine, 100)
 	engine.schedule(1, 1, 20)
@@ -237,7 +237,7 @@ func TestFixedPointClockDoesNotAccumulateDrift(t *testing.T) {
 			engine.reverb = nil
 			engine.limiter = nil
 			engine.SetTempo(tc.bpm)
-			engine.SetStepCount(tc.steps)
+			engine.SetStepCount(0, tc.steps)
 			engine.SetSwing(tc.swing)
 
 			baseQ := uint64(math.Round(testSampleRate * secondsPerMinute / tc.bpm / stepsPerBeat * float64(stepPhaseUnit)))
@@ -287,7 +287,7 @@ func TestCopyPatternDoesNotAllocate(t *testing.T) {
 func TestSetPatternDoesNotAllocate(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	pattern := make([]float64, PatternSize)
-	if allocs := testing.AllocsPerRun(100, func() { engine.SetPattern(pattern) }); allocs != 0 {
+	if allocs := testing.AllocsPerRun(100, func() { engine.SetPattern(0, pattern) }); allocs != 0 {
 		t.Fatalf("SetPattern allocated %v times, want 0", allocs)
 	}
 }
@@ -298,7 +298,7 @@ func TestHumanizedRenderIsDeterministic(t *testing.T) {
 		engine.SetHumanize(1)
 		for track := range TrackCount {
 			for step := range MaxSteps {
-				engine.SetCell(track, step, 1)
+				engine.SetCell(0, track, step, 1)
 			}
 		}
 		engine.SetRunning(true)

@@ -13,4 +13,4 @@ package drum
 //
 // This is unrelated to persistence.ts's FORMAT_VERSION, which versions saved
 // patterns rather than the live API.
-const ProtocolVersion = 3
+const ProtocolVersion = 4

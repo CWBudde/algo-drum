@@ -12,9 +12,12 @@ import {
   VOICE_PARAM_CAPACITY,
 } from "../engine/voiceParams";
 import {
+  MAX_CHAIN_LENGTH,
+  PATTERN_BANK_COUNT,
   createDefaultEngineState,
   TRIGGER_CONDITION,
   type EngineState,
+  type PatternBankState,
 } from "../engine/engineState";
 import {
   PATTERN_SIZE,
@@ -41,7 +44,7 @@ import type { TomModel } from "../engine/tomModel";
 // three bands instead of one. Older links still decode with values attached to
 // the same voices. V15 strictly appends the per-cell probability/condition
 // grids, per-track lengths and the fill-mode latch used by conditional trigs.
-const FORMAT_VERSION = 15;
+const FORMAT_VERSION = 16;
 
 // Byte layout: version, 6 scalar knobs, 5 volumes, 5 decays, 1 mute mask,
 // then the 80-cell pattern packed 2 bits per cell (20 bytes)...
@@ -172,6 +175,30 @@ const V15_TRACK_LENGTH_OFFSET =
   V15_CELL_CONDITION_OFFSET + V15_CELL_CONDITION_BYTES;
 const V15_FLAGS_OFFSET = V15_TRACK_LENGTH_OFFSET + V15_TRACK_LENGTH_BYTES;
 const V15_BYTES = V15_FLAGS_OFFSET + V15_FLAG_BYTES;
+
+// V16 preserves the complete v15 record as Bank A, then appends the per-cell
+// humanize multiplier that v15 did not have. Banks B-D follow as complete
+// rhythm blocks; global sound/mixer state remains shared by all four banks.
+// The final fixed-width chain record stores up to sixteen 2-bit bank IDs.
+const V16_CELL_HUMANIZE_BYTES = PATTERN_SIZE;
+const V16_BANK_BYTES =
+  1 + // step count
+  PATTERN_SIZE + // velocity
+  PATTERN_SIZE + // probability
+  PATTERN_SIZE + // humanize
+  PATTERN_SIZE / 2 + // packed trigger conditions
+  TRACK_COUNT; // track lengths
+const V16_EXTRA_BANK_COUNT = PATTERN_BANK_COUNT - 1;
+const V16_CHAIN_ENTRY_BYTES = MAX_CHAIN_LENGTH / 4;
+const V16_BANK_A_HUMANIZE_OFFSET = V15_BYTES;
+const V16_EXTRA_BANKS_OFFSET =
+  V16_BANK_A_HUMANIZE_OFFSET + V16_CELL_HUMANIZE_BYTES;
+const V16_STANDALONE_BANK_OFFSET =
+  V16_EXTRA_BANKS_OFFSET + V16_EXTRA_BANK_COUNT * V16_BANK_BYTES;
+const V16_CHAIN_FLAGS_OFFSET = V16_STANDALONE_BANK_OFFSET + 1;
+const V16_CHAIN_LENGTH_OFFSET = V16_CHAIN_FLAGS_OFFSET + 1;
+const V16_CHAIN_ENTRIES_OFFSET = V16_CHAIN_LENGTH_OFFSET + 1;
+const V16_BYTES = V16_CHAIN_ENTRIES_OFFSET + V16_CHAIN_ENTRY_BYTES;
 const MAX_TRIGGER_CONDITION = TRIGGER_CONDITION.notPreviousFired;
 
 // migrateStrikeRadius moves the *exact* shipped strike-radius detent onto the
@@ -340,10 +367,11 @@ function base64UrlToBytes(text: string): Uint8Array | null {
   }
 }
 
-// encodeState serializes the canonical engine-owned state into v15.
+// encodeState serializes the canonical engine-owned state into v16.
 export function encodeState(state: EngineState): string {
-  const bytes = new Uint8Array(V15_BYTES);
+  const bytes = new Uint8Array(V16_BYTES);
   let offset = 0;
+  const bankA = state.banks[0];
 
   bytes[offset++] = FORMAT_VERSION;
   const tempo = Math.round(
@@ -354,8 +382,8 @@ export function encodeState(state: EngineState): string {
   );
   bytes[offset++] = tempo & 0xff;
   bytes[offset++] = tempo >>> 8;
-  const stepCount = Number.isFinite(state.stepCount)
-    ? Math.round(state.stepCount)
+  const stepCount = Number.isFinite(bankA.stepCount)
+    ? Math.round(bankA.stepCount)
     : 1;
   const encodedStepCount = Math.min(STEP_CAPACITY, Math.max(1, stepCount));
   bytes[offset++] = encodedStepCount;
@@ -368,7 +396,7 @@ export function encodeState(state: EngineState): string {
   for (let i = 0; i < V14_PATTERN_BYTES; i++) {
     let packed = 0;
     for (let j = 0; j < 4; j++) {
-      const code = velToCode(state.pattern[i * 4 + j] ?? VEL_OFF);
+      const code = velToCode(bankA.pattern[i * 4 + j] ?? VEL_OFF);
       packed |= code << (j * 2);
     }
     bytes[offset++] = packed;
@@ -409,25 +437,87 @@ export function encodeState(state: EngineState): string {
   // V15's byte-precision velocity grid overrides the coarse 2-bit v14 pattern
   // on decode, while the old prefix keeps v14 readers and offsets coherent.
   for (let i = 0; i < PATTERN_SIZE; i++) {
-    bytes[offset++] = toByte(state.pattern[i] ?? VEL_OFF);
+    bytes[offset++] = toByte(bankA.pattern[i] ?? VEL_OFF);
   }
 
   for (let i = 0; i < PATTERN_SIZE; i++) {
-    bytes[offset++] = toByte(state.cellProbabilities[i] ?? 1);
+    bytes[offset++] = toByte(bankA.cellProbabilities[i] ?? 1);
   }
 
   for (let i = 0; i < PATTERN_SIZE; i += 2) {
-    const low = conditionCode(state.cellConditions[i]);
-    const high = conditionCode(state.cellConditions[i + 1]);
+    const low = conditionCode(bankA.cellConditions[i]);
+    const high = conditionCode(bankA.cellConditions[i + 1]);
     bytes[offset++] = low | (high << 4);
   }
 
   for (let track = 0; track < TRACK_COUNT; track++) {
-    bytes[offset++] = trackLength(state.trackLengths[track], encodedStepCount);
+    bytes[offset++] = trackLength(bankA.trackLengths[track], encodedStepCount);
   }
-  bytes[offset] = state.fillMode ? 1 : 0;
+  bytes[offset++] = state.fillMode ? 1 : 0;
+
+  for (let i = 0; i < PATTERN_SIZE; i++) {
+    bytes[offset++] = toByte(bankA.cellHumanize[i] ?? 1);
+  }
+
+  for (let bank = 1; bank < PATTERN_BANK_COUNT; bank++) {
+    offset = writePatternBank(bytes, offset, state.banks[bank]);
+  }
+
+  bytes[offset++] = validBankIndex(state.standaloneBank);
+  bytes[offset++] = state.chainEnabled ? 1 : 0;
+  const chainLength = Math.min(
+    MAX_CHAIN_LENGTH,
+    Math.max(1, state.chain.length || 1),
+  );
+  bytes[offset++] = chainLength;
+  for (let index = 0; index < chainLength; index++) {
+    const bank = validBankIndex(state.chain[index] ?? 0);
+    bytes[offset + Math.floor(index / 4)] |= bank << ((index % 4) * 2);
+  }
 
   return bytesToBase64Url(bytes);
+}
+
+function writePatternBank(
+  bytes: Uint8Array,
+  start: number,
+  bank: PatternBankState,
+): number {
+  let offset = start;
+  const rawStepCount = Number.isFinite(bank.stepCount)
+    ? Math.round(bank.stepCount)
+    : 1;
+  const stepCount = Math.min(STEP_CAPACITY, Math.max(1, rawStepCount));
+  bytes[offset++] = stepCount;
+
+  for (let i = 0; i < PATTERN_SIZE; i++)
+    bytes[offset++] = toByte(bank.pattern[i] ?? VEL_OFF);
+  for (let i = 0; i < PATTERN_SIZE; i++)
+    bytes[offset++] = toByte(bank.cellProbabilities[i] ?? 1);
+  for (let i = 0; i < PATTERN_SIZE; i++)
+    bytes[offset++] = toByte(bank.cellHumanize[i] ?? 1);
+  for (let i = 0; i < PATTERN_SIZE; i += 2) {
+    const low = conditionCode(bank.cellConditions[i]);
+    const high = conditionCode(bank.cellConditions[i + 1]);
+    bytes[offset++] = low | (high << 4);
+  }
+  for (let track = 0; track < TRACK_COUNT; track++) {
+    bytes[offset++] = trackLength(bank.trackLengths[track], stepCount);
+  }
+
+  return offset;
+}
+
+function validBankIndex(value: number | undefined): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 0 ||
+    value >= PATTERN_BANK_COUNT
+  ) {
+    return 0;
+  }
+  return value;
 }
 
 function conditionCode(value: number | undefined): number {
@@ -454,11 +544,93 @@ export function decodeState(text: string): EngineState | null {
   const bytes = base64UrlToBytes(text);
   if (!bytes || bytes.length === 0) return null;
 
-  if (bytes[0] === FORMAT_VERSION) return decodeV15(bytes);
+  if (bytes[0] === FORMAT_VERSION) return decodeV16(bytes);
+  if (bytes[0] === 15) return decodeV15(bytes);
   if (bytes[0] === 14) return decodeV14(bytes);
 
   const legacy = decodeLegacyState(bytes);
   return legacy ? canonicalizeLegacy(legacy) : null;
+}
+
+function decodeV16(bytes: Uint8Array): EngineState | null {
+  if (bytes.length !== V16_BYTES) return null;
+
+  const state = decodeV15(bytes.subarray(0, V15_BYTES));
+  if (!state) return null;
+
+  let offset = V16_BANK_A_HUMANIZE_OFFSET;
+  for (let i = 0; i < PATTERN_SIZE; i++) {
+    state.banks[0].cellHumanize[i] = fromByte(bytes[offset++]);
+  }
+
+  for (let bank = 1; bank < PATTERN_BANK_COUNT; bank++) {
+    const next = readPatternBank(bytes, offset);
+    if (!next) return null;
+    state.banks[bank] = next.bank;
+    offset = next.offset;
+  }
+
+  const standaloneBank = bytes[offset++];
+  if (standaloneBank >= PATTERN_BANK_COUNT) return null;
+  state.standaloneBank = standaloneBank;
+
+  const flags = bytes[offset++];
+  if ((flags & ~1) !== 0) return null;
+  state.chainEnabled = (flags & 1) !== 0;
+
+  const chainLength = bytes[offset++];
+  if (chainLength < 1 || chainLength > MAX_CHAIN_LENGTH) return null;
+
+  const chain = new Uint8Array(chainLength);
+  for (let index = 0; index < MAX_CHAIN_LENGTH; index++) {
+    const packed = bytes[offset + Math.floor(index / 4)];
+    const bank = (packed >>> ((index % 4) * 2)) & 0b11;
+    if (index < chainLength) chain[index] = bank;
+    else if (bank !== 0) return null;
+  }
+  state.chain = chain;
+
+  return state;
+}
+
+function readPatternBank(
+  bytes: Uint8Array,
+  start: number,
+): { bank: PatternBankState; offset: number } | null {
+  let offset = start;
+  const stepCount = bytes[offset++];
+  if (stepCount < 1 || stepCount > STEP_CAPACITY) return null;
+
+  const bank: PatternBankState = {
+    stepCount,
+    pattern: new Float32Array(PATTERN_SIZE),
+    cellProbabilities: new Float32Array(PATTERN_SIZE),
+    cellHumanize: new Float32Array(PATTERN_SIZE),
+    cellConditions: new Uint8Array(PATTERN_SIZE),
+    trackLengths: new Uint8Array(TRACK_COUNT),
+  };
+  for (let i = 0; i < PATTERN_SIZE; i++)
+    bank.pattern[i] = fromByte(bytes[offset++]);
+  for (let i = 0; i < PATTERN_SIZE; i++)
+    bank.cellProbabilities[i] = fromByte(bytes[offset++]);
+  for (let i = 0; i < PATTERN_SIZE; i++)
+    bank.cellHumanize[i] = fromByte(bytes[offset++]);
+  for (let i = 0; i < PATTERN_SIZE; i += 2) {
+    const packed = bytes[offset++];
+    const low = packed & 0x0f;
+    const high = packed >>> 4;
+    if (low > MAX_TRIGGER_CONDITION || high > MAX_TRIGGER_CONDITION)
+      return null;
+    bank.cellConditions[i] = low;
+    bank.cellConditions[i + 1] = high;
+  }
+  for (let track = 0; track < TRACK_COUNT; track++) {
+    const length = bytes[offset++];
+    if (length < 1 || length > STEP_CAPACITY) return null;
+    bank.trackLengths[track] = length;
+  }
+
+  return { bank, offset };
 }
 
 function decodeV15(bytes: Uint8Array): EngineState | null {
@@ -468,14 +640,15 @@ function decodeV15(bytes: Uint8Array): EngineState | null {
   // prefix therefore gives the new format one canonical core decoder.
   const state = decodeV14(bytes.subarray(0, V14_BYTES));
   if (!state) return null;
+  const bank = state.banks[0];
 
   let offset = V15_CELL_VELOCITY_OFFSET;
   for (let i = 0; i < PATTERN_SIZE; i++) {
-    state.pattern[i] = fromByte(bytes[offset++]);
+    bank.pattern[i] = fromByte(bytes[offset++]);
   }
 
   for (let i = 0; i < PATTERN_SIZE; i++) {
-    state.cellProbabilities[i] = fromByte(bytes[offset++]);
+    bank.cellProbabilities[i] = fromByte(bytes[offset++]);
   }
 
   for (let i = 0; i < PATTERN_SIZE; i += 2) {
@@ -484,14 +657,14 @@ function decodeV15(bytes: Uint8Array): EngineState | null {
     const high = packed >>> 4;
     if (low > MAX_TRIGGER_CONDITION || high > MAX_TRIGGER_CONDITION)
       return null;
-    state.cellConditions[i] = low;
-    state.cellConditions[i + 1] = high;
+    bank.cellConditions[i] = low;
+    bank.cellConditions[i + 1] = high;
   }
 
   for (let track = 0; track < TRACK_COUNT; track++) {
     const length = bytes[offset++];
     if (length < 1 || length > STEP_CAPACITY) return null;
-    state.trackLengths[track] = length;
+    bank.trackLengths[track] = length;
   }
 
   const flags = bytes[offset];
@@ -511,11 +684,12 @@ function decodeV14(bytes: Uint8Array): EngineState | null {
     return null;
 
   const state = createDefaultEngineState();
+  const bank = state.banks[0];
   state.tempoBpm = tempoBpm;
-  state.stepCount = stepCount;
+  bank.stepCount = stepCount;
   // Before v15 every track wrapped at the one global length. Migrating to that
   // value is behavior-preserving even when it differs from the fresh default.
-  state.trackLengths.fill(stepCount);
+  bank.trackLengths.fill(stepCount);
   state.swing = fromByte(bytes[offset++]) * 0.5;
   state.reverb = fromByte(bytes[offset++]);
   state.probability = fromByte(bytes[offset++]);
@@ -528,7 +702,7 @@ function decodeV14(bytes: Uint8Array): EngineState | null {
       // Code 3 has never represented a velocity. Treat it as corruption
       // rather than silently turning a damaged accent into an off cell.
       if (code === 3) return null;
-      state.pattern[i * 4 + j] = codeToVel(code);
+      bank.pattern[i * 4 + j] = codeToVel(code);
     }
   }
 
@@ -571,14 +745,15 @@ function decodeV14(bytes: Uint8Array): EngineState | null {
 
 function canonicalizeLegacy(legacy: LegacyState): EngineState {
   const state = createDefaultEngineState();
+  const bank = state.banks[0];
   state.tempoBpm = Math.round(60 + clamp01(legacy.tempo) * 140);
-  state.stepCount = Math.round(1 + clamp01(legacy.steps) * 15);
+  bank.stepCount = Math.round(1 + clamp01(legacy.steps) * 15);
   state.swing = clamp01(legacy.swing) * 0.5;
   state.reverb = clamp01(legacy.reverb);
   state.probability = clamp01(legacy.prob);
   state.humanize = clamp01(legacy.humanize);
-  state.pattern.set(legacy.pattern);
-  state.trackLengths.fill(state.stepCount);
+  bank.pattern.set(legacy.pattern);
+  bank.trackLengths.fill(bank.stepCount);
 
   for (let track = 0; track < TRACK_COUNT; track++) {
     const visual = visualIndexForEngineTrack(track);

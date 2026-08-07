@@ -15,6 +15,7 @@ import {
 
 interface Props {
   disabled: boolean;
+  showPlayhead: boolean;
   pattern: number[][];
   stepCount: number;
   volumes: number[];
@@ -36,6 +37,7 @@ interface Props {
 
 export default function StepGrid({
   disabled,
+  showPlayhead,
   pattern,
   stepCount,
   volumes,
@@ -84,8 +86,8 @@ export default function StepGrid({
       <p id="dm-velocity-help" className="dm-sr-only">
         Click to cycle off, normal and accent. Hold Shift and drag vertically
         for continuous velocity, or press Shift plus Up or Down Arrow in five
-        percent steps. Open the context menu or press F2 for probability and
-        trigger condition.
+        percent steps. Open the context menu or press F2 for probability,
+        humanize and trigger condition.
       </p>
       <div className="dm-screen" aria-hidden="true" />
 
@@ -119,6 +121,7 @@ export default function StepGrid({
               data-accent={velocity >= VEL_ACCENT || undefined}
               data-beyond={col >= trackLengths[row] || undefined}
               data-playhead={
+                showPlayhead &&
                 playhead.clockStep >= 0 &&
                 col === playhead.clockStep % trackLengths[row]
                   ? true
@@ -211,7 +214,9 @@ export default function StepGrid({
           key={col}
           className="dm-step-number"
           style={{ gridRow: TRACKS.length + 1, gridColumn: col + 2 }}
-          data-playhead={col === playhead.masterStep || undefined}
+          data-playhead={
+            showPlayhead && col === playhead.masterStep ? true : undefined
+          }
           data-beyond={col >= stepCount || undefined}
           aria-hidden="true"
         >

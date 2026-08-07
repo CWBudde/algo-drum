@@ -15,7 +15,7 @@ function sendStateAction(action: DrumStateAction): void {
       engine.setSwing(action.value);
       return;
     case "stepCount":
-      engine.setStepCount(action.value);
+      engine.setStepCount(action.bank, action.value);
       return;
     case "reverb":
       engine.setReverb(action.value);
@@ -27,22 +27,52 @@ function sendStateAction(action: DrumStateAction): void {
       engine.setHumanize(action.value);
       return;
     case "cell":
-      engine.setCell(action.track, action.step, action.value);
+      engine.setCell(action.bank, action.track, action.step, action.value);
       return;
     case "cellProbability":
-      engine.setCellProbability(action.track, action.step, action.value);
+      engine.setCellProbability(
+        action.bank,
+        action.track,
+        action.step,
+        action.value,
+      );
+      return;
+    case "cellHumanize":
+      engine.setCellHumanize(
+        action.bank,
+        action.track,
+        action.step,
+        action.value,
+      );
       return;
     case "cellCondition":
-      engine.setCellCondition(action.track, action.step, action.value);
+      engine.setCellCondition(
+        action.bank,
+        action.track,
+        action.step,
+        action.value,
+      );
       return;
     case "trackLength":
-      engine.setTrackLength(action.track, action.value);
+      engine.setTrackLength(action.bank, action.track, action.value);
       return;
     case "fillMode":
       engine.setFillMode(action.value);
       return;
     case "pattern":
-      engine.setPattern(action.value);
+      engine.setPattern(action.bank, action.value);
+      return;
+    case "patternBank":
+      engine.setPatternBank(action.bank, action.value);
+      return;
+    case "requestBank":
+      engine.requestBank(action.value);
+      return;
+    case "chain":
+      engine.setChain(action.value);
+      return;
+    case "chainEnabled":
+      engine.setChainEnabled(action.value);
       return;
     case "volume":
       engine.setVolume(action.track, action.value);
@@ -94,6 +124,11 @@ export function useEngineSync({
   const currentState = useRef(state);
   currentState.current = state;
   const [transport, setTransport] = useState<engine.TransportState>("stopped");
+  const [bankPlayback, setBankPlayback] = useState<engine.BankPlayback>({
+    activeBank: 0,
+    queuedBank: -1,
+    chainPosition: -1,
+  });
 
   const applyStateAction = useCallback(
     (action: DrumStateAction) => {
@@ -117,6 +152,7 @@ export function useEngineSync({
   }, [wasmLoaded]);
 
   useEffect(() => engine.onTransport(setTransport), []);
+  useEffect(() => engine.onBankPlayback(setBankPlayback), []);
   useEffect(
     () => engine.onState((next) => dispatch({ type: "replace", state: next })),
     [dispatch],
@@ -127,5 +163,5 @@ export function useEngineSync({
     return () => window.clearTimeout(id);
   }, [state]);
 
-  return { applyStateAction, transport };
+  return { applyStateAction, transport, bankPlayback };
 }

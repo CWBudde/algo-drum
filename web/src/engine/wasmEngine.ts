@@ -20,6 +20,7 @@ import {
   validateEngineState,
   type ConfigurationMethod,
   type EngineState,
+  type PatternBankState,
 } from "./engineState";
 import { StateMirror } from "./stateMirror";
 import type { TomModel } from "./tomModel";
@@ -50,6 +51,21 @@ let transportRevision = 0;
 let playAttempt = 0;
 const transportListeners = new Set<TransportListener>();
 
+export interface BankPlayback {
+  activeBank: number;
+  queuedBank: number;
+  chainPosition: number;
+}
+
+type BankPlaybackListener = (snapshot: BankPlayback) => void;
+
+let bankPlayback: BankPlayback = {
+  activeBank: 0,
+  queuedBank: -1,
+  chainPosition: -1,
+};
+const bankPlaybackListeners = new Set<BankPlaybackListener>();
+
 type FailureListener = (error: Error) => void;
 
 const failureListeners = new Set<FailureListener>();
@@ -70,6 +86,30 @@ export function onTransport(listener: TransportListener): () => void {
   listener(transportState);
 
   return () => transportListeners.delete(listener);
+}
+
+// onBankPlayback mirrors the bank that is audible, a manually queued bank,
+// and the current chain position independently from the transport state.
+// Keeping this separate avoids rerendering transport-only consumers for bank
+// changes while still replaying the complete current snapshot to new users.
+export function onBankPlayback(listener: BankPlaybackListener): () => void {
+  bankPlaybackListeners.add(listener);
+  listener(bankPlayback);
+
+  return () => bankPlaybackListeners.delete(listener);
+}
+
+function notifyBankPlayback(snapshot: BankPlayback): void {
+  if (
+    snapshot.activeBank === bankPlayback.activeBank &&
+    snapshot.queuedBank === bankPlayback.queuedBank &&
+    snapshot.chainPosition === bankPlayback.chainPosition
+  ) {
+    return;
+  }
+
+  bankPlayback = snapshot;
+  bankPlaybackListeners.forEach((listener) => listener(snapshot));
 }
 
 function notifyTransport(state: TransportState): void {
@@ -112,7 +152,16 @@ function validTransportSnapshot(value: TransportSnapshot): boolean {
     value.revision >= 0 &&
     Number.isInteger(value.step) &&
     value.step >= -1 &&
-    ((inactive && value.step === -1) || (!inactive && value.step >= 0))
+    ((inactive && value.step === -1) || (!inactive && value.step >= 0)) &&
+    Number.isInteger(value.activeBank) &&
+    value.activeBank >= 0 &&
+    value.activeBank < 4 &&
+    Number.isInteger(value.queuedBank) &&
+    value.queuedBank >= -1 &&
+    value.queuedBank < 4 &&
+    Number.isInteger(value.chainPosition) &&
+    value.chainPosition >= -1 &&
+    value.chainPosition < 16
   );
 }
 
@@ -147,6 +196,30 @@ function acceptTransport(
   // Also refresh lifecycle guards when a failed command reads back the same
   // state and revision (notably a rejected Play returning stopped@0).
   notifyTransport(transport.state);
+  const audible = source === "audible";
+  const activeBankChanged =
+    audible && transport.activeBank !== bankPlayback.activeBank;
+  notifyBankPlayback({
+    // While audio is flowing, only the worklet knows which bank has reached
+    // the speakers. A stopped engine has no audible chunks, so its immediate
+    // acknowledgement is authoritative instead.
+    activeBank:
+      audible || transport.state === "stopped"
+        ? transport.activeBank
+        : bankPlayback.activeBank,
+    // An older chunk can share the transport revision of a later bank request.
+    // Do not let its pre-request queuedBank value erase the worker's immediate
+    // acknowledgement; the audible snapshot owns this field only when it also
+    // announces that the requested bank has actually become active.
+    queuedBank:
+      source === "engine" || activeBankChanged
+        ? transport.queuedBank
+        : bankPlayback.queuedBank,
+    chainPosition:
+      audible || transport.state === "stopped"
+        ? transport.chainPosition
+        : bankPlayback.chainPosition,
+  });
 
   if (source === "audible" && transport.step !== audibleStep) {
     notifyStep(transport.step);
@@ -468,6 +541,7 @@ function reportWorkerUnavailable(active: Worker, error: Error): void {
   keepAudioAwake = false;
   notifyTransport("stopped");
   transportRevision = 0;
+  notifyBankPlayback({ activeBank: 0, queuedBank: -1, chainPosition: -1 });
   notifyStep(-1);
   failureListeners.forEach((listener) => listener(error));
 }
@@ -519,6 +593,7 @@ export function dispose(): void {
   keepAudioAwake = false;
   notifyTransport("stopped");
   transportRevision = 0;
+  notifyBankPlayback({ activeBank: 0, queuedBank: -1, chainPosition: -1 });
   notifyStep(-1);
 }
 
@@ -638,32 +713,52 @@ export function setSwing(swing: number): void {
 
 // setStepCount sets the active pattern length (clamped to 1–16 in the
 // engine); cells beyond it are kept, just not played.
-export function setStepCount(steps: number): void {
-  configurationCommand("setStepCount", steps);
+export function setStepCount(bank: number, steps: number): void {
+  configurationCommand("setStepCount", bank, steps);
 }
 
-export function setCell(track: number, step: number, velocity: number): void {
-  configurationCommand("setCell", track, step, velocity);
+export function setCell(
+  bank: number,
+  track: number,
+  step: number,
+  velocity: number,
+): void {
+  configurationCommand("setCell", bank, track, step, velocity);
 }
 
 export function setCellProbability(
+  bank: number,
   track: number,
   step: number,
   probability: number,
 ): void {
-  configurationCommand("setCellProbability", track, step, probability);
+  configurationCommand("setCellProbability", bank, track, step, probability);
+}
+
+export function setCellHumanize(
+  bank: number,
+  track: number,
+  step: number,
+  humanize: number,
+): void {
+  configurationCommand("setCellHumanize", bank, track, step, humanize);
 }
 
 export function setCellCondition(
+  bank: number,
   track: number,
   step: number,
   condition: number,
 ): void {
-  configurationCommand("setCellCondition", track, step, condition);
+  configurationCommand("setCellCondition", bank, track, step, condition);
 }
 
-export function setTrackLength(track: number, length: number): void {
-  configurationCommand("setTrackLength", track, length);
+export function setTrackLength(
+  bank: number,
+  track: number,
+  length: number,
+): void {
+  configurationCommand("setTrackLength", bank, track, length);
 }
 
 export function setFillMode(enabled: boolean): void {
@@ -672,8 +767,31 @@ export function setFillMode(enabled: boolean): void {
 
 // setPattern replaces the whole pattern: a flat track-major Float32Array of
 // TrackCount×MaxSteps (7×16) velocities in [0, 1], index = track*16 + step.
-export function setPattern(pattern: Float32Array): void {
-  configurationCommand("setPattern", pattern);
+export function setPattern(bank: number, pattern: Float32Array): void {
+  configurationCommand("setPattern", bank, pattern.slice());
+}
+
+export function setPatternBank(bank: number, state: PatternBankState): void {
+  configurationCommand("setPatternBank", bank, {
+    stepCount: state.stepCount,
+    pattern: state.pattern.slice(),
+    cellProbabilities: state.cellProbabilities.slice(),
+    cellHumanize: state.cellHumanize.slice(),
+    cellConditions: state.cellConditions.slice(),
+    trackLengths: state.trackLengths.slice(),
+  });
+}
+
+export function requestBank(bank: number): void {
+  configurationCommand("requestBank", bank);
+}
+
+export function setChain(chain: Uint8Array): void {
+  configurationCommand("setChain", chain.slice());
+}
+
+export function setChainEnabled(enabled: boolean): void {
+  configurationCommand("setChainEnabled", enabled);
 }
 
 // setState atomically seeds every configurable field. Clone before queueing so

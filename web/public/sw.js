@@ -27,7 +27,7 @@ const PRECACHE_PATHS = [
   // Keep this query in lockstep with audioWorker.ts's PROTOCOL_VERSION. It
   // makes the current worklet available offline while preventing an old
   // controlling service worker from satisfying the request with stale code.
-  "worklet.js?v=3",
+  "worklet.js?v=4",
   "algo_drum.wasm",
 ];
 
@@ -59,13 +59,16 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((key) => key.startsWith("algo-drum-") && key !== CACHE_NAME)
-          .map((key) => caches.delete(key)),
-      ),
-    ).then(() => self.clients.claim()),
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((key) => key.startsWith("algo-drum-") && key !== CACHE_NAME)
+            .map((key) => caches.delete(key)),
+        ),
+      )
+      .then(() => self.clients.claim()),
   );
 });
 
@@ -82,9 +85,7 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request).catch(() =>
-        caches.match(toScopedUrl("index.html")),
-      ),
+      fetch(request).catch(() => caches.match(toScopedUrl("index.html"))),
     );
     return;
   }
@@ -94,7 +95,9 @@ self.addEventListener("fetch", (event) => {
       fetch(request)
         .then((response) => {
           if (response && response.ok) {
-            void caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone()));
+            void caches
+              .open(CACHE_NAME)
+              .then((cache) => cache.put(request, response.clone()));
           }
           return response;
         })
@@ -107,7 +110,9 @@ self.addEventListener("fetch", (event) => {
     caches.match(request).then((cached) => {
       const networkFetch = fetch(request).then((response) => {
         if (response && response.ok) {
-          void caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone()));
+          void caches
+            .open(CACHE_NAME)
+            .then((cache) => cache.put(request, response.clone()));
         }
         return response;
       });

@@ -1,108 +1,177 @@
 import { useCallback, useRef, useState } from "react";
-import { patternsEqual } from "./patternView";
+import type { EngineState, PatternBankState } from "../engine/engineState";
 
 const HISTORY_LIMIT = 50;
+const BANK_COUNT = 4;
 
 export interface PatternHistory {
-  past: Float32Array[];
-  future: Float32Array[];
+  past: PatternBankState[];
+  future: PatternBankState[];
 }
 
 export interface PatternHistoryTransition {
   history: PatternHistory;
-  pattern: Float32Array | null;
+  bank: PatternBankState | null;
 }
 
 export const EMPTY_PATTERN_HISTORY: PatternHistory = { past: [], future: [] };
 
-export function recordPattern(
-  history: PatternHistory,
-  current: ArrayLike<number>,
-  next: ArrayLike<number>,
-): PatternHistory {
-  const canonicalNext = Float32Array.from(next);
-  if (patternsEqual(current, canonicalNext)) return history;
-  const past = [...history.past, Float32Array.from(current)];
-  return { past: past.slice(-HISTORY_LIMIT), future: [] };
-}
-
-export function undoPattern(
-  history: PatternHistory,
-  current: ArrayLike<number>,
-): PatternHistoryTransition {
-  const pattern = history.past[history.past.length - 1];
-  if (!pattern) return { history, pattern: null };
+function cloneBank(bank: PatternBankState): PatternBankState {
   return {
-    history: {
-      past: history.past.slice(0, -1),
-      future: [Float32Array.from(current), ...history.future],
-    },
-    pattern: pattern.slice(),
+    stepCount: bank.stepCount,
+    pattern: bank.pattern.slice(),
+    cellProbabilities: bank.cellProbabilities.slice(),
+    cellHumanize: bank.cellHumanize.slice(),
+    cellConditions: bank.cellConditions.slice(),
+    trackLengths: bank.trackLengths.slice(),
   };
 }
 
-export function redoPattern(
+function arraysEqual(
+  left: ArrayLike<number>,
+  right: ArrayLike<number>,
+): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index++) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+export function patternBanksEqual(
+  left: PatternBankState,
+  right: PatternBankState,
+): boolean {
+  return (
+    left.stepCount === right.stepCount &&
+    arraysEqual(left.pattern, right.pattern) &&
+    arraysEqual(left.cellProbabilities, right.cellProbabilities) &&
+    arraysEqual(left.cellHumanize, right.cellHumanize) &&
+    arraysEqual(left.cellConditions, right.cellConditions) &&
+    arraysEqual(left.trackLengths, right.trackLengths)
+  );
+}
+
+export function recordPatternBank(
   history: PatternHistory,
-  current: ArrayLike<number>,
+  current: PatternBankState,
+  next: PatternBankState,
+): PatternHistory {
+  if (patternBanksEqual(current, next)) return history;
+  const past = [...history.past, cloneBank(current)];
+  return { past: past.slice(-HISTORY_LIMIT), future: [] };
+}
+
+export function undoPatternBank(
+  history: PatternHistory,
+  current: PatternBankState,
 ): PatternHistoryTransition {
-  const pattern = history.future[0];
-  if (!pattern) return { history, pattern: null };
+  const bank = history.past[history.past.length - 1];
+  if (!bank) return { history, bank: null };
   return {
     history: {
-      past: [...history.past, Float32Array.from(current)],
+      past: history.past.slice(0, -1),
+      future: [cloneBank(current), ...history.future],
+    },
+    bank: cloneBank(bank),
+  };
+}
+
+export function redoPatternBank(
+  history: PatternHistory,
+  current: PatternBankState,
+): PatternHistoryTransition {
+  const bank = history.future[0];
+  if (!bank) return { history, bank: null };
+  return {
+    history: {
+      past: [...history.past, cloneBank(current)],
       future: history.future.slice(1),
     },
-    pattern: pattern.slice(),
+    bank: cloneBank(bank),
   };
 }
 
 export function usePatternHistory(
-  current: Float32Array,
-  applyPattern: (pattern: Float32Array) => void,
+  selectedBank: number,
+  banks: EngineState["banks"],
+  applyBank: (bank: number, state: PatternBankState) => void,
 ) {
-  const currentRef = useRef(current);
-  currentRef.current = current;
-  const historyRef = useRef<PatternHistory>(EMPTY_PATTERN_HISTORY);
+  const banksRef = useRef(banks);
+  banksRef.current = banks;
+  const selectedRef = useRef(selectedBank);
+  selectedRef.current = selectedBank;
+  const histories = useRef<PatternHistory[]>(
+    Array.from({ length: BANK_COUNT }, () => EMPTY_PATTERN_HISTORY),
+  );
   const [, render] = useState(0);
 
-  const updateHistory = useCallback((history: PatternHistory) => {
-    historyRef.current = history;
+  const updateHistory = useCallback((bank: number, history: PatternHistory) => {
+    histories.current[bank] = history;
     render((revision) => revision + 1);
   }, []);
 
+  const replaceBank = useCallback(
+    (bank: number, next: PatternBankState) => {
+      const current = banksRef.current[bank];
+      if (!current) return;
+      const history = recordPatternBank(histories.current[bank], current, next);
+      if (history === histories.current[bank]) return;
+      updateHistory(bank, history);
+      applyBank(bank, cloneBank(next));
+    },
+    [applyBank, updateHistory],
+  );
+
   const applyDestructivePattern = useCallback(
     (next: ArrayLike<number>) => {
-      const history = recordPattern(
-        historyRef.current,
-        currentRef.current,
-        next,
-      );
-      if (history === historyRef.current) return;
-      updateHistory(history);
-      applyPattern(Float32Array.from(next));
+      const bank = selectedRef.current;
+      const current = banksRef.current[bank];
+      if (!current) return;
+      replaceBank(bank, {
+        ...cloneBank(current),
+        pattern: Float32Array.from(next),
+      });
     },
-    [applyPattern, updateHistory],
+    [replaceBank],
+  );
+
+  const copyBank = useCallback(
+    (source: number, destination: number) => {
+      const sourceBank = banksRef.current[source];
+      if (!sourceBank || source === destination) return;
+      replaceBank(destination, sourceBank);
+    },
+    [replaceBank],
   );
 
   const undo = useCallback(() => {
-    const transition = undoPattern(historyRef.current, currentRef.current);
-    if (!transition.pattern) return;
-    updateHistory(transition.history);
-    applyPattern(transition.pattern);
-  }, [applyPattern, updateHistory]);
+    const bank = selectedRef.current;
+    const current = banksRef.current[bank];
+    if (!current) return;
+    const transition = undoPatternBank(histories.current[bank], current);
+    if (!transition.bank) return;
+    updateHistory(bank, transition.history);
+    applyBank(bank, transition.bank);
+  }, [applyBank, updateHistory]);
 
   const redo = useCallback(() => {
-    const transition = redoPattern(historyRef.current, currentRef.current);
-    if (!transition.pattern) return;
-    updateHistory(transition.history);
-    applyPattern(transition.pattern);
-  }, [applyPattern, updateHistory]);
+    const bank = selectedRef.current;
+    const current = banksRef.current[bank];
+    if (!current) return;
+    const transition = redoPatternBank(histories.current[bank], current);
+    if (!transition.bank) return;
+    updateHistory(bank, transition.history);
+    applyBank(bank, transition.bank);
+  }, [applyBank, updateHistory]);
 
+  const currentHistory = histories.current[selectedBank];
   return {
     applyDestructivePattern,
+    copyBank,
     undo,
     redo,
-    canUndo: historyRef.current.past.length > 0,
-    canRedo: historyRef.current.future.length > 0,
+    canUndo: (currentHistory?.past.length ?? 0) > 0,
+    canRedo: (currentHistory?.future.length ?? 0) > 0,
   };
 }

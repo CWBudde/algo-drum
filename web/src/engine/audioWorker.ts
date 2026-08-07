@@ -9,6 +9,7 @@ import {
   isConfigurationMethod,
   validateEngineState,
   type EngineState,
+  type PatternBankState,
 } from "./engineState";
 
 // The engine's JS surface. Exported so the main-thread bridge can type its
@@ -21,17 +22,38 @@ export interface AlgoDrumApi {
   pause: () => void;
   setTempo: (bpm: number) => void;
   setSwing: (swing: number) => void;
-  setStepCount: (steps: number) => void;
-  setCell: (track: number, step: number, velocity: number) => void;
+  setStepCount: (bank: number, steps: number) => void;
+  setCell: (
+    bank: number,
+    track: number,
+    step: number,
+    velocity: number,
+  ) => void;
   setCellProbability: (
+    bank: number,
     track: number,
     step: number,
     probability: number,
   ) => void;
-  setCellCondition: (track: number, step: number, condition: number) => void;
-  setTrackLength: (track: number, length: number) => void;
+  setCellHumanize: (
+    bank: number,
+    track: number,
+    step: number,
+    humanize: number,
+  ) => void;
+  setCellCondition: (
+    bank: number,
+    track: number,
+    step: number,
+    condition: number,
+  ) => void;
+  setTrackLength: (bank: number, track: number, length: number) => void;
   setFillMode: (enabled: boolean) => void;
-  setPattern: (pattern: Float32Array) => void;
+  setPattern: (bank: number, pattern: Float32Array) => void;
+  setPatternBank: (bank: number, state: PatternBankState) => void;
+  requestBank: (bank: number) => void;
+  setChain: (chain: Uint8Array) => void;
+  setChainEnabled: (enabled: boolean) => void;
   setState: (state: EngineState) => void;
   getState: () => EngineState;
   setVolume: (track: number, vol: number) => void;
@@ -48,6 +70,9 @@ export interface AlgoDrumApi {
   currentStep: () => number;
   transportState: () => TransportState;
   transportRevision: () => number;
+  activeBank: () => number;
+  queuedBank: () => number;
+  chainPosition: () => number;
   isIdle: () => boolean;
 }
 
@@ -61,6 +86,9 @@ export interface TransportSnapshot {
   state: TransportState;
   step: number;
   revision: number;
+  activeBank: number;
+  queuedBank: number;
+  chainPosition: number;
 }
 
 // The semantics of the API above, not just its shape. REQUIRED_METHODS below
@@ -69,7 +97,7 @@ export interface TransportSnapshot {
 // would load happily and play wrong. The engine publishes this number as
 // AlgoDrum.protocolVersion (internal/drum/protocol.go, the peer constant) and
 // the load refuses to proceed on a mismatch. Bump both together, or neither.
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 // The engine as it appears on the worker's global scope: the callable API plus
 // the version property. The property is deliberately kept out of AlgoDrumApi —
@@ -96,10 +124,15 @@ const REQUIRED_METHODS = [
   "setStepCount",
   "setCell",
   "setCellProbability",
+  "setCellHumanize",
   "setCellCondition",
   "setTrackLength",
   "setFillMode",
   "setPattern",
+  "setPatternBank",
+  "requestBank",
+  "setChain",
+  "setChainEnabled",
   "setState",
   "getState",
   "setVolume",
@@ -116,6 +149,9 @@ const REQUIRED_METHODS = [
   "currentStep",
   "transportState",
   "transportRevision",
+  "activeBank",
+  "queuedBank",
+  "chainPosition",
   "isIdle",
 ] as const satisfies readonly (keyof AlgoDrumApi)[];
 
@@ -137,6 +173,9 @@ export const OPERATIONAL_METHODS = [
   "currentStep",
   "transportState",
   "transportRevision",
+  "activeBank",
+  "queuedBank",
+  "chainPosition",
   "isIdle",
 ] as const satisfies readonly (keyof AlgoDrumApi)[];
 
@@ -316,7 +355,14 @@ function fillChunk(buf: Float32Array): {
     // Not idle: the main thread suspends the AudioContext on idle, and a
     // context that never runs cannot recover on its own.
     return {
-      transport: { state: "stopped", step: -1, revision: 0 },
+      transport: {
+        state: "stopped",
+        step: -1,
+        revision: 0,
+        activeBank: 0,
+        queuedBank: -1,
+        chainPosition: -1,
+      },
       idle: false,
     };
   }
@@ -357,7 +403,14 @@ function fillChunk(buf: Float32Array): {
     }
 
     return {
-      transport: { state: "stopped", step: -1, revision: 0 },
+      transport: {
+        state: "stopped",
+        step: -1,
+        revision: 0,
+        activeBank: 0,
+        queuedBank: -1,
+        chainPosition: -1,
+      },
       idle: false,
     };
   }
@@ -405,13 +458,23 @@ function invokeEngine(name: keyof AlgoDrumApi, args: unknown[]): boolean {
 }
 
 function isTransportCommand(name: keyof AlgoDrumApi): boolean {
-  return name === "beginStart" || name === "setRunning" || name === "pause";
+  return (
+    name === "beginStart" ||
+    name === "setRunning" ||
+    name === "pause" ||
+    name === "requestBank" ||
+    name === "setChain" ||
+    name === "setChainEnabled"
+  );
 }
 
 function readTransport(): TransportSnapshot {
   const state = workerScope.AlgoDrum.transportState();
   const step = workerScope.AlgoDrum.currentStep();
   const revision = workerScope.AlgoDrum.transportRevision();
+  const activeBank = workerScope.AlgoDrum.activeBank();
+  const queuedBank = workerScope.AlgoDrum.queuedBank();
+  const chainPosition = workerScope.AlgoDrum.chainPosition();
 
   if (
     state !== "stopped" &&
@@ -430,12 +493,28 @@ function readTransport(): TransportSnapshot {
     throw new TypeError(`invalid transport step ${String(step)}`);
   }
 
+  if (!Number.isInteger(activeBank) || activeBank < 0 || activeBank > 3) {
+    throw new TypeError(`invalid active bank ${String(activeBank)}`);
+  }
+
+  if (!Number.isInteger(queuedBank) || queuedBank < -1 || queuedBank > 3) {
+    throw new TypeError(`invalid queued bank ${String(queuedBank)}`);
+  }
+
+  if (
+    !Number.isInteger(chainPosition) ||
+    chainPosition < -1 ||
+    chainPosition > 15
+  ) {
+    throw new TypeError(`invalid chain position ${String(chainPosition)}`);
+  }
+
   const inactive = state === "stopped" || state === "starting";
   if ((inactive && step !== -1) || (!inactive && step < 0)) {
     throw new TypeError(`transport state ${state} cannot report step ${step}`);
   }
 
-  return { state, step, revision };
+  return { state, step, revision, activeBank, queuedBank, chainPosition };
 }
 
 // A failed read still returns an invalid sentinel: the mirror spends one

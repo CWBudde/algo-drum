@@ -35,18 +35,36 @@ export type EngineTracks = [
   TrackState,
 ];
 
+export const PATTERN_BANK_COUNT = 4;
+export const MAX_CHAIN_LENGTH = 16;
+
+export interface PatternBankState {
+  stepCount: number;
+  pattern: Float32Array;
+  cellProbabilities: Float32Array;
+  cellHumanize: Float32Array;
+  cellConditions: Uint8Array;
+  trackLengths: Uint8Array;
+}
+
+export type PatternBanks = [
+  PatternBankState,
+  PatternBankState,
+  PatternBankState,
+  PatternBankState,
+];
+
 export interface EngineState {
   tempoBpm: number;
   swing: number;
-  stepCount: number;
   reverb: number;
   probability: number;
   humanize: number;
-  pattern: Float32Array;
-  cellProbabilities: Float32Array;
-  cellConditions: Uint8Array;
-  trackLengths: Uint8Array;
   fillMode: boolean;
+  banks: PatternBanks;
+  standaloneBank: number;
+  chainEnabled: boolean;
+  chain: Uint8Array;
   tracks: EngineTracks;
 }
 
@@ -82,10 +100,15 @@ export const CONFIGURATION_METHODS = [
   "setStepCount",
   "setCell",
   "setCellProbability",
+  "setCellHumanize",
   "setCellCondition",
   "setTrackLength",
   "setFillMode",
   "setPattern",
+  "setPatternBank",
+  "requestBank",
+  "setChain",
+  "setChainEnabled",
   "setVolume",
   "setDecay",
   "setMuted",
@@ -132,16 +155,41 @@ export function createDefaultEngineState(): EngineState {
   return {
     tempoBpm: 120,
     swing: 0,
-    stepCount: STEP_CAPACITY,
     reverb: 0,
     probability: 1,
     humanize: 0,
+    fillMode: false,
+    banks: Array.from({ length: PATTERN_BANK_COUNT }, () =>
+      createDefaultPatternBankState(),
+    ) as PatternBanks,
+    standaloneBank: 0,
+    chainEnabled: false,
+    chain: Uint8Array.of(0),
+    tracks,
+  };
+}
+
+export function createDefaultPatternBankState(): PatternBankState {
+  return {
+    stepCount: STEP_CAPACITY,
     pattern: new Float32Array(PATTERN_SIZE),
     cellProbabilities: new Float32Array(PATTERN_SIZE).fill(1),
+    cellHumanize: new Float32Array(PATTERN_SIZE).fill(1),
     cellConditions: new Uint8Array(PATTERN_SIZE),
     trackLengths: new Uint8Array(TRACK_COUNT).fill(STEP_CAPACITY),
-    fillMode: false,
-    tracks,
+  };
+}
+
+export function clonePatternBankState(
+  bank: PatternBankState,
+): PatternBankState {
+  return {
+    stepCount: bank.stepCount,
+    pattern: bank.pattern.slice(),
+    cellProbabilities: bank.cellProbabilities.slice(),
+    cellHumanize: bank.cellHumanize.slice(),
+    cellConditions: bank.cellConditions.slice(),
+    trackLengths: bank.trackLengths.slice(),
   };
 }
 
@@ -149,15 +197,14 @@ export function cloneEngineState(state: EngineState): EngineState {
   return {
     tempoBpm: state.tempoBpm,
     swing: state.swing,
-    stepCount: state.stepCount,
     reverb: state.reverb,
     probability: state.probability,
     humanize: state.humanize,
-    pattern: state.pattern.slice(),
-    cellProbabilities: state.cellProbabilities.slice(),
-    cellConditions: state.cellConditions.slice(),
-    trackLengths: state.trackLengths.slice(),
     fillMode: state.fillMode,
+    banks: state.banks.map(clonePatternBankState) as PatternBanks,
+    standaloneBank: state.standaloneBank,
+    chainEnabled: state.chainEnabled,
+    chain: state.chain.slice(),
     tracks: state.tracks.map((track) => {
       const base: TrackState = {
         volume: track.volume,
@@ -252,32 +299,76 @@ export function validateEngineState(value: unknown): EngineState {
 
   requireNumber(value, "tempoBpm", 30, 300);
   requireNumber(value, "swing", 0, 0.5);
-  requireNumber(value, "stepCount", 1, STEP_CAPACITY, true);
   requireNumber(value, "reverb", 0, 1);
   requireNumber(value, "probability", 0, 1);
   requireNumber(value, "humanize", 0, 1);
-  requireUnitArray(value.pattern, PATTERN_SIZE, "engine state pattern");
-  requireUnitArray(
-    value.cellProbabilities,
-    PATTERN_SIZE,
-    "engine state cellProbabilities",
-  );
-  requireByteArray(
-    value.cellConditions,
-    PATTERN_SIZE,
-    "engine state cellConditions",
-    TRIGGER_CONDITION.always,
-    TRIGGER_CONDITION.notPreviousFired,
-  );
-  requireByteArray(
-    value.trackLengths,
-    TRACK_COUNT,
-    "engine state trackLengths",
-    1,
-    STEP_CAPACITY,
-  );
   if (typeof value.fillMode !== "boolean") {
     throw new TypeError("engine state fillMode must be boolean");
+  }
+
+  if (
+    !Array.isArray(value.banks) ||
+    value.banks.length !== PATTERN_BANK_COUNT
+  ) {
+    throw new TypeError(
+      `engine state banks must have length ${PATTERN_BANK_COUNT}`,
+    );
+  }
+  value.banks.forEach((candidate, bank) => {
+    if (!isRecord(candidate)) {
+      throw new TypeError(`engine state banks[${bank}] must be an object`);
+    }
+    requireNumber(candidate, "stepCount", 1, STEP_CAPACITY, true);
+    requireUnitArray(
+      candidate.pattern,
+      PATTERN_SIZE,
+      `engine state banks[${bank}].pattern`,
+    );
+    requireUnitArray(
+      candidate.cellProbabilities,
+      PATTERN_SIZE,
+      `engine state banks[${bank}].cellProbabilities`,
+    );
+    requireUnitArray(
+      candidate.cellHumanize,
+      PATTERN_SIZE,
+      `engine state banks[${bank}].cellHumanize`,
+    );
+    requireByteArray(
+      candidate.cellConditions,
+      PATTERN_SIZE,
+      `engine state banks[${bank}].cellConditions`,
+      TRIGGER_CONDITION.always,
+      TRIGGER_CONDITION.notPreviousFired,
+    );
+    requireByteArray(
+      candidate.trackLengths,
+      TRACK_COUNT,
+      `engine state banks[${bank}].trackLengths`,
+      1,
+      STEP_CAPACITY,
+    );
+  });
+
+  requireNumber(value, "standaloneBank", 0, PATTERN_BANK_COUNT - 1, true);
+  if (typeof value.chainEnabled !== "boolean") {
+    throw new TypeError("engine state chainEnabled must be boolean");
+  }
+  if (
+    !(value.chain instanceof Uint8Array) ||
+    value.chain.length < 1 ||
+    value.chain.length > MAX_CHAIN_LENGTH
+  ) {
+    throw new TypeError(
+      `engine state chain must be a Uint8Array of length 1–${MAX_CHAIN_LENGTH}`,
+    );
+  }
+  for (let index = 0; index < value.chain.length; index++) {
+    if (value.chain[index] >= PATTERN_BANK_COUNT) {
+      throw new TypeError(
+        `engine state chain[${index}] must be in [0, ${PATTERN_BANK_COUNT - 1}]`,
+      );
+    }
   }
 
   if (!Array.isArray(value.tracks) || value.tracks.length !== TRACK_COUNT) {

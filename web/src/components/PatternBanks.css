@@ -1,0 +1,166 @@
+.dm-banks {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: -8px 0 18px;
+  color: var(--dm-text);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+}
+
+.dm-bank-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.dm-bank-btn,
+.dm-bank-tool,
+.dm-bank-menu button,
+.dm-chain-panel button {
+  min-height: 28px;
+  border: 1px solid rgba(0, 0, 0, 0.72);
+  border-radius: 5px;
+  background: linear-gradient(180deg, #3a3a48, #20202b);
+  color: rgba(224, 215, 196, 0.94);
+  font: inherit;
+  cursor: pointer;
+}
+
+.dm-bank-btn {
+  width: 38px;
+}
+
+.dm-bank-btn[aria-pressed="true"] {
+  outline: 2px solid #829ee2;
+  outline-offset: 1px;
+}
+
+.dm-bank-btn[data-active] {
+  color: #fff2d8;
+  background: linear-gradient(180deg, #9a622b, #593315);
+  box-shadow: 0 0 8px rgba(200, 120, 40, 0.5);
+}
+
+.dm-bank-btn[data-queued]::after {
+  content: "•";
+  margin-left: 3px;
+  color: #ffd08a;
+}
+
+.dm-bank-tool {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  list-style: none;
+  user-select: none;
+}
+
+.dm-bank-tool::-webkit-details-marker {
+  display: none;
+}
+
+.dm-bank-copy,
+.dm-chain-editor {
+  position: relative;
+}
+
+.dm-bank-menu,
+.dm-chain-panel {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  display: grid;
+  gap: 6px;
+  padding: 9px;
+  border: 1px solid rgba(0, 0, 0, 0.82);
+  border-radius: 7px;
+  background: linear-gradient(145deg, #30303d, #171722);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.65);
+}
+
+.dm-bank-menu {
+  grid-template-columns: repeat(2, minmax(54px, 1fr));
+  width: 132px;
+}
+
+.dm-bank-menu button,
+.dm-chain-panel button {
+  padding: 0 8px;
+}
+
+.dm-chain-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dm-chain-panel {
+  left: 0;
+  width: 188px;
+  max-height: min(420px, 70vh);
+  overflow: auto;
+}
+
+.dm-chain-panel ol {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dm-chain-panel li {
+  display: grid;
+  grid-template-columns: 22px 1fr 30px;
+  align-items: center;
+  gap: 5px;
+  padding: 3px;
+  border-radius: 4px;
+}
+
+.dm-chain-panel li[data-active] {
+  background: rgba(200, 120, 40, 0.22);
+}
+
+.dm-chain-panel select {
+  min-height: 28px;
+  border: 1px solid rgba(0, 0, 0, 0.72);
+  border-radius: 4px;
+  background: #09090f;
+  color: #ded2ba;
+}
+
+.dm-bank-status {
+  margin-left: auto;
+  color: rgba(212, 201, 180, 0.78);
+  letter-spacing: 0.03em;
+}
+
+.dm-bank-btn:focus-visible,
+.dm-bank-tool:focus-visible,
+.dm-bank-menu button:focus-visible,
+.dm-chain-panel button:focus-visible,
+.dm-chain-panel select:focus-visible,
+.dm-chain-toggle input:focus-visible {
+  outline: 2px solid rgba(200, 140, 60, 0.9);
+  outline-offset: 2px;
+}
+
+.dm-bank-btn:disabled,
+.dm-bank-menu button:disabled,
+.dm-chain-panel button:disabled,
+.dm-chain-panel select:disabled,
+.dm-chain-toggle input:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@media (max-width: 620px) {
+  .dm-bank-status {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+}

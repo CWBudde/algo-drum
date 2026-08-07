@@ -6,25 +6,35 @@ import (
 	"github.com/cwbudde/algo-tom/tomparams"
 )
 
-// EngineState is the complete user-controlled engine state. Pattern,
-// CellProbabilities and CellConditions are flat track-major arrays with width
-// PatternSize; TrackLengths and Tracks are engine-major with width TrackCount.
+// EngineState is the complete user-controlled engine state. Each bank owns its
+// rhythmic configuration; mixer, voice and global performance controls remain
+// shared. Active/queued bank and chain cursor are runtime-only.
 // The transport/playheads, conditional pass history, live smoothing values,
 // active tails and RNG position are deliberately runtime state rather than
 // preset state.
 type EngineState struct {
-	TempoBPM          float64
-	Swing             float64
+	TempoBPM       float64
+	Swing          float64
+	Reverb         float64
+	Probability    float64
+	Humanize       float64
+	FillMode       bool
+	Banks          []PatternBankState
+	StandaloneBank int
+	ChainEnabled   bool
+	Chain          []int
+	Tracks         []TrackState
+}
+
+// PatternBankState is one owned rhythmic snapshot. Cell arrays are flat
+// track-major with PatternSize entries; TrackLengths is engine-major.
+type PatternBankState struct {
 	StepCount         int
-	Reverb            float64
-	Probability       float64
-	Humanize          float64
-	FillMode          bool
 	Pattern           []float64
 	CellProbabilities []float64
+	CellHumanize      []float64
 	CellConditions    []TriggerCondition
 	TrackLengths      []int
-	Tracks            []TrackState
 }
 
 // TrackState is one engine-major track. Volume remains meaningful while Muted
@@ -51,27 +61,41 @@ type TomState struct {
 // all returned slices and may modify them without aliasing the live engine.
 func (e *Engine) State() EngineState {
 	state := EngineState{
-		TempoBPM:          e.bpm,
-		Swing:             e.swing,
-		StepCount:         e.stepCount,
-		Reverb:            e.reverbAmount,
-		Probability:       e.prob,
-		Humanize:          e.humanize,
-		FillMode:          e.fillMode,
-		Pattern:           make([]float64, PatternSize),
-		CellProbabilities: make([]float64, PatternSize),
-		CellConditions:    make([]TriggerCondition, PatternSize),
-		TrackLengths:      make([]int, TrackCount),
-		Tracks:            make([]TrackState, TrackCount),
+		TempoBPM:       e.bpm,
+		Swing:          e.swing,
+		Reverb:         e.reverbAmount,
+		Probability:    e.prob,
+		Humanize:       e.humanize,
+		FillMode:       e.fillMode,
+		Banks:          make([]PatternBankState, PatternBankCount),
+		StandaloneBank: e.standaloneBank,
+		ChainEnabled:   e.chainEnabled,
+		Chain:          append([]int(nil), e.chain[:e.chainLength]...),
+		Tracks:         make([]TrackState, TrackCount),
 	}
 
-	for track := range e.pattern {
-		start := track * MaxSteps
-		end := (track + 1) * MaxSteps
-		copy(state.Pattern[start:end], e.pattern[track][:])
-		copy(state.CellProbabilities[start:end], e.cellProbability[track][:])
-		copy(state.CellConditions[start:end], e.cellCondition[track][:])
-		state.TrackLengths[track] = e.trackLength[track]
+	for bank := range PatternBankCount {
+		stored := &e.banks[bank]
+
+		bankState := PatternBankState{
+			StepCount:         stored.stepCount,
+			Pattern:           make([]float64, PatternSize),
+			CellProbabilities: make([]float64, PatternSize),
+			CellHumanize:      make([]float64, PatternSize),
+			CellConditions:    make([]TriggerCondition, PatternSize),
+			TrackLengths:      make([]int, TrackCount),
+		}
+		for track := range TrackCount {
+			start := track * MaxSteps
+			end := start + MaxSteps
+			copy(bankState.Pattern[start:end], stored.pattern[track][:])
+			copy(bankState.CellProbabilities[start:end], stored.cellProbability[track][:])
+			copy(bankState.CellHumanize[start:end], stored.cellHumanize[track][:])
+			copy(bankState.CellConditions[start:end], stored.cellCondition[track][:])
+			bankState.TrackLengths[track] = stored.trackLength[track]
+		}
+
+		state.Banks[bank] = bankState
 	}
 
 	for track := range e.voices {
@@ -117,22 +141,36 @@ func (e *Engine) ReplaceState(state EngineState) error {
 
 	e.SetTempo(normalized.TempoBPM)
 	e.SetSwing(normalized.Swing)
-	e.SetStepCount(normalized.StepCount)
 	e.SetReverb(normalized.Reverb)
 	e.SetProbability(normalized.Probability)
 	e.SetHumanize(normalized.Humanize)
 	e.SetFillMode(normalized.FillMode)
-	e.SetPattern(normalized.Pattern)
 
-	for index := range normalized.CellProbabilities {
-		track := index / MaxSteps
-		step := index % MaxSteps
-		e.SetCellProbability(track, step, normalized.CellProbabilities[index])
-		e.SetCellCondition(track, step, normalized.CellConditions[index])
+	for bank, bankState := range normalized.Banks {
+		e.storePatternBank(bank, bankState)
 	}
 
-	for track, length := range normalized.TrackLengths {
-		e.SetTrackLength(track, length)
+	e.standaloneBank = normalized.StandaloneBank
+	e.chainEnabled = normalized.ChainEnabled
+	e.chainLength = len(normalized.Chain)
+	copy(e.chain[:], normalized.Chain)
+	clear(e.chain[e.chainLength:])
+	e.chainPosition = 0
+	e.queuedBank = NoBank
+
+	target := e.activeBank
+	if e.transport == transportStopped {
+		target = e.standaloneBank
+		if e.chainEnabled {
+			target = e.chain[0]
+		}
+	}
+
+	e.loadBank(target)
+	e.recomputeStepDurations()
+
+	if e.transport == transportStopped {
+		e.resetSequencer()
 	}
 
 	for track, trackState := range normalized.Tracks {
@@ -172,27 +210,168 @@ func (e *Engine) ReplaceState(state EngineState) error {
 	return nil
 }
 
-// normalizeState performs the complete rejection pass and returns an owned,
-// clamped copy. It must remain a pure read of e: ReplaceState relies on that
-// property for its reject-before-mutation guarantee.
-func (e *Engine) normalizeState(state EngineState) (EngineState, error) {
+// ReplacePatternBank atomically validates and replaces one complete rhythmic
+// bank. Invalid indexes are silent no-ops, matching the indexed setter
+// contract; malformed state is reported without mutating any bank.
+func (e *Engine) ReplacePatternBank(bank int, state PatternBankState) error {
+	if !validBank(bank) {
+		return nil
+	}
+
+	normalized, err := normalizePatternBank(state)
+	if err != nil {
+		return err
+	}
+
+	e.storePatternBank(bank, normalized)
+
+	if bank == e.activeBank {
+		e.loadBank(bank)
+		e.recomputeStepDurations()
+
+		if e.currentStep >= e.stepCount {
+			e.currentStep = 0
+			e.stepPhase = 0
+			e.stepTriggered = false
+		}
+
+		for track := range TrackCount {
+			if e.trackStep[track] >= e.trackLength[track] {
+				e.trackStep[track] = 0
+				e.trackPass[track] = 0
+				e.previousFired[track] = false
+			}
+		}
+	}
+
+	return nil
+}
+
+func (e *Engine) storePatternBank(bank int, state PatternBankState) {
+	target := &e.banks[bank]
+	target.stepCount = state.StepCount
+
+	for index := range PatternSize {
+		track := index / MaxSteps
+		step := index % MaxSteps
+		target.pattern[track][step] = state.Pattern[index]
+		target.cellProbability[track][step] = state.CellProbabilities[index]
+		target.cellHumanize[track][step] = state.CellHumanize[index]
+		target.cellCondition[track][step] = state.CellConditions[index]
+	}
+
+	copy(target.trackLength[:], state.TrackLengths)
+}
+
+func normalizePatternBank(state PatternBankState) (PatternBankState, error) {
 	if len(state.Pattern) != PatternSize {
-		return EngineState{}, fmt.Errorf("pattern length %d, want %d", len(state.Pattern), PatternSize)
+		return PatternBankState{}, fmt.Errorf("pattern length %d, want %d", len(state.Pattern), PatternSize)
 	}
 
 	if len(state.CellProbabilities) != PatternSize {
-		return EngineState{}, fmt.Errorf("cell probability length %d, want %d",
+		return PatternBankState{}, fmt.Errorf("cell probability length %d, want %d",
 			len(state.CellProbabilities), PatternSize)
 	}
 
+	if len(state.CellHumanize) != PatternSize {
+		return PatternBankState{}, fmt.Errorf("cell humanize length %d, want %d",
+			len(state.CellHumanize), PatternSize)
+	}
+
 	if len(state.CellConditions) != PatternSize {
-		return EngineState{}, fmt.Errorf("cell condition length %d, want %d",
+		return PatternBankState{}, fmt.Errorf("cell condition length %d, want %d",
 			len(state.CellConditions), PatternSize)
 	}
 
 	if len(state.TrackLengths) != TrackCount {
-		return EngineState{}, fmt.Errorf("track length count %d, want %d",
+		return PatternBankState{}, fmt.Errorf("track length count %d, want %d",
 			len(state.TrackLengths), TrackCount)
+	}
+
+	normalized := PatternBankState{
+		StepCount:         state.StepCount,
+		Pattern:           make([]float64, PatternSize),
+		CellProbabilities: make([]float64, PatternSize),
+		CellHumanize:      make([]float64, PatternSize),
+		CellConditions:    make([]TriggerCondition, PatternSize),
+		TrackLengths:      make([]int, TrackCount),
+	}
+	if normalized.StepCount < 1 {
+		normalized.StepCount = 1
+	} else if normalized.StepCount > MaxSteps {
+		normalized.StepCount = MaxSteps
+	}
+
+	for index, value := range state.Pattern {
+		clamped, valid := validFloat(value, 0, 1)
+		if !valid {
+			return PatternBankState{}, fmt.Errorf("pattern value %d is not finite: %v", index, value)
+		}
+
+		normalized.Pattern[index] = clamped
+	}
+
+	for index, value := range state.CellProbabilities {
+		clamped, valid := validFloat(value, 0, 1)
+		if !valid {
+			return PatternBankState{}, fmt.Errorf("cell probability %d is not finite: %v", index, value)
+		}
+
+		normalized.CellProbabilities[index] = clamped
+	}
+
+	for index, value := range state.CellHumanize {
+		clamped, valid := validFloat(value, 0, 1)
+		if !valid {
+			return PatternBankState{}, fmt.Errorf("cell humanize %d is not finite: %v", index, value)
+		}
+
+		normalized.CellHumanize[index] = clamped
+	}
+
+	for index, condition := range state.CellConditions {
+		if condition >= triggerConditionCount {
+			return PatternBankState{}, fmt.Errorf("cell condition %d has invalid code %d", index, condition)
+		}
+
+		normalized.CellConditions[index] = condition
+	}
+
+	for track, length := range state.TrackLengths {
+		if length < 1 {
+			length = 1
+		} else if length > MaxSteps {
+			length = MaxSteps
+		}
+
+		normalized.TrackLengths[track] = length
+	}
+
+	return normalized, nil
+}
+
+// normalizeState performs the complete rejection pass and returns an owned,
+// clamped copy. It must remain a pure read of e: ReplaceState relies on that
+// property for its reject-before-mutation guarantee.
+func (e *Engine) normalizeState(state EngineState) (EngineState, error) {
+	if len(state.Banks) != PatternBankCount {
+		return EngineState{}, fmt.Errorf("bank count %d, want %d", len(state.Banks), PatternBankCount)
+	}
+
+	if !validBank(state.StandaloneBank) {
+		return EngineState{}, fmt.Errorf("standalone bank %d outside [0, %d]",
+			state.StandaloneBank, PatternBankCount-1)
+	}
+
+	if len(state.Chain) < 1 || len(state.Chain) > MaxChainLength {
+		return EngineState{}, fmt.Errorf("chain length %d outside [1, %d]",
+			len(state.Chain), MaxChainLength)
+	}
+
+	for position, bank := range state.Chain {
+		if !validBank(bank) {
+			return EngineState{}, fmt.Errorf("chain position %d has invalid bank %d", position, bank)
+		}
 	}
 
 	if len(state.Tracks) != TrackCount {
@@ -200,13 +379,12 @@ func (e *Engine) normalizeState(state EngineState) (EngineState, error) {
 	}
 
 	normalized := EngineState{
-		StepCount:         state.StepCount,
-		FillMode:          state.FillMode,
-		Pattern:           make([]float64, PatternSize),
-		CellProbabilities: make([]float64, PatternSize),
-		CellConditions:    make([]TriggerCondition, PatternSize),
-		TrackLengths:      make([]int, TrackCount),
-		Tracks:            make([]TrackState, TrackCount),
+		FillMode:       state.FillMode,
+		Banks:          make([]PatternBankState, PatternBankCount),
+		StandaloneBank: state.StandaloneBank,
+		ChainEnabled:   state.ChainEnabled,
+		Chain:          append([]int(nil), state.Chain...),
+		Tracks:         make([]TrackState, TrackCount),
 	}
 
 	var ok bool
@@ -230,46 +408,13 @@ func (e *Engine) normalizeState(state EngineState) (EngineState, error) {
 		return EngineState{}, fmt.Errorf("humanize is not finite: %v", state.Humanize)
 	}
 
-	if normalized.StepCount < 1 {
-		normalized.StepCount = 1
-	} else if normalized.StepCount > MaxSteps {
-		normalized.StepCount = MaxSteps
-	}
-
-	for index, value := range state.Pattern {
-		clamped, valid := validFloat(value, 0, 1)
-		if !valid {
-			return EngineState{}, fmt.Errorf("pattern value %d is not finite: %v", index, value)
+	for bank, source := range state.Banks {
+		bankState, bankErr := normalizePatternBank(source)
+		if bankErr != nil {
+			return EngineState{}, fmt.Errorf("bank %d: %w", bank, bankErr)
 		}
 
-		normalized.Pattern[index] = clamped
-	}
-
-	for index, value := range state.CellProbabilities {
-		clamped, valid := validFloat(value, 0, 1)
-		if !valid {
-			return EngineState{}, fmt.Errorf("cell probability %d is not finite: %v", index, value)
-		}
-
-		normalized.CellProbabilities[index] = clamped
-	}
-
-	for index, condition := range state.CellConditions {
-		if condition >= triggerConditionCount {
-			return EngineState{}, fmt.Errorf("cell condition %d has invalid code %d", index, condition)
-		}
-
-		normalized.CellConditions[index] = condition
-	}
-
-	for track, length := range state.TrackLengths {
-		if length < 1 {
-			length = 1
-		} else if length > MaxSteps {
-			length = MaxSteps
-		}
-
-		normalized.TrackLengths[track] = length
+		normalized.Banks[bank] = bankState
 	}
 
 	for track, source := range state.Tracks {

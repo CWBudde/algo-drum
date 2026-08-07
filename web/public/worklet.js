@@ -162,7 +162,10 @@ class AlgoDrumProcessor extends AudioWorkletProcessor {
           !this.lastTransport ||
           transport.state !== this.lastTransport.state ||
           transport.step !== this.lastTransport.step ||
-          transport.revision !== this.lastTransport.revision
+          transport.revision !== this.lastTransport.revision ||
+          transport.activeBank !== this.lastTransport.activeBank ||
+          transport.queuedBank !== this.lastTransport.queuedBank ||
+          transport.chainPosition !== this.lastTransport.chainPosition
         ) {
           this.lastTransport = transport;
           this.port.postMessage({ type: "transport", transport });

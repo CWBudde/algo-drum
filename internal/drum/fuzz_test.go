@@ -95,13 +95,13 @@ func applyFuzzProgram(engine *Engine, program []byte) {
 		case opHumanize:
 			engine.SetHumanize(value)
 		case opCell:
-			engine.SetCell(index, small, value)
+			engine.SetCell(0, index, small, value)
 		case opPattern:
-			engine.SetPattern([]float64{value, -value, value * 2, math.NaN()})
+			engine.SetPattern(0, []float64{value, -value, value * 2, math.NaN()})
 		case opStepCountRaw:
-			engine.SetStepCount(int(int64(bits)))
+			engine.SetStepCount(0, int(int64(bits)))
 		case opStepCount:
-			engine.SetStepCount(small)
+			engine.SetStepCount(0, small)
 		case opRunning:
 			engine.SetRunning(bits&1 == 1)
 		case opVoiceParam:
@@ -109,10 +109,11 @@ func applyFuzzProgram(engine *Engine, program []byte) {
 		case opTriggerVoice:
 			engine.TriggerVoice(index, value)
 		case opCellProbability:
-			engine.SetCellProbability(index, small, value)
+			engine.SetCellProbability(0, index, small, value)
 		case opDepthConfig:
-			engine.SetTrackLength(index, small)
-			engine.SetCellCondition(index, small, TriggerCondition(byte(bits>>8)))
+			engine.SetTrackLength(0, index, small)
+			engine.SetCellCondition(0, index, small, TriggerCondition(byte(bits>>8)))
+			engine.SetCellHumanize(0, index, small, value)
 			engine.SetFillMode(bits&1 == 1)
 		}
 	}

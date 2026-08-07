@@ -2,6 +2,7 @@ import {
   createDefaultEngineState,
   type EngineState,
   type EngineTracks,
+  type PatternBankState,
 } from "../engine/engineState";
 import type { TomModel } from "../engine/tomModel";
 import { STEP_CAPACITY, TRACK_COUNT } from "../algo/pattern";
@@ -12,16 +13,39 @@ export type DrumStateAction =
   | { type: "replace"; state: EngineState }
   | { type: "tempo"; value: number }
   | { type: "swing"; value: number }
-  | { type: "stepCount"; value: number }
+  | { type: "stepCount"; bank: number; value: number }
   | { type: "reverb"; value: number }
   | { type: "probability"; value: number }
   | { type: "humanize"; value: number }
-  | { type: "cell"; track: number; step: number; value: number }
-  | { type: "cellProbability"; track: number; step: number; value: number }
-  | { type: "cellCondition"; track: number; step: number; value: number }
-  | { type: "trackLength"; track: number; value: number }
+  | { type: "cell"; bank: number; track: number; step: number; value: number }
+  | {
+      type: "cellProbability";
+      bank: number;
+      track: number;
+      step: number;
+      value: number;
+    }
+  | {
+      type: "cellHumanize";
+      bank: number;
+      track: number;
+      step: number;
+      value: number;
+    }
+  | {
+      type: "cellCondition";
+      bank: number;
+      track: number;
+      step: number;
+      value: number;
+    }
+  | { type: "trackLength"; bank: number; track: number; value: number }
   | { type: "fillMode"; value: boolean }
-  | { type: "pattern"; value: Float32Array }
+  | { type: "pattern"; bank: number; value: Float32Array }
+  | { type: "patternBank"; bank: number; value: PatternBankState }
+  | { type: "requestBank"; value: number }
+  | { type: "chain"; value: Uint8Array }
+  | { type: "chainEnabled"; value: boolean }
   | { type: "volume"; track: number; value: number }
   | { type: "decay"; track: number; value: number }
   | { type: "muted"; track: number; value: boolean }
@@ -45,6 +69,28 @@ function updateTrack(
   return { ...state, tracks: tracks as EngineTracks };
 }
 
+function clonePatternBank(bank: PatternBankState): PatternBankState {
+  return {
+    stepCount: bank.stepCount,
+    pattern: bank.pattern.slice(),
+    cellProbabilities: bank.cellProbabilities.slice(),
+    cellHumanize: bank.cellHumanize.slice(),
+    cellConditions: bank.cellConditions.slice(),
+    trackLengths: bank.trackLengths.slice(),
+  };
+}
+
+function updateBank(
+  state: EngineState,
+  bank: number,
+  update: (current: PatternBankState) => PatternBankState,
+): EngineState {
+  if (bank < 0 || bank >= state.banks.length) return state;
+  const banks = [...state.banks];
+  banks[bank] = update(banks[bank]);
+  return { ...state, banks: banks as EngineState["banks"] };
+}
+
 export function reduceDrumState(
   state: EngineState,
   action: DrumStateAction,
@@ -57,11 +103,11 @@ export function reduceDrumState(
     case "swing":
       return { ...state, swing: action.value };
     case "stepCount":
-      return {
-        ...state,
+      return updateBank(state, action.bank, (bank) => ({
+        ...bank,
         stepCount: action.value,
         trackLengths: new Uint8Array(TRACK_COUNT).fill(action.value),
-      };
+      }));
     case "reverb":
       return { ...state, reverb: action.value };
     case "probability":
@@ -78,9 +124,11 @@ export function reduceDrumState(
         return state;
       }
       const index = action.track * STEP_CAPACITY + action.step;
-      const pattern = new Float32Array(state.pattern);
-      pattern[index] = action.value;
-      return { ...state, pattern };
+      return updateBank(state, action.bank, (bank) => {
+        const pattern = new Float32Array(bank.pattern);
+        pattern[index] = action.value;
+        return { ...bank, pattern };
+      });
     }
     case "cellProbability": {
       if (
@@ -91,10 +139,27 @@ export function reduceDrumState(
       ) {
         return state;
       }
-      const cellProbabilities = state.cellProbabilities.slice();
-      cellProbabilities[action.track * STEP_CAPACITY + action.step] =
-        action.value;
-      return { ...state, cellProbabilities };
+      return updateBank(state, action.bank, (bank) => {
+        const cellProbabilities = bank.cellProbabilities.slice();
+        cellProbabilities[action.track * STEP_CAPACITY + action.step] =
+          action.value;
+        return { ...bank, cellProbabilities };
+      });
+    }
+    case "cellHumanize": {
+      if (
+        action.track < 0 ||
+        action.track >= TRACK_COUNT ||
+        action.step < 0 ||
+        action.step >= STEP_CAPACITY
+      ) {
+        return state;
+      }
+      return updateBank(state, action.bank, (bank) => {
+        const cellHumanize = bank.cellHumanize.slice();
+        cellHumanize[action.track * STEP_CAPACITY + action.step] = action.value;
+        return { ...bank, cellHumanize };
+      });
     }
     case "cellCondition": {
       if (
@@ -105,20 +170,38 @@ export function reduceDrumState(
       ) {
         return state;
       }
-      const cellConditions = state.cellConditions.slice();
-      cellConditions[action.track * STEP_CAPACITY + action.step] = action.value;
-      return { ...state, cellConditions };
+      return updateBank(state, action.bank, (bank) => {
+        const cellConditions = bank.cellConditions.slice();
+        cellConditions[action.track * STEP_CAPACITY + action.step] =
+          action.value;
+        return { ...bank, cellConditions };
+      });
     }
     case "trackLength": {
       if (action.track < 0 || action.track >= TRACK_COUNT) return state;
-      const trackLengths = state.trackLengths.slice();
-      trackLengths[action.track] = action.value;
-      return { ...state, trackLengths };
+      return updateBank(state, action.bank, (bank) => {
+        const trackLengths = bank.trackLengths.slice();
+        trackLengths[action.track] = action.value;
+        return { ...bank, trackLengths };
+      });
     }
     case "fillMode":
       return { ...state, fillMode: action.value };
     case "pattern":
-      return { ...state, pattern: new Float32Array(action.value) };
+      return updateBank(state, action.bank, (bank) => ({
+        ...bank,
+        pattern: new Float32Array(action.value),
+      }));
+    case "patternBank":
+      return updateBank(state, action.bank, () =>
+        clonePatternBank(action.value),
+      );
+    case "requestBank":
+      return { ...state, standaloneBank: action.value };
+    case "chain":
+      return { ...state, chain: action.value.slice() };
+    case "chainEnabled":
+      return { ...state, chainEnabled: action.value };
     case "volume":
       return updateTrack(state, action.track, (track) => ({
         ...track,

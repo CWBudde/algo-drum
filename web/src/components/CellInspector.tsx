@@ -5,8 +5,10 @@ interface Props {
   track: number;
   step: number;
   probability: number;
+  humanize: number;
   condition: number;
   onProbabilityChange: (value: number) => void;
+  onHumanizeChange: (value: number) => void;
   onConditionChange: (value: number) => void;
   onClose: () => void;
 }
@@ -15,8 +17,10 @@ export default function CellInspector({
   track,
   step,
   probability,
+  humanize,
   condition,
   onProbabilityChange,
+  onHumanizeChange,
   onConditionChange,
   onClose,
 }: Props) {
@@ -50,6 +54,21 @@ export default function CellInspector({
           }
         />
         <output>{Math.round(probability * 100)}%</output>
+      </label>
+      <label>
+        HUMANIZE
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={1}
+          value={Math.round(humanize * 100)}
+          aria-valuetext={`${Math.round(humanize * 100)} percent`}
+          onChange={(event) =>
+            onHumanizeChange(Number(event.target.value) / 100)
+          }
+        />
+        <output>{Math.round(humanize * 100)}%</output>
       </label>
       <label>
         CONDITION

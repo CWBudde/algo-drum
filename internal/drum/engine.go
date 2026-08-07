@@ -9,7 +9,10 @@ import (
 )
 
 const (
-	TrackCount = 7
+	TrackCount       = 7
+	PatternBankCount = 4
+	MaxChainLength   = 16
+	NoBank           = -1
 
 	// MaxSteps is the pattern capacity. SetStepCount sets the master/displayed
 	// loop and initializes every track to that length; SetTrackLength then lets
@@ -49,11 +52,11 @@ const (
 	// reproducible run-to-run (the voices are seeded the same way).
 	engineSeed = 0x5eed
 
-	// humanizeTimingMaxS is the largest timing jitter at humanize=1: each hit
-	// is delayed by a random offset in [0, humanize·humanizeTimingMaxS]. A hit
-	// can only be pushed later — the step boundary has already elapsed — so the
-	// jitter is one-sided rather than centered.
-	humanizeTimingMaxS = 0.015
+	// humanizeTimingMaxS is the largest absolute timing jitter at humanize=1.
+	// Steady-state hits are scheduled with one-step lookahead in the centered
+	// interval [-7.5 ms, +7.5 ms]. The first step after Play has no causal
+	// pre-roll, so its negative offsets clamp to the start boundary.
+	humanizeTimingMaxS = 0.0075
 
 	// humanizeVelMax is the largest velocity deviation at humanize=1: each hit's
 	// velocity is scaled by 1 ± a random fraction up to humanize·humanizeVelMax.
@@ -102,6 +105,17 @@ type pendingTrigger struct {
 	countdown int     // samples remaining until the voice fires
 	track     int     // voice index to trigger
 	velocity  float64 // humanized velocity to trigger at
+}
+
+// patternBank is the allocation-free render representation of one bank.
+// PatternBankState is its owned, slice-backed snapshot at the state boundary.
+type patternBank struct {
+	stepCount       int
+	pattern         [TrackCount][MaxSteps]float64
+	cellProbability [TrackCount][MaxSteps]float64
+	cellHumanize    [TrackCount][MaxSteps]float64
+	cellCondition   [TrackCount][MaxSteps]TriggerCondition
+	trackLength     [TrackCount]int
 }
 
 // TriggerCondition controls whether an active cell is eligible on a given
@@ -165,6 +179,7 @@ type Engine struct {
 
 	pattern         [TrackCount][MaxSteps]float64 // per-cell velocity in [0, 1], 0 = off
 	cellProbability [TrackCount][MaxSteps]float64 // multiplied by the global probability
+	cellHumanize    [TrackCount][MaxSteps]float64 // multiplied by the global humanize amount
 	cellCondition   [TrackCount][MaxSteps]TriggerCondition
 	volumes         [TrackCount]float64 // targets set by SetVolume
 	muted           [TrackCount]bool    // mutes do not overwrite the stored volumes
@@ -194,13 +209,27 @@ type Engine struct {
 	trackStep           [TrackCount]int
 	trackPass           [TrackCount]uint64
 	previousFired       [TrackCount]bool
+	nextFired           [TrackCount]bool
+	nextStepScheduled   bool
+	nextBank            int
+	nextChainPosition   int
 
-	prob        float64 // per-hit trigger probability in [0, 1]
-	humanize    float64 // timing/velocity randomization amount in [0, 1]
-	fillMode    bool    // enables cells carrying TriggerFillOnly
-	rng         *rand.Rand
-	pending     [maxPending]pendingTrigger
-	pendingMask uint32
+	banks          [PatternBankCount]patternBank
+	standaloneBank int
+	activeBank     int
+	queuedBank     int
+	chainEnabled   bool
+	chain          [MaxChainLength]int
+	chainLength    int
+	chainPosition  int
+
+	prob              float64 // per-hit trigger probability in [0, 1]
+	humanize          float64 // timing/velocity randomization amount in [0, 1]
+	humanizeLookahead int     // centered timing lookahead in whole samples
+	fillMode          bool    // enables cells carrying TriggerFillOnly
+	rng               *rand.Rand
+	pending           [maxPending]pendingTrigger
+	pendingMask       uint32
 
 	reverb           *reverb.FDNReverb
 	reverbAmount     float64
@@ -228,21 +257,33 @@ func NewEngine(sr float64) *Engine {
 		volCoef:   1 - math.Exp(-1.0/(sr*volSmoothTauS)),
 		// At the clamped rate floor this is still 400 samples, so the window
 		// can never degenerate to "idle on the first quiet sample".
-		idleSamples: int64(math.Round(sr * idleConfirmS)),
-		prob:        1,
-		humanize:    0,
-		rng:         rand.New(rand.NewPCG(engineSeed, engineSeed)),
+		idleSamples:       int64(math.Round(sr * idleConfirmS)),
+		prob:              1,
+		humanize:          0,
+		humanizeLookahead: int(math.Ceil(sr * humanizeTimingMaxS)),
+		rng:               rand.New(rand.NewPCG(engineSeed, engineSeed)),
+		queuedBank:        NoBank,
+		nextBank:          NoBank,
+		chainLength:       1,
 	}
 	for i := range e.volumes {
 		e.volumes[i] = 1.0
 		e.liveVol[i] = 1.0
-		e.decays[i] = 0.5
-		e.trackLength[i] = MaxSteps
 
-		for step := range MaxSteps {
-			e.cellProbability[i][step] = 1
+		e.decays[i] = 0.5
+		for bank := range PatternBankCount {
+			e.banks[bank].stepCount = MaxSteps
+
+			e.banks[bank].trackLength[i] = MaxSteps
+			for step := range MaxSteps {
+				e.banks[bank].cellProbability[i][step] = 1
+				e.banks[bank].cellHumanize[i][step] = 1
+			}
 		}
 	}
+
+	e.chain[0] = 0
+	e.loadBank(0)
 
 	e.voices[0] = NewBassDrum(sr)
 	e.voices[1] = NewSnare(sr)
@@ -409,11 +450,32 @@ func (e *Engine) SetRunning(running bool) {
 	}
 
 	e.setTransport(transportStopped)
+	e.queuedBank = NoBank
+	e.chainPosition = 0
+
+	target := e.standaloneBank
+	if e.chainEnabled {
+		target = e.chain[0]
+	}
+
+	if target != e.activeBank {
+		e.loadBank(target)
+		e.recomputeStepDurations()
+	}
+
+	e.resetSequencer()
+}
+
+func (e *Engine) resetSequencer() {
 	e.currentStep = 0
 	e.clockStep = 0
 	e.stepPhase = 0
 	e.currentStepDuration = e.stepDuration[0]
 	e.stepTriggered = false
+	e.nextStepScheduled = false
+	e.nextBank = NoBank
+	e.nextChainPosition = 0
+	e.nextFired = [TrackCount]bool{}
 
 	for track := range TrackCount {
 		e.trackStep[track] = 0
@@ -490,13 +552,28 @@ func (e *Engine) SetSwing(swing float64) {
 // operation. Call SetTrackLength afterward to create a polymeter. Cells beyond
 // a new length keep their contents (see SetCell). Step durations are recomputed
 // because swing pairs steps within the master loop.
-func (e *Engine) SetStepCount(count int) {
+func (e *Engine) SetStepCount(bank, count int) {
+	if !validBank(bank) {
+		return
+	}
+
 	if count < 1 {
 		count = 1
 	}
 
 	if count > MaxSteps {
 		count = MaxSteps
+	}
+
+	stored := &e.banks[bank]
+
+	stored.stepCount = count
+	for track := range TrackCount {
+		stored.trackLength[track] = count
+	}
+
+	if bank != e.activeBank {
+		return
 	}
 
 	e.stepCount = count
@@ -523,6 +600,8 @@ func (e *Engine) SetStepCount(count int) {
 		e.previousFired[track] = false
 	}
 
+	e.syncActiveBank()
+
 	e.recomputeStepDurations()
 }
 
@@ -530,12 +609,25 @@ func (e *Engine) SetStepCount(count int) {
 // [1, MaxSteps]. The master StepCount continues to define the displayed
 // playhead and swing loop; track playheads advance continuously across master
 // wraps, which is what makes non-dividing lengths a true polymeter.
-func (e *Engine) SetTrackLength(track, count int) {
-	if !validTrack(track) {
+func (e *Engine) SetTrackLength(bank, track, count int) {
+	if !validBank(bank) || !validTrack(track) {
+		return
+	}
+
+	if count < 1 {
+		count = 1
+	} else if count > MaxSteps {
+		count = MaxSteps
+	}
+
+	e.banks[bank].trackLength[track] = count
+
+	if bank != e.activeBank {
 		return
 	}
 
 	e.setTrackLength(track, count)
+	e.syncActiveBank()
 }
 
 func (e *Engine) setTrackLength(track, count int) {
@@ -565,8 +657,8 @@ func (e *Engine) setTrackLength(track, count int) {
 // is a non-finite velocity — the cell keeps its previous value. Every indexed
 // setter behaves this way (SetVolume, SetDecay), because the JS bridge feeds
 // unvalidated arguments straight through and must never take the engine down.
-func (e *Engine) SetCell(track, step int, velocity float64) {
-	if !validTrack(track) || !validStep(step) {
+func (e *Engine) SetCell(bank, track, step int, velocity float64) {
+	if !validBank(bank) || !validTrack(track) || !validStep(step) {
 		return
 	}
 
@@ -575,14 +667,17 @@ func (e *Engine) SetCell(track, step int, velocity float64) {
 		return
 	}
 
-	e.pattern[track][step] = vel
+	e.banks[bank].pattern[track][step] = vel
+	if bank == e.activeBank {
+		e.pattern[track][step] = vel
+	}
 }
 
 // SetCellProbability sets one cell's probability multiplier. It is combined
 // with the global Probability control at trigger time. Defaults are 1, so old
 // patterns and the mechanical render path remain sample-exact.
-func (e *Engine) SetCellProbability(track, step int, probability float64) {
-	if !validTrack(track) || !validStep(step) {
+func (e *Engine) SetCellProbability(bank, track, step int, probability float64) {
+	if !validBank(bank) || !validTrack(track) || !validStep(step) {
 		return
 	}
 
@@ -591,17 +686,41 @@ func (e *Engine) SetCellProbability(track, step int, probability float64) {
 		return
 	}
 
-	e.cellProbability[track][step] = value
+	e.banks[bank].cellProbability[track][step] = value
+	if bank == e.activeBank {
+		e.cellProbability[track][step] = value
+	}
+}
+
+// SetCellHumanize sets one cell's multiplier for the global Humanize amount.
+// Defaults are 1, so older patterns retain their existing global response.
+func (e *Engine) SetCellHumanize(bank, track, step int, amount float64) {
+	if !validBank(bank) || !validTrack(track) || !validStep(step) {
+		return
+	}
+
+	value, ok := validFloat(amount, 0, 1)
+	if !ok {
+		return
+	}
+
+	e.banks[bank].cellHumanize[track][step] = value
+	if bank == e.activeBank {
+		e.cellHumanize[track][step] = value
+	}
 }
 
 // SetCellCondition sets one cell's loop/fill condition. Unknown numeric codes
 // are rejected so persisted state cannot silently acquire different semantics.
-func (e *Engine) SetCellCondition(track, step int, condition TriggerCondition) {
-	if !validTrack(track) || !validStep(step) || condition >= triggerConditionCount {
+func (e *Engine) SetCellCondition(bank, track, step int, condition TriggerCondition) {
+	if !validBank(bank) || !validTrack(track) || !validStep(step) || condition >= triggerConditionCount {
 		return
 	}
 
-	e.cellCondition[track][step] = condition
+	e.banks[bank].cellCondition[track][step] = condition
+	if bank == e.activeBank {
+		e.cellCondition[track][step] = condition
+	}
 }
 
 // SetFillMode enables or disables cells marked TriggerFillOnly. It is semantic
@@ -616,8 +735,8 @@ const PatternSize = TrackCount * MaxSteps
 // SetPattern atomically replaces the full flat track-major pattern (index =
 // track*MaxSteps + step). A wrong-sized snapshot or any non-finite entry is
 // rejected as a whole; finite velocities are clamped to [0, 1].
-func (e *Engine) SetPattern(velocities []float64) {
-	if len(velocities) != PatternSize {
+func (e *Engine) SetPattern(bank int, velocities []float64) {
+	if !validBank(bank) || len(velocities) != PatternSize {
 		return
 	}
 
@@ -629,7 +748,12 @@ func (e *Engine) SetPattern(velocities []float64) {
 
 	for i, velocity := range velocities {
 		vel, _ := validFloat(velocity, 0, 1)
-		e.pattern[i/MaxSteps][i%MaxSteps] = vel
+
+		e.banks[bank].pattern[i/MaxSteps][i%MaxSteps] = vel
+
+		if bank == e.activeBank {
+			e.pattern[i/MaxSteps][i%MaxSteps] = vel
+		}
 	}
 }
 
@@ -934,69 +1058,137 @@ func (e *Engine) TransportSnapshot() TransportSnapshot {
 	}
 }
 
-// triggerStep fires (or schedules) the voices whose cell is active on the
-// current step, applying probability and humanize.
-func (e *Engine) triggerStep() {
-	for t := range e.voices {
-		step := e.trackStep[t]
-		vel := e.pattern[t][step]
-
-		if vel <= 0 {
-			e.previousFired[t] = false
-			continue
-		}
-
-		if !e.conditionAllows(t, step) {
-			e.previousFired[t] = false
-			continue
-		}
-
-		// The global knob remains a master probability while the cell value
-		// supplies local variation. At the all-1 defaults the RNG is left
-		// untouched, preserving the procedural render digests.
-		probability := e.prob * e.cellProbability[t][step]
-		if probability < 1 && e.rng.Float64() >= probability {
-			e.previousFired[t] = false
-			continue
-		}
-
-		e.previousFired[t] = true
-
-		if e.humanize <= 0 {
-			e.voices[t].Trigger(vel)
-			continue
-		}
-
-		// Velocity humanize: scale by 1 ± up to humanize·20%.
-		vel = clamp01(vel * (1 + (e.rng.Float64()*2-1)*e.humanize*humanizeVelMax))
-
-		// Timing humanize: delay by 0..humanize·15 ms worth of samples.
-		delay := int(e.rng.Float64() * e.humanize * humanizeTimingMaxS * e.sr)
-		if delay <= 0 {
-			e.voices[t].Trigger(vel)
-			continue
-		}
-
-		e.schedule(t, vel, delay)
-	}
+// triggerFirstStep evaluates the first step without a pre-roll. Positive
+// offsets are delayed; negative offsets clamp to the start boundary because
+// audio before Play cannot be rendered causally.
+func (e *Engine) triggerFirstStep() {
+	e.previousFired = e.scheduleBankStep(
+		&e.banks[e.activeBank], e.trackStep, e.trackPass, e.previousFired, 1, true,
+	)
 }
 
-func (e *Engine) conditionAllows(track, step int) bool {
-	switch e.cellCondition[track][step] {
+// scheduleNextStep commits the next rhythmic decision inside the centered
+// timing lookahead. Bank requests arriving afterward intentionally wait for
+// the next eligible master wrap: audio for this boundary has already been
+// rendered into pending triggers.
+func (e *Engine) scheduleNextStep(samplesToBoundary int) {
+	targetBank := e.activeBank
+	targetChainPosition := e.chainPosition
+
+	masterWrap := e.currentStep+1 >= e.stepCount
+	if masterWrap {
+		switch {
+		case e.chainEnabled:
+			targetChainPosition = (e.chainPosition + 1) % e.chainLength
+			targetBank = e.chain[targetChainPosition]
+		case e.queuedBank != NoBank:
+			targetBank = e.queuedBank
+		}
+	}
+
+	var (
+		steps  [TrackCount]int
+		passes [TrackCount]uint64
+	)
+
+	previous := e.previousFired
+	if targetBank == e.activeBank {
+		for track := range TrackCount {
+			steps[track] = e.trackStep[track] + 1
+
+			passes[track] = e.trackPass[track]
+			if steps[track] >= e.trackLength[track] {
+				steps[track] = 0
+				passes[track]++
+			}
+		}
+	} else {
+		previous = [TrackCount]bool{}
+	}
+
+	e.nextFired = e.scheduleBankStep(
+		&e.banks[targetBank], steps, passes, previous, samplesToBoundary+1, false,
+	)
+	e.nextBank = targetBank
+	e.nextChainPosition = targetChainPosition
+	e.nextStepScheduled = true
+}
+
+// scheduleBankStep decides condition/probability at the nominal step and
+// queues its voices relative to a future boundary. It returns whether each
+// gate was accepted; conditional history follows the grid, not the possibly
+// early/late sample where a voice happens to sound.
+func (e *Engine) scheduleBankStep(
+	bank *patternBank,
+	steps [TrackCount]int,
+	passes [TrackCount]uint64,
+	previous [TrackCount]bool,
+	baseDelay int,
+	first bool,
+) [TrackCount]bool {
+	var fired [TrackCount]bool
+
+	for track := range e.voices {
+		step := steps[track]
+
+		vel := bank.pattern[track][step]
+		if vel <= 0 || !e.conditionAllows(bank.cellCondition[track][step], passes[track], previous[track]) {
+			continue
+		}
+
+		probability := e.prob * bank.cellProbability[track][step]
+		if probability < 1 && e.rng.Float64() >= probability {
+			continue
+		}
+
+		fired[track] = true
+
+		effective := e.humanize * bank.cellHumanize[track][step]
+		if effective <= 0 {
+			if first {
+				e.voices[track].Trigger(vel)
+			} else {
+				e.schedule(track, vel, baseDelay)
+			}
+
+			continue
+		}
+
+		vel = clamp01(vel * (1 + (e.rng.Float64()*2-1)*effective*humanizeVelMax))
+
+		jitter := int((e.rng.Float64()*2 - 1) * effective * humanizeTimingMaxS * e.sr)
+		if first && jitter <= 0 {
+			e.voices[track].Trigger(vel)
+			continue
+		}
+
+		delay := baseDelay + jitter
+		if delay <= 0 {
+			e.voices[track].Trigger(vel)
+		} else {
+			e.schedule(track, vel, delay)
+		}
+	}
+
+	return fired
+}
+
+func (e *Engine) conditionAllows(condition TriggerCondition, pass uint64, previous bool) bool {
+	switch condition {
 	case TriggerAlways:
 		return true
 	case TriggerEvery2:
-		return (e.trackPass[track]+1)%2 == 0
+		return (pass+1)%2 == 0
 	case TriggerEvery3:
-		return (e.trackPass[track]+1)%3 == 0
+		return (pass+1)%3 == 0
 	case TriggerEvery4:
-		return (e.trackPass[track]+1)%4 == 0
+		return (pass+1)%4 == 0
 	case TriggerFirstLoop:
-		return e.trackPass[track] == 0
+		return pass == 0
 	case TriggerFillOnly:
 		return e.fillMode
 	case TriggerNotPreviousFired:
-		return !e.previousFired[track]
+		return !previous
 	default:
 		return false
 	}
@@ -1035,6 +1227,50 @@ func (e *Engine) firePending() {
 	}
 }
 
+func (e *Engine) commitScheduledBoundary() {
+	targetBank := e.nextBank
+	if targetBank != e.activeBank {
+		// A different bank is a new rhythmic phrase: master and track phases,
+		// pass history and fractional step phase all restart at step zero.
+		e.loadBank(targetBank)
+		e.recomputeStepDurations()
+		e.currentStep = 0
+		e.clockStep = 0
+		e.stepPhase = 0
+		e.currentStepDuration = e.stepDuration[0]
+
+		for track := range TrackCount {
+			e.trackStep[track] = 0
+			e.trackPass[track] = 0
+		}
+	} else {
+		e.clockStep++
+		e.currentStep = (e.currentStep + 1) % e.stepCount
+		e.currentStepDuration = e.stepDuration[e.currentStep]
+
+		for track := range TrackCount {
+			e.trackStep[track]++
+			if e.trackStep[track] >= e.trackLength[track] {
+				e.trackStep[track] = 0
+				e.trackPass[track]++
+			}
+		}
+	}
+
+	// A duplicate bank in a chain still advances the song cursor while the
+	// same-bank branch above deliberately preserves polymetric/pass phase.
+	e.chainPosition = e.nextChainPosition
+	if e.queuedBank == targetBank {
+		e.queuedBank = NoBank
+	}
+
+	e.previousFired = e.nextFired
+	e.nextFired = [TrackCount]bool{}
+	e.stepTriggered = true
+	e.nextStepScheduled = false
+	e.nextBank = NoBank
+}
+
 // Render fills buf with mono audio samples.
 //
 // The invariants the loop relies on — a positive duration for every step, the
@@ -1047,26 +1283,30 @@ func (e *Engine) Render(buf []float32) {
 	for i := range buf {
 		if e.transport == transportPlaying {
 			if !e.stepTriggered {
-				e.triggerStep()
+				e.triggerFirstStep()
 				e.stepTriggered = true
+			}
+
+			remainingPhase := e.currentStepDuration - e.stepPhase
+
+			remainingSamples := int((remainingPhase + stepPhaseUnit - 1) / stepPhaseUnit)
+			if !e.nextStepScheduled && remainingSamples <= e.humanizeLookahead {
+				e.scheduleNextStep(remainingSamples)
 			}
 
 			e.stepPhase += stepPhaseUnit
 			if e.stepPhase >= e.currentStepDuration {
 				e.stepPhase -= e.currentStepDuration
-				e.clockStep++
-				e.currentStep = (e.currentStep + 1) % e.stepCount
-				e.currentStepDuration = e.stepDuration[e.currentStep]
-
-				for track := range TrackCount {
-					e.trackStep[track]++
-					if e.trackStep[track] >= e.trackLength[track] {
-						e.trackStep[track] = 0
-						e.trackPass[track]++
-					}
+				if e.nextStepScheduled {
+					e.commitScheduledBoundary()
+				} else {
+					// Defensive fallback: current production bounds guarantee the
+					// lookahead is shorter than every legal step duration.
+					e.clockStep++
+					e.currentStep = (e.currentStep + 1) % e.stepCount
+					e.currentStepDuration = e.stepDuration[e.currentStep]
+					e.stepTriggered = false
 				}
-
-				e.stepTriggered = false
 			}
 
 			e.firePending()

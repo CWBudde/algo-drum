@@ -12,6 +12,7 @@ import {
   replaceAddressBarWithShareUrl,
 } from "../algo/persistence";
 import * as engine from "../engine/wasmEngine";
+import type { PatternBankState } from "../engine/engineState";
 import { DEFAULT_TOM_MODEL, type TomModel } from "../engine/tomModel";
 import {
   defaultPhysicalTomParams,
@@ -24,6 +25,7 @@ import CellInspector from "./CellInspector";
 import { defaultEngineState, reduceDrumState } from "./drumState";
 import { usePatternHistory } from "./patternHistory";
 import { cellIndex, flatToVisual, TRACK_INDEX } from "./patternView";
+import PatternBanks from "./PatternBanks";
 import StepGrid from "./StepGrid";
 import Transport from "./Transport";
 import { useEngineSync } from "./useEngineSync";
@@ -49,7 +51,7 @@ interface SelectedCell {
 export default function DrumMachine({ wasmLoaded }: Props) {
   const initial = useMemo(() => loadInitialState() ?? defaultEngineState(), []);
   const [drumState, dispatch] = useReducer(reduceDrumState, initial);
-  const { applyStateAction, transport } = useEngineSync({
+  const { applyStateAction, transport, bankPlayback } = useEngineSync({
     wasmLoaded,
     initial,
     state: drumState,
@@ -57,12 +59,21 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   });
   const [editorTrack, setEditorTrack] = useState<number | null>(null);
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
+  const [selectedBank, setSelectedBank] = useState(() =>
+    initial.chainEnabled ? (initial.chain[0] ?? 0) : initial.standaloneBank,
+  );
+  const currentBank = drumState.banks[selectedBank] ?? drumState.banks[0];
 
-  const applyPattern = useCallback(
-    (value: Float32Array) => applyStateAction({ type: "pattern", value }),
+  const applyPatternBank = useCallback(
+    (bank: number, value: PatternBankState) =>
+      applyStateAction({ type: "patternBank", bank, value }),
     [applyStateAction],
   );
-  const patternHistory = usePatternHistory(drumState.pattern, applyPattern);
+  const patternHistory = usePatternHistory(
+    selectedBank,
+    drumState.banks,
+    applyPatternBank,
+  );
   const { undo: undoPattern, redo: redoPattern } = patternHistory;
 
   const handleShare = useCallback(
@@ -188,18 +199,18 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   );
 
   const pattern = useMemo(
-    () => flatToVisual(drumState.pattern),
-    [drumState.pattern],
+    () => flatToVisual(currentBank.pattern),
+    [currentBank.pattern],
   );
   const flatPattern = useMemo(
-    () => Array.from(drumState.pattern),
-    [drumState.pattern],
+    () => Array.from(currentBank.pattern),
+    [currentBank.pattern],
   );
   const volumes = TRACK_INDEX.map((track) => drumState.tracks[track].volume);
   const decays = TRACK_INDEX.map((track) => drumState.tracks[track].decay);
   const muted = TRACK_INDEX.map((track) => drumState.tracks[track].muted);
   const trackLengths = TRACK_INDEX.map(
-    (track) => drumState.trackLengths[track] ?? STEP_CAPACITY,
+    (track) => currentBank.trackLengths[track] ?? STEP_CAPACITY,
   );
 
   const tomModel = drumState.tracks[TOM_TRACK].tom?.model ?? DEFAULT_TOM_MODEL;
@@ -236,7 +247,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         <AlgoPanel
           disabled={!wasmLoaded}
           pattern={flatPattern}
-          stepCount={drumState.stepCount}
+          stepCount={currentBank.stepCount}
           onApplyPattern={patternHistory.applyDestructivePattern}
           canUndo={patternHistory.canUndo}
           canRedo={patternHistory.canRedo}
@@ -246,16 +257,52 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         />
       </header>
 
+      <PatternBanks
+        disabled={!wasmLoaded}
+        transport={transport}
+        selectedBank={selectedBank}
+        activeBank={bankPlayback.activeBank}
+        queuedBank={bankPlayback.queuedBank}
+        chainPosition={bankPlayback.chainPosition}
+        chainEnabled={drumState.chainEnabled}
+        chain={drumState.chain}
+        onSelectBank={(bank) => {
+          setSelectedCell(null);
+          setSelectedBank(bank);
+          if (!drumState.chainEnabled) {
+            applyStateAction({ type: "requestBank", value: bank });
+          }
+        }}
+        onCopyBank={(destination) =>
+          patternHistory.copyBank(selectedBank, destination)
+        }
+        onChainEnabledChange={(value) => {
+          applyStateAction({ type: "chainEnabled", value });
+          if (value) {
+            setSelectedCell(null);
+            setSelectedBank(drumState.chain[0] ?? 0);
+          }
+        }}
+        onChainChange={(value) => applyStateAction({ type: "chain", value })}
+      />
+
       <StepGrid
         disabled={!wasmLoaded}
+        showPlayhead={selectedBank === bankPlayback.activeBank}
         pattern={pattern}
-        stepCount={drumState.stepCount}
+        stepCount={currentBank.stepCount}
         volumes={volumes}
         decays={decays}
         muted={muted}
         trackLengths={trackLengths}
         onCellChange={(track, step, value) =>
-          applyStateAction({ type: "cell", track, step, value })
+          applyStateAction({
+            type: "cell",
+            bank: selectedBank,
+            track,
+            step,
+            value,
+          })
         }
         onVolumeChange={(row, value) =>
           applyStateAction({ type: "volume", track: TRACK_INDEX[row], value })
@@ -274,6 +321,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         onTrackLengthChange={(row, value) =>
           applyStateAction({
             type: "trackLength",
+            bank: selectedBank,
             track: TRACK_INDEX[row],
             value,
           })
@@ -287,18 +335,33 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           track={selectedCell.track}
           step={selectedCell.step}
           probability={
-            drumState.cellProbabilities[
+            currentBank.cellProbabilities[
+              cellIndex(selectedCell.track, selectedCell.step)
+            ]
+          }
+          humanize={
+            currentBank.cellHumanize[
               cellIndex(selectedCell.track, selectedCell.step)
             ]
           }
           condition={
-            drumState.cellConditions[
+            currentBank.cellConditions[
               cellIndex(selectedCell.track, selectedCell.step)
             ]
           }
           onProbabilityChange={(value) =>
             applyStateAction({
               type: "cellProbability",
+              bank: selectedBank,
+              track: selectedCell.track,
+              step: selectedCell.step,
+              value,
+            })
+          }
+          onHumanizeChange={(value) =>
+            applyStateAction({
+              type: "cellHumanize",
+              bank: selectedBank,
               track: selectedCell.track,
               step: selectedCell.step,
               value,
@@ -307,6 +370,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           onConditionChange={(value) =>
             applyStateAction({
               type: "cellCondition",
+              bank: selectedBank,
               track: selectedCell.track,
               step: selectedCell.step,
               value,
@@ -354,7 +418,8 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         transport={transport}
         bpm={drumState.tempoBpm}
         swing={drumState.swing}
-        stepCount={drumState.stepCount}
+        bank={selectedBank}
+        stepCount={currentBank.stepCount}
         probability={drumState.probability}
         humanize={drumState.humanize}
         reverb={drumState.reverb}

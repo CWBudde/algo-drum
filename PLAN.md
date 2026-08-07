@@ -26,7 +26,7 @@ Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pa
 | 10  | Repo hygiene              | **8/10** | —   | Clean tree and dependabot now watching; the deps themselves are still three majors behind   |
 | 11  | Documentation             | **9/10** | +2  | Every verified-stale claim corrected; the toolchain and test suite are finally documented   |
 | 12  | PWA & deployment          | **6/10** | —   | Stamp verified and deploy no longer races CI; the bundle is still never precached           |
-| 13  | Feature depth vs the name | **6/10** | —   | The "algo" arrived — but every algorithmic control is global and one-shot                   |
+| 13  | Feature depth vs the name | **6/10** | —   | Per-cell variation, polymeter and chained rhythm banks now provide real depth                |
 
 **Overall: 7.7/10** (was 6.6 at re-review, 4.0 at first review). The hardening, engine,
 pipeline and state passes closed the correctness, DSP, transport-plumbing and split-state
@@ -739,29 +739,32 @@ The "algo" arrived and it is real work: a correct Bjorklund with rotation
 (`euclid.ts:11`), a musically-biased random walk that protects the downbeat and never
 empties the pattern (`mutate.ts:71`), a probability gate and humanize in the Go engine
 (`engine.go:307`), six presets, a compact versioned share format, and tap tempo — all
-pure, all unit-tested. What holds the score is that **every algorithmic control is global
-and one-shot**: one probability knob for all 80 cells, one humanize, one length, one
-pattern. It is an excellent generative-_assist_ step sequencer, not yet an algorithmic
-drum machine.
+pure, all unit-tested. The depth pass has since added local probability/humanize,
+polymeter, conditional triggers and four chained rhythm banks; the remaining gaps are
+now song/export integration and broader generative controls rather than a single global
+pattern.
 
 - [ ] **G7: accent row / open hi-hat / master volume.** Partly superseded — accent shipped
       as a per-cell 3-state cycle, which is better than a separate row. Still open: the
       6th voice (open hat + choke group; `TrackCount = 5`, `engine.go:12`) and master
       volume (only a fixed `mixHeadroom` exists, `engine.go:21`).
-- [ ] **G8 (high): probability and humanize are global, not per-step.** `engine.go:76`
+- [x] **G8 (high): probability and humanize are global, not per-step.** `engine.go:76`
       holds one scalar applied to every hit on every track. The original G2 asked for
       _per-step_ probability — this is the single biggest gap against the product name.
       Humanize is also strictly _late_ (`engine.go:328`), so the groove drags as it rises.
-      **Partly closed:** every cell now has an independent probability multiplier,
-      persisted at byte precision and editable through the F2/context inspector. The
-      global probability remains a master multiplier. Per-step humanize and centered
-      timing remain open, so the item stays unchecked.
+      Closed in two passes: every cell now has independent probability and humanize
+      multipliers, persisted at byte precision and editable through the F2/context
+      inspector. The global knobs remain master multipliers, while steady-state timing
+      jitter is centered at ±7.5 ms instead of dragging late.
 - [x] **G9: no per-track length / polymeter.** One `stepCount` (`engine.go:71`) wraps all
       voices together (`:385`). Table stakes for algorithmic drums.
       Each track now has its own 1–16-step loop, playhead and pass counter; non-dividing
       lengths continue across master wraps, and Stop resets their phase.
-- [ ] **G10: no pattern banks, song or chain mode.** Exactly one pattern exists in the
+- [x] **G10: no pattern banks, song or chain mode.** Exactly one pattern exists in the
       engine (`engine.go:63`) and the UI — no A/B, copy, queueing or chaining.
+      Four complete rhythm banks now support copy, last-write-wins loop-boundary
+      queueing, independent history, persistence/share links and a looping 1–16-entry
+      A–D chain whose duplicate entries preserve polymetric phase.
 - [x] **G11: no undo/redo.** MUTATE, CLEAR, preset load and Euclid FILL all destroy the
       current pattern irreversibly.
       A bounded 50-snapshot history covers all four destructive actions, with toolbar
@@ -838,10 +841,10 @@ so the rest stays fixed), X5/X17 (roving tabindex + skip link), X7/X8/X15 (playh
 live regions), X9 (targets), P12 (generated SW → closes P5/P8) and P13 (update UX),
 T10 (a DOM test environment — the precondition for testing any of the above).
 
-**P5 — depth:** ✔ A13/A14 (one persistent state shape and owner → closed A4/A8/A9),
-✔ A16 (engine-owned transport arbitration), ✔ G8 probability half, ✔ G16 (conditional
-trigs), ✔ G9 (per-track length), ✔ G11 (undo), ✔ G18 (continuous velocity), ✔ F7 (split
-`DrumMachine.tsx`). Next: G8 per-step humanize/centered timing and G10 (pattern banks).
+**P5 — depth:** ✔ Done 2026-08-07: A13/A14 (one persistent state shape and owner →
+closed A4/A8/A9), A16 (engine-owned transport arbitration), G8 (per-cell probability +
+centered humanize), G16 (conditional trigs), G9 (per-track length), G10 (four banks +
+chain), G11 (undo), G18 (continuous velocity) and F7 (split `DrumMachine.tsx`).
 
 **Quick wins, any time:** G14 (Tom absent from every preset), G21 + U19 (a default
 pattern so the app makes a sound on first click), U18 (`?` shortcut overlay), CI11 (a

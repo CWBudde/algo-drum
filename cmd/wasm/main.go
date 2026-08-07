@@ -50,14 +50,10 @@ var (
 type stateOutput struct {
 	value js.Value
 
-	pattern              []float32
-	patternBytes         js.Value
-	cellProbabilities    []float32
-	cellProbabilityBytes js.Value
-	cellConditions       []byte
-	cellConditionBytes   js.Value
-	trackLengths         []byte
-	trackLengthBytes     js.Value
+	banks      js.Value
+	bankValues [drum.PatternBankCount]patternBankOutput
+	chain      []byte
+	chainBytes js.Value
 
 	tracks          js.Value
 	trackValues     [drum.TrackCount]js.Value
@@ -66,6 +62,21 @@ type stateOutput struct {
 	tomValues       [drum.TrackCount]js.Value
 	physicalParams  [drum.TrackCount][]float32
 	physicalBytes   [drum.TrackCount]js.Value
+}
+
+type patternBankOutput struct {
+	value js.Value
+
+	pattern              []float32
+	patternBytes         js.Value
+	cellProbabilities    []float32
+	cellProbabilityBytes js.Value
+	cellHumanize         []float32
+	cellHumanizeBytes    js.Value
+	cellConditions       []byte
+	cellConditionBytes   js.Value
+	trackLengths         []byte
+	trackLengthBytes     js.Value
 }
 
 func main() {
@@ -144,8 +155,11 @@ func main() {
 			return js.Null()
 		}
 
-		if steps, ok := argInt(args, 0, "setStepCount"); ok {
-			engine.SetStepCount(steps)
+		bank, bankOK := argInt(args, 0, "setStepCount")
+		steps, stepsOK := argInt(args, 1, "setStepCount")
+
+		if bankOK && stepsOK {
+			engine.SetStepCount(bank, steps)
 		}
 
 		return js.Null()
@@ -156,12 +170,13 @@ func main() {
 			return js.Null()
 		}
 
-		track, trackOK := argInt(args, 0, "setCell")
-		step, stepOK := argInt(args, 1, "setCell")
-		velocity, velOK := argFloat(args, 2, "setCell")
+		bank, bankOK := argInt(args, 0, "setCell")
+		track, trackOK := argInt(args, 1, "setCell")
+		step, stepOK := argInt(args, 2, "setCell")
+		velocity, velOK := argFloat(args, 3, "setCell")
 
-		if trackOK && stepOK && velOK {
-			engine.SetCell(track, step, velocity)
+		if bankOK && trackOK && stepOK && velOK {
+			engine.SetCell(bank, track, step, velocity)
 		}
 
 		return js.Null()
@@ -172,12 +187,30 @@ func main() {
 			return js.Null()
 		}
 
-		track, trackOK := argInt(args, 0, "setCellProbability")
-		step, stepOK := argInt(args, 1, "setCellProbability")
-		probability, probabilityOK := argFloat(args, 2, "setCellProbability")
+		bank, bankOK := argInt(args, 0, "setCellProbability")
+		track, trackOK := argInt(args, 1, "setCellProbability")
+		step, stepOK := argInt(args, 2, "setCellProbability")
+		probability, probabilityOK := argFloat(args, 3, "setCellProbability")
 
-		if trackOK && stepOK && probabilityOK {
-			engine.SetCellProbability(track, step, probability)
+		if bankOK && trackOK && stepOK && probabilityOK {
+			engine.SetCellProbability(bank, track, step, probability)
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("setCellHumanize", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		bank, bankOK := argInt(args, 0, "setCellHumanize")
+		track, trackOK := argInt(args, 1, "setCellHumanize")
+		step, stepOK := argInt(args, 2, "setCellHumanize")
+		humanize, humanizeOK := argFloat(args, 3, "setCellHumanize")
+
+		if bankOK && trackOK && stepOK && humanizeOK {
+			engine.SetCellHumanize(bank, track, step, humanize)
 		}
 
 		return js.Null()
@@ -188,12 +221,13 @@ func main() {
 			return js.Null()
 		}
 
-		track, trackOK := argInt(args, 0, "setCellCondition")
-		step, stepOK := argInt(args, 1, "setCellCondition")
-		condition, conditionOK := argInt(args, 2, "setCellCondition")
+		bank, bankOK := argInt(args, 0, "setCellCondition")
+		track, trackOK := argInt(args, 1, "setCellCondition")
+		step, stepOK := argInt(args, 2, "setCellCondition")
+		condition, conditionOK := argInt(args, 3, "setCellCondition")
 
-		if trackOK && stepOK && conditionOK {
-			engine.SetCellCondition(track, step, drum.TriggerCondition(condition))
+		if bankOK && trackOK && stepOK && conditionOK {
+			engine.SetCellCondition(bank, track, step, drum.TriggerCondition(condition))
 		}
 
 		return js.Null()
@@ -204,11 +238,12 @@ func main() {
 			return js.Null()
 		}
 
-		track, trackOK := argInt(args, 0, "setTrackLength")
-		length, lengthOK := argInt(args, 1, "setTrackLength")
+		bank, bankOK := argInt(args, 0, "setTrackLength")
+		track, trackOK := argInt(args, 1, "setTrackLength")
+		length, lengthOK := argInt(args, 2, "setTrackLength")
 
-		if trackOK && lengthOK {
-			engine.SetTrackLength(track, length)
+		if bankOK && trackOK && lengthOK {
+			engine.SetTrackLength(bank, track, length)
 		}
 
 		return js.Null()
@@ -229,11 +264,16 @@ func main() {
 	// setPattern takes a flat track-major Float32Array (index =
 	// track*MaxSteps + step) of velocities in [0, 1].
 	api.Set("setPattern", export(func(args []js.Value) any {
-		if !ready() || len(args) < 1 {
+		if !ready() {
 			return js.Null()
 		}
 
-		arr := args[0]
+		bank, bankOK := argInt(args, 0, "setPattern")
+		if !bankOK || len(args) < 2 {
+			return js.Null()
+		}
+
+		arr := args[1]
 		if arr.Type() != js.TypeObject {
 			warnBadArg("setPattern")
 
@@ -280,7 +320,72 @@ func main() {
 			patternInput[i] = vel
 		}
 
-		engine.SetPattern(patternInput[:])
+		engine.SetPattern(bank, patternInput[:])
+
+		return js.Null()
+	}))
+
+	api.Set("setPatternBank", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		bank, bankOK := argInt(args, 0, "setPatternBank")
+		if !bankOK || len(args) < 2 {
+			return js.Null()
+		}
+
+		state, stateOK := readPatternBankState(args[1])
+		if !stateOK {
+			warnBadArg("setPatternBank")
+
+			return js.Null()
+		}
+
+		if err := engine.ReplacePatternBank(bank, state); err != nil {
+			warnBadArg("setPatternBank")
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("requestBank", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		if bank, ok := argInt(args, 0, "requestBank"); ok {
+			engine.RequestBank(bank)
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("setChain", export(func(args []js.Value) any {
+		if !ready() || len(args) < 1 {
+			return js.Null()
+		}
+
+		chain, ok := readVariableIntArray(args[0], 1, drum.MaxChainLength)
+		if !ok {
+			warnBadArg("setChain")
+
+			return js.Null()
+		}
+
+		engine.SetChain(chain)
+
+		return js.Null()
+	}))
+
+	api.Set("setChainEnabled", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		if enabled, ok := argBool(args, 0, "setChainEnabled"); ok {
+			engine.SetChainEnabled(enabled)
+		}
 
 		return js.Null()
 	}))
@@ -511,6 +616,30 @@ func main() {
 		return float64(engine.TransportSnapshot().Revision)
 	}))
 
+	api.Set("activeBank", export(func(args []js.Value) any {
+		if !ready() {
+			return 0
+		}
+
+		return engine.ActiveBank()
+	}))
+
+	api.Set("queuedBank", export(func(args []js.Value) any {
+		if !ready() {
+			return drum.NoBank
+		}
+
+		return engine.QueuedBank()
+	}))
+
+	api.Set("chainPosition", export(func(args []js.Value) any {
+		if !ready() {
+			return -1
+		}
+
+		return engine.ChainPosition()
+	}))
+
 	// isIdle reports that the engine has nothing left to render, so the caller
 	// can stop pulling chunks (and suspend the AudioContext) instead of paying
 	// for silence. An uninitialized engine has produced nothing at all, which
@@ -634,44 +763,50 @@ func readEngineState(args []js.Value, index int) (drum.EngineState, bool) {
 	value := args[index]
 	tempo, tempoOK := finiteJSNumber(value.Get("tempoBpm"))
 	swing, swingOK := finiteJSNumber(value.Get("swing"))
-	stepCount, stepsOK := integerJSNumber(value.Get("stepCount"))
 	reverbAmount, reverbOK := finiteJSNumber(value.Get("reverb"))
 	probability, probabilityOK := finiteJSNumber(value.Get("probability"))
 	humanize, humanizeOK := finiteJSNumber(value.Get("humanize"))
 	fillModeValue := value.Get("fillMode")
-	pattern, patternOK := readFloatArray(value.Get("pattern"), drum.PatternSize)
-	cellProbabilities, cellProbabilitiesOK := readFloatArray(
-		value.Get("cellProbabilities"), drum.PatternSize,
-	)
-	cellConditions, cellConditionsOK := readConditionArray(
-		value.Get("cellConditions"), drum.PatternSize,
-	)
-	trackLengths, trackLengthsOK := readIntArray(value.Get("trackLengths"), drum.TrackCount)
+	standaloneBank, standaloneBankOK := integerJSNumber(value.Get("standaloneBank"))
+	chainEnabledValue := value.Get("chainEnabled")
+	chain, chainOK := readVariableIntArray(value.Get("chain"), 1, drum.MaxChainLength)
+	banksValue := value.Get("banks")
+	banksOK := banksValue.Type() == js.TypeObject &&
+		js.Global().Get("Array").Call("isArray", banksValue).Bool() &&
+		banksValue.Length() == drum.PatternBankCount
 
 	tracksValue := value.Get("tracks")
 	tracksOK := tracksValue.Type() == js.TypeObject &&
 		js.Global().Get("Array").Call("isArray", tracksValue).Bool() &&
 		tracksValue.Length() == drum.TrackCount
 
-	if !tempoOK || !swingOK || !stepsOK || !reverbOK || !probabilityOK || !humanizeOK ||
-		fillModeValue.Type() != js.TypeBoolean || !patternOK || !cellProbabilitiesOK ||
-		!cellConditionsOK || !trackLengthsOK || !tracksOK {
+	if !tempoOK || !swingOK || !reverbOK || !probabilityOK || !humanizeOK ||
+		fillModeValue.Type() != js.TypeBoolean || !standaloneBankOK ||
+		chainEnabledValue.Type() != js.TypeBoolean || !chainOK || !banksOK || !tracksOK {
 		return drum.EngineState{}, false
 	}
 
 	state := drum.EngineState{
-		TempoBPM:          tempo,
-		Swing:             swing,
-		StepCount:         stepCount,
-		Reverb:            reverbAmount,
-		Probability:       probability,
-		Humanize:          humanize,
-		FillMode:          fillModeValue.Bool(),
-		Pattern:           pattern,
-		CellProbabilities: cellProbabilities,
-		CellConditions:    cellConditions,
-		TrackLengths:      trackLengths,
-		Tracks:            make([]drum.TrackState, drum.TrackCount),
+		TempoBPM:       tempo,
+		Swing:          swing,
+		Reverb:         reverbAmount,
+		Probability:    probability,
+		Humanize:       humanize,
+		FillMode:       fillModeValue.Bool(),
+		Banks:          make([]drum.PatternBankState, drum.PatternBankCount),
+		StandaloneBank: standaloneBank,
+		ChainEnabled:   chainEnabledValue.Bool(),
+		Chain:          chain,
+		Tracks:         make([]drum.TrackState, drum.TrackCount),
+	}
+
+	for bank := range state.Banks {
+		bankState, ok := readPatternBankState(banksValue.Index(bank))
+		if !ok {
+			return drum.EngineState{}, false
+		}
+
+		state.Banks[bank] = bankState
 	}
 
 	for track := range state.Tracks {
@@ -745,6 +880,39 @@ func readEngineState(args []js.Value, index int) (drum.EngineState, bool) {
 	return state, true
 }
 
+func readPatternBankState(value js.Value) (drum.PatternBankState, bool) {
+	if value.Type() != js.TypeObject {
+		return drum.PatternBankState{}, false
+	}
+
+	stepCount, stepCountOK := integerJSNumber(value.Get("stepCount"))
+	pattern, patternOK := readFloatArray(value.Get("pattern"), drum.PatternSize)
+	cellProbabilities, cellProbabilitiesOK := readFloatArray(
+		value.Get("cellProbabilities"), drum.PatternSize,
+	)
+	cellHumanize, cellHumanizeOK := readFloatArray(
+		value.Get("cellHumanize"), drum.PatternSize,
+	)
+	cellConditions, cellConditionsOK := readConditionArray(
+		value.Get("cellConditions"), drum.PatternSize,
+	)
+	trackLengths, trackLengthsOK := readIntArray(value.Get("trackLengths"), drum.TrackCount)
+
+	if !stepCountOK || !patternOK || !cellProbabilitiesOK || !cellHumanizeOK ||
+		!cellConditionsOK || !trackLengthsOK {
+		return drum.PatternBankState{}, false
+	}
+
+	return drum.PatternBankState{
+		StepCount:         stepCount,
+		Pattern:           pattern,
+		CellProbabilities: cellProbabilities,
+		CellHumanize:      cellHumanize,
+		CellConditions:    cellConditions,
+		TrackLengths:      trackLengths,
+	}, true
+}
+
 func finiteJSNumber(value js.Value) (float64, bool) {
 	if value.Type() != js.TypeNumber {
 		return 0, false
@@ -810,6 +978,27 @@ func readIntArray(value js.Value, expected int) ([]int, bool) {
 	return result, true
 }
 
+func readVariableIntArray(value js.Value, minLength, maxLength int) ([]int, bool) {
+	if value.Type() != js.TypeObject {
+		return nil, false
+	}
+
+	count, ok := integerJSNumber(value.Get("length"))
+	if !ok || count < minLength || count > maxLength {
+		return nil, false
+	}
+
+	result := make([]int, count)
+	for i := range result {
+		result[i], ok = integerJSNumber(value.Index(i))
+		if !ok {
+			return nil, false
+		}
+	}
+
+	return result, true
+}
+
 func readConditionArray(value js.Value, expected int) ([]drum.TriggerCondition, bool) {
 	values, ok := readIntArray(value, expected)
 	if !ok {
@@ -834,27 +1023,48 @@ func writeEngineState(state drum.EngineState) js.Value {
 
 	stateOut.value.Set("tempoBpm", state.TempoBPM)
 	stateOut.value.Set("swing", state.Swing)
-	stateOut.value.Set("stepCount", state.StepCount)
 	stateOut.value.Set("reverb", state.Reverb)
 	stateOut.value.Set("probability", state.Probability)
 	stateOut.value.Set("humanize", state.Humanize)
 	stateOut.value.Set("fillMode", state.FillMode)
-	copyFloatOutput(stateOut.pattern, stateOut.patternBytes, state.Pattern)
-	copyFloatOutput(
-		stateOut.cellProbabilities, stateOut.cellProbabilityBytes, state.CellProbabilities,
-	)
+	stateOut.value.Set("standaloneBank", state.StandaloneBank)
+	stateOut.value.Set("chainEnabled", state.ChainEnabled)
 
-	for i, condition := range state.CellConditions {
-		stateOut.cellConditions[i] = byte(condition)
+	if len(stateOut.chain) != len(state.Chain) {
+		stateOut.chain = make([]byte, len(state.Chain))
+		stateOut.chainBytes = js.Global().Get("Uint8Array").New(len(state.Chain))
+		stateOut.value.Set("chain", stateOut.chainBytes)
 	}
 
-	js.CopyBytesToJS(stateOut.cellConditionBytes, stateOut.cellConditions)
-
-	for i, length := range state.TrackLengths {
-		stateOut.trackLengths[i] = byte(length)
+	for i, bank := range state.Chain {
+		stateOut.chain[i] = byte(bank)
 	}
 
-	js.CopyBytesToJS(stateOut.trackLengthBytes, stateOut.trackLengths)
+	js.CopyBytesToJS(stateOut.chainBytes, stateOut.chain)
+
+	for bank, bankState := range state.Banks {
+		output := &stateOut.bankValues[bank]
+		output.value.Set("stepCount", bankState.StepCount)
+		copyFloatOutput(output.pattern, output.patternBytes, bankState.Pattern)
+		copyFloatOutput(
+			output.cellProbabilities, output.cellProbabilityBytes, bankState.CellProbabilities,
+		)
+		copyFloatOutput(
+			output.cellHumanize, output.cellHumanizeBytes, bankState.CellHumanize,
+		)
+
+		for i, condition := range bankState.CellConditions {
+			output.cellConditions[i] = byte(condition)
+		}
+
+		js.CopyBytesToJS(output.cellConditionBytes, output.cellConditions)
+
+		for i, length := range bankState.TrackLengths {
+			output.trackLengths[i] = byte(length)
+		}
+
+		js.CopyBytesToJS(output.trackLengthBytes, output.trackLengths)
+	}
 
 	for track, trackState := range state.Tracks {
 		trackValue := stateOut.trackValues[track]
@@ -891,26 +1101,43 @@ func ensureStateOutput(state drum.EngineState) {
 	}
 
 	stateOut.value = js.Global().Get("Object").New()
+	stateOut.banks = js.Global().Get("Array").New(len(state.Banks))
+	stateOut.value.Set("banks", stateOut.banks)
 
-	var patternView js.Value
+	stateOut.chain = make([]byte, len(state.Chain))
+	stateOut.chainBytes = js.Global().Get("Uint8Array").New(len(state.Chain))
+	stateOut.value.Set("chain", stateOut.chainBytes)
 
-	stateOut.pattern, stateOut.patternBytes, patternView = newFloatOutput(len(state.Pattern))
-	stateOut.value.Set("pattern", patternView)
+	for bank, bankState := range state.Banks {
+		output := &stateOut.bankValues[bank]
+		output.value = js.Global().Get("Object").New()
+		stateOut.banks.SetIndex(bank, output.value)
 
-	var cellProbabilityView js.Value
+		var patternView js.Value
 
-	stateOut.cellProbabilities, stateOut.cellProbabilityBytes, cellProbabilityView = newFloatOutput(len(state.CellProbabilities))
-	stateOut.value.Set("cellProbabilities", cellProbabilityView)
+		output.pattern, output.patternBytes, patternView = newFloatOutput(len(bankState.Pattern))
+		output.value.Set("pattern", patternView)
 
-	stateOut.cellConditions = make([]byte, len(state.CellConditions))
-	cellConditionView := js.Global().Get("Uint8Array").New(len(state.CellConditions))
-	stateOut.cellConditionBytes = cellConditionView
-	stateOut.value.Set("cellConditions", cellConditionView)
+		var cellProbabilityView js.Value
 
-	stateOut.trackLengths = make([]byte, len(state.TrackLengths))
-	trackLengthView := js.Global().Get("Uint8Array").New(len(state.TrackLengths))
-	stateOut.trackLengthBytes = trackLengthView
-	stateOut.value.Set("trackLengths", trackLengthView)
+		output.cellProbabilities, output.cellProbabilityBytes, cellProbabilityView = newFloatOutput(len(bankState.CellProbabilities))
+		output.value.Set("cellProbabilities", cellProbabilityView)
+
+		var cellHumanizeView js.Value
+
+		output.cellHumanize, output.cellHumanizeBytes, cellHumanizeView = newFloatOutput(len(bankState.CellHumanize))
+		output.value.Set("cellHumanize", cellHumanizeView)
+
+		output.cellConditions = make([]byte, len(bankState.CellConditions))
+		cellConditionView := js.Global().Get("Uint8Array").New(len(bankState.CellConditions))
+		output.cellConditionBytes = cellConditionView
+		output.value.Set("cellConditions", cellConditionView)
+
+		output.trackLengths = make([]byte, len(bankState.TrackLengths))
+		trackLengthView := js.Global().Get("Uint8Array").New(len(bankState.TrackLengths))
+		output.trackLengthBytes = trackLengthView
+		output.value.Set("trackLengths", trackLengthView)
+	}
 
 	stateOut.tracks = js.Global().Get("Array").New(len(state.Tracks))
 	stateOut.value.Set("tracks", stateOut.tracks)

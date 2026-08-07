@@ -39,8 +39,8 @@ func renderSteps(engine *Engine, steps int) {
 func TestCellProbabilityDefaultsToOneAndMultipliesGlobalProbability(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	voices := installCountingVoices(engine)
-	engine.SetStepCount(1)
-	engine.SetCell(0, 0, 1)
+	engine.SetStepCount(0, 1)
+	engine.SetCell(0, 0, 0, 1)
 	engine.SetRunning(true)
 
 	renderSteps(engine, 2)
@@ -48,16 +48,16 @@ func TestCellProbabilityDefaultsToOneAndMultipliesGlobalProbability(t *testing.T
 		t.Fatalf("default cell probability produced %d hits, want 2", got)
 	}
 
-	engine.SetCellProbability(0, 0, 0)
+	engine.SetCellProbability(0, 0, 0, 0)
 	renderSteps(engine, 2)
-	if got := voices[0].triggers; got != 2 {
-		t.Fatalf("cell probability 0 increased hit count to %d", got)
+	if got := voices[0].triggers; got != 3 {
+		t.Fatalf("cell probability edit after lookahead produced %d total hits, want one committed hit", got)
 	}
 
-	engine.SetCellProbability(0, 0, 1)
+	engine.SetCellProbability(0, 0, 0, 1)
 	engine.SetProbability(0)
 	renderSteps(engine, 2)
-	if got := voices[0].triggers; got != 2 {
+	if got := voices[0].triggers; got != 3 {
 		t.Fatalf("global probability 0 increased hit count to %d", got)
 	}
 }
@@ -65,14 +65,14 @@ func TestCellProbabilityDefaultsToOneAndMultipliesGlobalProbability(t *testing.T
 func TestDefaultCellSemanticsAreSampleExact(t *testing.T) {
 	build := func(explicit bool) *Engine {
 		engine := NewEngine(testSampleRate)
-		engine.SetCell(0, 0, 1)
-		engine.SetCell(2, 4, 0.7)
+		engine.SetCell(0, 0, 0, 1)
+		engine.SetCell(0, 2, 4, 0.7)
 		if explicit {
 			for track := range TrackCount {
-				engine.SetTrackLength(track, MaxSteps)
+				engine.SetTrackLength(0, track, MaxSteps)
 				for step := range MaxSteps {
-					engine.SetCellProbability(track, step, 1)
-					engine.SetCellCondition(track, step, TriggerAlways)
+					engine.SetCellProbability(0, track, step, 1)
+					engine.SetCellCondition(0, track, step, TriggerAlways)
 				}
 			}
 			engine.SetFillMode(false)
@@ -108,9 +108,9 @@ func TestPassConditionsUseIndependentTrackLoops(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			engine := NewEngine(testSampleRate)
 			voices := installCountingVoices(engine)
-			engine.SetStepCount(1)
-			engine.SetCell(0, 0, 1)
-			engine.SetCellCondition(0, 0, test.condition)
+			engine.SetStepCount(0, 1)
+			engine.SetCell(0, 0, 0, 1)
+			engine.SetCellCondition(0, 0, 0, test.condition)
 			engine.SetRunning(true)
 			renderSteps(engine, test.loops)
 
@@ -125,9 +125,9 @@ func TestFillOnlyAndNotPreviousFiredConditions(t *testing.T) {
 	t.Run("fill only", func(t *testing.T) {
 		engine := NewEngine(testSampleRate)
 		voices := installCountingVoices(engine)
-		engine.SetStepCount(1)
-		engine.SetCell(0, 0, 1)
-		engine.SetCellCondition(0, 0, TriggerFillOnly)
+		engine.SetStepCount(0, 1)
+		engine.SetCell(0, 0, 0, 1)
+		engine.SetCellCondition(0, 0, 0, TriggerFillOnly)
 		engine.SetRunning(true)
 		renderSteps(engine, 3)
 		if got := voices[0].triggers; got != 0 {
@@ -136,19 +136,19 @@ func TestFillOnlyAndNotPreviousFiredConditions(t *testing.T) {
 
 		engine.SetFillMode(true)
 		renderSteps(engine, 3)
-		if got := voices[0].triggers; got != 3 {
-			t.Fatalf("fill-enabled hit count = %d, want 3", got)
+		if got := voices[0].triggers; got != 2 {
+			t.Fatalf("fill-enabled hit count = %d, want 2 after the committed disabled step", got)
 		}
 	})
 
 	t.Run("not previous fired observes accepted gates", func(t *testing.T) {
 		engine := NewEngine(testSampleRate)
 		voices := installCountingVoices(engine)
-		engine.SetStepCount(2)
-		engine.SetCell(0, 0, 1)
-		engine.SetCell(0, 1, 1)
-		engine.SetCellProbability(0, 0, 0)
-		engine.SetCellCondition(0, 1, TriggerNotPreviousFired)
+		engine.SetStepCount(0, 2)
+		engine.SetCell(0, 0, 0, 1)
+		engine.SetCell(0, 0, 1, 1)
+		engine.SetCellProbability(0, 0, 0, 0)
+		engine.SetCellCondition(0, 0, 1, TriggerNotPreviousFired)
 		engine.SetRunning(true)
 		renderSteps(engine, 4)
 
@@ -161,11 +161,11 @@ func TestFillOnlyAndNotPreviousFiredConditions(t *testing.T) {
 func TestPerTrackLengthsCreatePolymeterAcrossMasterWraps(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	voices := installCountingVoices(engine)
-	engine.SetStepCount(5)
-	engine.SetTrackLength(0, 3)
-	engine.SetTrackLength(1, 4)
-	engine.SetCell(0, 0, 1)
-	engine.SetCell(1, 0, 1)
+	engine.SetStepCount(0, 5)
+	engine.SetTrackLength(0, 0, 3)
+	engine.SetTrackLength(0, 1, 4)
+	engine.SetCell(0, 0, 0, 1)
+	engine.SetCell(0, 1, 0, 1)
 	engine.SetRunning(true)
 
 	renderSteps(engine, 12)
@@ -183,7 +183,7 @@ func TestPerTrackLengthsCreatePolymeterAcrossMasterWraps(t *testing.T) {
 func TestTrackLengthEditUsesTheAbsoluteClock(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	installCountingVoices(engine)
-	engine.SetStepCount(5)
+	engine.SetStepCount(0, 5)
 	engine.SetRunning(true)
 	renderSteps(engine, 6)
 
@@ -191,7 +191,7 @@ func TestTrackLengthEditUsesTheAbsoluteClock(t *testing.T) {
 		t.Fatalf("clock before length edit: master=%d absolute=%d, want 1/6",
 			engine.currentStep, engine.clockStep)
 	}
-	engine.SetTrackLength(0, 4)
+	engine.SetTrackLength(0, 0, 4)
 	if got := engine.trackStep[0]; got != 2 {
 		t.Fatalf("4-step track after clock 6 = %d, want 2", got)
 	}
@@ -200,10 +200,10 @@ func TestTrackLengthEditUsesTheAbsoluteClock(t *testing.T) {
 func TestStopResetsConditionalPassAndTrackPlayheads(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	voices := installCountingVoices(engine)
-	engine.SetStepCount(4)
-	engine.SetTrackLength(0, 3)
-	engine.SetCell(0, 0, 1)
-	engine.SetCellCondition(0, 0, TriggerFirstLoop)
+	engine.SetStepCount(0, 4)
+	engine.SetTrackLength(0, 0, 3)
+	engine.SetCell(0, 0, 0, 1)
+	engine.SetCellCondition(0, 0, 0, TriggerFirstLoop)
 	engine.SetRunning(true)
 	renderSteps(engine, 4)
 	if voices[0].triggers != 1 || engine.trackPass[0] != 1 || engine.trackStep[0] != 1 {
@@ -225,20 +225,20 @@ func TestStopResetsConditionalPassAndTrackPlayheads(t *testing.T) {
 
 func TestDepthSettersClampAndRejectInvalidInput(t *testing.T) {
 	engine := NewEngine(testSampleRate)
-	engine.SetCellProbability(0, 0, 2)
-	engine.SetTrackLength(0, 0)
+	engine.SetCellProbability(0, 0, 0, 2)
+	engine.SetTrackLength(0, 0, 0)
 	if engine.cellProbability[0][0] != 1 || engine.trackLength[0] != 1 {
 		t.Fatalf("finite values were not clamped: probability=%v length=%d",
 			engine.cellProbability[0][0], engine.trackLength[0])
 	}
 
 	for _, bad := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
-		engine.SetCellProbability(0, 0, bad)
+		engine.SetCellProbability(0, 0, 0, bad)
 		if engine.cellProbability[0][0] != 1 {
 			t.Fatalf("non-finite probability %v changed the cell", bad)
 		}
 	}
-	engine.SetCellCondition(0, 0, TriggerCondition(255))
+	engine.SetCellCondition(0, 0, 0, TriggerCondition(255))
 	if engine.cellCondition[0][0] != TriggerAlways {
 		t.Fatalf("invalid condition changed cell to %d", engine.cellCondition[0][0])
 	}
@@ -248,11 +248,11 @@ func TestConditionalPolymeterRenderDoesNotAllocate(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	engine.SetTempo(300)
 	for track := range TrackCount {
-		engine.SetTrackLength(track, MaxSteps-track)
+		engine.SetTrackLength(0, track, MaxSteps-track)
 		for step := range MaxSteps {
-			engine.SetCell(track, step, 1)
-			engine.SetCellProbability(track, step, 0.75)
-			engine.SetCellCondition(track, step, TriggerCondition(step%int(triggerConditionCount)))
+			engine.SetCell(0, track, step, 1)
+			engine.SetCellProbability(0, track, step, 0.75)
+			engine.SetCellCondition(0, track, step, TriggerCondition(step%int(triggerConditionCount)))
 		}
 	}
 	engine.SetFillMode(true)
