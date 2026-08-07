@@ -22,6 +22,19 @@
   font-size: 15px;
 }
 
+/* The machine stays mounted across a load fault so its React state survives a
+   retry. This shell preserves the direct child's former flex sizing; `hidden`
+   removes the whole control surface from layout, focus navigation and the
+   accessibility tree while the fault panel is active. Keep the explicit rule:
+   author styles can otherwise override the browser's `[hidden]` stylesheet. */
+.app-machine {
+  width: min(100%, 1000px);
+}
+
+.app-machine[hidden] {
+  display: none;
+}
+
 /* ── WASM-load failure panel (skeuomorphic, matches the machine) ─────────── */
 
 .app-fault {

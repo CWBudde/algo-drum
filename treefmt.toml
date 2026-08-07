@@ -81,16 +81,8 @@ includes = [
 ]
 excludes = [
     "**/*.sops.*",
-    # Prettier interprets LaTeX subscripts as Markdown emphasis and corrupts
-    # the equations in these research/calibration documents.
-    "docs/physical-model-research.md",
-    "docs/physical-calibration.md",
-    # Go-generated JSON artefacts (encoding/json with SetIndent). Prettier
-    # collapses their numeric arrays and rewrites exponents (1.9e-05 → 1.9e-5),
-    # so every regeneration would show up as a formatting failure — and for the
-    # two that CI diffs against a fresh regeneration (`just check-physical-
-    # reference`), a formatted copy would fail that check outright.
-    "testdata/physical-fit-tom.json",
-    "testdata/physical-reference-v2.json",
-    "docs/paper/model-data.json",
+    # The physical model's LaTeX-bearing documents and Go-generated JSON
+    # artefacts used to be excluded here. They moved to
+    # github.com/cwbudde/algo-tom along with the model, and so did their
+    # excludes — see that repository's treefmt.toml for why each one is listed.
 ]

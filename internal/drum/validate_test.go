@@ -34,7 +34,7 @@ func TestValidateAcceptsEngineAfterUse(t *testing.T) {
 
 	// Long enough to wrap the odd-length loop several times, so pending
 	// humanize triggers are in flight when the render stops.
-	renderTotal(engine, int(engine.stepLen[0])*20)
+	renderTotal(engine, samplesForStep(engine, 0)*20)
 
 	if err := engine.Validate(); err != nil {
 		t.Fatalf("engine invalid after playback: %v", err)
@@ -48,14 +48,9 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 		want    string
 	}{
 		{
-			name:    "zero step length",
-			corrupt: func(engine *Engine) { engine.stepLen[3] = 0 },
-			want:    "step 3 length 0",
-		},
-		{
-			name:    "negative step length",
-			corrupt: func(engine *Engine) { engine.stepLen[0] = -1 },
-			want:    "step 0 length -1",
+			name:    "zero step duration",
+			corrupt: func(engine *Engine) { engine.stepDuration[3] = 0 },
+			want:    "step 3 duration is zero",
 		},
 		{
 			name:    "playhead past the loop end",
@@ -68,11 +63,6 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 			want:    "playhead -1",
 		},
 		{
-			name:    "negative elapsed samples",
-			corrupt: func(engine *Engine) { engine.stepSamples = -1 },
-			want:    "elapsed step samples -1",
-		},
-		{
 			name:    "step count below one",
 			corrupt: func(engine *Engine) { engine.stepCount = 0 },
 			want:    "step count 0",
@@ -83,23 +73,39 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 			want:    "step count 17",
 		},
 		{
+			name:    "track length below one",
+			corrupt: func(engine *Engine) { engine.trackLength[2] = 0 },
+			want:    "track 2 length 0",
+		},
+		{
+			name: "track playhead past loop end",
+			corrupt: func(engine *Engine) {
+				engine.trackLength[2] = 3
+				engine.trackStep[2] = 3
+			},
+			want: "track 2 playhead 3 outside loop of 3 steps",
+		},
+		{
 			name: "pending trigger past its deadline",
 			corrupt: func(engine *Engine) {
-				engine.pending[2] = pendingTrigger{countdown: 0, track: 1, velocity: 0.7, active: true}
+				engine.pending[2] = pendingTrigger{countdown: 0, track: 1, velocity: 0.7}
+				engine.pendingMask = 1 << 2
 			},
 			want: "pending trigger 2 past its deadline",
 		},
 		{
 			name: "pending trigger on an unknown track",
 			corrupt: func(engine *Engine) {
-				engine.pending[0] = pendingTrigger{countdown: 10, track: TrackCount, velocity: 0.7, active: true}
+				engine.pending[0] = pendingTrigger{countdown: 10, track: TrackCount, velocity: 0.7}
+				engine.pendingMask = 1
 			},
 			want: "pending trigger 0 targets invalid track 7",
 		},
 		{
 			name: "pending trigger with a non-finite velocity",
 			corrupt: func(engine *Engine) {
-				engine.pending[0] = pendingTrigger{countdown: 10, track: 0, velocity: math.NaN(), active: true}
+				engine.pending[0] = pendingTrigger{countdown: 10, track: 0, velocity: math.NaN()}
+				engine.pendingMask = 1
 			},
 			want: "pending trigger 0 velocity",
 		},
@@ -122,6 +128,16 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 			name:    "non-finite cell velocity",
 			corrupt: func(engine *Engine) { engine.pattern[1][2] = math.Inf(1) },
 			want:    "cell (1, 2) velocity",
+		},
+		{
+			name:    "non-finite cell probability",
+			corrupt: func(engine *Engine) { engine.cellProbability[1][2] = math.NaN() },
+			want:    "cell (1, 2) probability",
+		},
+		{
+			name:    "invalid cell condition",
+			corrupt: func(engine *Engine) { engine.cellCondition[1][2] = TriggerCondition(255) },
+			want:    "cell (1, 2) condition",
 		},
 		{
 			name:    "volume past unity",
@@ -154,9 +170,60 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 			want:    "reverb amount",
 		},
 		{
+			name:    "silent run past the confirm window",
+			corrupt: func(engine *Engine) { engine.silentRun = engine.idleSamples + 1 },
+			want:    "silent run",
+		},
+		{
+			name:    "negative silent run",
+			corrupt: func(engine *Engine) { engine.silentRun = -1 },
+			want:    "silent run -1",
+		},
+		{
+			name:    "idle confirm window of zero samples",
+			corrupt: func(engine *Engine) { engine.idleSamples = 0 },
+			want:    "idle confirm window",
+		},
+		{
 			name:    "missing voice",
 			corrupt: func(engine *Engine) { engine.voices[4] = nil },
 			want:    "track 4 has no voice",
+		},
+		{
+			name: "physical shadow has wrong width",
+			corrupt: func(engine *Engine) {
+				engine.physicalTomParams[tomTrackIndex] = nil
+			},
+			want: "physical Tom track 3 shadow parameter count",
+		},
+		{
+			name: "physical shadow has non-finite value",
+			corrupt: func(engine *Engine) {
+				engine.physicalTomParams[tomTrackIndex][0] = math.NaN()
+			},
+			want: "physical Tom track 3 shadow param 0",
+		},
+		{
+			name: "physical instance diverges from shadow",
+			corrupt: func(engine *Engine) {
+				engine.SetTomModel(tomTrackIndex, TomModelPhysical)
+				engine.physicalTomParams[tomTrackIndex][0] = 0.9
+			},
+			want: "physical Tom track 3 param 0",
+		},
+		{
+			name: "selected physical Tom has no voice",
+			corrupt: func(engine *Engine) {
+				engine.tomModels[tomTrackIndex] = TomModelPhysical
+			},
+			want: "physical Tom track 3 has no physical voice",
+		},
+		{
+			name: "selected Tom does not own active voice",
+			corrupt: func(engine *Engine) {
+				engine.voices[tomTrackIndex] = engine.voices[0]
+			},
+			want: "procedural Tom track 3 does not own its active voice",
 		},
 	}
 
@@ -179,7 +246,7 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 
 func TestValidateReportsEveryViolation(t *testing.T) {
 	engine := NewEngine(testSampleRate)
-	engine.stepLen[0] = 0
+	engine.stepDuration[0] = 0
 	engine.currentStep = MaxSteps
 
 	err := engine.Validate()
@@ -187,7 +254,7 @@ func TestValidateReportsEveryViolation(t *testing.T) {
 		t.Fatal("Validate accepted a broken engine")
 	}
 
-	for _, want := range []string{"step 0 length 0", "playhead 16"} {
+	for _, want := range []string{"step 0 duration is zero", "playhead 16"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("Validate reported %q, want it to mention %q too", err, want)
 		}

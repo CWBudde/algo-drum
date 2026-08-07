@@ -5,8 +5,13 @@ import (
 	"testing"
 )
 
-func newTestVoices() map[string]Voice {
-	return map[string]Voice{
+type activeVoice interface {
+	Voice
+	IsActive() bool
+}
+
+func newTestVoices() map[string]activeVoice {
+	return map[string]activeVoice{
 		"BassDrum": NewBassDrum(testSampleRate),
 		"Snare":    NewSnare(testSampleRate),
 		"HiHat":    NewHiHat(testSampleRate),
@@ -19,7 +24,7 @@ func newTestVoices() map[string]Voice {
 
 // tickUntilInactive runs a voice until it deactivates, returning the number
 // of samples it stayed active and the absolute peak it produced.
-func tickUntilInactive(t *testing.T, name string, voice Voice) (int, float64) {
+func tickUntilInactive(t *testing.T, name string, voice activeVoice) (int, float64) {
 	t.Helper()
 
 	const maxSamples = int(testSampleRate * 30)

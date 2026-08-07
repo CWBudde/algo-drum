@@ -9,7 +9,9 @@ import { defineConfig, devices } from "@playwright/test";
 const LOCAL_CHROMIUM = "/opt/pw-browsers/chromium";
 const executablePath = existsSync(LOCAL_CHROMIUM) ? LOCAL_CHROMIUM : undefined;
 
-const PORT = 4173;
+// Allow concurrent worktrees/projects to choose another preview port while CI
+// and the normal local command retain the documented default.
+const PORT = Number(process.env.PLAYWRIGHT_PORT ?? 4173);
 const BASE_URL = `http://localhost:${PORT}/algo-drum/`;
 
 export default defineConfig({
@@ -45,8 +47,7 @@ export default defineConfig({
   // "build only if missing" shortcut made every dev machine with a stale
   // artifact fail the suite with a rebuild-me error instead of running it.
   webServer: {
-    command:
-      "sh -c 'bash ../scripts/build-wasm.sh && bunx vite build && bunx vite preview --port 4173 --strictPort'",
+    command: `sh -c 'bash ../scripts/build-wasm.sh && bunx vite build && bunx vite preview --port ${PORT} --strictPort'`,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
