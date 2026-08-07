@@ -114,6 +114,7 @@ func applyFuzzProgram(engine *Engine, program []byte) {
 			engine.SetTrackLength(0, index, small)
 			engine.SetCellCondition(0, index, small, TriggerCondition(byte(bits>>8)))
 			engine.SetCellHumanize(0, index, small, value)
+			engine.SetCellRepeats(0, index, small, int(int64(bits)))
 			engine.SetFillMode(bits&1 == 1)
 		}
 	}

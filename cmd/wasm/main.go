@@ -75,6 +75,8 @@ type patternBankOutput struct {
 	cellHumanizeBytes    js.Value
 	cellConditions       []byte
 	cellConditionBytes   js.Value
+	cellRepeats          []byte
+	cellRepeatBytes      js.Value
 	trackLengths         []byte
 	trackLengthBytes     js.Value
 }
@@ -228,6 +230,23 @@ func main() {
 
 		if bankOK && trackOK && stepOK && conditionOK {
 			engine.SetCellCondition(bank, track, step, drum.TriggerCondition(condition))
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("setCellRepeats", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		bank, bankOK := argInt(args, 0, "setCellRepeats")
+		track, trackOK := argInt(args, 1, "setCellRepeats")
+		step, stepOK := argInt(args, 2, "setCellRepeats")
+		repeats, repeatsOK := argInt(args, 3, "setCellRepeats")
+
+		if bankOK && trackOK && stepOK && repeatsOK {
+			engine.SetCellRepeats(bank, track, step, repeats)
 		}
 
 		return js.Null()
@@ -896,10 +915,11 @@ func readPatternBankState(value js.Value) (drum.PatternBankState, bool) {
 	cellConditions, cellConditionsOK := readConditionArray(
 		value.Get("cellConditions"), drum.PatternSize,
 	)
+	cellRepeats, cellRepeatsOK := readRepeatArray(value.Get("cellRepeats"), drum.PatternSize)
 	trackLengths, trackLengthsOK := readIntArray(value.Get("trackLengths"), drum.TrackCount)
 
 	if !stepCountOK || !patternOK || !cellProbabilitiesOK || !cellHumanizeOK ||
-		!cellConditionsOK || !trackLengthsOK {
+		!cellConditionsOK || !cellRepeatsOK || !trackLengthsOK {
 		return drum.PatternBankState{}, false
 	}
 
@@ -909,6 +929,7 @@ func readPatternBankState(value js.Value) (drum.PatternBankState, bool) {
 		CellProbabilities: cellProbabilities,
 		CellHumanize:      cellHumanize,
 		CellConditions:    cellConditions,
+		CellRepeats:       cellRepeats,
 		TrackLengths:      trackLengths,
 	}, true
 }
@@ -1018,6 +1039,25 @@ func readConditionArray(value js.Value, expected int) ([]drum.TriggerCondition, 
 	return result, true
 }
 
+func readRepeatArray(value js.Value, expected int) ([]uint8, bool) {
+	values, ok := readIntArray(value, expected)
+	if !ok {
+		return nil, false
+	}
+
+	result := make([]uint8, expected)
+
+	for i, value := range values {
+		if value < 1 || value > 4 {
+			return nil, false
+		}
+
+		result[i] = uint8(value)
+	}
+
+	return result, true
+}
+
 func writeEngineState(state drum.EngineState) js.Value {
 	ensureStateOutput(state)
 
@@ -1058,6 +1098,8 @@ func writeEngineState(state drum.EngineState) js.Value {
 		}
 
 		js.CopyBytesToJS(output.cellConditionBytes, output.cellConditions)
+		copy(output.cellRepeats, bankState.CellRepeats)
+		js.CopyBytesToJS(output.cellRepeatBytes, output.cellRepeats)
 
 		for i, length := range bankState.TrackLengths {
 			output.trackLengths[i] = byte(length)
@@ -1132,6 +1174,11 @@ func ensureStateOutput(state drum.EngineState) {
 		cellConditionView := js.Global().Get("Uint8Array").New(len(bankState.CellConditions))
 		output.cellConditionBytes = cellConditionView
 		output.value.Set("cellConditions", cellConditionView)
+
+		output.cellRepeats = make([]byte, len(bankState.CellRepeats))
+		cellRepeatView := js.Global().Get("Uint8Array").New(len(bankState.CellRepeats))
+		output.cellRepeatBytes = cellRepeatView
+		output.value.Set("cellRepeats", cellRepeatView)
 
 		output.trackLengths = make([]byte, len(bankState.TrackLengths))
 		trackLengthView := js.Global().Get("Uint8Array").New(len(bankState.TrackLengths))

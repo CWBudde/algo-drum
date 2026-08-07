@@ -7,9 +7,11 @@ interface Props {
   probability: number;
   humanize: number;
   condition: number;
+  repeats: number;
   onProbabilityChange: (value: number) => void;
   onHumanizeChange: (value: number) => void;
   onConditionChange: (value: number) => void;
+  onRepeatsChange: (value: number) => void;
   onClose: () => void;
 }
 
@@ -19,9 +21,11 @@ export default function CellInspector({
   probability,
   humanize,
   condition,
+  repeats,
   onProbabilityChange,
   onHumanizeChange,
   onConditionChange,
+  onRepeatsChange,
   onClose,
 }: Props) {
   const visualRow = TRACK_INDEX.indexOf(track as (typeof TRACK_INDEX)[number]);
@@ -81,6 +85,19 @@ export default function CellInspector({
               {label}
             </option>
           ))}
+        </select>
+      </label>
+      <label>
+        RATCHET
+        <select
+          value={repeats}
+          aria-label="Ratchet repeats"
+          onChange={(event) => onRepeatsChange(Number(event.target.value))}
+        >
+          <option value={1}>1 hit</option>
+          <option value={2}>2 hits</option>
+          <option value={3}>3 hits</option>
+          <option value={4}>4 hits</option>
         </select>
       </label>
       <button type="button" onClick={onClose} aria-label="Close step settings">

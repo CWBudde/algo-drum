@@ -566,10 +566,12 @@ func TestHumanizeRenderDoesNotAllocate(t *testing.T) {
 	for track := 0; track < TrackCount; track++ {
 		for step := 0; step < MaxSteps; step++ {
 			engine.SetCell(0, track, step, 1)
+			engine.SetCellRepeats(0, track, step, maxCellRepeats)
 		}
 	}
 
 	engine.SetTempo(300) // fastest tempo → most step boundaries per render
+	engine.SetSwing(maxSwing)
 	engine.SetRunning(true)
 
 	buf := make([]float32, 4096)

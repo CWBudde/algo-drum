@@ -100,7 +100,7 @@ describe("reduceDrumState", () => {
     expect(next.banks[0].stepCount).toBe(16);
   });
 
-  it("updates local humanize and chain state without aliasing", () => {
+  it("updates local humanize, ratchets, and chain state without aliasing", () => {
     const state = defaultEngineState();
     const humanized = reduceDrumState(state, {
       type: "cellHumanize",
@@ -113,10 +113,19 @@ describe("reduceDrumState", () => {
       type: "chain",
       value: Uint8Array.from([0, 1, 1, 3]),
     });
+    const ratcheted = reduceDrumState(chained, {
+      type: "cellRepeats",
+      bank: 1,
+      track: 0,
+      step: 2,
+      value: 4,
+    });
 
     expect(humanized.banks[1].cellHumanize[2]).toBeCloseTo(0.4);
     expect(state.banks[1].cellHumanize[2]).toBe(1);
     expect(Array.from(chained.chain)).toEqual([0, 1, 1, 3]);
     expect(chained.chain).not.toBe(state.chain);
+    expect(ratcheted.banks[1].cellRepeats[2]).toBe(4);
+    expect(chained.banks[1].cellRepeats[2]).toBe(1);
   });
 });

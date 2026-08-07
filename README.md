@@ -13,7 +13,7 @@ No plugins, no backend — just a `.wasm` file and a browser.
   pattern length (STEPS knob, 1–16)
 - Per-step velocity: click to cycle off → hit → accent, or Shift-drag / use
   Shift+Arrow to set a continuous level
-- Per-cell probability, centered humanize depth, and evolving trigger
+- Per-cell probability, centered humanize depth, 1–4-hit ratchets, and evolving trigger
   conditions (every 2nd/3rd/4th loop, first loop, fill-only, or when the
   previous step did not fire)
 - Independent 1–16-step track lengths for polymetric patterns, with a live
@@ -31,7 +31,7 @@ No plugins, no backend — just a `.wasm` file and a browser.
   `localStorage`, so reloading or sending a link restores the pattern, tempo,
   and knobs
 - Keyboard-accessible: Space toggles play/pause; F2 opens a cell's probability,
-  humanize, and condition inspector; pattern undo/redo uses the standard
+  humanize, ratchet, and condition inspector; pattern undo/redo uses the standard
   shortcuts; and the knobs are ARIA sliders with full keyboard controls
 - Installable as a PWA: a web app manifest plus a service worker that caches
   the app shell, the WASM engine, and the audio worklet (a fully offline reload

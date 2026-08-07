@@ -80,6 +80,87 @@ func TestCellHumanizeZeroIsMechanicalWithGlobalHumanize(t *testing.T) {
 	}
 }
 
+func TestCellRatchetsAreEvenlySpacedWithinStep(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	voice := installTimingVoice(engine, 0)
+	engine.SetStepCount(0, 1)
+	engine.SetCell(0, 0, 0, 0.75)
+	engine.SetCellRepeats(0, 0, 0, 4)
+	engine.SetRunning(true)
+
+	stepSamples := samplesForStep(engine, 0)
+	engine.Render(make([]float32, stepSamples))
+
+	want := []int{0, stepSamples / 4, stepSamples / 2, stepSamples * 3 / 4}
+	if len(voice.triggers) != len(want) {
+		t.Fatalf("ratchet trigger count = %d, want %d", len(voice.triggers), len(want))
+	}
+
+	for hit, sample := range voice.triggers {
+		if sample != want[hit] {
+			t.Errorf("ratchet hit %d at %d, want %d", hit, sample, want[hit])
+		}
+		if voice.velocities[hit] != 0.75 {
+			t.Errorf("ratchet hit %d velocity = %v, want 0.75", hit, voice.velocities[hit])
+		}
+	}
+}
+
+func TestCellRatchetSetterClamps(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	engine.SetCellRepeats(2, 3, 4, 0)
+	if got := engine.banks[2].cellRepeats[3][4]; got != 1 {
+		t.Fatalf("low repeat count = %d, want 1", got)
+	}
+
+	engine.SetCellRepeats(2, 3, 4, 9)
+	if got := engine.banks[2].cellRepeats[3][4]; got != 4 {
+		t.Fatalf("high repeat count = %d, want 4", got)
+	}
+}
+
+func TestCellRatchetConditionGatesTheGroupOnce(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	voices := installCountingVoices(engine)
+	engine.SetStepCount(0, 1)
+	engine.SetCell(0, 0, 0, 1)
+	engine.SetCellRepeats(0, 0, 0, 4)
+	engine.SetCellCondition(0, 0, 0, TriggerEvery2)
+	engine.SetRunning(true)
+
+	renderSteps(engine, 2)
+	if got := voices[0].triggers; got != 4 {
+		t.Fatalf("every-second-loop ratchet triggered %d times, want one four-hit group", got)
+	}
+}
+
+func TestCellHumanizeMovesRatchetAsOneGroup(t *testing.T) {
+	engine := NewEngine(testSampleRate)
+	voice := installTimingVoice(engine, 0)
+	engine.SetStepCount(0, 1)
+	engine.SetCell(0, 0, 0, 0.8)
+	engine.SetCellRepeats(0, 0, 0, 4)
+	engine.SetHumanize(1)
+	engine.SetRunning(true)
+
+	stepSamples := samplesForStep(engine, 0)
+	engine.Render(make([]float32, stepSamples*3))
+	if len(voice.triggers) < 8 {
+		t.Fatalf("ratchet trigger count = %d, want at least 8", len(voice.triggers))
+	}
+
+	spacing := stepSamples / 4
+	for hit := 5; hit < 8; hit++ {
+		if got := voice.triggers[hit] - voice.triggers[hit-1]; got != spacing {
+			t.Errorf("humanized ratchet spacing %d = %d, want %d", hit-4, got, spacing)
+		}
+		if voice.velocities[hit] != voice.velocities[4] {
+			t.Errorf("humanized ratchet velocity %d = %v, want group velocity %v",
+				hit-4, voice.velocities[hit], voice.velocities[4])
+		}
+	}
+}
+
 func TestBankSelectionAndChainBoundaries(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	engine.SetStepCount(0, 2)

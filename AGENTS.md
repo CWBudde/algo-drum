@@ -88,7 +88,7 @@ Vite serves `web/public/` as static assets, so `algo_drum.wasm` and `wasm_exec.j
 
 ```
 cmd/wasm/main.go          — WASM entry point; registers the AlgoDrum JS API (worker global scope)
-internal/drum/engine.go   — Sequencer: four rhythm banks (7×16 each), queued/chain switching, fixed-point tempo/swing clock, probability + centered per-cell humanize (allocation-free pending-trigger mask), smoothed per-track volumes, Render()
+internal/drum/engine.go   — Sequencer: four rhythm banks (7×16 each), queued/chain switching, fixed-point tempo/swing clock, probability + centered per-cell humanize + 1–4-hit ratchets (allocation-free pending-trigger mask), smoothed per-track volumes, Render()
 internal/drum/state.go    — Engine-owned semantic snapshot/replacement contract: full pattern, controls, engine-major mixer/mute and voice/Tom parameter banks
 internal/drum/voices.go   — Drum synthesizer voices (BassDrum, Snare, HiHat, Tom, Cymbal, Tom 2, Percussion); all tuning is runtime-settable
 internal/drum/params.go   — Per-voice synthesis parameter specs (ranges, curves, defaults) + the normalized→engineering mapping
@@ -98,7 +98,7 @@ internal/drum/assert.go   — assertValid(): a no-op in shipped builds; `-tags d
 cmd/gen-voiceparams/      — Generates web/src/engine/voiceParams.generated.ts from params.go (`just gen-params`; CI diffs it)
 internal/drum/*_test.go   — Go unit tests: sequencing, clamping, bit-exact render determinism, per-voice envelopes
 internal/drum/physical_tom.go — Adapter wrapping algo-tom's physical.DoubleHead as a Voice; the model itself lives in github.com/cwbudde/algo-tom → "The physical Tom voice"
-web/src/engine/engineState.ts — Canonical semantic EngineState shape shared by the bridge, React reducer and persistence; includes four engine-major rhythm banks, per-cell velocity/probability/humanize/condition grids, per-track lengths and chain configuration
+web/src/engine/engineState.ts — Canonical semantic EngineState shape shared by the bridge, React reducer and persistence; includes four engine-major rhythm banks, per-cell velocity/probability/humanize/condition/ratchet grids, per-track lengths and chain configuration
 web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands, exposes authoritative configuration/transport snapshots and dispose()
 web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; gates the load on the engine's protocol version and method list, renders audio chunks and echoes the complete authoritative state after every configuration edit
 web/src/engine/stateMirror.ts — Reconciles full engine snapshots with in-flight optimistic UI edits (Go engine = single source of truth)
@@ -113,7 +113,7 @@ web/src/components/ErrorBoundary.tsx — App-wide React error boundary; a render
 web/src/algo/euclid.ts     — Pure Bjorklund/Euclidean E(pulses, steps) rhythm generator with rotation
 web/src/algo/mutate.ts     — Pure musical random-walk mutation of a flat pattern
 web/src/algo/presets.ts    — Classic 16-step preset patterns (rock, house, breakbeat, hip-hop, techno, funk) + Clear
-web/src/algo/persistence.ts — Pure versioned EngineState encode/decode → base64url (v16 preserves v15 as Bank A and appends per-cell humanize, Banks B–D and chain configuration; v1–v15 still decode); localStorage + URL-hash glue
+web/src/algo/persistence.ts — Pure versioned EngineState encode/decode → base64url (v17 preserves v16 and appends compact per-cell ratchet counts; v1–v16 still decode); localStorage + URL-hash glue
 web/src/algo/pattern.ts    — Shared pattern constants (dims, velocities, flat-index helper) for the algo modules
 web/src/App.tsx           — Root: loads WASM on mount, renders DrumMachine inside the ErrorBoundary, shows a retryable fault panel if the engine fails
 web/src/main.tsx          — Browser entry: mounts App and registers the service worker (production builds only)
@@ -160,6 +160,7 @@ UI displays Cymbal, Percussion, Tom 2, Tom, Hi-Hat, Snare, Bass from top to bott
 | `setCellProbability(b,t,s,p)`  | Set one cell's probability multiplier                                              |
 | `setCellHumanize(b,t,s,h)`     | Set one cell's timing/velocity humanize multiplier                                 |
 | `setCellCondition(b,t,s,0–6)`  | Set one cell's always/loop/fill/previous-step condition                            |
+| `setCellRepeats(b,t,s,1–4)`    | Set one cell's evenly spaced ratchet hit count                                      |
 | `setTrackLength(bank,track,n)` | Set one track's independent loop length within a bank (clamped to 1–16)            |
 | `setFillMode(bool)`            | Enable or disable cells carrying the fill-only condition                           |
 | `setPattern(bank,Float32Array)` | Atomically replace one bank's flat track-major 7×16 velocity pattern              |

@@ -153,8 +153,8 @@ func (e *Engine) checkTransport(problems []error) []error {
 // the moment it fires.
 func (e *Engine) checkPending(problems []error) []error {
 	for active := e.pendingMask; active != 0; {
-		slot := bits.TrailingZeros32(active)
-		active &^= uint32(1) << slot
+		slot := bits.TrailingZeros64(active)
+		active &^= uint64(1) << slot
 		trigger := e.pending[slot]
 
 		if trigger.countdown <= 0 {
@@ -254,6 +254,11 @@ func (e *Engine) checkMix(problems []error) []error {
 					fmt.Errorf("cell (%d, %d) condition out of contract: %d",
 						track, step, condition))
 			}
+
+			if repeats := e.cellRepeats[track][step]; repeats < minCellRepeats || repeats > maxCellRepeats {
+				problems = append(problems,
+					fmt.Errorf("cell (%d, %d) repeats out of contract: %d", track, step, repeats))
+			}
 		}
 	}
 
@@ -291,6 +296,12 @@ func (e *Engine) checkMix(problems []error) []error {
 					problems = append(problems,
 						fmt.Errorf("bank %d cell (%d, %d) condition out of contract", bank, track, step))
 				}
+
+				if repeats := stored.cellRepeats[track][step]; repeats < minCellRepeats || repeats > maxCellRepeats {
+					problems = append(problems,
+						fmt.Errorf("bank %d cell (%d, %d) repeats out of contract: %d",
+							bank, track, step, repeats))
+				}
 			}
 		}
 	}
@@ -299,7 +310,8 @@ func (e *Engine) checkMix(problems []error) []error {
 		active := &e.banks[e.activeBank]
 		if e.stepCount != active.stepCount || e.pattern != active.pattern ||
 			e.cellProbability != active.cellProbability || e.cellHumanize != active.cellHumanize ||
-			e.cellCondition != active.cellCondition || e.trackLength != active.trackLength {
+			e.cellCondition != active.cellCondition || e.cellRepeats != active.cellRepeats ||
+			e.trackLength != active.trackLength {
 			problems = append(problems, errors.New("active rhythmic mirror diverges from its bank"))
 		}
 	}

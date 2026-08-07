@@ -23,6 +23,7 @@ function cloneBank(bank: PatternBankState): PatternBankState {
     cellProbabilities: bank.cellProbabilities.slice(),
     cellHumanize: bank.cellHumanize.slice(),
     cellConditions: bank.cellConditions.slice(),
+    cellRepeats: bank.cellRepeats.slice(),
     trackLengths: bank.trackLengths.slice(),
   };
 }
@@ -48,6 +49,7 @@ export function patternBanksEqual(
     arraysEqual(left.cellProbabilities, right.cellProbabilities) &&
     arraysEqual(left.cellHumanize, right.cellHumanize) &&
     arraysEqual(left.cellConditions, right.cellConditions) &&
+    arraysEqual(left.cellRepeats, right.cellRepeats) &&
     arraysEqual(left.trackLengths, right.trackLengths)
   );
 }

@@ -456,6 +456,7 @@ describe("command queue", () => {
     engine.setCellProbability(2, 1, 3, 0.5);
     engine.setCellHumanize(2, 1, 3, 0.25);
     engine.setCellCondition(2, 1, 3, 4);
+    engine.setCellRepeats(2, 1, 3, 3);
     engine.setTrackLength(2, 1, 7);
     engine.setPattern(2, bank.pattern);
     engine.setPatternBank(2, bank);
@@ -473,6 +474,7 @@ describe("command queue", () => {
       ["setCellProbability", [2, 1, 3, 0.5]],
       ["setCellHumanize", [2, 1, 3, 0.25]],
       ["setCellCondition", [2, 1, 3, 4]],
+      ["setCellRepeats", [2, 1, 3, 3]],
       ["setTrackLength", [2, 1, 7]],
       ["setPattern", [2, expect.any(Float32Array)]],
       ["setPatternBank", [2, expect.any(Object)]],
@@ -499,6 +501,7 @@ describe("command queue", () => {
     expect(snapshot.cellProbabilities).not.toBe(bank.cellProbabilities);
     expect(snapshot.cellHumanize).not.toBe(bank.cellHumanize);
     expect(snapshot.cellConditions).not.toBe(bank.cellConditions);
+    expect(snapshot.cellRepeats).not.toBe(bank.cellRepeats);
     expect(snapshot.trackLengths).not.toBe(bank.trackLengths);
     expect(commands[2].args[0]).not.toBe(chain);
   });

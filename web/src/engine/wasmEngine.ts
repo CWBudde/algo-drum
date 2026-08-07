@@ -753,6 +753,15 @@ export function setCellCondition(
   configurationCommand("setCellCondition", bank, track, step, condition);
 }
 
+export function setCellRepeats(
+  bank: number,
+  track: number,
+  step: number,
+  repeats: number,
+): void {
+  configurationCommand("setCellRepeats", bank, track, step, repeats);
+}
+
 export function setTrackLength(
   bank: number,
   track: number,
@@ -778,6 +787,7 @@ export function setPatternBank(bank: number, state: PatternBankState): void {
     cellProbabilities: state.cellProbabilities.slice(),
     cellHumanize: state.cellHumanize.slice(),
     cellConditions: state.cellConditions.slice(),
+    cellRepeats: state.cellRepeats.slice(),
     trackLengths: state.trackLengths.slice(),
   });
 }

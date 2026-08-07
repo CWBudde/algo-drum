@@ -349,6 +349,11 @@ export default function DrumMachine({ wasmLoaded }: Props) {
               cellIndex(selectedCell.track, selectedCell.step)
             ]
           }
+          repeats={
+            currentBank.cellRepeats[
+              cellIndex(selectedCell.track, selectedCell.step)
+            ]
+          }
           onProbabilityChange={(value) =>
             applyStateAction({
               type: "cellProbability",
@@ -370,6 +375,15 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           onConditionChange={(value) =>
             applyStateAction({
               type: "cellCondition",
+              bank: selectedBank,
+              track: selectedCell.track,
+              step: selectedCell.step,
+              value,
+            })
+          }
+          onRepeatsChange={(value) =>
+            applyStateAction({
+              type: "cellRepeats",
               bank: selectedBank,
               track: selectedCell.track,
               step: selectedCell.step,

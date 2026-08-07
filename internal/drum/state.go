@@ -34,6 +34,7 @@ type PatternBankState struct {
 	CellProbabilities []float64
 	CellHumanize      []float64
 	CellConditions    []TriggerCondition
+	CellRepeats       []uint8
 	TrackLengths      []int
 }
 
@@ -83,6 +84,7 @@ func (e *Engine) State() EngineState {
 			CellProbabilities: make([]float64, PatternSize),
 			CellHumanize:      make([]float64, PatternSize),
 			CellConditions:    make([]TriggerCondition, PatternSize),
+			CellRepeats:       make([]uint8, PatternSize),
 			TrackLengths:      make([]int, TrackCount),
 		}
 		for track := range TrackCount {
@@ -92,6 +94,7 @@ func (e *Engine) State() EngineState {
 			copy(bankState.CellProbabilities[start:end], stored.cellProbability[track][:])
 			copy(bankState.CellHumanize[start:end], stored.cellHumanize[track][:])
 			copy(bankState.CellConditions[start:end], stored.cellCondition[track][:])
+			copy(bankState.CellRepeats[start:end], stored.cellRepeats[track][:])
 			bankState.TrackLengths[track] = stored.trackLength[track]
 		}
 
@@ -258,6 +261,7 @@ func (e *Engine) storePatternBank(bank int, state PatternBankState) {
 		target.cellProbability[track][step] = state.CellProbabilities[index]
 		target.cellHumanize[track][step] = state.CellHumanize[index]
 		target.cellCondition[track][step] = state.CellConditions[index]
+		target.cellRepeats[track][step] = state.CellRepeats[index]
 	}
 
 	copy(target.trackLength[:], state.TrackLengths)
@@ -283,6 +287,11 @@ func normalizePatternBank(state PatternBankState) (PatternBankState, error) {
 			len(state.CellConditions), PatternSize)
 	}
 
+	if len(state.CellRepeats) != PatternSize {
+		return PatternBankState{}, fmt.Errorf("cell repeat length %d, want %d",
+			len(state.CellRepeats), PatternSize)
+	}
+
 	if len(state.TrackLengths) != TrackCount {
 		return PatternBankState{}, fmt.Errorf("track length count %d, want %d",
 			len(state.TrackLengths), TrackCount)
@@ -294,6 +303,7 @@ func normalizePatternBank(state PatternBankState) (PatternBankState, error) {
 		CellProbabilities: make([]float64, PatternSize),
 		CellHumanize:      make([]float64, PatternSize),
 		CellConditions:    make([]TriggerCondition, PatternSize),
+		CellRepeats:       make([]uint8, PatternSize),
 		TrackLengths:      make([]int, TrackCount),
 	}
 	if normalized.StepCount < 1 {
@@ -335,6 +345,15 @@ func normalizePatternBank(state PatternBankState) (PatternBankState, error) {
 		}
 
 		normalized.CellConditions[index] = condition
+	}
+
+	for index, repeats := range state.CellRepeats {
+		if repeats < minCellRepeats || repeats > maxCellRepeats {
+			return PatternBankState{}, fmt.Errorf("cell repeat %d outside [%d, %d]: %d",
+				index, minCellRepeats, maxCellRepeats, repeats)
+		}
+
+		normalized.CellRepeats[index] = repeats
 	}
 
 	for track, length := range state.TrackLengths {

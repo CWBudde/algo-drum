@@ -740,7 +740,7 @@ The "algo" arrived and it is real work: a correct Bjorklund with rotation
 empties the pattern (`mutate.ts:71`), a probability gate and humanize in the Go engine
 (`engine.go:307`), six presets, a compact versioned share format, and tap tempo — all
 pure, all unit-tested. The depth pass has since added local probability/humanize,
-polymeter, conditional triggers and four chained rhythm banks; the remaining gaps are
+ratchets, polymeter, conditional triggers and four chained rhythm banks; the remaining gaps are
 now song/export integration and broader generative controls rather than a single global
 pattern.
 
@@ -793,9 +793,12 @@ deterministically.
       All six conditions ship with per-track pass accounting; accepted probability gates
       count as fired for the previous-step condition, and a persisted FILL toggle controls
       fill-only cells.
-- [ ] **G17: ratcheting / sub-step retrigger.** A per-step repeat count (2–4 hits inside
+- [x] **G17: ratcheting / sub-step retrigger.** A per-step repeat count (2–4 hits inside
       one step, optionally with a velocity ramp) reuses the existing pending-trigger list
       (`engine.go:360`) and is the other classic generative gesture.
+      Every cell now stores 1–4 evenly spaced hits. Probability and conditions gate the
+      cell once, centered humanize moves the repeated group coherently, and v17 appends
+      compact 2-bit repeat counts while v1–v16 migrate to one hit.
 - [x] **G18: expose continuous velocity.** The engine accepts any 0–1 value per cell, but
       the UI quantises to exactly three (`cycleVelocity`, `DrumMachine.tsx:27`). Let a
       drag or modifier set velocity freely — depth already paid for in the engine and
@@ -841,10 +844,10 @@ so the rest stays fixed), X5/X17 (roving tabindex + skip link), X7/X8/X15 (playh
 live regions), X9 (targets), P12 (generated SW → closes P5/P8) and P13 (update UX),
 T10 (a DOM test environment — the precondition for testing any of the above).
 
-**P5 — depth:** ✔ Done 2026-08-07: A13/A14 (one persistent state shape and owner →
+**P5 — depth:** ✔ Done 2026-08-07, extended 2026-08-08 with G17: A13/A14 (one persistent state shape and owner →
 closed A4/A8/A9), A16 (engine-owned transport arbitration), G8 (per-cell probability +
 centered humanize), G16 (conditional trigs), G9 (per-track length), G10 (four banks +
-chain), G11 (undo), G18 (continuous velocity) and F7 (split `DrumMachine.tsx`).
+chain), G11 (undo), G17 (per-cell ratchets), G18 (continuous velocity) and F7 (split `DrumMachine.tsx`).
 
 **Quick wins, any time:** G14 (Tom absent from every preset), G21 + U19 (a default
 pattern so the app makes a sound on first click), U18 (`?` shortcut overlay), CI11 (a

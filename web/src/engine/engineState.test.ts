@@ -33,6 +33,7 @@ describe("EngineState", () => {
       );
       expect(bank.cellHumanize).toEqual(new Float32Array(PATTERN_SIZE).fill(1));
       expect(bank.cellConditions).toEqual(new Uint8Array(PATTERN_SIZE));
+      expect(bank.cellRepeats).toEqual(new Uint8Array(PATTERN_SIZE).fill(1));
       expect(bank.trackLengths).toEqual(new Uint8Array(TRACK_COUNT).fill(16));
     });
     expect(state.banks[0].pattern).not.toBe(state.banks[1].pattern);
@@ -68,6 +69,7 @@ describe("EngineState", () => {
       );
       expect(bank.cellHumanize).not.toBe(state.banks[index].cellHumanize);
       expect(bank.cellConditions).not.toBe(state.banks[index].cellConditions);
+      expect(bank.cellRepeats).not.toBe(state.banks[index].cellRepeats);
       expect(bank.trackLengths).not.toBe(state.banks[index].trackLengths);
     });
     expect(clone.chain).not.toBe(state.chain);
@@ -117,6 +119,12 @@ describe("EngineState", () => {
       "invalid trigger condition",
       (s: ReturnType<typeof createDefaultEngineState>) => {
         s.banks[0].cellConditions[0] = 7;
+      },
+    ],
+    [
+      "invalid ratchet count",
+      (s: ReturnType<typeof createDefaultEngineState>) => {
+        s.banks[0].cellRepeats[0] = 0;
       },
     ],
     [

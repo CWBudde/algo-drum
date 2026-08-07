@@ -62,9 +62,13 @@ const (
 	// velocity is scaled by 1 ± a random fraction up to humanize·humanizeVelMax.
 	humanizeVelMax = 0.20
 
-	// maxPending caps in-flight humanize-delayed triggers; sized well above the
-	// handful that can overlap so scheduling stays allocation-free in Render.
-	maxPending = 32
+	// maxPending caps in-flight humanize-delayed and ratcheted triggers. At the
+	// shortest legal swung step, seven four-hit ratchets from the next step can
+	// overlap the tail of the current step, so keep a full 64-bit fixed set.
+	maxPending = 64
+
+	minCellRepeats = 1
+	maxCellRepeats = 4
 
 	// Tempo bounds in BPM. The lower bound also bounds a step's length, which
 	// keeps the swing arithmetic in recomputeStepDurations well away from
@@ -115,6 +119,7 @@ type patternBank struct {
 	cellProbability [TrackCount][MaxSteps]float64
 	cellHumanize    [TrackCount][MaxSteps]float64
 	cellCondition   [TrackCount][MaxSteps]TriggerCondition
+	cellRepeats     [TrackCount][MaxSteps]uint8
 	trackLength     [TrackCount]int
 }
 
@@ -181,10 +186,11 @@ type Engine struct {
 	cellProbability [TrackCount][MaxSteps]float64 // multiplied by the global probability
 	cellHumanize    [TrackCount][MaxSteps]float64 // multiplied by the global humanize amount
 	cellCondition   [TrackCount][MaxSteps]TriggerCondition
-	volumes         [TrackCount]float64 // targets set by SetVolume
-	muted           [TrackCount]bool    // mutes do not overwrite the stored volumes
-	liveVol         [TrackCount]float64 // smoothed volumes applied in Render
-	volCoef         float64             // per-sample one-pole ramp coefficient
+	cellRepeats     [TrackCount][MaxSteps]uint8 // evenly spaced hits per eligible cell, in [1, 4]
+	volumes         [TrackCount]float64         // targets set by SetVolume
+	muted           [TrackCount]bool            // mutes do not overwrite the stored volumes
+	liveVol         [TrackCount]float64         // smoothed volumes applied in Render
+	volCoef         float64                     // per-sample one-pole ramp coefficient
 	decays          [TrackCount]float64
 
 	voices [TrackCount]Voice
@@ -229,7 +235,7 @@ type Engine struct {
 	fillMode          bool    // enables cells carrying TriggerFillOnly
 	rng               *rand.Rand
 	pending           [maxPending]pendingTrigger
-	pendingMask       uint32
+	pendingMask       uint64
 
 	reverb           *reverb.FDNReverb
 	reverbAmount     float64
@@ -278,6 +284,7 @@ func NewEngine(sr float64) *Engine {
 			for step := range MaxSteps {
 				e.banks[bank].cellProbability[i][step] = 1
 				e.banks[bank].cellHumanize[i][step] = 1
+				e.banks[bank].cellRepeats[i][step] = minCellRepeats
 			}
 		}
 	}
@@ -393,24 +400,8 @@ func validStep(step int) bool {
 // length rather than stretching the loop. Steps past the active length never
 // play and are held at the base length too.
 func (e *Engine) recomputeStepDurations() {
-	base := e.sr * secondsPerMinute / e.bpm / stepsPerBeat // samples per 16th note
-	plain := uint64(math.Round(base * float64(stepPhaseUnit)))
-	delta := uint64(math.Round(base * e.swing * float64(stepPhaseUnit)))
-	long := plain + delta
-	short := plain - delta
-	last := e.stepCount - 1
-
-	for i := range e.stepDuration {
-		unpaired := i > last || (i == last && e.stepCount%2 == 1)
-
-		switch {
-		case unpaired:
-			e.stepDuration[i] = plain
-		case i%2 == 0:
-			e.stepDuration[i] = long
-		default:
-			e.stepDuration[i] = short
-		}
+	for step := range e.stepDuration {
+		e.stepDuration[step] = e.stepDurationFor(e.stepCount, step)
 	}
 
 	// Parameter edits are latched at the next boundary while playing or
@@ -418,6 +409,25 @@ func (e *Engine) recomputeStepDurations() {
 	// transport starts with the newly configured duration immediately.
 	if e.transport == transportStopped || e.currentStepDuration == 0 {
 		e.currentStepDuration = e.stepDuration[e.currentStep]
+	}
+}
+
+func (e *Engine) stepDurationFor(stepCount, step int) uint64 {
+	base := e.sr * secondsPerMinute / e.bpm / stepsPerBeat // samples per 16th note
+	plain := uint64(math.Round(base * float64(stepPhaseUnit)))
+	delta := uint64(math.Round(base * e.swing * float64(stepPhaseUnit)))
+	long := plain + delta
+	short := plain - delta
+	last := stepCount - 1
+	unpaired := step > last || (step == last && stepCount%2 == 1)
+
+	switch {
+	case unpaired:
+		return plain
+	case step%2 == 0:
+		return long
+	default:
+		return short
 	}
 }
 
@@ -720,6 +730,27 @@ func (e *Engine) SetCellCondition(bank, track, step int, condition TriggerCondit
 	e.banks[bank].cellCondition[track][step] = condition
 	if bank == e.activeBank {
 		e.cellCondition[track][step] = condition
+	}
+}
+
+// SetCellRepeats sets the number of evenly spaced hits emitted by an eligible
+// cell. Invalid indexes no-op and counts clamp to [1, 4].
+func (e *Engine) SetCellRepeats(bank, track, step, repeats int) {
+	if !validBank(bank) || !validTrack(track) || !validStep(step) {
+		return
+	}
+
+	if repeats < minCellRepeats {
+		repeats = minCellRepeats
+	} else if repeats > maxCellRepeats {
+		repeats = maxCellRepeats
+	}
+
+	value := uint8(repeats)
+
+	e.banks[bank].cellRepeats[track][step] = value
+	if bank == e.activeBank {
+		e.cellRepeats[track][step] = value
 	}
 }
 
@@ -1063,7 +1094,8 @@ func (e *Engine) TransportSnapshot() TransportSnapshot {
 // audio before Play cannot be rendered causally.
 func (e *Engine) triggerFirstStep() {
 	e.previousFired = e.scheduleBankStep(
-		&e.banks[e.activeBank], e.trackStep, e.trackPass, e.previousFired, 1, true,
+		&e.banks[e.activeBank], e.trackStep, e.trackPass, e.previousFired,
+		1, e.currentStepDuration, true,
 	)
 }
 
@@ -1074,6 +1106,7 @@ func (e *Engine) triggerFirstStep() {
 func (e *Engine) scheduleNextStep(samplesToBoundary int) {
 	targetBank := e.activeBank
 	targetChainPosition := e.chainPosition
+	targetMasterStep := (e.currentStep + 1) % e.stepCount
 
 	masterWrap := e.currentStep+1 >= e.stepCount
 	if masterWrap {
@@ -1104,10 +1137,17 @@ func (e *Engine) scheduleNextStep(samplesToBoundary int) {
 		}
 	} else {
 		previous = [TrackCount]bool{}
+		targetMasterStep = 0
+	}
+
+	targetDuration := e.stepDuration[targetMasterStep]
+	if targetBank != e.activeBank {
+		targetDuration = e.stepDurationFor(e.banks[targetBank].stepCount, targetMasterStep)
 	}
 
 	e.nextFired = e.scheduleBankStep(
-		&e.banks[targetBank], steps, passes, previous, samplesToBoundary+1, false,
+		&e.banks[targetBank], steps, passes, previous,
+		samplesToBoundary+1, targetDuration, false,
 	)
 	e.nextBank = targetBank
 	e.nextChainPosition = targetChainPosition
@@ -1124,6 +1164,7 @@ func (e *Engine) scheduleBankStep(
 	passes [TrackCount]uint64,
 	previous [TrackCount]bool,
 	baseDelay int,
+	stepDuration uint64,
 	first bool,
 ) [TrackCount]bool {
 	var fired [TrackCount]bool
@@ -1144,33 +1185,41 @@ func (e *Engine) scheduleBankStep(
 		fired[track] = true
 
 		effective := e.humanize * bank.cellHumanize[track][step]
-		if effective <= 0 {
-			if first {
-				e.voices[track].Trigger(vel)
+		velocity := vel
+		jitter := 0
+		// Keep the count=1, humanize=0 path free of RNG calls and sample-exact
+		// with every persisted state predating ratchets.
+		if effective > 0 {
+			velocity = clamp01(vel * (1 + (e.rng.Float64()*2-1)*effective*humanizeVelMax))
+			jitter = int((e.rng.Float64()*2 - 1) * effective * humanizeTimingMaxS * e.sr)
+		}
+
+		repeats := int(bank.cellRepeats[track][step])
+		for repeat := range repeats {
+			offset := ratchetOffsetSamples(stepDuration, repeat, repeats)
+
+			delay := baseDelay + offset + jitter
+			if first && delay <= 1 {
+				e.voices[track].Trigger(velocity)
+			} else if delay <= 0 {
+				e.voices[track].Trigger(velocity)
 			} else {
-				e.schedule(track, vel, baseDelay)
+				e.schedule(track, velocity, delay)
 			}
-
-			continue
-		}
-
-		vel = clamp01(vel * (1 + (e.rng.Float64()*2-1)*effective*humanizeVelMax))
-
-		jitter := int((e.rng.Float64()*2 - 1) * effective * humanizeTimingMaxS * e.sr)
-		if first && jitter <= 0 {
-			e.voices[track].Trigger(vel)
-			continue
-		}
-
-		delay := baseDelay + jitter
-		if delay <= 0 {
-			e.voices[track].Trigger(vel)
-		} else {
-			e.schedule(track, vel, delay)
 		}
 	}
 
 	return fired
+}
+
+func ratchetOffsetSamples(stepDuration uint64, repeat, repeats int) int {
+	if repeat == 0 || repeats <= 1 {
+		return 0
+	}
+
+	phase := stepDuration * uint64(repeat) / uint64(repeats)
+
+	return int((phase + stepPhaseUnit/2) / stepPhaseUnit)
 }
 
 func (e *Engine) conditionAllows(condition TriggerCondition, pass uint64, previous bool) bool {
@@ -1204,17 +1253,17 @@ func (e *Engine) schedule(track int, velocity float64, delay int) {
 		return
 	}
 
-	slot := bits.TrailingZeros32(free)
+	slot := bits.TrailingZeros64(free)
 	e.pending[slot] = pendingTrigger{countdown: delay, track: track, velocity: velocity}
-	e.pendingMask |= uint32(1) << slot
+	e.pendingMask |= uint64(1) << slot
 }
 
 // firePending advances every queued trigger by one sample and fires those that
 // have reached their scheduled time.
 func (e *Engine) firePending() {
 	for active := e.pendingMask; active != 0; {
-		slot := bits.TrailingZeros32(active)
-		bit := uint32(1) << slot
+		slot := bits.TrailingZeros64(active)
+		bit := uint64(1) << slot
 		active &^= bit
 
 		trigger := &e.pending[slot]

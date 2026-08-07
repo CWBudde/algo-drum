@@ -516,7 +516,7 @@ test("pattern banks copy, diverge, and persist independently", async ({
   await expect(bass).toHaveAccessibleName("Bass step 1: accent");
 });
 
-test("per-cell humanize survives a share link", async ({ page }) => {
+test("per-cell humanize and ratchet survive a share link", async ({ page }) => {
   await page.goto("./");
   await expect(
     page.getByRole("button", { name: "Play", exact: true }),
@@ -534,6 +534,9 @@ test("per-cell humanize survives a share link", async ({ page }) => {
   for (let index = 0; index < 37; index++)
     await page.keyboard.press("ArrowRight");
   await expect(humanize).toHaveValue("37");
+  const ratchet = page.getByRole("combobox", { name: "Ratchet repeats" });
+  await ratchet.selectOption("3");
+  await expect(ratchet).toHaveValue("3");
 
   await page.getByRole("button", { name: "Close step settings" }).click();
   await page.getByRole("button", { name: /Copy shareable link/i }).click();
@@ -548,6 +551,9 @@ test("per-cell humanize survives a share link", async ({ page }) => {
   await expect(
     page.getByRole("slider", { name: "HUMANIZE", exact: true }),
   ).toHaveValue("37");
+  await expect(
+    page.getByRole("combobox", { name: "Ratchet repeats" }),
+  ).toHaveValue("3");
 });
 
 test("a two-bank chain advances and wraps on audible boundaries", async ({

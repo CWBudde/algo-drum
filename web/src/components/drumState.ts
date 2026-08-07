@@ -39,6 +39,13 @@ export type DrumStateAction =
       step: number;
       value: number;
     }
+  | {
+      type: "cellRepeats";
+      bank: number;
+      track: number;
+      step: number;
+      value: number;
+    }
   | { type: "trackLength"; bank: number; track: number; value: number }
   | { type: "fillMode"; value: boolean }
   | { type: "pattern"; bank: number; value: Float32Array }
@@ -76,6 +83,7 @@ function clonePatternBank(bank: PatternBankState): PatternBankState {
     cellProbabilities: bank.cellProbabilities.slice(),
     cellHumanize: bank.cellHumanize.slice(),
     cellConditions: bank.cellConditions.slice(),
+    cellRepeats: bank.cellRepeats.slice(),
     trackLengths: bank.trackLengths.slice(),
   };
 }
@@ -175,6 +183,21 @@ export function reduceDrumState(
         cellConditions[action.track * STEP_CAPACITY + action.step] =
           action.value;
         return { ...bank, cellConditions };
+      });
+    }
+    case "cellRepeats": {
+      if (
+        action.track < 0 ||
+        action.track >= TRACK_COUNT ||
+        action.step < 0 ||
+        action.step >= STEP_CAPACITY
+      ) {
+        return state;
+      }
+      return updateBank(state, action.bank, (bank) => {
+        const cellRepeats = bank.cellRepeats.slice();
+        cellRepeats[action.track * STEP_CAPACITY + action.step] = action.value;
+        return { ...bank, cellRepeats };
       });
     }
     case "trackLength": {

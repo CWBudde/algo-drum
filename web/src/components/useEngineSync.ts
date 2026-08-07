@@ -53,6 +53,14 @@ function sendStateAction(action: DrumStateAction): void {
         action.value,
       );
       return;
+    case "cellRepeats":
+      engine.setCellRepeats(
+        action.bank,
+        action.track,
+        action.step,
+        action.value,
+      );
+      return;
     case "trackLength":
       engine.setTrackLength(action.bank, action.track, action.value);
       return;

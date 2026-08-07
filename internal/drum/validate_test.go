@@ -140,6 +140,11 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 			want:    "cell (1, 2) condition",
 		},
 		{
+			name:    "invalid cell repeats",
+			corrupt: func(engine *Engine) { engine.cellRepeats[1][2] = 0 },
+			want:    "cell (1, 2) repeats",
+		},
+		{
 			name:    "volume past unity",
 			corrupt: func(engine *Engine) { engine.volumes[3] = 2 },
 			want:    "track 3 volume",

@@ -44,7 +44,9 @@ import type { TomModel } from "../engine/tomModel";
 // three bands instead of one. Older links still decode with values attached to
 // the same voices. V15 strictly appends the per-cell probability/condition
 // grids, per-track lengths and the fill-mode latch used by conditional trigs.
-const FORMAT_VERSION = 16;
+// V16 adds four rhythm banks, local humanize and chain configuration; v17
+// preserves that complete record and appends packed per-cell ratchet counts.
+const FORMAT_VERSION = 17;
 
 // Byte layout: version, 6 scalar knobs, 5 volumes, 5 decays, 1 mute mask,
 // then the 80-cell pattern packed 2 bits per cell (20 bytes)...
@@ -199,6 +201,10 @@ const V16_CHAIN_FLAGS_OFFSET = V16_STANDALONE_BANK_OFFSET + 1;
 const V16_CHAIN_LENGTH_OFFSET = V16_CHAIN_FLAGS_OFFSET + 1;
 const V16_CHAIN_ENTRIES_OFFSET = V16_CHAIN_LENGTH_OFFSET + 1;
 const V16_BYTES = V16_CHAIN_ENTRIES_OFFSET + V16_CHAIN_ENTRY_BYTES;
+// V17 appends four 2-bit repeat-count codes (stored as count-1) per byte for
+// every bank. The complete v16 record remains an immutable migration prefix.
+const V17_CELL_REPEAT_BYTES = (PATTERN_BANK_COUNT * PATTERN_SIZE) / 4;
+const V17_BYTES = V16_BYTES + V17_CELL_REPEAT_BYTES;
 const MAX_TRIGGER_CONDITION = TRIGGER_CONDITION.notPreviousFired;
 
 // migrateStrikeRadius moves the *exact* shipped strike-radius detent onto the
@@ -367,9 +373,9 @@ function base64UrlToBytes(text: string): Uint8Array | null {
   }
 }
 
-// encodeState serializes the canonical engine-owned state into v16.
+// encodeState serializes the canonical engine-owned state into v17.
 export function encodeState(state: EngineState): string {
-  const bytes = new Uint8Array(V16_BYTES);
+  const bytes = new Uint8Array(V17_BYTES);
   let offset = 0;
   const bankA = state.banks[0];
 
@@ -475,6 +481,17 @@ export function encodeState(state: EngineState): string {
     bytes[offset + Math.floor(index / 4)] |= bank << ((index % 4) * 2);
   }
 
+  offset = V16_BYTES;
+  for (const bank of state.banks) {
+    for (let index = 0; index < PATTERN_SIZE; index += 4) {
+      let packed = 0;
+      for (let lane = 0; lane < 4; lane++) {
+        packed |= repeatCode(bank.cellRepeats[index + lane]) << (lane * 2);
+      }
+      bytes[offset++] = packed;
+    }
+  }
+
   return bytesToBase64Url(bytes);
 }
 
@@ -532,6 +549,13 @@ function conditionCode(value: number | undefined): number {
   return value;
 }
 
+function repeatCode(value: number | undefined): number {
+  const finite =
+    typeof value === "number" && Number.isFinite(value) ? value : 1;
+  const repeats = Math.min(4, Math.max(1, Math.round(finite)));
+  return repeats - 1;
+}
+
 function trackLength(value: number | undefined, fallback: number): number {
   const finite =
     typeof value === "number" && Number.isFinite(value) ? value : fallback;
@@ -544,12 +568,32 @@ export function decodeState(text: string): EngineState | null {
   const bytes = base64UrlToBytes(text);
   if (!bytes || bytes.length === 0) return null;
 
-  if (bytes[0] === FORMAT_VERSION) return decodeV16(bytes);
+  if (bytes[0] === FORMAT_VERSION) return decodeV17(bytes);
+  if (bytes[0] === 16) return decodeV16(bytes);
   if (bytes[0] === 15) return decodeV15(bytes);
   if (bytes[0] === 14) return decodeV14(bytes);
 
   const legacy = decodeLegacyState(bytes);
   return legacy ? canonicalizeLegacy(legacy) : null;
+}
+
+function decodeV17(bytes: Uint8Array): EngineState | null {
+  if (bytes.length !== V17_BYTES) return null;
+
+  const state = decodeV16(bytes.subarray(0, V16_BYTES));
+  if (!state) return null;
+
+  let offset = V16_BYTES;
+  for (const bank of state.banks) {
+    for (let index = 0; index < PATTERN_SIZE; index += 4) {
+      const packed = bytes[offset++];
+      for (let lane = 0; lane < 4; lane++) {
+        bank.cellRepeats[index + lane] = ((packed >>> (lane * 2)) & 0b11) + 1;
+      }
+    }
+  }
+
+  return state;
 }
 
 function decodeV16(bytes: Uint8Array): EngineState | null {
@@ -607,6 +651,7 @@ function readPatternBank(
     cellProbabilities: new Float32Array(PATTERN_SIZE),
     cellHumanize: new Float32Array(PATTERN_SIZE),
     cellConditions: new Uint8Array(PATTERN_SIZE),
+    cellRepeats: new Uint8Array(PATTERN_SIZE).fill(1),
     trackLengths: new Uint8Array(TRACK_COUNT),
   };
   for (let i = 0; i < PATTERN_SIZE; i++)

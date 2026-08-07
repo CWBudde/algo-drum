@@ -47,6 +47,12 @@ export interface AlgoDrumApi {
     step: number,
     condition: number,
   ) => void;
+  setCellRepeats: (
+    bank: number,
+    track: number,
+    step: number,
+    repeats: number,
+  ) => void;
   setTrackLength: (bank: number, track: number, length: number) => void;
   setFillMode: (enabled: boolean) => void;
   setPattern: (bank: number, pattern: Float32Array) => void;
@@ -97,7 +103,7 @@ export interface TransportSnapshot {
 // would load happily and play wrong. The engine publishes this number as
 // AlgoDrum.protocolVersion (internal/drum/protocol.go, the peer constant) and
 // the load refuses to proceed on a mismatch. Bump both together, or neither.
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 // The engine as it appears on the worker's global scope: the callable API plus
 // the version property. The property is deliberately kept out of AlgoDrumApi —
@@ -126,6 +132,7 @@ const REQUIRED_METHODS = [
   "setCellProbability",
   "setCellHumanize",
   "setCellCondition",
+  "setCellRepeats",
   "setTrackLength",
   "setFillMode",
   "setPattern",

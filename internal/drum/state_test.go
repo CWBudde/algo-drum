@@ -16,7 +16,8 @@ func TestStateHasCompleteEngineMajorShapeWithoutConstructingPhysicalToms(t *test
 	}
 	for bank, bankState := range state.Banks {
 		if len(bankState.Pattern) != PatternSize || len(bankState.CellProbabilities) != PatternSize ||
-			len(bankState.CellHumanize) != PatternSize || len(bankState.CellConditions) != PatternSize {
+			len(bankState.CellHumanize) != PatternSize || len(bankState.CellConditions) != PatternSize ||
+			len(bankState.CellRepeats) != PatternSize {
 			t.Fatalf("bank %d has incomplete cell grids", bank)
 		}
 		if len(bankState.TrackLengths) != TrackCount {
@@ -25,6 +26,11 @@ func TestStateHasCompleteEngineMajorShapeWithoutConstructingPhysicalToms(t *test
 		for index, amount := range bankState.CellHumanize {
 			if amount != 1 {
 				t.Fatalf("bank %d cell humanize %d = %v, want default 1", bank, index, amount)
+			}
+		}
+		for index, repeats := range bankState.CellRepeats {
+			if repeats != 1 {
+				t.Fatalf("bank %d cell repeats %d = %d, want default 1", bank, index, repeats)
 			}
 		}
 	}
@@ -64,6 +70,7 @@ func TestStateIsADeepCopy(t *testing.T) {
 	got.Banks[0].CellProbabilities[0] = 0
 	got.Banks[0].CellHumanize[0] = 0
 	got.Banks[0].CellConditions[0] = TriggerEvery4
+	got.Banks[0].CellRepeats[0] = 4
 	got.Banks[0].TrackLengths[0] = 1
 	got.Chain[0] = 3
 	got.Tracks[0].VoiceParams[0] = 1
@@ -87,6 +94,7 @@ func TestReplaceStateDoesNotRetainCallerSlices(t *testing.T) {
 	input.Banks[0].CellProbabilities[0] = 0
 	input.Banks[0].CellHumanize[0] = 0
 	input.Banks[0].CellConditions[0] = TriggerEvery4
+	input.Banks[0].CellRepeats[0] = 4
 	input.Banks[0].TrackLengths[0] = 1
 	input.Tracks[0].VoiceParams[0] = 1
 	input.Tracks[tomTrackIndex].Tom.PhysicalParams[0] = 1
@@ -114,6 +122,7 @@ func TestReplaceStateRoundTripsEveryBank(t *testing.T) {
 				source.SetCellHumanize(bank, track, step, float64((bank+track+step)%9)/8)
 				source.SetCellCondition(bank, track, step,
 					TriggerCondition((bank+track+step)%int(triggerConditionCount)))
+				source.SetCellRepeats(bank, track, step, (bank+track+step)%maxCellRepeats+1)
 			}
 			source.SetTrackLength(bank, track, MaxSteps-track)
 		}
@@ -244,6 +253,9 @@ func TestReplaceStateRejectsMalformedOrNonFiniteBeforeMutation(t *testing.T) {
 		{"short cell humanize", func(s *EngineState) {
 			s.Banks[0].CellHumanize = s.Banks[0].CellHumanize[:PatternSize-1]
 		}, "cell humanize length"},
+		{"short cell repeats", func(s *EngineState) {
+			s.Banks[0].CellRepeats = s.Banks[0].CellRepeats[:PatternSize-1]
+		}, "cell repeat length"},
 		{"short track lengths", func(s *EngineState) {
 			s.Banks[0].TrackLengths = s.Banks[0].TrackLengths[:TrackCount-1]
 		}, "track length count"},
@@ -263,6 +275,9 @@ func TestReplaceStateRejectsMalformedOrNonFiniteBeforeMutation(t *testing.T) {
 		{"invalid cell condition", func(s *EngineState) {
 			s.Banks[0].CellConditions[80] = TriggerCondition(255)
 		}, "cell condition 80"},
+		{"invalid cell repeats", func(s *EngineState) {
+			s.Banks[0].CellRepeats[80] = 0
+		}, "cell repeat 80"},
 		{"non-finite volume", func(s *EngineState) { s.Tracks[2].Volume = math.NaN() }, "track 2 volume"},
 		{"non-finite decay", func(s *EngineState) { s.Tracks[4].Decay = math.Inf(1) }, "track 4 decay"},
 		{"short voice bank", func(s *EngineState) { s.Tracks[1].VoiceParams = nil }, "track 1 voice parameter count"},
@@ -301,6 +316,7 @@ func TestReplacePatternBankIsAtomicAndOwned(t *testing.T) {
 	bank.StepCount = 9
 	bank.Pattern[17] = 0.75
 	bank.CellHumanize[17] = 0.25
+	bank.CellRepeats[17] = 3
 	bank.TrackLengths[1] = 7
 	if err := engine.ReplacePatternBank(2, bank); err != nil {
 		t.Fatal(err)

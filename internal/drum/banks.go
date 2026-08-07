@@ -16,6 +16,7 @@ func (e *Engine) loadBank(bank int) {
 	e.cellProbability = stored.cellProbability
 	e.cellHumanize = stored.cellHumanize
 	e.cellCondition = stored.cellCondition
+	e.cellRepeats = stored.cellRepeats
 	e.trackLength = stored.trackLength
 }
 
@@ -27,6 +28,7 @@ func (e *Engine) syncActiveBank() {
 	stored.cellProbability = e.cellProbability
 	stored.cellHumanize = e.cellHumanize
 	stored.cellCondition = e.cellCondition
+	stored.cellRepeats = e.cellRepeats
 	stored.trackLength = e.trackLength
 }
 

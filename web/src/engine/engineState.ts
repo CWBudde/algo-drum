@@ -44,6 +44,7 @@ export interface PatternBankState {
   cellProbabilities: Float32Array;
   cellHumanize: Float32Array;
   cellConditions: Uint8Array;
+  cellRepeats: Uint8Array;
   trackLengths: Uint8Array;
 }
 
@@ -102,6 +103,7 @@ export const CONFIGURATION_METHODS = [
   "setCellProbability",
   "setCellHumanize",
   "setCellCondition",
+  "setCellRepeats",
   "setTrackLength",
   "setFillMode",
   "setPattern",
@@ -176,6 +178,7 @@ export function createDefaultPatternBankState(): PatternBankState {
     cellProbabilities: new Float32Array(PATTERN_SIZE).fill(1),
     cellHumanize: new Float32Array(PATTERN_SIZE).fill(1),
     cellConditions: new Uint8Array(PATTERN_SIZE),
+    cellRepeats: new Uint8Array(PATTERN_SIZE).fill(1),
     trackLengths: new Uint8Array(TRACK_COUNT).fill(STEP_CAPACITY),
   };
 }
@@ -189,6 +192,7 @@ export function clonePatternBankState(
     cellProbabilities: bank.cellProbabilities.slice(),
     cellHumanize: bank.cellHumanize.slice(),
     cellConditions: bank.cellConditions.slice(),
+    cellRepeats: bank.cellRepeats.slice(),
     trackLengths: bank.trackLengths.slice(),
   };
 }
@@ -340,6 +344,13 @@ export function validateEngineState(value: unknown): EngineState {
       `engine state banks[${bank}].cellConditions`,
       TRIGGER_CONDITION.always,
       TRIGGER_CONDITION.notPreviousFired,
+    );
+    requireByteArray(
+      candidate.cellRepeats,
+      PATTERN_SIZE,
+      `engine state banks[${bank}].cellRepeats`,
+      1,
+      4,
     );
     requireByteArray(
       candidate.trackLengths,
