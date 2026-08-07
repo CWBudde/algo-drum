@@ -17,7 +17,7 @@ interface Props {
   /** The voice's parameter descriptors, in index order. */
   specs: readonly VoiceParamSpec[];
   /** Current normalized positions, parallel to `specs`. */
-  values: readonly number[];
+  values: ArrayLike<number>;
   /** True while the engine is still loading — disables the audition button. */
   disabled: boolean;
   /** Present only for Tom voices, whose implementation can be selected. */

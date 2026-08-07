@@ -31,7 +31,7 @@ export const DEFAULT_PHYSICAL_TOM_PRESET: PhysicalTomPreset = {
 };
 
 /**
- * The best fit to `reference/tom.wav`, from `cmd/fit-physical`.
+ * The best fit to `reference/tom.wav`, from algo-tom's `cmd/fit-physical`.
  *
  * **Orphaned as of 2026-08-01**: that recording has been deleted (PLAN.md
  * P10/N8), so this bank can no longer be reproduced, re-scored or improved
@@ -42,7 +42,8 @@ export const DEFAULT_PHYSICAL_TOM_PRESET: PhysicalTomPreset = {
  * recording's envelope, glide and attack balance closely and covers most of its
  * partials, but it misses all three adoption-gate terms — partial frequency
  * 48.9 ¢ against 25, partial decay 0.573 against 0.25, spectral envelope
- * 11.1 dB against 4. See docs/physical-measured-fit.md; the reference itself is
+ * 11.1 dB against 4. See algo-tom's docs/physical-measured-fit.md; the reference
+ * itself is
  * of unknown provenance and is not in the repository.
  *
  * Re-derived 2026-08-01 under the corrected glide estimator, which had been

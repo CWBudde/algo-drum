@@ -2,27 +2,48 @@ package drum
 
 import (
 	"math"
+	"math/bits"
 	"math/rand/v2"
 
-	"github.com/cwbudde/algo-dsp/dsp/effects/dynamics"
 	"github.com/cwbudde/algo-dsp/dsp/effects/reverb"
 )
 
 const (
 	TrackCount = 7
 
-	// MaxSteps is the pattern capacity; the active length is set at runtime
-	// via SetStepCount (1–MaxSteps). Steps are 16th notes, so 16 steps span
-	// one 4/4 bar.
+	// MaxSteps is the pattern capacity. SetStepCount sets the master/displayed
+	// loop and initializes every track to that length; SetTrackLength then lets
+	// tracks diverge for polymeter. Steps are 16th notes, so 16 steps span one
+	// 4/4 bar.
 	MaxSteps = 16
 
-	// mixHeadroom scales the summed voice mix so simultaneous hits do not
-	// slam the limiter; the limiter then only catches rare worst cases.
+	// mixHeadroom scales the summed voice mix before the master chain. It does
+	// not buy enough headroom to keep the limiter idle: measured at 48 kHz, a
+	// solo hi-hat already peaks at +1.7 dBFS after this scaling and an ordinary
+	// bass/snare/hat pattern reaches +5.1 dBFS, so the limiter does routine
+	// transient reduction rather than only catching worst cases. That is the
+	// shipped balance — the per-voice gains it comes from are user-facing
+	// parameter defaults (hat ranges to 2.5), so no static scalar here can bound
+	// the mix; only the limiter can. See PLAN.md E7.
 	mixHeadroom = 0.5
 
 	// volSmoothTauS is the per-track volume ramp time constant. ~8 ms feels
 	// instant on a knob but is long enough to avoid zipper noise.
 	volSmoothTauS = 0.008
+
+	// engineSilence is the output magnitude at or below which a rendered sample
+	// counts as silence for idle detection. 1e-6 is about −120 dBFS: two orders
+	// of magnitude below the ±1 LSB of 16-bit audio and far below anything a
+	// listener or an output device can resolve, so treating it as zero is
+	// inaudible rather than merely quiet.
+	engineSilence = 1e-6
+
+	// idleConfirmS is how long the output must stay below engineSilence before
+	// Render takes its idle path. 50 ms is long enough that a waveform passing
+	// through a zero crossing, or a voice envelope dipping between partials,
+	// cannot be mistaken for a decayed tail, and short enough that the CPU wakes
+	// only for the tail end of a stop.
+	idleConfirmS = 0.05
 
 	// engineSeed seeds the probability/humanize randomness so renders stay
 	// reproducible run-to-run (the voices are seeded the same way).
@@ -43,7 +64,7 @@ const (
 	maxPending = 32
 
 	// Tempo bounds in BPM. The lower bound also bounds a step's length, which
-	// keeps the swing arithmetic in recomputeStepLengths well away from
+	// keeps the swing arithmetic in recomputeStepDurations well away from
 	// degenerate (sub-sample) steps.
 	minTempoBPM = 30.0
 	maxTempoBPM = 300.0
@@ -66,6 +87,7 @@ const (
 	// steps are 16th notes, so there are four per quarter-note beat.
 	secondsPerMinute = 60.0
 	stepsPerBeat     = 4.0
+	stepPhaseUnit    = uint64(1) << 32
 
 	// Reverb mapping: SetReverb(1) means a 0.45 wet mix and a 4 s RT60.
 	reverbMaxWet     = 0.45
@@ -80,41 +102,117 @@ type pendingTrigger struct {
 	countdown int     // samples remaining until the voice fires
 	track     int     // voice index to trigger
 	velocity  float64 // humanized velocity to trigger at
-	active    bool    // slot in use
+}
+
+// TriggerCondition controls whether an active cell is eligible on a given
+// pass through its track's independent loop. The numeric values are part of
+// the EngineState/WASM wire contract; append new values rather than reordering
+// these constants.
+type TriggerCondition uint8
+
+const (
+	TriggerAlways TriggerCondition = iota
+	TriggerEvery2
+	TriggerEvery3
+	TriggerEvery4
+	TriggerFirstLoop
+	TriggerFillOnly
+	TriggerNotPreviousFired
+	triggerConditionCount
+)
+
+type transportState uint8
+
+const (
+	transportStopped transportState = iota
+	transportStarting
+	transportPlaying
+	transportPaused
+)
+
+// TransportState is the semantic transport state exposed at the WASM
+// boundary. The sequencer remains the authority for this value; the worker and
+// UI only mirror snapshots returned by TransportSnapshot.
+type TransportState string
+
+const (
+	TransportStopped  TransportState = "stopped"
+	TransportStarting TransportState = "starting"
+	TransportPlaying  TransportState = "playing"
+	TransportPaused   TransportState = "paused"
+)
+
+// TransportSnapshot identifies one transport epoch and its playhead. Revision
+// changes at every state transition, which lets the main thread reject chunks
+// rendered before a Stop, Pause or restart even when they reach the speakers
+// later from the worklet's queue.
+type TransportSnapshot struct {
+	State    TransportState
+	Step     int
+	Revision uint64
 }
 
 // Engine is the drum machine sequencer and mixer.
 type Engine struct {
-	sr      float64
-	running bool
-	bpm     float64
-	swing   float64 // 0.0 = no swing, 0.5 = full shuffle
+	sr        float64
+	transport transportState
+	// transportRevision is monotonic for the lifetime of an engine. It is
+	// deliberately runtime-only: loading a preset must not make buffered audio
+	// from the current transport epoch stale.
+	transportRevision uint64
+	bpm               float64
+	swing             float64 // 0.0 = no swing, 0.5 = full shuffle
 
-	pattern [TrackCount][MaxSteps]float64 // per-cell velocity in [0, 1], 0 = off
-	volumes [TrackCount]float64           // targets set by SetVolume
-	liveVol [TrackCount]float64           // smoothed volumes applied in Render
-	volCoef float64                       // per-sample one-pole ramp coefficient
-	decays  [TrackCount]float64
+	pattern         [TrackCount][MaxSteps]float64 // per-cell velocity in [0, 1], 0 = off
+	cellProbability [TrackCount][MaxSteps]float64 // multiplied by the global probability
+	cellCondition   [TrackCount][MaxSteps]TriggerCondition
+	volumes         [TrackCount]float64 // targets set by SetVolume
+	muted           [TrackCount]bool    // mutes do not overwrite the stored volumes
+	liveVol         [TrackCount]float64 // smoothed volumes applied in Render
+	volCoef         float64             // per-sample one-pole ramp coefficient
+	decays          [TrackCount]float64
 
 	voices [TrackCount]Voice
 
 	tomModels      [TrackCount]TomModel
 	proceduralToms [TrackCount]*Tom
 	physicalToms   [TrackCount]*physicalTom
+	// physicalTomParams is authoritative even before the comparatively heavy
+	// physical voice is constructed. State snapshots therefore preserve both
+	// Tom banks without turning a procedural-only session into two physical
+	// model allocations.
+	physicalTomParams [TrackCount][]float64
 
-	stepCount   int // active pattern length in [1, MaxSteps]
-	currentStep int
-	stepSamples int64
-	stepLen     [MaxSteps]int64 // pre-computed step lengths
+	stepCount           int // master/displayed loop length in [1, MaxSteps]
+	currentStep         int
+	clockStep           uint64 // absolute step clock since the last Stop/master reset
+	stepPhase           uint64 // elapsed Q32.32 samples in the current step
+	currentStepDuration uint64 // latched Q32.32 duration of the current step
+	stepDuration        [MaxSteps]uint64
+	stepTriggered       bool
+	trackLength         [TrackCount]int
+	trackStep           [TrackCount]int
+	trackPass           [TrackCount]uint64
+	previousFired       [TrackCount]bool
 
-	prob     float64 // per-hit trigger probability in [0, 1]
-	humanize float64 // timing/velocity randomization amount in [0, 1]
-	rng      *rand.Rand
-	pending  [maxPending]pendingTrigger
+	prob        float64 // per-hit trigger probability in [0, 1]
+	humanize    float64 // timing/velocity randomization amount in [0, 1]
+	fillMode    bool    // enables cells carrying TriggerFillOnly
+	rng         *rand.Rand
+	pending     [maxPending]pendingTrigger
+	pendingMask uint32
 
-	reverb       *reverb.FDNReverb
-	reverbAmount float64
-	limiter      *dynamics.LookaheadLimiter
+	reverb           *reverb.FDNReverb
+	reverbAmount     float64
+	liveReverbAmount float64
+	limiter          *peakLimiter
+	hardClipCount    uint64
+
+	// silentRun counts consecutive rendered samples that were below
+	// engineSilence while nothing could make the engine loud again; it
+	// saturates at idleSamples, which is all IsIdle needs to know.
+	silentRun   int64
+	idleSamples int64 // idleConfirmS in samples, the confirm window for IsIdle
 }
 
 // NewEngine creates a drum engine at the given sample rate. A non-finite or
@@ -128,14 +226,22 @@ func NewEngine(sr float64) *Engine {
 		bpm:       120,
 		stepCount: MaxSteps,
 		volCoef:   1 - math.Exp(-1.0/(sr*volSmoothTauS)),
-		prob:      1,
-		humanize:  0,
-		rng:       rand.New(rand.NewPCG(engineSeed, engineSeed)),
+		// At the clamped rate floor this is still 400 samples, so the window
+		// can never degenerate to "idle on the first quiet sample".
+		idleSamples: int64(math.Round(sr * idleConfirmS)),
+		prob:        1,
+		humanize:    0,
+		rng:         rand.New(rand.NewPCG(engineSeed, engineSeed)),
 	}
 	for i := range e.volumes {
 		e.volumes[i] = 1.0
 		e.liveVol[i] = 1.0
 		e.decays[i] = 0.5
+		e.trackLength[i] = MaxSteps
+
+		for step := range MaxSteps {
+			e.cellProbability[i][step] = 1
+		}
 	}
 
 	e.voices[0] = NewBassDrum(sr)
@@ -143,17 +249,19 @@ func NewEngine(sr float64) *Engine {
 	e.voices[2] = NewHiHat(sr)
 	e.proceduralToms[tomTrackIndex] = NewTom(sr)
 	e.voices[tomTrackIndex] = e.proceduralToms[tomTrackIndex]
+	e.physicalTomParams[tomTrackIndex] = defaultParams(physicalTomSpecs)
 
 	e.voices[4] = NewCymbal(sr)
 	e.proceduralToms[tom2TrackIndex] = NewTom2(sr)
 	e.voices[tom2TrackIndex] = e.proceduralToms[tom2TrackIndex]
+	e.physicalTomParams[tom2TrackIndex] = defaultParams(physicalTomSpecs)
 
 	e.voices[6] = NewPercussion(sr)
 	for i := range e.voices {
 		e.voices[i].SetDecay(e.decays[i])
 	}
 
-	e.recomputeStepLengths()
+	e.recomputeStepDurations()
 
 	// The DSP constructors return (nil, err) for a rate they cannot work
 	// with, so both handles stay nil-checked: a broken effect degrades to a
@@ -167,18 +275,10 @@ func NewEngine(sr float64) *Engine {
 
 	e.reverb = rev
 
-	// Lookahead limiter controls the sustained level (dense patterns, long
-	// reverb tails). Its smoothed detector still under-reacts to
-	// single-sample noise transients, so the hard clamp in Render is the
-	// actual brick wall for those rare (~inaudible) peaks.
-	lim, err := dynamics.NewLookaheadLimiter(sr)
-	logErr("NewLookaheadLimiter", err)
-
-	if lim != nil {
-		logErr("limiter.SetThreshold", lim.SetThreshold(-1.0))
-	}
-
-	e.limiter = lim
+	// The master limiter uses a peak-max lookahead detector, so even isolated
+	// noise transients are held below the ceiling. The final clamp in Render is
+	// retained only as a last-resort finite-output contract.
+	e.limiter = newPeakLimiter(sr)
 
 	return e
 }
@@ -242,54 +342,103 @@ func validStep(step int) bool {
 	return step >= 0 && step < MaxSteps
 }
 
-// recomputeStepLengths recalculates step durations accounting for swing.
+// recomputeStepDurations recalculates Q32.32 step durations accounting for swing.
 // Swing lengthens a step and shortens the one after it by the same amount, so
 // each (long, short) pair still spans exactly two base steps and the loop
-// keeps its tempo: sum(stepLen[0:stepCount]) == stepCount·base for any swing.
+// keeps its tempo exactly in fixed point. The retained fractional phase crosses
+// step and loop boundaries, so a non-integer samples-per-step value cannot
+// accumulate tempo drift.
 // An odd step count leaves the final step unpaired, so it keeps the plain base
 // length rather than stretching the loop. Steps past the active length never
 // play and are held at the base length too.
-func (e *Engine) recomputeStepLengths() {
+func (e *Engine) recomputeStepDurations() {
 	base := e.sr * secondsPerMinute / e.bpm / stepsPerBeat // samples per 16th note
-
-	// The short step is derived by subtraction, not by scaling with (1-swing),
-	// so truncation to whole samples cannot make a pair drift off 2·base.
-	plain := int64(base)
-	long := int64(base * (1.0 + e.swing))
-	short := 2*plain - long
+	plain := uint64(math.Round(base * float64(stepPhaseUnit)))
+	delta := uint64(math.Round(base * e.swing * float64(stepPhaseUnit)))
+	long := plain + delta
+	short := plain - delta
 	last := e.stepCount - 1
 
-	for i := range e.stepLen {
+	for i := range e.stepDuration {
 		unpaired := i > last || (i == last && e.stepCount%2 == 1)
 
 		switch {
 		case unpaired:
-			e.stepLen[i] = plain
+			e.stepDuration[i] = plain
 		case i%2 == 0:
-			e.stepLen[i] = long
+			e.stepDuration[i] = long
 		default:
-			e.stepLen[i] = short
+			e.stepDuration[i] = short
 		}
 	}
+
+	// Parameter edits are latched at the next boundary while playing or
+	// paused, avoiding a shortened step suddenly ending mid-buffer. A stopped
+	// transport starts with the newly configured duration immediately.
+	if e.transport == transportStopped || e.currentStepDuration == 0 {
+		e.currentStepDuration = e.stepDuration[e.currentStep]
+	}
+}
+
+func (e *Engine) setTransport(state transportState) {
+	if e.transport == state {
+		return
+	}
+
+	e.transport = state
+	e.transportRevision++
+}
+
+// BeginStart records a requested start before the browser's asynchronous
+// audio graph is ready. Render does not advance the sequencer in this state;
+// SetRunning(true) commits the transition once audio output has resumed.
+func (e *Engine) BeginStart() {
+	if e.transport == transportPlaying || e.transport == transportStarting {
+		return
+	}
+
+	e.setTransport(transportStarting)
 }
 
 func (e *Engine) SetRunning(running bool) {
-	if !running {
-		e.currentStep = 0
-		e.stepSamples = 0
+	if running {
+		e.setTransport(transportPlaying)
+		e.wake()
 
-		// Drop any humanize-delayed hits so they don't fire after restart.
-		for i := range e.pending {
-			e.pending[i].active = false
-		}
+		return
 	}
 
-	e.running = running
+	e.setTransport(transportStopped)
+	e.currentStep = 0
+	e.clockStep = 0
+	e.stepPhase = 0
+	e.currentStepDuration = e.stepDuration[0]
+	e.stepTriggered = false
+
+	for track := range TrackCount {
+		e.trackStep[track] = 0
+		e.trackPass[track] = 0
+		e.previousFired[track] = false
+	}
+
+	// Drop any humanize-delayed hits so they don't fire after restart.
+	e.pendingMask = 0
 }
 
-// SetProbability sets the chance each scheduled hit actually fires, clamped to
-// [0, 1]. 1 = every hit plays (default); 0 = silence. A non-finite value is
-// rejected and leaves the current probability unchanged.
+// Pause freezes sequencer time and delayed humanized hits while allowing
+// already-triggered voices and effects to ring out. SetRunning(true) resumes
+// from the held fractional position; SetRunning(false) performs a full stop.
+func (e *Engine) Pause() {
+	if e.transport == transportPlaying {
+		e.setTransport(transportPaused)
+	}
+}
+
+// SetProbability sets the global probability multiplier, clamped to [0, 1].
+// Each hit's effective chance is this value times its CellProbability. A
+// global value of 1 leaves cell probabilities unscaled (the default), while 0
+// silences every sequenced hit. A non-finite value is rejected and leaves the
+// current probability unchanged.
 func (e *Engine) SetProbability(p float64) {
 	prob, ok := validFloat(p, 0, 1)
 	if !ok {
@@ -321,7 +470,7 @@ func (e *Engine) SetTempo(bpm float64) {
 	}
 
 	e.bpm = tempo
-	e.recomputeStepLengths()
+	e.recomputeStepDurations()
 }
 
 // SetSwing sets the swing amount, clamped to [0, maxSwing]. A non-finite value
@@ -333,12 +482,14 @@ func (e *Engine) SetSwing(swing float64) {
 	}
 
 	e.swing = amount
-	e.recomputeStepLengths()
+	e.recomputeStepDurations()
 }
 
-// SetStepCount sets the active pattern length, clamped to [1, MaxSteps].
-// Cells beyond the new length keep their contents (see SetCell). Step lengths
-// are recomputed because swing pairs steps within the active loop.
+// SetStepCount sets the master/displayed loop length, clamped to [1, MaxSteps],
+// and applies it to every track as the backwards-compatible global-length
+// operation. Call SetTrackLength afterward to create a polymeter. Cells beyond
+// a new length keep their contents (see SetCell). Step durations are recomputed
+// because swing pairs steps within the master loop.
 func (e *Engine) SetStepCount(count int) {
 	if count < 1 {
 		count = 1
@@ -354,10 +505,56 @@ func (e *Engine) SetStepCount(count int) {
 		// it plays out with its own length instead of inheriting the elapsed
 		// samples of the step it replaced.
 		e.currentStep %= count
-		e.stepSamples = 0
+		e.stepPhase = 0
+		e.stepTriggered = false
+		e.currentStepDuration = 0
 	}
 
-	e.recomputeStepLengths()
+	e.clockStep = uint64(e.currentStep)
+
+	// The legacy master-length control is also the quick way to bring a
+	// polymeter back into phase: all track loops adopt the master length and
+	// align to its current step. Independent edits made afterward continue
+	// across master wraps in SetTrackLength's polymetric mode.
+	for track := range TrackCount {
+		e.trackLength[track] = count
+		e.trackStep[track] = e.currentStep
+		e.trackPass[track] = 0
+		e.previousFired[track] = false
+	}
+
+	e.recomputeStepDurations()
+}
+
+// SetTrackLength sets one track's independent loop length, clamped to
+// [1, MaxSteps]. The master StepCount continues to define the displayed
+// playhead and swing loop; track playheads advance continuously across master
+// wraps, which is what makes non-dividing lengths a true polymeter.
+func (e *Engine) SetTrackLength(track, count int) {
+	if !validTrack(track) {
+		return
+	}
+
+	e.setTrackLength(track, count)
+}
+
+func (e *Engine) setTrackLength(track, count int) {
+	if count < 1 {
+		count = 1
+	} else if count > MaxSteps {
+		count = MaxSteps
+	}
+
+	if e.trackLength[track] == count {
+		return
+	}
+
+	e.trackLength[track] = count
+	e.trackStep[track] = int(e.clockStep % uint64(count))
+	// A length edit defines a new loop, so conditional-pass history starts
+	// over instead of inheriting a pass number from a different cycle shape.
+	e.trackPass[track] = 0
+	e.previousFired[track] = false
 }
 
 // SetCell sets a cell's velocity, clamped to [0, 1] (0 = off). Steps are
@@ -381,35 +578,69 @@ func (e *Engine) SetCell(track, step int, velocity float64) {
 	e.pattern[track][step] = vel
 }
 
-// SetPattern replaces cells from a flat track-major slice (index =
-// track*MaxSteps + step) of velocities, each clamped to [0, 1]. Values past
-// TrackCount×MaxSteps are ignored; a shorter slice leaves the rest untouched.
-// Per the SetCell contract a non-finite entry is skipped, leaving that one
-// cell unchanged while the rest of the slice still applies.
+// SetCellProbability sets one cell's probability multiplier. It is combined
+// with the global Probability control at trigger time. Defaults are 1, so old
+// patterns and the mechanical render path remain sample-exact.
+func (e *Engine) SetCellProbability(track, step int, probability float64) {
+	if !validTrack(track) || !validStep(step) {
+		return
+	}
+
+	value, ok := validFloat(probability, 0, 1)
+	if !ok {
+		return
+	}
+
+	e.cellProbability[track][step] = value
+}
+
+// SetCellCondition sets one cell's loop/fill condition. Unknown numeric codes
+// are rejected so persisted state cannot silently acquire different semantics.
+func (e *Engine) SetCellCondition(track, step int, condition TriggerCondition) {
+	if !validTrack(track) || !validStep(step) || condition >= triggerConditionCount {
+		return
+	}
+
+	e.cellCondition[track][step] = condition
+}
+
+// SetFillMode enables or disables cells marked TriggerFillOnly. It is semantic
+// configuration state rather than transport state so snapshots and shares can
+// reproduce what the engine will play.
+func (e *Engine) SetFillMode(enabled bool) {
+	e.fillMode = enabled
+}
+
+const PatternSize = TrackCount * MaxSteps
+
+// SetPattern atomically replaces the full flat track-major pattern (index =
+// track*MaxSteps + step). A wrong-sized snapshot or any non-finite entry is
+// rejected as a whole; finite velocities are clamped to [0, 1].
 func (e *Engine) SetPattern(velocities []float64) {
-	for i, velocity := range velocities {
-		if i >= TrackCount*MaxSteps {
+	if len(velocities) != PatternSize {
+		return
+	}
+
+	for _, velocity := range velocities {
+		if _, ok := validFloat(velocity, 0, 1); !ok {
 			return
 		}
+	}
 
-		vel, ok := validFloat(velocity, 0, 1)
-		if !ok {
-			continue
-		}
-
+	for i, velocity := range velocities {
+		vel, _ := validFloat(velocity, 0, 1)
 		e.pattern[i/MaxSteps][i%MaxSteps] = vel
 	}
 }
 
-// Pattern returns a flat track-major copy of the full pattern (see
-// SetPattern for the layout).
-func (e *Engine) Pattern() []float64 {
-	out := make([]float64, 0, TrackCount*MaxSteps)
-	for t := range e.pattern {
-		out = append(out, e.pattern[t][:]...)
+// CopyPattern writes the full pattern into caller-owned storage without
+// allocating. float32 matches the WASM wire format.
+func (e *Engine) CopyPattern(dst *[PatternSize]float32) {
+	for track := range e.pattern {
+		for step, velocity := range e.pattern[track] {
+			dst[track*MaxSteps+step] = float32(velocity)
+		}
 	}
-
-	return out
 }
 
 // SetVolume sets per-track volume, clamped to [0, 1]. The change ramps in
@@ -426,6 +657,34 @@ func (e *Engine) SetVolume(track int, vol float64) {
 	}
 
 	e.volumes[track] = volume
+}
+
+// SetMuted changes one track's mute state without changing its stored volume.
+// Render ramps toward zero while muted and back toward the stored volume when
+// unmuted, so both transitions inherit the zipper-noise protection of the
+// volume control.
+func (e *Engine) SetMuted(track int, muted bool) {
+	if !validTrack(track) {
+		return
+	}
+
+	wasMuted := e.muted[track]
+
+	e.muted[track] = muted
+	if wasMuted && !muted {
+		// A muted tail may have taken the engine into its frozen idle path.
+		// Give it a chance to resume when its stored volume becomes audible.
+		e.wake()
+	}
+}
+
+// Muted reports one track's mute state. Invalid tracks report false.
+func (e *Engine) Muted(track int) bool {
+	if !validTrack(track) {
+		return false
+	}
+
+	return e.muted[track]
 }
 
 // SetDecay sets per-track decay amount, clamped to [0, 1]. An out-of-range
@@ -474,16 +733,25 @@ func (e *Engine) SetPhysicalTomParam(track, index int, value01 float64) {
 		return
 	}
 
-	if _, ok := validFloat(value01, 0, 1); !ok {
-		return
-	}
-
-	physicalVoice, ok := e.ensurePhysicalTom(track)
+	value, ok := validFloat(value01, 0, 1)
 	if !ok {
 		return
 	}
 
-	physicalVoice.SetParam(index, value01)
+	// The shadow is sufficient while the physical bank is inactive. This is
+	// intentionally lazy: editing or restoring its controls must not construct
+	// a DoubleHead until the user selects it.
+	physicalVoice := e.physicalToms[track]
+	if physicalVoice == nil {
+		e.physicalTomParams[track][index] = value
+
+		return
+	}
+
+	physicalVoice.SetParam(index, value)
+	// SetParam rolls itself back if the derived physical configuration is not
+	// valid. Mirror what it actually accepted rather than assuming success.
+	e.physicalTomParams[track][index] = physicalVoice.Param(index)
 }
 
 func (e *Engine) ensurePhysicalTom(track int) (*physicalTom, bool) {
@@ -503,6 +771,13 @@ func (e *Engine) ensurePhysicalTom(track int) (*physicalTom, bool) {
 	}
 
 	physicalVoice.SetDecay(e.decays[track])
+
+	if err := physicalVoice.replaceParams(e.physicalTomParams[track]); err != nil {
+		logErr("physical Tom shadow parameters", err)
+
+		return nil, false
+	}
+
 	e.physicalToms[track] = physicalVoice
 
 	return physicalVoice, true
@@ -572,12 +847,45 @@ func (e *Engine) TriggerVoice(track int, velocity float64) {
 		return
 	}
 
+	e.wake()
 	e.voices[track].Trigger(vel)
 }
 
-// SetReverb sets the reverb amount in [0, 1]. 0 = fully dry, 1 = maximum
-// reverb (wet=reverbMaxWet, RT60=4 s). A non-finite amount is rejected and
-// leaves the current setting unchanged.
+// wake cancels an in-progress (or reached) idle window. Every path that can
+// make a stopped engine loud again has to call it, because the idle fast path
+// in Render writes zeros without ticking the voices and so cannot notice the
+// new sound on its own. Starting the transport, auditioning a voice and
+// unmuting a possibly frozen tail all pass through here; triggerStep and
+// schedule only run while the transport is playing, which holds the counter at
+// zero anyway.
+func (e *Engine) wake() {
+	e.silentRun = 0
+}
+
+// IsIdle reports whether Render is producing nothing but silence and can be
+// stopped being called: the output has stayed below engineSilence for
+// idleConfirmS while the transport was not playing and no humanize-delayed hit
+// was armed. It is the engine's half of the "stop the audio graph when there is
+// nothing to hear" contract — the worklet/worker side decides what to do with
+// it.
+//
+// This truncates a decaying tail rather than rendering it to the last denormal:
+// the reverb and the voice envelopes are exponential and never reach exactly
+// zero, so waiting for a bit-exact zero would mean never idling at all. What is
+// discarded is everything below −120 dBFS, which is over two orders of magnitude
+// under the quantisation step of the 16-bit output it eventually reaches and far
+// under the noise floor of any playback chain, so the cut is inaudible by
+// construction. The consequence to be aware of is that renders are no longer
+// bit-identical to a build without idling once a tail crosses the threshold —
+// hence the tests hold idling to "nothing above engineSilence was lost" rather
+// than to sample equality.
+func (e *Engine) IsIdle() bool {
+	return e.silentRun >= e.idleSamples
+}
+
+// SetReverb sets the target reverb amount in [0, 1]. Render smooths the wet
+// gain to that target; 0 = fully dry, 1 = maximum (wet=reverbMaxWet, RT60=4 s).
+// A non-finite amount is rejected and leaves the current setting unchanged.
 func (e *Engine) SetReverb(amount float64) {
 	wet, ok := validFloat(amount, 0, 1)
 	if !ok {
@@ -591,37 +899,68 @@ func (e *Engine) SetReverb(amount float64) {
 	}
 
 	if wet <= 0 {
-		logErr("reverb.SetWet", e.reverb.SetWet(0))
-
 		return
 	}
 
-	logErr("reverb.SetWet", e.reverb.SetWet(wet*reverbMaxWet))
 	logErr("reverb.SetRT60", e.reverb.SetRT60(reverbMinRT60S+wet*reverbRangeRT60S))
 }
 
 func (e *Engine) CurrentStep() int {
-	if !e.running {
+	if e.transport == transportStopped || e.transport == transportStarting {
 		return -1
 	}
 
 	return e.currentStep
 }
 
+// TransportSnapshot returns the engine-owned transport state, its logical
+// playhead and a revision that identifies the current transport epoch.
+func (e *Engine) TransportSnapshot() TransportSnapshot {
+	state := TransportStopped
+
+	switch e.transport {
+	case transportStarting:
+		state = TransportStarting
+	case transportPlaying:
+		state = TransportPlaying
+	case transportPaused:
+		state = TransportPaused
+	}
+
+	return TransportSnapshot{
+		State:    state,
+		Step:     e.CurrentStep(),
+		Revision: e.transportRevision,
+	}
+}
+
 // triggerStep fires (or schedules) the voices whose cell is active on the
 // current step, applying probability and humanize.
 func (e *Engine) triggerStep() {
 	for t := range e.voices {
-		vel := e.pattern[t][e.currentStep]
+		step := e.trackStep[t]
+		vel := e.pattern[t][step]
+
 		if vel <= 0 {
+			e.previousFired[t] = false
 			continue
 		}
 
-		// Probability gate: drop the hit with chance 1-prob. At prob=1 the
-		// rng is left untouched so mechanical renders stay deterministic.
-		if e.prob < 1 && e.rng.Float64() >= e.prob {
+		if !e.conditionAllows(t, step) {
+			e.previousFired[t] = false
 			continue
 		}
+
+		// The global knob remains a master probability while the cell value
+		// supplies local variation. At the all-1 defaults the RNG is left
+		// untouched, preserving the procedural render digests.
+		probability := e.prob * e.cellProbability[t][step]
+		if probability < 1 && e.rng.Float64() >= probability {
+			e.previousFired[t] = false
+			continue
+		}
+
+		e.previousFired[t] = true
 
 		if e.humanize <= 0 {
 			e.voices[t].Trigger(vel)
@@ -642,44 +981,63 @@ func (e *Engine) triggerStep() {
 	}
 }
 
+func (e *Engine) conditionAllows(track, step int) bool {
+	switch e.cellCondition[track][step] {
+	case TriggerAlways:
+		return true
+	case TriggerEvery2:
+		return (e.trackPass[track]+1)%2 == 0
+	case TriggerEvery3:
+		return (e.trackPass[track]+1)%3 == 0
+	case TriggerEvery4:
+		return (e.trackPass[track]+1)%4 == 0
+	case TriggerFirstLoop:
+		return e.trackPass[track] == 0
+	case TriggerFillOnly:
+		return e.fillMode
+	case TriggerNotPreviousFired:
+		return !e.previousFired[track]
+	default:
+		return false
+	}
+}
+
 // schedule queues a delayed voice trigger; if the fixed pending buffer is full
 // the hit fires immediately rather than being dropped.
 func (e *Engine) schedule(track int, velocity float64, delay int) {
-	for i := range e.pending {
-		if !e.pending[i].active {
-			e.pending[i] = pendingTrigger{
-				countdown: delay,
-				track:     track,
-				velocity:  velocity,
-				active:    true,
-			}
+	free := ^e.pendingMask
+	if free == 0 {
+		e.voices[track].Trigger(velocity)
 
-			return
-		}
+		return
 	}
 
-	e.voices[track].Trigger(velocity)
+	slot := bits.TrailingZeros32(free)
+	e.pending[slot] = pendingTrigger{countdown: delay, track: track, velocity: velocity}
+	e.pendingMask |= uint32(1) << slot
 }
 
 // firePending advances every queued trigger by one sample and fires those that
 // have reached their scheduled time.
 func (e *Engine) firePending() {
-	for i := range e.pending {
-		if !e.pending[i].active {
-			continue
-		}
+	for active := e.pendingMask; active != 0; {
+		slot := bits.TrailingZeros32(active)
+		bit := uint32(1) << slot
+		active &^= bit
 
-		e.pending[i].countdown--
-		if e.pending[i].countdown <= 0 {
-			e.voices[e.pending[i].track].Trigger(e.pending[i].velocity)
-			e.pending[i].active = false
+		trigger := &e.pending[slot]
+
+		trigger.countdown--
+		if trigger.countdown <= 0 {
+			e.voices[trigger.track].Trigger(trigger.velocity)
+			e.pendingMask &^= bit
 		}
 	}
 }
 
 // Render fills buf with mono audio samples.
 //
-// The invariants the loop relies on — a positive length for every step, the
+// The invariants the loop relies on — a positive duration for every step, the
 // playhead inside the loop, no pending trigger past its deadline — are checked
 // per buffer, on entry and on exit, only in builds tagged `drumassert`; the
 // shipped build compiles assertValid away to nothing (see assert.go).
@@ -687,32 +1045,74 @@ func (e *Engine) Render(buf []float32) {
 	e.assertValid()
 
 	for i := range buf {
-		if e.running {
-			if e.stepSamples == 0 {
+		if e.transport == transportPlaying {
+			if !e.stepTriggered {
 				e.triggerStep()
+				e.stepTriggered = true
 			}
 
-			e.stepSamples++
-			if e.stepSamples >= e.stepLen[e.currentStep] {
-				e.stepSamples = 0
+			e.stepPhase += stepPhaseUnit
+			if e.stepPhase >= e.currentStepDuration {
+				e.stepPhase -= e.currentStepDuration
+				e.clockStep++
 				e.currentStep = (e.currentStep + 1) % e.stepCount
+				e.currentStepDuration = e.stepDuration[e.currentStep]
+
+				for track := range TrackCount {
+					e.trackStep[track]++
+					if e.trackStep[track] >= e.trackLength[track] {
+						e.trackStep[track] = 0
+						e.trackPass[track]++
+					}
+				}
+
+				e.stepTriggered = false
 			}
+
+			e.firePending()
 		}
 
-		e.firePending()
+		// Idle fast path: with the transport stopped and the tail decayed away
+		// there is nothing for the voices, the reverb or the limiter to compute,
+		// and running them anyway is what kept the CPU busy forever (PLAN.md
+		// B10). Their state is left frozen rather than reset, so a later hit
+		// resumes from exactly where the silence began. The check is per sample
+		// so a buffer that goes idle halfway stops working halfway.
+		if e.IsIdle() {
+			buf[i] = 0
+
+			continue
+		}
 
 		var out float64
 
 		for t, v := range e.voices {
 			// One-pole ramp toward the target volume so knob moves during
 			// playback do not step the gain per-sample (zipper noise).
-			e.liveVol[t] += (e.volumes[t] - e.liveVol[t]) * e.volCoef
+			targetVolume := e.volumes[t]
+			if e.muted[t] {
+				targetVolume = 0
+			}
+
+			e.liveVol[t] += (targetVolume - e.liveVol[t]) * e.volCoef
 			out += v.Tick() * e.liveVol[t]
 		}
 
 		out *= mixHeadroom
 
-		if e.reverbAmount > 0 && e.reverb != nil {
+		if e.reverb != nil {
+			e.liveReverbAmount += (e.reverbAmount - e.liveReverbAmount) * e.volCoef
+
+			// FDNReverb returns input*dry + tail*wet and its dry gain defaults
+			// to 1, so setting only the wet gain would make REVERB a send that
+			// raises the master level rather than a mix. Trading dry for wet
+			// keeps the level flat across the sweep, which is what a 0–1
+			// "amount" knob means and what keeps the limiter off the tail.
+			// reverbMaxWet < 1, so the dry gain never goes negative.
+			wet := e.liveReverbAmount * reverbMaxWet
+			logErr("reverb.SetWet", e.reverb.SetWet(wet))
+			logErr("reverb.SetDry", e.reverb.SetDry(1-wet))
+
 			out = e.reverb.ProcessSample(out)
 		}
 
@@ -729,10 +1129,26 @@ func (e *Engine) Render(buf []float32) {
 		switch {
 		case out > 1:
 			out = 1
+			e.hardClipCount++
 		case out < -1:
 			out = -1
+			e.hardClipCount++
 		case math.IsNaN(out):
 			out = 0
+		}
+
+		// Silence accounting, on the same value that reaches the buffer. A
+		// playing transport or an armed pending hit means audio is coming
+		// regardless of how quiet this sample is, so neither can be allowed to
+		// accumulate a window. The counter saturates at the window length: it
+		// has nothing left to prove past that point, and not growing keeps it
+		// from running away over a long idle.
+		if e.transport != transportPlaying && e.pendingMask == 0 && math.Abs(out) < engineSilence {
+			if e.silentRun < e.idleSamples {
+				e.silentRun++
+			}
+		} else {
+			e.silentRun = 0
 		}
 
 		buf[i] = float32(out)

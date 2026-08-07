@@ -37,6 +37,8 @@ const (
 	opRunning
 	opVoiceParam
 	opTriggerVoice
+	opCellProbability
+	opDepthConfig
 	fuzzOpCount
 )
 
@@ -106,6 +108,12 @@ func applyFuzzProgram(engine *Engine, program []byte) {
 			engine.SetVoiceParam(index, small, value)
 		case opTriggerVoice:
 			engine.TriggerVoice(index, value)
+		case opCellProbability:
+			engine.SetCellProbability(index, small, value)
+		case opDepthConfig:
+			engine.SetTrackLength(index, small)
+			engine.SetCellCondition(index, small, TriggerCondition(byte(bits>>8)))
+			engine.SetFillMode(bits&1 == 1)
 		}
 	}
 }
@@ -154,6 +162,8 @@ func FuzzEngineSetters(f *testing.F) {
 	f.Add(fuzzProgram(
 		fuzzOp(opPattern, 0, posInf),
 		fuzzOp(opProbability, 0, nan),
+		fuzzOp(opCellProbability, fuzzIndexBias, nan),
+		fuzzOp(opDepthConfig, fuzzIndexBias, fuzzIndexValue(0)),
 		fuzzOp(opHumanize, 0, nan),
 		fuzzOp(opReverb, 0, nan),
 	))

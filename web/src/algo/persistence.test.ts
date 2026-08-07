@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { decodeState, encodeState, type PersistedState } from "./persistence";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  createDefaultEngineState,
+  type EngineState,
+} from "../engine/engineState";
+import {
+  PHYSICAL_TOM_PARAM_CAPACITY,
+  PHYSICAL_TOM_PARAMS,
+  VOICE_PARAM_CAPACITY,
+} from "../engine/voiceParams";
 import {
   PATTERN_SIZE,
   TRACK_COUNT,
@@ -8,79 +16,162 @@ import {
   VEL_OFF,
 } from "./pattern";
 import {
-  PHYSICAL_TOM_PARAM_CAPACITY,
-  PHYSICAL_TOM_PARAMS,
-  VOICE_PARAM_CAPACITY,
-} from "../engine/voiceParams";
+  buildShareUrl,
+  decodeState,
+  encodeState,
+  replaceAddressBarWithShareUrl,
+  shareUrl,
+} from "./persistence";
 
-const V1_BYTES = 38;
 const LEGACY_TRACK_COUNT = 5;
+const LEGACY_PATTERN_SIZE = LEGACY_TRACK_COUNT * 16;
+const V1_BYTES = 38;
 const V2_BYTES = V1_BYTES + LEGACY_TRACK_COUNT * VOICE_PARAM_CAPACITY;
 const V3_BYTES = V2_BYTES + 1;
-const V4_PHYSICAL_TOM_PARAM_CAPACITY = 13;
-const V4_BYTES = V3_BYTES + V4_PHYSICAL_TOM_PARAM_CAPACITY;
-const V5_PHYSICAL_TOM_PARAM_CAPACITY = 15;
-const V6_BYTES = V3_BYTES + V5_PHYSICAL_TOM_PARAM_CAPACITY;
+const V4_PHYSICAL_CAPACITY = 13;
+const V4_BYTES = V3_BYTES + V4_PHYSICAL_CAPACITY;
+const V5_PHYSICAL_CAPACITY = 15;
+const V6_BYTES = V3_BYTES + V5_PHYSICAL_CAPACITY;
 const EXTRA_TRACK_COUNT = TRACK_COUNT - LEGACY_TRACK_COUNT;
-const LEGACY_VISUAL_TO_CURRENT = [0, 3, 4, 5, 6] as const;
-const V8_BYTES =
-  V6_BYTES +
+const V7_EXTRA_BYTES =
   EXTRA_TRACK_COUNT * 2 +
   1 +
-  (EXTRA_TRACK_COUNT * 16) / 4 +
+  (PATTERN_SIZE - LEGACY_PATTERN_SIZE) / 4 +
   EXTRA_TRACK_COUNT * VOICE_PARAM_CAPACITY;
-const V9_BYTES = V8_BYTES + 1 + V5_PHYSICAL_TOM_PARAM_CAPACITY;
-const V10_PHYSICAL_TOM_PARAM_CAPACITY = 16;
-// The byte constants above describe the v9 layout. v10 widened the Tom 1 bank
-// in the middle of the record, so anything after it sits one slot later.
-const V10_TOM2_MODEL_OFFSET =
-  V8_BYTES + (PHYSICAL_TOM_PARAM_CAPACITY - V5_PHYSICAL_TOM_PARAM_CAPACITY);
-const TOTAL_BYTES =
-  V9_BYTES + (PHYSICAL_TOM_PARAM_CAPACITY - V5_PHYSICAL_TOM_PARAM_CAPACITY) * 2;
+const V8_BYTES = V6_BYTES + V7_EXTRA_BYTES;
+const V9_BYTES = V8_BYTES + 1 + V5_PHYSICAL_CAPACITY;
+const V10_PHYSICAL_CAPACITY = 16;
+const V10_BYTES =
+  V3_BYTES + V10_PHYSICAL_CAPACITY + V7_EXTRA_BYTES + 1 + V10_PHYSICAL_CAPACITY;
+const V13_BYTES =
+  V3_BYTES +
+  PHYSICAL_TOM_PARAM_CAPACITY +
+  V7_EXTRA_BYTES +
+  1 +
+  PHYSICAL_TOM_PARAM_CAPACITY;
 
-// Scalars are stored as one byte, so only multiples of 1/255 survive a
-// roundtrip exactly. Quantize test inputs so equality is bit-exact.
+const V14_PATTERN_OFFSET = 8;
+const V14_PATTERN_BYTES = PATTERN_SIZE / 4;
+const V14_MIXER_OFFSET = V14_PATTERN_OFFSET + V14_PATTERN_BYTES;
+const V14_MUTE_OFFSET = V14_MIXER_OFFSET + TRACK_COUNT * 2;
+const V14_VOICE_OFFSET = V14_MUTE_OFFSET + 1;
+const V14_MODEL_OFFSET = V14_VOICE_OFFSET + TRACK_COUNT * VOICE_PARAM_CAPACITY;
+const V14_PHYSICAL_OFFSET = V14_MODEL_OFFSET + 1;
+const V14_BYTES = V14_PHYSICAL_OFFSET + 2 * PHYSICAL_TOM_PARAM_CAPACITY;
+const V15_VELOCITY_OFFSET = V14_BYTES;
+const V15_PROBABILITY_OFFSET = V15_VELOCITY_OFFSET + PATTERN_SIZE;
+const V15_CONDITION_OFFSET = V15_PROBABILITY_OFFSET + PATTERN_SIZE;
+const V15_TRACK_LENGTH_OFFSET = V15_CONDITION_OFFSET + PATTERN_SIZE / 2;
+const V15_FLAGS_OFFSET = V15_TRACK_LENGTH_OFFSET + TRACK_COUNT;
+const V15_BYTES = V15_FLAGS_OFFSET + 1;
+
+const LEGACY_VISUAL_TO_CURRENT = [0, 3, 4, 5, 6] as const;
+const ENGINE_TO_VISUAL = [6, 5, 4, 3, 0, 2, 1] as const;
+
 const q = (x: number): number => Math.round(x * 255) / 255;
 
-// base64url <-> bytes helpers for tampering with encoded blobs in tests.
-function toBytes(s: string): Uint8Array {
-  const b = atob(s.replace(/-/g, "+").replace(/_/g, "/"));
-  return Uint8Array.from(b, (c) => c.charCodeAt(0));
-}
-function toB64Url(bytes: Uint8Array): string {
-  let bin = "";
-  for (const byte of bytes) bin += String.fromCharCode(byte);
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+function toBytes(text: string): Uint8Array {
+  const base64 = text.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="));
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
-function makeState(): PersistedState {
+function toB64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+function makeState(): EngineState {
+  const state = createDefaultEngineState();
+  state.tempoBpm = 173;
+  state.stepCount = 7;
+  state.swing = q(0.4) * 0.5;
+  state.reverb = q(0.6);
+  state.probability = q(0.85);
+  state.humanize = q(0.33);
+
+  for (let i = 0; i < PATTERN_SIZE; i++) {
+    state.pattern[i] = q([VEL_OFF, VEL_NORMAL, VEL_ACCENT][i % 3]);
+    state.cellProbabilities[i] = q((i % 11) / 10);
+    state.cellConditions[i] = i % 7;
+  }
+
+  state.trackLengths.set([16, 15, 14, 13, 12, 11, 10]);
+  state.fillMode = true;
+
+  for (let track = 0; track < TRACK_COUNT; track++) {
+    const row = state.tracks[track];
+    row.volume = q((track + 1) / 9);
+    row.decay = q((8 - track) / 10);
+    row.muted = track % 3 === 1;
+    for (let i = 0; i < row.voiceParams.length; i++) {
+      row.voiceParams[i] = q((track * VOICE_PARAM_CAPACITY + i + 1) / 50);
+    }
+  }
+
+  state.tracks[3].tom.model = "physical";
+  state.tracks[5].tom.model = "procedural";
+  for (let i = 0; i < PHYSICAL_TOM_PARAM_CAPACITY; i++) {
+    state.tracks[3].tom.physicalParams[i] = q((i + 1) / 20);
+    state.tracks[5].tom.physicalParams[i] = q(
+      (PHYSICAL_TOM_PARAM_CAPACITY - i) / 20,
+    );
+  }
+
+  return state;
+}
+
+interface LegacyFixtureState {
+  pattern: number[];
+  steps: number;
+  tempo: number;
+  swing: number;
+  reverb: number;
+  prob: number;
+  humanize: number;
+  volumes: number[];
+  decays: number[];
+  muted: boolean[];
+  voiceParams: number[][];
+  tomModel: "procedural" | "physical";
+  physicalTomParams: number[];
+  tom2Model: "procedural" | "physical";
+  physicalTom2Params: number[];
+}
+
+function makeLegacyState(): LegacyFixtureState {
   const pattern = new Array<number>(PATTERN_SIZE).fill(VEL_OFF);
   pattern[0] = VEL_ACCENT;
   pattern[3] = VEL_NORMAL;
-  pattern[16] = VEL_NORMAL; // snare track, step 0
+  pattern[16] = VEL_NORMAL;
   pattern[PATTERN_SIZE - 1] = VEL_ACCENT;
+
   return {
     pattern,
-    steps: q(1.0),
+    steps: q(0.6),
     tempo: q(0.43),
     swing: q(0.2),
     reverb: q(0.6),
     prob: q(0.85),
     humanize: q(0.33),
-    volumes: [q(0.2), q(0.4), q(0.75), q(0.5), q(1.0), q(0.0), q(0.9)],
+    volumes: [q(0.2), q(0.4), q(0.75), q(0.5), q(1), q(0), q(0.9)],
     decays: [q(0.7), q(0.3), q(0.5), q(0.25), q(0.8), q(0.1), q(0.6)],
     muted: [true, false, false, true, false, false, true],
     voiceParams: Array.from({ length: TRACK_COUNT }, (_, track) =>
       Array.from({ length: VOICE_PARAM_CAPACITY }, (_, i) =>
-        q((track * VOICE_PARAM_CAPACITY + i) / 60),
+        q((track * VOICE_PARAM_CAPACITY + i + 1) / 50),
       ),
     ),
     tomModel: "physical",
-    tom2Model: "physical",
     physicalTomParams: Array.from(
       { length: PHYSICAL_TOM_PARAM_CAPACITY },
-      (_, i) => q((i + 1) / (PHYSICAL_TOM_PARAM_CAPACITY + 1)),
+      (_, i) => q((i + 1) / 20),
     ),
+    tom2Model: "physical",
     physicalTom2Params: Array.from(
       { length: PHYSICAL_TOM_PARAM_CAPACITY },
       (_, i) => q((PHYSICAL_TOM_PARAM_CAPACITY - i) / 20),
@@ -88,540 +179,524 @@ function makeState(): PersistedState {
   };
 }
 
-// encodeV1 builds a pre-voice-editor blob by hand, so the backward-compat
-// tests document the v1 layout instead of depending on a captured golden.
-function encodeV1(state: PersistedState): string {
-  const bytes = new Uint8Array(V1_BYTES);
-  const toByte = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 255);
+function legacyV13Bytes(state: LegacyFixtureState): Uint8Array {
+  const bytes = new Uint8Array(V13_BYTES);
+  const toByte = (value: number) =>
+    Math.round(
+      Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0)) * 255,
+    );
   let offset = 0;
+  bytes[offset++] = 13;
+  for (const scalar of [
+    state.steps,
+    state.tempo,
+    state.swing,
+    state.reverb,
+    state.prob,
+    state.humanize,
+  ]) {
+    bytes[offset++] = toByte(scalar);
+  }
 
-  bytes[offset++] = 1; // format version
-  bytes[offset++] = toByte(state.steps);
-  bytes[offset++] = toByte(state.tempo);
-  bytes[offset++] = toByte(state.swing);
-  bytes[offset++] = toByte(state.reverb);
-  bytes[offset++] = toByte(state.prob);
-  bytes[offset++] = toByte(state.humanize);
-
-  for (const visualIndex of LEGACY_VISUAL_TO_CURRENT)
-    bytes[offset++] = toByte(state.volumes[visualIndex]);
-  for (const visualIndex of LEGACY_VISUAL_TO_CURRENT)
-    bytes[offset++] = toByte(state.decays[visualIndex]);
-
+  for (const visual of LEGACY_VISUAL_TO_CURRENT)
+    bytes[offset++] = toByte(state.volumes[visual]);
+  for (const visual of LEGACY_VISUAL_TO_CURRENT)
+    bytes[offset++] = toByte(state.decays[visual]);
   let muteMask = 0;
-  for (let i = 0; i < LEGACY_TRACK_COUNT; i++)
+  for (let i = 0; i < LEGACY_TRACK_COUNT; i++) {
     if (state.muted[LEGACY_VISUAL_TO_CURRENT[i]]) muteMask |= 1 << i;
+  }
   bytes[offset++] = muteMask;
 
-  for (let i = 0; i < (LEGACY_TRACK_COUNT * 16) / 4; i++) {
-    let packed = 0;
-    for (let j = 0; j < 4; j++) {
-      const vel = state.pattern[i * 4 + j] ?? VEL_OFF;
-      const code = vel >= VEL_ACCENT ? 2 : vel > VEL_OFF ? 1 : 0;
-      packed |= code << (j * 2);
+  const packPattern = (start: number, byteCount: number) => {
+    for (let i = 0; i < byteCount; i++) {
+      let packed = 0;
+      for (let j = 0; j < 4; j++) {
+        const velocity = state.pattern[start + i * 4 + j] ?? VEL_OFF;
+        const code = velocity >= VEL_ACCENT ? 2 : velocity > VEL_OFF ? 1 : 0;
+        packed |= code << (j * 2);
+      }
+      bytes[offset++] = packed;
     }
-    bytes[offset++] = packed;
-  }
+  };
+  packPattern(0, LEGACY_PATTERN_SIZE / 4);
 
-  return toB64Url(bytes);
+  const writeVoiceRows = (from: number, to: number) => {
+    for (let track = from; track < to; track++) {
+      for (let i = 0; i < VOICE_PARAM_CAPACITY; i++)
+        bytes[offset++] = toByte(state.voiceParams[track][i]);
+    }
+  };
+  writeVoiceRows(0, LEGACY_TRACK_COUNT);
+  bytes[offset++] = state.tomModel === "physical" ? 1 : 0;
+  for (const value of state.physicalTomParams) bytes[offset++] = toByte(value);
+
+  for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
+    bytes[offset++] = toByte(state.volumes[ENGINE_TO_VISUAL[track]]);
+  }
+  for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
+    bytes[offset++] = toByte(state.decays[ENGINE_TO_VISUAL[track]]);
+  }
+  let extraMuteMask = 0;
+  for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
+    if (state.muted[ENGINE_TO_VISUAL[track]])
+      extraMuteMask |= 1 << (track - LEGACY_TRACK_COUNT);
+  }
+  bytes[offset++] = extraMuteMask;
+  packPattern(LEGACY_PATTERN_SIZE, (PATTERN_SIZE - LEGACY_PATTERN_SIZE) / 4);
+  writeVoiceRows(LEGACY_TRACK_COUNT, TRACK_COUNT);
+  bytes[offset++] = state.tom2Model === "physical" ? 1 : 0;
+  for (const value of state.physicalTom2Params) bytes[offset++] = toByte(value);
+
+  expect(offset).toBe(bytes.length);
+  return bytes;
 }
 
-// Versions 2–9 are all prefixes of the v9 layout, so every fixture below is
-// that layout truncated — which keeps them anchored to encodeState instead of
-// duplicating it, and makes the truncation point the documentation of what each
-// version added.
-//
-// v10 is the first release that is not a strict append: it widened the physical
-// Tom bank sitting in the middle of the record, shifting every later offset, and
-// v12 widened it again. So the reversal is parameterized by the target width
-// rather than hard-coded to one slot — hard-coding it silently stops reversing
-// anything the next time a bank grows.
-function bytesAtBankWidth(state: PersistedState, width: number): Uint8Array {
-  const current = toBytes(encodeState(state));
+function bytesAtPhysicalWidth(
+  state: LegacyFixtureState,
+  width: number,
+): Uint8Array {
+  const current = legacyV13Bytes(state);
   const dropped = new Set<number>();
   for (let i = 0; i < PHYSICAL_TOM_PARAM_CAPACITY - width; i++) {
-    dropped.add(V3_BYTES + PHYSICAL_TOM_PARAM_CAPACITY - 1 - i); // Tom 1 tail
-    dropped.add(current.length - 1 - i); // Tom 2 tail
+    dropped.add(V3_BYTES + PHYSICAL_TOM_PARAM_CAPACITY - 1 - i);
+    dropped.add(current.length - 1 - i);
   }
-
   return current.filter((_, index) => !dropped.has(index));
 }
 
-function preV10Bytes(state: PersistedState): Uint8Array {
-  return bytesAtBankWidth(state, V5_PHYSICAL_TOM_PARAM_CAPACITY);
-}
-
-// v11 changed no bytes at all, only the meaning of one stored position, so v10
-// and v11 share a layout and differ only in their version byte.
-function encodeAtV10Width(state: PersistedState, version: number): string {
-  const bytes = bytesAtBankWidth(state, V10_PHYSICAL_TOM_PARAM_CAPACITY);
+function legacyBlob(state: LegacyFixtureState, version: number): string {
+  let bytes: Uint8Array;
+  switch (version) {
+    case 1:
+      bytes = bytesAtPhysicalWidth(state, V5_PHYSICAL_CAPACITY).slice(
+        0,
+        V1_BYTES,
+      );
+      break;
+    case 2:
+      bytes = bytesAtPhysicalWidth(state, V5_PHYSICAL_CAPACITY).slice(
+        0,
+        V2_BYTES,
+      );
+      break;
+    case 3:
+      bytes = bytesAtPhysicalWidth(state, V5_PHYSICAL_CAPACITY).slice(
+        0,
+        V3_BYTES,
+      );
+      break;
+    case 4:
+      bytes = bytesAtPhysicalWidth(state, V5_PHYSICAL_CAPACITY).slice(
+        0,
+        V4_BYTES,
+      );
+      break;
+    case 5:
+    case 6:
+      bytes = bytesAtPhysicalWidth(state, V5_PHYSICAL_CAPACITY).slice(
+        0,
+        V6_BYTES,
+      );
+      break;
+    case 7:
+    case 8:
+      bytes = bytesAtPhysicalWidth(state, V5_PHYSICAL_CAPACITY).slice(
+        0,
+        V8_BYTES,
+      );
+      break;
+    case 9:
+      bytes = bytesAtPhysicalWidth(state, V5_PHYSICAL_CAPACITY).slice(
+        0,
+        V9_BYTES,
+      );
+      break;
+    case 10:
+    case 11:
+      bytes = bytesAtPhysicalWidth(state, V10_PHYSICAL_CAPACITY).slice(
+        0,
+        V10_BYTES,
+      );
+      break;
+    case 12:
+    case 13:
+      bytes = legacyV13Bytes(state);
+      break;
+    default:
+      throw new Error(`unsupported fixture version ${version}`);
+  }
   bytes[0] = version;
   return toB64Url(bytes);
 }
 
-function encodeV10(state: PersistedState): string {
-  return encodeAtV10Width(state, 10);
-}
-
-function encodeLegacy(
-  state: PersistedState,
-  version: number,
-  length: number,
-): string {
-  const bytes = preV10Bytes(state).slice(0, length);
-  bytes[0] = version;
-  return toB64Url(bytes);
-}
-
-function encodeV2(state: PersistedState): string {
-  return encodeLegacy(state, 2, V2_BYTES);
-}
-
-function encodeV3(state: PersistedState): string {
-  return encodeLegacy(state, 3, V3_BYTES);
-}
-
-function encodeV4(state: PersistedState): string {
-  return encodeLegacy(state, 4, V4_BYTES);
-}
-
-function encodeV5(state: PersistedState): string {
-  return encodeLegacy(state, 5, V6_BYTES);
-}
-
-function encodeV6(state: PersistedState): string {
-  return encodeLegacy(state, 6, V6_BYTES);
-}
-
-function encodeV7(state: PersistedState): string {
-  return encodeLegacy(state, 7, V8_BYTES);
-}
-
-function encodeV8(state: PersistedState): string {
-  return encodeLegacy(state, 8, V8_BYTES);
-}
-
-function encodeV9(state: PersistedState): string {
-  return encodeLegacy(state, 9, V9_BYTES);
-}
-
-describe("persistence encode/decode", () => {
-  it("roundtrips a representative state exactly", () => {
+describe("v15 canonical persistence", () => {
+  it("roundtrips a representative EngineState", () => {
     const state = makeState();
-    const decoded = decodeState(encodeState(state));
-    expect(decoded).toEqual(state);
+    expect(decodeState(encodeState(state))).toEqual(state);
   });
 
-  it("roundtrips pattern velocities exactly (3-state quantization)", () => {
+  it("has a stable fixed-width engine-major layout", () => {
     const state = makeState();
-    // Fill every cell with a rotating off/normal/accent value.
-    state.pattern = Array.from(
-      { length: PATTERN_SIZE },
-      (_, i) => [VEL_OFF, VEL_NORMAL, VEL_ACCENT][i % 3],
+    const bytes = toBytes(encodeState(state));
+
+    expect(bytes).toHaveLength(V15_BYTES);
+    expect(bytes[0]).toBe(15);
+    expect(bytes[1] | (bytes[2] << 8)).toBe(state.tempoBpm);
+    expect(bytes[3]).toBe(state.stepCount);
+    expect(bytes[V14_MIXER_OFFSET]).toBe(
+      Math.round(state.tracks[0].volume * 255),
     );
+    expect(bytes[V14_MIXER_OFFSET + 2]).toBe(
+      Math.round(state.tracks[1].volume * 255),
+    );
+    expect(bytes[V14_MUTE_OFFSET]).toBe(0b0010010);
+    expect(bytes[V14_VOICE_OFFSET]).toBe(
+      Math.round(state.tracks[0].voiceParams[0] * 255),
+    );
+    expect(bytes[V14_VOICE_OFFSET + VOICE_PARAM_CAPACITY]).toBe(
+      Math.round(state.tracks[1].voiceParams[0] * 255),
+    );
+    expect(bytes[V14_MODEL_OFFSET]).toBe(0b01);
+    expect(bytes[V14_PHYSICAL_OFFSET]).toBe(
+      Math.round(state.tracks[3].tom.physicalParams[0] * 255),
+    );
+    expect(bytes[V15_VELOCITY_OFFSET + 1]).toBe(
+      Math.round(state.pattern[1] * 255),
+    );
+    expect(bytes[V15_PROBABILITY_OFFSET + 10]).toBe(255);
+    expect(bytes[V15_CONDITION_OFFSET]).toBe(0x10);
+    expect(bytes[V15_CONDITION_OFFSET + 3]).toBe(0x06);
+    expect(
+      Array.from(
+        bytes.slice(V15_TRACK_LENGTH_OFFSET, V15_TRACK_LENGTH_OFFSET + 7),
+      ),
+    ).toEqual([16, 15, 14, 13, 12, 11, 10]);
+    expect(bytes[V15_FLAGS_OFFSET]).toBe(1);
+  });
+
+  it("stores BPM and step count semantically and exactly", () => {
+    for (const [tempoBpm, stepCount] of [
+      [30, 1],
+      [137, 7],
+      [300, 16],
+    ] as const) {
+      const state = makeState();
+      state.tempoBpm = tempoBpm;
+      state.stepCount = stepCount;
+      const decoded = decodeState(encodeState(state));
+      expect(decoded?.tempoBpm).toBe(tempoBpm);
+      expect(decoded?.stepCount).toBe(stepCount);
+    }
+  });
+
+  it("roundtrips continuous cell velocities at byte precision", () => {
+    const state = makeState();
+    state.pattern.set([0.23, 0.51, 0.88]);
+
+    const decoded = decodeState(encodeState(state))!;
+    expect(decoded.pattern[0]).toBeCloseTo(q(0.23), 6);
+    expect(decoded.pattern[1]).toBeCloseTo(q(0.51), 6);
+    expect(decoded.pattern[2]).toBeCloseTo(q(0.88), 6);
+  });
+
+  it("quantizes, clamps, and sanitizes normalized fields", () => {
+    const state = makeState();
+    state.swing = Infinity;
+    state.reverb = -1;
+    state.probability = 2;
+    state.humanize = NaN;
+    state.tracks[0].voiceParams.set([NaN, -1, 2]);
+    state.cellProbabilities.set([NaN, -1, 2]);
+    state.cellConditions.set([255, 6]);
+    state.trackLengths.set([0, 255]);
+
     const decoded = decodeState(encodeState(state));
-    expect(decoded?.pattern).toEqual(state.pattern);
+    expect(decoded?.swing).toBe(0);
+    expect(decoded?.reverb).toBe(0);
+    expect(decoded?.probability).toBe(1);
+    expect(decoded?.humanize).toBe(0);
+    expect(Array.from(decoded!.tracks[0].voiceParams.slice(0, 3))).toEqual([
+      0, 0, 1,
+    ]);
+    expect(Array.from(decoded!.cellProbabilities.slice(0, 3))).toEqual([
+      0, 0, 1,
+    ]);
+    expect(Array.from(decoded!.cellConditions.slice(0, 2))).toEqual([0, 6]);
+    expect(Array.from(decoded!.trackLengths.slice(0, 2))).toEqual([1, 16]);
   });
 
-  it("is a stable fixed point (re-encoding decoded state is identical)", () => {
-    const encoded = encodeState(makeState());
-    const decoded = decodeState(encoded);
-    expect(decoded).not.toBeNull();
-    expect(encodeState(decoded!)).toBe(encoded);
-  });
-
-  it("emits URL-safe base64 (no +, /, or = padding)", () => {
+  it("emits URL-safe base64 and is a stable fixed point", () => {
     const encoded = encodeState(makeState());
     expect(encoded).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(encodeState(decodeState(encoded)!)).toBe(encoded);
   });
 
-  it("encodes to the expected fixed width", () => {
-    // A layout slip anywhere shows up here before it shows up as a null decode.
-    expect(toBytes(encodeState(makeState()))).toHaveLength(TOTAL_BYTES);
+  it("rejects corrupt reserved codes and invalid semantic fields", () => {
+    const pattern = toBytes(encodeState(makeState()));
+    pattern[V14_PATTERN_OFFSET] |= 0b11;
+    expect(decodeState(toB64Url(pattern))).toBeNull();
+
+    const tempo = toBytes(encodeState(makeState()));
+    tempo[1] = 0;
+    tempo[2] = 0;
+    expect(decodeState(toB64Url(tempo))).toBeNull();
+
+    const stepCount = toBytes(encodeState(makeState()));
+    stepCount[3] = 0;
+    expect(decodeState(toB64Url(stepCount))).toBeNull();
+
+    const model = toBytes(encodeState(makeState()));
+    model[V14_MODEL_OFFSET] = 4;
+    expect(decodeState(toB64Url(model))).toBeNull();
+
+    const condition = toBytes(encodeState(makeState()));
+    condition[V15_CONDITION_OFFSET] = 0x70;
+    expect(decodeState(toB64Url(condition))).toBeNull();
+
+    const trackLength = toBytes(encodeState(makeState()));
+    trackLength[V15_TRACK_LENGTH_OFFSET] = 0;
+    expect(decodeState(toB64Url(trackLength))).toBeNull();
+
+    const flags = toBytes(encodeState(makeState()));
+    flags[V15_FLAGS_OFFSET] = 2;
+    expect(decodeState(toB64Url(flags))).toBeNull();
   });
 
-  describe("voice parameters", () => {
-    it("roundtrips every slot exactly", () => {
-      const state = makeState();
-      const decoded = decodeState(encodeState(state));
-      expect(decoded?.voiceParams).toEqual(state.voiceParams);
-    });
+  it("keeps the complete v14 record as an immutable prefix", () => {
+    const state = makeState();
+    const v15 = toBytes(encodeState(state));
+    const v14 = v15.slice(0, V14_BYTES);
+    v14[0] = 14;
 
-    it("pads short rows and truncates long ones to the capacity", () => {
-      const state = makeState();
-      state.voiceParams = [
-        [q(0.1), q(0.2), q(0.3)],
-        ...Array.from({ length: TRACK_COUNT - 2 }, () =>
-          new Array<number>(VOICE_PARAM_CAPACITY).fill(0),
-        ),
-        new Array<number>(VOICE_PARAM_CAPACITY + 2).fill(q(0.4)),
-      ];
-
-      const decoded = decodeState(encodeState(state));
-      expect(decoded?.voiceParams?.[0]).toEqual([
-        q(0.1),
-        q(0.2),
-        q(0.3),
-        ...new Array<number>(VOICE_PARAM_CAPACITY - 3).fill(0),
-      ]);
-      expect(decoded?.voiceParams?.[TRACK_COUNT - 1]).toHaveLength(
-        VOICE_PARAM_CAPACITY,
-      );
-    });
-
-    it("clamps and sanitizes out-of-range values", () => {
-      const state = makeState();
-      state.voiceParams = state.voiceParams!.map(() => [
-        NaN,
-        -1,
-        2,
-        ...new Array<number>(VOICE_PARAM_CAPACITY - 3).fill(0),
-      ]);
-
-      const decoded = decodeState(encodeState(state));
-      expect(decoded?.voiceParams?.[0].slice(0, 3)).toEqual([0, 0, 1]);
-    });
+    const decoded = decodeState(toB64Url(v14))!;
+    expect(decoded.tempoBpm).toBe(state.tempoBpm);
+    expect(decoded.pattern).toEqual(
+      Float32Array.from(state.pattern, (velocity) =>
+        velocity >= VEL_ACCENT
+          ? VEL_ACCENT
+          : velocity > VEL_OFF
+            ? VEL_NORMAL
+            : VEL_OFF,
+      ),
+    );
+    expect(decoded.tracks).toEqual(state.tracks);
+    expect(Array.from(decoded.cellProbabilities)).toEqual(
+      new Array(PATTERN_SIZE).fill(1),
+    );
+    expect(Array.from(decoded.cellConditions)).toEqual(
+      new Array(PATTERN_SIZE).fill(0),
+    );
+    expect(Array.from(decoded.trackLengths)).toEqual(
+      new Array(TRACK_COUNT).fill(state.stepCount),
+    );
+    expect(decoded.fillMode).toBe(false);
   });
+});
 
-  describe("Tom model", () => {
-    it("roundtrips both model selections", () => {
-      for (const tomModel of ["procedural", "physical"] as const) {
-        const state = { ...makeState(), tomModel };
-        expect(decodeState(encodeState(state))?.tomModel).toBe(tomModel);
-      }
-    });
-
-    it("roundtrips Tom 2 model selection independently", () => {
-      const state = {
-        ...makeState(),
-        tomModel: "procedural" as const,
-        tom2Model: "physical" as const,
-      };
-      const decoded = decodeState(encodeState(state));
-      expect(decoded?.tomModel).toBe("procedural");
-      expect(decoded?.tom2Model).toBe("physical");
-    });
-
-    it("rejects an unknown model code", () => {
-      const bytes = toBytes(encodeState(makeState()));
-      bytes[V2_BYTES] = 2;
-      expect(decodeState(toB64Url(bytes))).toBeNull();
-    });
-
-    it("rejects an unknown Tom 2 model code", () => {
-      const bytes = toBytes(encodeState(makeState()));
-      bytes[V10_TOM2_MODEL_OFFSET] = 2;
-      expect(decodeState(toB64Url(bytes))).toBeNull();
-    });
-  });
-
-  describe("physical Tom parameters", () => {
-    it("roundtrips every slot exactly", () => {
-      const state = makeState();
-      expect(decodeState(encodeState(state))?.physicalTomParams).toEqual(
-        state.physicalTomParams,
-      );
-    });
-
-    it("roundtrips Tom 2's independent physical bank", () => {
-      const state = makeState();
-      expect(decodeState(encodeState(state))?.physicalTom2Params).toEqual(
-        state.physicalTom2Params,
-      );
-    });
-
-    it("pads, truncates, clamps, and sanitizes the independent bank", () => {
-      const state = makeState();
-      state.physicalTomParams = [
-        NaN,
-        -1,
-        2,
-        ...new Array<number>(PHYSICAL_TOM_PARAM_CAPACITY + 2).fill(q(0.4)),
-      ];
-
-      const decoded = decodeState(encodeState(state))?.physicalTomParams;
-      expect(decoded).toHaveLength(PHYSICAL_TOM_PARAM_CAPACITY);
-      expect(decoded?.slice(0, 3)).toEqual([0, 0, 1]);
-    });
-  });
-
-  describe("backward compatibility with v1–v8 blobs", () => {
-    it("decodes a v1 blob and leaves voiceParams unset", () => {
-      const state = makeState();
-      const decoded = decodeState(encodeV1(state));
-
+describe("legacy v1-v13 migration", () => {
+  it.each(Array.from({ length: 13 }, (_, index) => index + 1))(
+    "decodes v%i into semantic EngineState coordinates",
+    (version) => {
+      const legacy = makeLegacyState();
+      const decoded = decodeState(legacyBlob(legacy, version));
       expect(decoded).not.toBeNull();
-      expect(decoded?.pattern.slice(0, 80)).toEqual(state.pattern.slice(0, 80));
-      expect(decoded?.pattern.slice(80)).toEqual(
-        new Array<number>(32).fill(VEL_OFF),
+      expect(decoded?.tempoBpm).toBe(Math.round(60 + legacy.tempo * 140));
+      expect(decoded?.stepCount).toBe(Math.round(1 + legacy.steps * 15));
+      expect(decoded?.swing).toBe(legacy.swing * 0.5);
+      expect(decoded?.reverb).toBe(legacy.reverb);
+      expect(decoded?.probability).toBe(legacy.prob);
+      expect(decoded?.humanize).toBe(legacy.humanize);
+      expect(Array.from(decoded!.cellProbabilities)).toEqual(
+        new Array(PATTERN_SIZE).fill(1),
       );
-      expect(decoded?.tempo).toBe(state.tempo);
-      expect(decoded?.swing).toBe(state.swing);
-      expect(decoded?.volumes).toEqual([
-        state.volumes[0],
-        0.75,
-        0.75,
-        ...state.volumes.slice(3),
-      ]);
-      expect(decoded?.decays).toEqual([
-        state.decays[0],
-        0.5,
-        0.5,
-        ...state.decays.slice(3),
-      ]);
-      expect(decoded?.muted).toEqual([
-        state.muted[0],
-        false,
-        false,
-        ...state.muted.slice(3),
-      ]);
-      expect(decoded?.voiceParams).toBeUndefined();
-      expect(decoded?.tomModel).toBeUndefined();
-      expect(decoded?.physicalTomParams).toBeUndefined();
-    });
-
-    it("decodes a v2 blob and defaults the Tom model at the call site", () => {
-      const state = makeState();
-      const decoded = decodeState(encodeV2(state));
-
-      expect(decoded?.voiceParams).toEqual(
-        state.voiceParams?.slice(0, LEGACY_TRACK_COUNT),
+      expect(Array.from(decoded!.cellConditions)).toEqual(
+        new Array(PATTERN_SIZE).fill(0),
       );
-      expect(decoded?.tomModel).toBeUndefined();
-      expect(decoded?.physicalTomParams).toBeUndefined();
-    });
-
-    it("decodes a v3 blob and leaves physical parameters unset", () => {
-      const state = makeState();
-      const decoded = decodeState(encodeV3(state));
-
-      expect(decoded?.voiceParams).toEqual(
-        state.voiceParams?.slice(0, LEGACY_TRACK_COUNT),
+      expect(Array.from(decoded!.trackLengths)).toEqual(
+        new Array(TRACK_COUNT).fill(decoded!.stepCount),
       );
-      expect(decoded?.tomModel).toBe(state.tomModel);
-      expect(decoded?.physicalTomParams).toBeUndefined();
-    });
+      expect(decoded!.fillMode).toBe(false);
+    },
+  );
 
-    it("decodes a v4 blob and leaves appended asymmetry controls unset", () => {
-      const state = makeState();
-      const decoded = decodeState(encodeV4(state));
+  it("maps the historical visual mixer rows back to engine tracks", () => {
+    const legacy = makeLegacyState();
+    const decoded = decodeState(legacyBlob(legacy, 13))!;
 
-      expect(decoded?.physicalTomParams).toEqual(
-        state.physicalTomParams?.slice(0, V4_PHYSICAL_TOM_PARAM_CAPACITY),
-      );
-    });
-
-    it("moves the old shipped strike radius to the corrected default", () => {
-      const state = makeState();
-      state.physicalTomParams![4] = q(0.45 / 0.95);
-
-      for (const encoded of [encodeV4(state), encodeV5(state)]) {
-        const decoded = decodeState(encoded);
-        expect(decoded?.physicalTomParams?.[4]).toBe(
-          PHYSICAL_TOM_PARAMS[4].default,
-        );
-      }
-    });
-
-    it("preserves an edited legacy strike radius", () => {
-      const state = makeState();
-      state.physicalTomParams![4] = q(0.8);
-
-      expect(decodeState(encodeV5(state))?.physicalTomParams?.[4]).toBe(q(0.8));
-    });
-
-    it("moves the v6 central strike detent off centre in both banks", () => {
-      const state = makeState();
-      state.physicalTomParams![4] = q(0.12 / 0.95);
-      state.physicalTom2Params![4] = q(0.12 / 0.95);
-
-      // v9 is the first version with a Tom 2 bank, so it and v10 are the two
-      // that can carry the detent there. The v6 rule deliberately skipped that
-      // bank; this one must not.
-      for (const encoded of [encodeV9(state), encodeV10(state)]) {
-        const decoded = decodeState(encoded);
-        expect(decoded?.physicalTomParams?.[4]).toBe(
-          PHYSICAL_TOM_PARAMS[4].default,
-        );
-        expect(decoded?.physicalTom2Params?.[4]).toBe(
-          PHYSICAL_TOM_PARAMS[4].default,
-        );
-      }
-    });
-
-    it("preserves a strike radius edited back to the v4 detent", () => {
-      const state = makeState();
-      state.physicalTomParams![4] = q(0.45 / 0.95);
-
-      // A v6-or-later blob sitting at 0.45 is a deliberate edit, not the
-      // shipped position, so the two detent rules must stay separately gated.
-      expect(decodeState(encodeV10(state))?.physicalTomParams?.[4]).toBe(
-        q(0.45 / 0.95),
-      );
-    });
-
-    it("decodes v6 with the two added tracks at defaults", () => {
-      const decoded = decodeState(encodeV6(makeState()));
-
-      expect(decoded?.volumes).toEqual([
-        makeState().volumes[0],
-        0.75,
-        0.75,
-        ...makeState().volumes.slice(3),
-      ]);
-      expect(decoded?.decays).toEqual([
-        makeState().decays[0],
-        0.5,
-        0.5,
-        ...makeState().decays.slice(3),
-      ]);
-      expect(decoded?.muted).toEqual([
-        makeState().muted[0],
-        false,
-        false,
-        ...makeState().muted.slice(3),
-      ]);
-      expect(decoded?.pattern.slice(80)).toEqual(
-        new Array<number>(32).fill(VEL_OFF),
-      );
-      expect(decoded?.voiceParams).toHaveLength(LEGACY_TRACK_COUNT);
-    });
-
-    it("keeps v7 mixer values attached to their voices after reordering", () => {
-      const state = makeState();
-      const decoded = decodeState(encodeV7(state));
-
-      expect(decoded?.volumes).toEqual(state.volumes);
-      expect(decoded?.decays).toEqual(state.decays);
-      expect(decoded?.muted).toEqual(state.muted);
-      expect(decoded?.tom2Model).toBeUndefined();
-      expect(decoded?.physicalTom2Params).toBeUndefined();
-    });
-
-    it("decodes v8 with Tom 2 physical settings absent", () => {
-      const decoded = decodeState(encodeV8(makeState()));
-
-      expect(decoded?.tom2Model).toBeUndefined();
-      expect(decoded?.physicalTom2Params).toBeUndefined();
-    });
-
-    it("decodes v9 with both physical banks one slot narrower", () => {
-      const state = makeState();
-      const decoded = decodeState(encodeV9(state));
-
-      expect(decoded?.physicalTomParams).toEqual(
-        state.physicalTomParams?.slice(0, V5_PHYSICAL_TOM_PARAM_CAPACITY),
-      );
-      expect(decoded?.physicalTom2Params).toEqual(
-        state.physicalTom2Params?.slice(0, V5_PHYSICAL_TOM_PARAM_CAPACITY),
-      );
-      expect(decoded?.tom2Model).toBe(state.tom2Model);
-    });
-
-    it("re-encodes a decoded v1 state as v13 (one-way upgrade)", () => {
-      const decoded = decodeState(encodeV1(makeState()));
-      const bytes = toBytes(encodeState(decoded!));
-
-      expect(bytes).toHaveLength(TOTAL_BYTES);
-      expect(bytes[0]).toBe(13);
-    });
-
-    it("rejects a v1-length blob whose version byte claims v2", () => {
-      const bytes = toBytes(encodeV1(makeState()));
-      bytes[0] = 2;
-      expect(decodeState(toB64Url(bytes))).toBeNull();
-    });
-
-    it("rejects a v2-length blob whose version byte claims v1", () => {
-      const bytes = toBytes(encodeV2(makeState()));
-      bytes[0] = 1;
-      expect(decodeState(toB64Url(bytes))).toBeNull();
-    });
-
-    it("rejects an unknown future version at the right length", () => {
-      const bytes = toBytes(encodeState(makeState()));
-      bytes[0] = 14;
-      expect(decodeState(toB64Url(bytes))).toBeNull();
-    });
-
-    // v13 changed no bytes, only how one slot is read, so a v12 blob is a v13
-    // blob with a different version byte — which makes the migration itself the
-    // only thing under test here.
-    it("rescales a v12 attack level onto the narrowed range", () => {
-      const state = makeState();
-      // 0.4 of the old 0–0.3 range is 0.12, which is 0.8 of the new 0–0.15 one.
-      const edited = Math.round(0.4 * 255) / 255;
-      state.physicalTomParams = [...state.physicalTomParams!];
-      state.physicalTomParams[16] = edited;
-      state.physicalTom2Params = [...state.physicalTom2Params!];
-      state.physicalTom2Params[16] = edited;
-
-      const bytes = toBytes(encodeState(state));
-      bytes[0] = 12;
-
-      const decoded = decodeState(toB64Url(bytes));
-      expect(decoded).not.toBeNull();
-      expect(decoded?.physicalTomParams?.[16]).toBeCloseTo(edited * 2, 6);
-      // Tom 2's bank is a separate call site and has been missed before.
-      expect(decoded?.physicalTom2Params?.[16]).toBeCloseTo(edited * 2, 6);
-    });
-
-    it("moves an untouched v12 attack level onto the new default", () => {
-      const state = makeState();
-      state.physicalTomParams = [...state.physicalTomParams!];
-      state.physicalTomParams[16] = Math.round((0.1 / 0.3) * 255) / 255;
-
-      const bytes = toBytes(encodeState(state));
-      bytes[0] = 12;
-
-      const decoded = decodeState(toB64Url(bytes));
-      expect(decoded?.physicalTomParams?.[16]).toBeCloseTo(
-        PHYSICAL_TOM_PARAMS[16].default,
-        6,
-      );
-    });
-
-    // This is the case a version bump is most likely to break, and breaking it
-    // loses every pattern in every user's localStorage and every share link
-    // already sent: the previous version needs its own length and its own bank
-    // width, and the fixtures only ever covered versions older than that.
-    it.each([10, 11])("decodes v%i at its own bank width", (version) => {
-      const state = makeState();
-      const decoded = decodeState(encodeAtV10Width(state, version));
-
-      expect(decoded).not.toBeNull();
-      expect(decoded?.physicalTomParams).toHaveLength(
-        V10_PHYSICAL_TOM_PARAM_CAPACITY,
-      );
-      expect(decoded?.physicalTom2Params).toHaveLength(
-        V10_PHYSICAL_TOM_PARAM_CAPACITY,
-      );
-      // Everything after the Tom 1 bank decodes at the right offset only if the
-      // bank width is right, so these are the desynchronization detectors.
-      expect(decoded?.pattern).toEqual(state.pattern);
-      expect(decoded?.muted).toEqual(state.muted);
-      expect(decoded?.voiceParams).toEqual(state.voiceParams);
-      expect(decoded?.tom2Model).toBe(state.tom2Model);
-      expect(decoded?.physicalTom2Params).toEqual(
-        state.physicalTom2Params?.slice(0, V10_PHYSICAL_TOM_PARAM_CAPACITY),
-      );
-    });
+    for (let track = 0; track < TRACK_COUNT; track++) {
+      const visual = ENGINE_TO_VISUAL[track];
+      expect(decoded.tracks[track].volume).toBe(legacy.volumes[visual]);
+      expect(decoded.tracks[track].decay).toBe(legacy.decays[visual]);
+      expect(decoded.tracks[track].muted).toBe(legacy.muted[visual]);
+    }
   });
 
-  describe("rejects bad input with null", () => {
-    it("garbage / non-base64 strings", () => {
-      expect(decodeState("@@@not-valid@@@")).toBeNull();
-      expect(decodeState("")).toBeNull();
+  it("fills state absent from early versions with canonical defaults", () => {
+    const legacy = makeLegacyState();
+    const defaults = createDefaultEngineState();
+    const v1 = decodeState(legacyBlob(legacy, 1))!;
+
+    expect(Array.from(v1.pattern.slice(LEGACY_PATTERN_SIZE))).toEqual(
+      new Array(PATTERN_SIZE - LEGACY_PATTERN_SIZE).fill(VEL_OFF),
+    );
+    for (const track of [5, 6]) {
+      expect(v1.tracks[track]).toEqual(defaults.tracks[track]);
+    }
+    for (let track = 0; track < TRACK_COUNT; track++) {
+      expect(v1.tracks[track].voiceParams).toEqual(
+        defaults.tracks[track].voiceParams,
+      );
+    }
+    expect(v1.tracks[3].tom.model).toBe("procedural");
+    expect(v1.tracks[5].tom.model).toBe("procedural");
+  });
+
+  it("restores engine-major voice rows and both Tom banks", () => {
+    const legacy = makeLegacyState();
+    const decoded = decodeState(legacyBlob(legacy, 13))!;
+
+    for (let track = 0; track < TRACK_COUNT; track++) {
+      const length = decoded.tracks[track].voiceParams.length;
+      expect(Array.from(decoded.tracks[track].voiceParams)).toEqual(
+        legacy.voiceParams[track].slice(0, length).map(Math.fround),
+      );
+    }
+    expect(decoded.tracks[3].tom.model).toBe("physical");
+    expect(decoded.tracks[5].tom.model).toBe("physical");
+    expect(Array.from(decoded.tracks[3].tom.physicalParams)).toEqual(
+      legacy.physicalTomParams.map(Math.fround),
+    );
+    expect(Array.from(decoded.tracks[5].tom.physicalParams)).toEqual(
+      legacy.physicalTom2Params.map(Math.fround),
+    );
+  });
+
+  it("preserves the two historical strike-radius migrations", () => {
+    const legacy = makeLegacyState();
+    legacy.physicalTomParams[4] = q(0.45 / 0.95);
+    expect(
+      decodeState(legacyBlob(legacy, 5))?.tracks[3].tom.physicalParams[4],
+    ).toBe(Math.fround(PHYSICAL_TOM_PARAMS[4].default));
+
+    legacy.physicalTomParams[4] = q(0.12 / 0.95);
+    legacy.physicalTom2Params[4] = q(0.12 / 0.95);
+    const v10 = decodeState(legacyBlob(legacy, 10))!;
+    expect(v10.tracks[3].tom.physicalParams[4]).toBe(
+      Math.fround(PHYSICAL_TOM_PARAMS[4].default),
+    );
+    expect(v10.tracks[5].tom.physicalParams[4]).toBe(
+      Math.fround(PHYSICAL_TOM_PARAMS[4].default),
+    );
+  });
+
+  it("rescales v12 attack level in both independent banks", () => {
+    const legacy = makeLegacyState();
+    const edited = q(0.4);
+    legacy.physicalTomParams[16] = edited;
+    legacy.physicalTom2Params[16] = edited;
+    const decoded = decodeState(legacyBlob(legacy, 12))!;
+
+    expect(decoded.tracks[3].tom.physicalParams[16]).toBeCloseTo(edited * 2, 6);
+    expect(decoded.tracks[5].tom.physicalParams[16]).toBeCloseTo(edited * 2, 6);
+  });
+
+  it("upgrades legacy blobs to v15 on re-encode", () => {
+    const decoded = decodeState(legacyBlob(makeLegacyState(), 1))!;
+    const bytes = toBytes(encodeState(decoded));
+    expect(bytes[0]).toBe(15);
+    expect(bytes).toHaveLength(V15_BYTES);
+  });
+});
+
+describe("invalid input", () => {
+  it("rejects garbage, wrong lengths, and unknown versions", () => {
+    expect(decodeState("@@@not-valid@@@")).toBeNull();
+    expect(decodeState("")).toBeNull();
+    expect(decodeState("AAAA")).toBeNull();
+
+    const future = toBytes(encodeState(makeState()));
+    future[0] = 99;
+    expect(decodeState(toB64Url(future))).toBeNull();
+
+    const truncatedV15 = toBytes(encodeState(makeState())).slice(0, -1);
+    expect(decodeState(toB64Url(truncatedV15))).toBeNull();
+
+    const extendedV15 = new Uint8Array(V15_BYTES + 1);
+    extendedV15.set(toBytes(encodeState(makeState())));
+    expect(decodeState(toB64Url(extendedV15))).toBeNull();
+
+    const truncatedV14 = toBytes(encodeState(makeState())).slice(
+      0,
+      V14_BYTES - 1,
+    );
+    truncatedV14[0] = 14;
+    expect(decodeState(toB64Url(truncatedV14))).toBeNull();
+  });
+});
+
+describe("share URLs", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("builds a URL purely from state and an explicit location", () => {
+    const state = makeState();
+    const currentHref =
+      "https://example.test/algo-drum/?theme=dark#previous-state";
+
+    const first = buildShareUrl(state, currentHref);
+    const second = buildShareUrl(state, currentHref);
+
+    expect(first).toBe(second);
+    expect(first).toBe(
+      `https://example.test/algo-drum/?theme=dark#${encodeState(state)}`,
+    );
+    expect(currentHref).toBe(
+      "https://example.test/algo-drum/?theme=dark#previous-state",
+    );
+  });
+
+  it("gets the current-page share URL without touching history", () => {
+    const replaceState = vi.fn();
+    vi.stubGlobal("window", {
+      location: { href: "https://example.test/drums?preset=house#old" },
+      history: { replaceState },
     });
 
-    it("too-short (wrong length) blobs", () => {
-      expect(decodeState("AAAA")).toBeNull(); // decodes to 3 bytes
+    expect(shareUrl(makeState())).toMatch(
+      /^https:\/\/example\.test\/drums\?preset=house#[A-Za-z0-9_-]+$/,
+    );
+    expect(replaceState).not.toHaveBeenCalled();
+  });
+
+  it("mutates history only through the explicitly named operation", () => {
+    const replaceState = vi.fn();
+    const historyState = { route: "drums", scroll: 42 };
+    vi.stubGlobal("window", {
+      location: { href: "https://example.test/drums" },
+      history: { state: historyState, replaceState },
     });
 
-    it("a wrong format version", () => {
-      const bytes = toBytes(encodeState(makeState()));
-      bytes[0] = 99; // corrupt the version byte, keep correct length
-      expect(decodeState(toB64Url(bytes))).toBeNull();
+    const state = makeState();
+    const url = replaceAddressBarWithShareUrl(state);
+
+    expect(url).toBe(`https://example.test/drums#${encodeState(state)}`);
+    expect(replaceState).toHaveBeenCalledOnce();
+    expect(replaceState).toHaveBeenCalledWith(historyState, "", url);
+  });
+
+  it("returns the share URL when the address-bar mutation is unavailable", () => {
+    const replaceState = vi.fn(() => {
+      throw new DOMException("History access denied", "SecurityError");
     });
+    vi.stubGlobal("window", {
+      location: { href: "https://example.test/drums" },
+      history: { state: { route: "drums" }, replaceState },
+    });
+
+    const state = makeState();
+    expect(replaceAddressBarWithShareUrl(state)).toBe(
+      `https://example.test/drums#${encodeState(state)}`,
+    );
+    expect(replaceState).toHaveBeenCalledOnce();
   });
 });
