@@ -1,7 +1,7 @@
 github.com/cwbudde/algo-dsp v0.0.0-20260729115219-8ea972cf5f07 h1:K2zn1StYVC1TG9D/IV8uqxLHAPBQRKtzAp6StshSacE=
 github.com/cwbudde/algo-dsp v0.0.0-20260729115219-8ea972cf5f07/go.mod h1:TngjsQIOjAHbD7y7xwI/wXm6yBxDJHzF8Nr6q44VTc8=
-github.com/cwbudde/algo-fft v0.7.3 h1:1MDkBhgo/hhigpbTMDvcXZpMaW0ubz844IL6rDL/Bms=
-github.com/cwbudde/algo-fft v0.7.3/go.mod h1:H5rJ7JNXvhe3kT4yc41TJB9DEnO7KlhHN7toLO+ZZXU=
+github.com/cwbudde/algo-fft v0.7.4 h1:OnELA6aeZDM8qjKVLpyI0cr0CNCrT6d/yH8eJ/2w198=
+github.com/cwbudde/algo-fft v0.7.4/go.mod h1:H5rJ7JNXvhe3kT4yc41TJB9DEnO7KlhHN7toLO+ZZXU=
 github.com/cwbudde/algo-tom v0.1.0 h1:R/rGcD1VilsIUrxy6nfVSm8y5LYK2If5BKzIS03XN2g=
 github.com/cwbudde/algo-tom v0.1.0/go.mod h1:R2Km4EDTBS93dhfHPYxPrV5Xf65KXBHI6WLUV0Ut+aQ=
 github.com/cwbudde/algo-vecmath v0.1.0 h1:RjZLXt3BAu1f3UmdWWXbgw3Xscyh+bsg31PkS5K4y4c=
