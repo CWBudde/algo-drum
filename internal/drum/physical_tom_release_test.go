@@ -5,7 +5,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/cwbudde/algo-drum/internal/physical"
+	"github.com/cwbudde/algo-tom/physical"
+	"github.com/cwbudde/algo-tom/tomparams"
 )
 
 // physicalTomReleaseCapSeconds bounds the measurement itself, so a voice that
@@ -82,7 +83,7 @@ func TestTheVoiceReleasesAtEveryKnobPosition(t *testing.T) {
 		decay  float64
 	}
 
-	cases := []knobCase{{name: "defaults", values: nil, decay: NeutralDecayAmount}}
+	cases := []knobCase{{name: "defaults", values: nil, decay: tomparams.NeutralDecayAmount}}
 
 	for index := range specs {
 		for _, value := range []float64{0, 1} {

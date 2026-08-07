@@ -1,12 +1,11 @@
 package drum
 
 import (
-	"errors"
 	"math"
 	"reflect"
 	"testing"
 
-	"github.com/cwbudde/algo-drum/internal/physical"
+	"github.com/cwbudde/algo-tom/tomparams"
 )
 
 // TestPhysicalTomReachesProductLevelWithoutACompensatingGain is the assertion
@@ -68,53 +67,15 @@ func TestPhysicalTomReachesProductLevelWithoutACompensatingGain(t *testing.T) {
 	}
 }
 
-// TestPhysicalTomConfigAtDefaultsIsTheShippedModel pins the one property that
-// makes the exported mapping trustworthy to an offline fitter: an untouched
-// bank, at the strip's neutral DEC position, reproduces DefaultPhysicalDrum()
-// exactly. Every knob's Shipped constant is supposed to be the model default it
-// was read from, and the multiplicative knobs (DAMP, D.TILT, NLIN) are supposed
-// to be neutral at 1. If either drifts, a fit run offline would be measuring a
-// different instrument than the one the app ships, and nothing else would say
-// so.
-func TestPhysicalTomConfigAtDefaultsIsTheShippedModel(t *testing.T) {
-	t.Parallel()
-
-	const sampleRate = 48_000
-
-	defaults := make([]float64, len(physicalTomSpecs))
-	for i, spec := range physicalTomSpecs {
-		defaults[i] = spec.Default
-	}
-
-	got, err := PhysicalTomConfig(defaults, NeutralDecayAmount, sampleRate)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	want := physical.DefaultPhysicalDrum()
-	want.SampleRateHz = sampleRate
-
-	// Two departures exist and are enumerated here rather than tolerated by a
-	// loose comparison, so that a third one fails this test.
-	//
-	// MIC.R: the bank ships 0.32 where the model's fitted close-microphone
-	// geometry is 0.65 of the radius (docs/physical-calibration.md). The
-	// difference is audible — it is the partial structure the near-field term
-	// was fitted at — so it is recorded, not quietly corrected here.
-	want.Pickup.Radius01 = physicalTomSpecs[physicalTomParamPickupRadius].Shipped
-	// MIC.A: the knob is in degrees, so the shipped 0.6 rad round-trips through
-	// a division and a multiplication by 180/π and lands one ulp away.
-	want.Pickup.AngleRad = physicalTomSpecs[physicalTomParamPickupAngle].Shipped *
-		math.Pi / 180
-
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("PhysicalTomConfig at defaults = %+v, want %+v", got, want)
-	}
-}
-
-// TestPhysicalTomConfigMatchesTheVoice keeps the exported mapping and the voice
-// that uses it from diverging: whatever the voice ends up configured with, the
-// function must reproduce from the same bank.
+// TestPhysicalTomConfigMatchesTheVoice keeps the voice and the shared mapping
+// from diverging: whatever the voice ends up configured with, tomparams.Config
+// must reproduce from the same bank.
+//
+// It is the assertion that makes the *fitter* trustworthy. The fitter scores
+// candidates by calling tomparams.Config directly; the voice reaches it through
+// reconfigure. If those two ever parted company, every offline fit would be
+// describing an instrument the product does not ship, and nothing upstream
+// could notice — tomparams cannot see this package's voice.
 func TestPhysicalTomConfigMatchesTheVoice(t *testing.T) {
 	t.Parallel()
 
@@ -131,20 +92,12 @@ func TestPhysicalTomConfigMatchesTheVoice(t *testing.T) {
 
 	voice.SetDecay(0.8)
 
-	want, err := PhysicalTomConfig(voice.params.vals, 0.8, 48_000)
+	want, err := tomparams.Config(voice.params.vals, 0.8, 48_000)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if !reflect.DeepEqual(voice.config, want) {
 		t.Errorf("voice config = %+v, want %+v", voice.config, want)
-	}
-}
-
-func TestPhysicalTomConfigRejectsTheWrongBankWidth(t *testing.T) {
-	t.Parallel()
-
-	if _, err := PhysicalTomConfig(make([]float64, len(physicalTomSpecs)-1), 0.5, 48_000); !errors.Is(err, ErrPhysicalTomParamCount) {
-		t.Errorf("error = %v, want ErrPhysicalTomParamCount", err)
 	}
 }

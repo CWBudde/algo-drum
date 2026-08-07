@@ -4,8 +4,13 @@
 // the command queue and the pattern mirror).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PATTERN_SIZE } from "../algo/pattern";
-import type { WorkerCommand, WorkerResponse } from "./audioWorker";
+import { PROTOCOL_VERSION } from "./audioWorker";
+import type {
+  TransportState,
+  WorkerCommand,
+  WorkerResponse,
+} from "./audioWorker";
+import { createDefaultEngineState } from "./engineState";
 
 class FakeWorker {
   static created: FakeWorker[] = [];
@@ -34,6 +39,12 @@ class FakeWorker {
     this.onmessage?.({ data: response } as MessageEvent<WorkerResponse>);
   }
 
+  // ready completes the load handshake. The version the real worker sends is
+  // the one it checked the engine against, so a bump only touches this line.
+  ready(): void {
+    this.emit({ type: "ready", protocolVersion: PROTOCOL_VERSION });
+  }
+
   fail(message: string): void {
     this.onerror?.({ message } as ErrorEvent);
   }
@@ -51,9 +62,7 @@ class FakeWorker {
 // play(): enough surface for it to wire the worklet up, plus the hooks the
 // tests need to emit steps and to observe teardown.
 class FakePort {
-  onmessage:
-    ((event: MessageEvent<{ type: string; step: number }>) => void) | null =
-    null;
+  onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
 
   postMessage(): void {}
 }
@@ -79,29 +88,71 @@ class FakeWorkletNode {
     this.disconnected++;
   }
 
-  // step delivers one audible-step report from the worklet.
-  step(step: number): void {
-    this.port.onmessage?.({ data: { type: "step", step } } as MessageEvent<{
-      type: string;
-      step: number;
-    }>);
+  // emit delivers one worklet report to the bridge.
+  emit(data: unknown): void {
+    this.port.onmessage?.({ data } as MessageEvent<unknown>);
   }
+
+  // transport delivers the engine snapshot attached to an audible chunk.
+  transport(state: TransportState, step: number, revision: number): void {
+    this.emit({ type: "transport", transport: { state, step, revision } });
+  }
+}
+
+function sync(
+  worker: FakeWorker,
+  state: TransportState,
+  step: number,
+  revision: number,
+): void {
+  worker.emit({
+    type: "transportSync",
+    transport: { state, step, revision },
+  });
 }
 
 class FakeAudioContext {
   static created: FakeAudioContext[] = [];
+  static modules: string[] = [];
+  static addModule: (_url: string) => Promise<void> = () => Promise.resolve();
 
   state = "running";
   closed = false;
+  suspends = 0;
+  resumes = 0;
   readonly destination = {};
-  readonly audioWorklet = { addModule: () => Promise.resolve() };
+  readonly audioWorklet = {
+    addModule: (url: string) => {
+      FakeAudioContext.modules.push(url);
+      return FakeAudioContext.addModule(url);
+    },
+  };
 
   constructor() {
     FakeAudioContext.created.push(this);
   }
 
   resume(): Promise<void> {
+    this.resumes++;
+    this.state = "running";
     return Promise.resolve();
+  }
+
+  // Suspension takes effect when the promise settles, not when it is asked
+  // for — that gap is exactly what a resume racing it has to survive.
+  suspend(): Promise<void> {
+    this.suspends++;
+
+    // Several ticks deep on purpose: a resume that merely reads .state
+    // without waiting the suspend out still sees "running", skips the
+    // resume, and is then overtaken by the suspension.
+    return Promise.resolve()
+      .then(() => undefined)
+      .then(() => undefined)
+      .then(() => undefined)
+      .then(() => {
+        this.state = "suspended";
+      });
   }
 
   close(): Promise<void> {
@@ -110,11 +161,10 @@ class FakeAudioContext {
   }
 }
 
-// A full-size pattern echo whose leading cells hold the given velocities.
-const pattern = (...values: number[]): Float32Array => {
-  const flat = new Float32Array(PATTERN_SIZE);
-  flat.set(values);
-  return flat;
+const state = (tempoBpm = 120) => {
+  const snapshot = createDefaultEngineState();
+  snapshot.tempoBpm = tempoBpm;
+  return snapshot;
 };
 
 const importEngine = async () => {
@@ -128,6 +178,8 @@ beforeEach(() => {
   FakeWorker.created = [];
   FakeWorkletNode.created = [];
   FakeAudioContext.created = [];
+  FakeAudioContext.modules = [];
+  FakeAudioContext.addModule = () => Promise.resolve();
   vi.stubGlobal("Worker", FakeWorker);
   vi.stubGlobal("AudioContext", FakeAudioContext);
   vi.stubGlobal("AudioWorkletNode", FakeWorkletNode);
@@ -148,7 +200,7 @@ describe("loadWasm", () => {
     const engine = await importEngine();
 
     const load = engine.loadWasm();
-    workers()[0].emit({ type: "ready" });
+    workers()[0].ready();
 
     await expect(load).resolves.toBeUndefined();
     expect(workers()).toHaveLength(1);
@@ -163,7 +215,7 @@ describe("loadWasm", () => {
     const second = engine.loadWasm();
     expect(workers()).toHaveLength(1);
 
-    workers()[0].emit({ type: "ready" });
+    workers()[0].ready();
 
     await expect(first).resolves.toBeUndefined();
     await expect(second).resolves.toBeUndefined();
@@ -181,7 +233,7 @@ describe("loadWasm", () => {
     expect(workers()).toHaveLength(2);
     expect(workers()[0].terminated).toBe(true);
 
-    workers()[1].emit({ type: "ready" });
+    workers()[1].ready();
     await expect(retry).resolves.toBeUndefined();
   });
 
@@ -254,7 +306,7 @@ describe("loadWasm", () => {
     const engine = await importEngine();
 
     const load = engine.loadWasm();
-    workers()[0].emit({ type: "ready" });
+    workers()[0].ready();
     await load;
 
     // The pending timer must be cleared, or it would reject a settled
@@ -271,7 +323,7 @@ describe("command queue", () => {
     const load = engine.loadWasm();
     expect(workers()[0].commands()).toHaveLength(0);
 
-    workers()[0].emit({ type: "ready" });
+    workers()[0].ready();
     await load;
 
     expect(workers()[0].commands()).toEqual([
@@ -282,7 +334,7 @@ describe("command queue", () => {
   it("replays queued edits to the retry worker without reverting newer ones", async () => {
     const engine = await importEngine();
     const listener = vi.fn();
-    engine.onPattern(listener);
+    engine.onState(listener);
 
     // Edit A is queued against a worker that then fails to load.
     engine.setCell(0, 0, 0.7);
@@ -293,7 +345,7 @@ describe("command queue", () => {
     // Retry, then edit B before the replacement worker is ready.
     const retry = engine.loadWasm();
     engine.setCell(1, 1, 1.0);
-    workers()[1].emit({ type: "ready" });
+    workers()[1].ready();
     await retry;
 
     // Both edits are replayed, so both are echoed exactly once.
@@ -303,11 +355,62 @@ describe("command queue", () => {
     ]);
 
     // The echo for A alone must not be published: it predates B.
-    workers()[1].emit({ type: "patternSync", pattern: pattern(0.7) });
+    workers()[1].emit({ type: "stateSync", state: state(130) });
     expect(listener).not.toHaveBeenCalled();
 
-    workers()[1].emit({ type: "patternSync", pattern: pattern(0.7, 1.0) });
-    expect(listener).toHaveBeenCalledExactlyOnceWith(pattern(0.7, 1.0));
+    const current = state(140);
+    workers()[1].emit({ type: "stateSync", state: current });
+    expect(listener).toHaveBeenCalledExactlyOnceWith(current);
+  });
+
+  it("reconciles every configuration setter but not operational commands", async () => {
+    const engine = await loaded();
+    const listener = vi.fn();
+    engine.onState(listener);
+
+    engine.setTempo(999);
+    const clamped = state(300);
+    workers()[0].emit({ type: "stateSync", state: clamped });
+    expect(listener).toHaveBeenCalledExactlyOnceWith(clamped);
+
+    await engine.play();
+    workers()[0].emit({ type: "stateSync", state: state(200) });
+    // Play is operational and therefore does not create in-flight state that
+    // could suppress an unsolicited authoritative sync.
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects invalid bulk state before counting or queueing it", async () => {
+    const engine = await loaded();
+    const invalid = state();
+    invalid.pattern = new Float32Array(1);
+
+    expect(() => engine.setState(invalid)).toThrow(TypeError);
+    expect(workers()[0].commands()).toHaveLength(0);
+
+    const unsolicited = state(150);
+    const listener = vi.fn();
+    engine.onState(listener);
+    workers()[0].emit({ type: "stateSync", state: unsolicited });
+    expect(listener).toHaveBeenCalledExactlyOnceWith(unsolicited);
+  });
+
+  it("owns the typed arrays queued by setState", async () => {
+    const engine = await loaded();
+    const supplied = state();
+
+    engine.setState(supplied);
+    const posted = workers()[0].commands()[0];
+    const snapshot = posted.args[0] as typeof supplied;
+
+    expect(snapshot).not.toBe(supplied);
+    expect(snapshot.pattern).not.toBe(supplied.pattern);
+    expect(snapshot.tracks[0].voiceParams).not.toBe(
+      supplied.tracks[0].voiceParams,
+    );
+    expect(snapshot.tracks[3].tom.physicalParams).not.toBe(
+      supplied.tracks[3].tom.physicalParams,
+    );
   });
 
   it("maps the named Tom model to the WASM model code", async () => {
@@ -337,12 +440,135 @@ describe("command queue", () => {
 const loaded = async () => {
   const engine = await importEngine();
   const load = engine.loadWasm();
-  workers()[0].emit({ type: "ready" });
+  workers()[0].ready();
   await load;
   return engine;
 };
 
 const node = () => FakeWorkletNode.created[0];
+
+describe("transport", () => {
+  it("loads the worklet under the live protocol version", async () => {
+    const engine = await loaded();
+
+    await engine.play();
+
+    expect(FakeAudioContext.modules).toHaveLength(1);
+    expect(FakeAudioContext.modules[0]).toMatch(
+      new RegExp(`worklet\\.js\\?v=${PROTOCOL_VERSION}$`),
+    );
+  });
+
+  it("publishes the engine-owned starting and confirmed transport states", async () => {
+    const engine = await loaded();
+    const states: string[] = [];
+    engine.onTransport((state) => states.push(state));
+
+    await engine.play();
+    expect(states).toEqual(["stopped"]);
+
+    sync(workers()[0], "starting", -1, 1);
+    sync(workers()[0], "playing", 0, 2);
+    expect(states).toEqual(["stopped", "starting", "playing"]);
+
+    engine.pause();
+    expect(states).toEqual(["stopped", "starting", "playing"]);
+    sync(workers()[0], "paused", 0, 3);
+    expect(states).toEqual(["stopped", "starting", "playing", "paused"]);
+
+    engine.stop();
+    expect(states).toEqual(["stopped", "starting", "playing", "paused"]);
+    sync(workers()[0], "stopped", -1, 4);
+    expect(states).toEqual([
+      "stopped",
+      "starting",
+      "playing",
+      "paused",
+      "stopped",
+    ]);
+  });
+
+  it.each([
+    [
+      "a fatal response",
+      (worker: FakeWorker) =>
+        worker.emit({
+          type: "error",
+          error: "rendering failed",
+          fatal: true,
+        }),
+    ],
+    ["onerror", (worker: FakeWorker) => worker.fail("worker crashed")],
+    [
+      "onmessageerror",
+      (worker: FakeWorker) => worker.onmessageerror?.({} as MessageEvent),
+    ],
+  ])(
+    "returns to stopped when a ready worker fails via %s",
+    async (_label, fail) => {
+      const engine = await loaded();
+      const states: string[] = [];
+      const failures: Error[] = [];
+      engine.onTransport((state) => states.push(state));
+      engine.onFailure((error) => failures.push(error));
+
+      await engine.play();
+      sync(workers()[0], "playing", 0, 2);
+      fail(workers()[0]);
+
+      expect(states).toEqual(["stopped", "playing", "stopped"]);
+      expect(failures).toHaveLength(1);
+      expect(workers()[0].terminated).toBe(true);
+      expect(node().disconnected).toBe(1);
+      expect(ctx().closed).toBe(true);
+    },
+  );
+
+  it("deduplicates repeated acknowledgements", async () => {
+    const engine = await loaded();
+    const listener = vi.fn();
+    engine.onTransport(listener);
+
+    sync(workers()[0], "stopped", -1, 0);
+    sync(workers()[0], "stopped", -1, 0);
+
+    expect(listener).toHaveBeenCalledOnce();
+  });
+
+  it("ignores late acknowledgements from a failed worker", async () => {
+    const engine = await loaded();
+    const states: string[] = [];
+    engine.onTransport((state) => states.push(state));
+    const first = workers()[0];
+
+    first.fail("worker crashed");
+    const retry = engine.loadWasm();
+    workers()[1].ready();
+    await retry;
+    sync(workers()[1], "playing", 0, 2);
+
+    // This message was already queued when terminate() ran. It belongs to the
+    // failed worker and must not replace the new worker's confirmed state.
+    sync(first, "paused", 0, 3);
+
+    expect(states).toEqual(["stopped", "playing"]);
+  });
+
+  it("clears the audio wake guard when Play is rejected", async () => {
+    const engine = await loaded();
+    await engine.play();
+
+    workers()[0].emit({
+      type: "error",
+      error: "AlgoDrum.setRunning failed",
+    });
+    sync(workers()[0], "stopped", -1, 0);
+    node().emit({ type: "idle", idle: true });
+    await flush();
+
+    expect(ctx().suspends).toBe(1);
+  });
+});
 
 describe("playhead", () => {
   // Recorded steps, minus the -1 onStep replays to every new subscriber.
@@ -352,55 +578,181 @@ describe("playhead", () => {
     return steps;
   };
 
-  it("ignores steps still draining from a stop", async () => {
+  it("rejects buffered chunks from before a stop", async () => {
     const engine = await loaded();
     const steps = record(engine);
 
     await engine.play();
-    node().step(0);
-    node().step(1);
+    sync(workers()[0], "playing", 0, 2);
+    node().transport("playing", 0, 2);
+    node().transport("playing", 1, 2);
     engine.stop();
+    sync(workers()[0], "stopped", -1, 3);
 
     // ~43 ms of already-rendered audio is still queued in the worklet, tagged
-    // with the steps it was rendered on. Reporting those would flash the
-    // playhead backwards after the user pressed Stop.
-    node().step(2);
-    node().step(3);
+    // with the old revision. They cannot relight the stopped playhead.
+    node().transport("playing", 2, 2);
+    node().transport("playing", 3, 2);
 
     expect(steps).toEqual([-1, 0, 1, -1]);
   });
 
-  it("resumes reporting after the engine's first stopped chunk", async () => {
+  it("holds the playhead until the paused epoch becomes audible", async () => {
     const engine = await loaded();
     const steps = record(engine);
 
     await engine.play();
-    node().step(0);
-    engine.stop();
-    node().step(1); // stale
-    node().step(-1); // rendered after the stop: the drain is over
+    sync(workers()[0], "playing", 0, 2);
+    node().transport("playing", 2, 2);
+    engine.pause();
+    sync(workers()[0], "paused", 2, 3);
+    node().transport("playing", 3, 2);
+    node().transport("paused", 2, 3);
+
+    expect(workers()[0].commands().slice(-3)).toEqual([
+      { type: "cmd", name: "beginStart", args: [] },
+      { type: "cmd", name: "setRunning", args: [true] },
+      { type: "cmd", name: "pause", args: [] },
+    ]);
+    expect(steps).toEqual([-1, 2]);
+  });
+
+  it("uses the new revision immediately after stop and restart", async () => {
+    const engine = await loaded();
+    const steps = record(engine);
 
     await engine.play();
-    node().step(0);
+    sync(workers()[0], "playing", 0, 2);
+    node().transport("playing", 0, 2);
+    engine.stop();
+    sync(workers()[0], "stopped", -1, 3);
+
+    await engine.play();
+    sync(workers()[0], "starting", -1, 4);
+    sync(workers()[0], "playing", 0, 5);
+    node().transport("playing", 1, 2); // stale from the first run
+    node().transport("playing", 0, 5);
 
     expect(steps).toEqual([-1, 0, -1, 0]);
   });
 
-  it("does not strand the playhead when play beats the drain", async () => {
+  it("cancels a pending start when Stop wins the race", async () => {
     const engine = await loaded();
-    const steps = record(engine);
+    let resolveModule: (() => void) | undefined;
+    const addModule = new Promise<void>((resolve) => {
+      resolveModule = resolve;
+    });
+    FakeAudioContext.addModule = () => addModule;
 
+    const playing = engine.play();
+    engine.stop();
+    resolveModule?.();
+    await playing;
+
+    expect(workers()[0].commands()).toEqual([
+      { type: "cmd", name: "beginStart", args: [] },
+      { type: "cmd", name: "setRunning", args: [false] },
+    ]);
+  });
+});
+
+const ctx = () => FakeAudioContext.created[0];
+
+// flush lets the suspend/resume promise chains settle.
+const flush = async () => {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+};
+
+describe("idle suspend", () => {
+  it("suspends the context once the engine has gone quiet", async () => {
+    const engine = await loaded();
     await engine.play();
-    node().step(4);
     engine.stop();
 
-    // Restarted inside the drain window, so the engine never renders the -1
-    // chunk that would otherwise end the suppression.
-    await engine.play();
-    node().step(0);
-    node().step(1);
+    // The engine only reports idle after its output has actually fallen
+    // silent, so the reverb and voice tails are already through the worklet
+    // by the time this arrives.
+    node().emit({ type: "idle", idle: true });
+    await flush();
 
-    expect(steps).toEqual([-1, 4, -1, 0, 1]);
+    expect(ctx().suspends).toBe(1);
+    expect(ctx().state).toBe("suspended");
+  });
+
+  it("keeps the context awake while the transport is running", async () => {
+    const engine = await loaded();
+    await engine.play();
+
+    // A silent passage mid-pattern must not stop the pull loop: the playhead
+    // would freeze with it.
+    node().emit({ type: "idle", idle: true });
+    await flush();
+
+    expect(ctx().suspends).toBe(0);
+  });
+
+  it("resumes on the next play", async () => {
+    const engine = await loaded();
+    await engine.play();
+    engine.stop();
+    node().emit({ type: "idle", idle: true });
+    await flush();
+
+    await engine.play();
+
+    expect(ctx().state).toBe("running");
+    expect(ctx().resumes).toBe(1);
+  });
+
+  it("resumes for an audition", async () => {
+    const engine = await loaded();
+    await engine.play();
+    engine.stop();
+    node().emit({ type: "idle", idle: true });
+    await flush();
+
+    await engine.triggerVoice(0, 1);
+
+    expect(ctx().state).toBe("running");
+    expect(workers()[0].commands().slice(-1)).toEqual([
+      {
+        type: "cmd",
+        name: "triggerVoice",
+        args: [0, 1],
+      },
+    ]);
+  });
+
+  it("does not let an in-flight suspend outlive the play that resumes it", async () => {
+    const engine = await loaded();
+    await engine.play();
+    engine.stop();
+
+    // Idle report and Play in the same tick: without waiting the suspend out,
+    // the resume can land first and leave a suspended context that nothing
+    // will ever wake — the worklet is not called while suspended.
+    node().emit({ type: "idle", idle: true });
+    await engine.play();
+
+    // Let the suspend land wherever it was going to: a resume that skipped
+    // it because the state still read "running" is overtaken right here.
+    await flush();
+
+    expect(ctx().state).toBe("running");
+  });
+});
+
+describe("underruns", () => {
+  it("publishes dropout reports to subscribers", async () => {
+    const engine = await loaded();
+    const reports: { samples: number; count: number }[] = [];
+    engine.onUnderrun((report) => reports.push(report));
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await engine.play();
+    node().emit({ type: "underrun", samples: 384, count: 3 });
+
+    expect(reports).toEqual([{ samples: 384, count: 3 }]);
   });
 });
 
@@ -420,7 +772,8 @@ describe("dispose", () => {
   it("darkens the playhead", async () => {
     const engine = await loaded();
     await engine.play();
-    node().step(3);
+    sync(workers()[0], "playing", 0, 2);
+    node().transport("playing", 3, 2);
 
     const steps: number[] = [];
     engine.onStep((step) => steps.push(step));
@@ -436,7 +789,7 @@ describe("dispose", () => {
     const reload = engine.loadWasm();
     expect(workers()).toHaveLength(2);
 
-    workers()[1].emit({ type: "ready" });
+    workers()[1].ready();
     await expect(reload).resolves.toBeUndefined();
   });
 
@@ -465,7 +818,7 @@ describe("dispose", () => {
     expect(workers()).toHaveLength(2);
     expect(workers()[1].terminated).toBe(false);
 
-    workers()[1].emit({ type: "ready" });
+    workers()[1].ready();
     await expect(reload).resolves.toBeUndefined();
   });
 
@@ -476,7 +829,7 @@ describe("dispose", () => {
     engine.dispose();
 
     const load = engine.loadWasm();
-    workers()[0].emit({ type: "ready" });
+    workers()[0].ready();
     await load;
 
     expect(workers()[0].commands()).toHaveLength(0);

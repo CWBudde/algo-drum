@@ -11,7 +11,7 @@ import "testing"
 func TestRenderHasNoAssertionInDefaultBuild(t *testing.T) {
 	engine := NewEngine(testSampleRate)
 	engine.SetRunning(true)
-	engine.stepLen[0] = 0
+	engine.stepDuration[0] = 0
 
 	defer func() {
 		if recovered := recover(); recovered != nil {

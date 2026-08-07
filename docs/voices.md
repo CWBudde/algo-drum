@@ -363,6 +363,21 @@ other track. The fixed `percSeed` keeps renders reproducible.
 Once triggered, a voice's `Tick()` output travels through `Engine.Render`
 (`internal/drum/engine.go`) once per sample, in this order:
 
+0. **Idle fast path.** Before any of the below, `Render` checks `IsIdle()`: once
+   the output has stayed under `engineSilence` (`1e-6`, ≈ −120 dBFS) for
+   `idleConfirmS` (50 ms) with the transport not playing and no humanize-delayed
+   hit armed, the sample is written as a plain zero and every stage below is
+   skipped. Voice, reverb and limiter state is frozen rather than reset, so a
+   later hit resumes from where the silence began, and `SetRunning(true)` /
+   `TriggerVoice` clear the counter. This is what lets the browser side suspend
+   the `AudioContext` instead of rendering silence forever (PLAN.md **B10**).
+   It truncates a decaying tail below −120 dBFS, so renders are not bit-identical
+   to a build without idling — the tests assert "nothing above `engineSilence`
+   was lost" rather than sample equality. How long a stop takes to reach idle is
+   set by the voice envelopes, not by the threshold: measured at 48 kHz, hi-hat
+   0.4 s, snare 1.7 s, bass 4.2 s, cymbal 11.1 s, and a full kit at reverb 1
+   about 11.9 s. Raising the threshold barely moves those numbers (the cymbal is
+   still 10.5 s at −80 dBFS), which is why it is set where it is.
 1. **Per-voice `Tick()`.** Each of the 7 voices produces one sample (0 if
    inactive).
 2. **Volume smoothing.** Each track's live gain (`liveVol[t]`) ramps toward
@@ -371,26 +386,44 @@ Once triggered, a voice's `Tick()` output travels through `Engine.Render`
    derived from `volSmoothTauS` (`0.008 s`, ~8 ms) — fast enough to feel
    instant on a knob, slow enough to avoid zipper noise on live changes.
 3. **Mix + headroom.** The 7 volume-scaled voice outputs are summed, then
-   scaled by `mixHeadroom` (`0.5`) so that simultaneous hits on all tracks
-   don't slam the limiter — the limiter is meant to catch rare worst cases,
-   not do steady-state gain reduction.
-4. **FDN reverb (conditional).** If `reverbAmount > 0`, the sample passes
-   through `Engine.reverb` (`reverb.FDNReverb` from algo-dsp). `SetReverb(amount)`
-   maps the UI's `[0, 1]` knob to `wet = amount * 0.45` (so reverb is never
-   more than 45% wet) and `RT60 = 0.3 + amount * 3.7` seconds (0.3 s dry-ish
-   room up to a 4 s tail at full reverb).
-5. **Lookahead limiter.** `Engine.limiter` (`dynamics.LookaheadLimiter` from
-   algo-dsp), threshold fixed at `-1.0 dB` via `SetThreshold`. This is the
-   real gain-reduction stage for sustained loud passages (dense patterns,
-   long reverb tails) — its smoothed detector still under-reacts to
-   single-sample transients.
-6. **Hard clamp.** A final `if out > 1 / out < -1` clamp to `[-1, 1]` is the
-   brick wall for whatever the limiter's detector missed; the browser's
-   output stage would clip anyway, so this just guarantees the contract of
-   `Render` producing values in range.
+   scaled by `mixHeadroom` (`0.5`). This does _not_ leave enough headroom to
+   keep the limiter idle, and is not meant to: measured at 48 kHz, a solo
+   hi-hat peaks at +1.7 dBFS after this scaling and an ordinary
+   bass/snare/hat pattern reaches +5.1 dBFS. The per-voice gains those peaks
+   come from are user-facing parameter defaults (`hat.gain` ranges to 2.5), so
+   no static scalar here can bound the mix — the limiter does. Routine
+   transient reduction is the shipped operating point.
+4. **FDN reverb.** The sample always passes through `Engine.reverb`
+   (`reverb.FDNReverb` from algo-dsp) — the delay lines advance at every
+   setting, so a tail is never truncated or resurrected stale.
+   `SetReverb(amount)` maps the UI's `[0, 1]` knob to `RT60 = 0.3 + amount *
+3.7` seconds (0.3 s dry-ish room up to a 4 s tail), while `Render` ramps
+   `liveReverbAmount` toward the target with the same one-pole coefficient as
+   the volumes and sets the FDN's gains from it each sample. It is a true
+   **mix**, not a send: `wet = liveReverbAmount * 0.45` (never more than 45 %
+   wet) with `dry = 1 - wet`. `FDNReverb.ProcessSample` returns
+   `input*dry + tail*wet` and its dry gain defaults to 1, so setting only the
+   wet gain would make the knob raise the master level; trading dry for wet
+   keeps the level flat across the sweep. At `amount == 0` the wet gain is 0
+   and the dry gain 1, which is bit-exactly transparent.
+5. **Lookahead peak limiter.** `Engine.limiter` (`peakLimiter`,
+   `internal/drum/peak_limiter.go`) — a true peak limiter at a `-1.0 dBFS`
+   ceiling. The program path is delayed by a 3 ms lookahead while a monotonic
+   deque tracks the largest `|input|` over each delayed sample's complete
+   lookahead window, so gain reduction is instantaneous and only the recovery
+   is smoothed (100 ms). Unlike an attack-smoothed compressor detector, this
+   bounds an isolated one-sample transient as tightly as a sustained one; the
+   output cannot cross the ceiling.
+6. **Hard clamp.** A final `if out > 1 / out < -1` clamp to `[-1, 1]`,
+   counted in `hardClipCount`. With the limiter in circuit it is unreachable
+   — `TestDensePatternDoesNotReachHardClamp` asserts the counter stays at zero
+   — so it is a contract guarantee and a regression detector, not a working
+   stage. NaN is caught in the same switch and muted, since one NaN sample
+   silences the Web Audio graph until reload.
 
 ```
-voice.Tick() ×5 → × liveVol[t] (smoothed) → Σ → × mixHeadroom → FDN reverb → limiter → clamp[-1,1] → buf[i]
+voice.Tick() ×7 → × liveVol[t] (smoothed) → Σ → × mixHeadroom → FDN reverb (wet/dry mix)
+    → lookahead peak limiter (−1 dBFS) → clamp[-1,1] → buf[i]
 ```
 
 ## Determinism and the golden render tests

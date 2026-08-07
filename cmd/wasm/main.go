@@ -38,7 +38,35 @@ var (
 	renderBuf []float32
 	jsBytes   js.Value // Uint8Array over the same allocation as jsFloats
 	jsFloats  js.Value // Float32Array returned to the caller
+
+	patternInput [drum.PatternSize]float64
+
+	stateOut stateOutput
 )
+
+// stateOutput owns the reusable JS typed arrays returned by getState. The
+// worker structured-clones the object synchronously before the next update, so
+// reusing these views does not alias snapshots received on the main thread.
+type stateOutput struct {
+	value js.Value
+
+	pattern              []float32
+	patternBytes         js.Value
+	cellProbabilities    []float32
+	cellProbabilityBytes js.Value
+	cellConditions       []byte
+	cellConditionBytes   js.Value
+	trackLengths         []byte
+	trackLengthBytes     js.Value
+
+	tracks          js.Value
+	trackValues     [drum.TrackCount]js.Value
+	voiceParams     [drum.TrackCount][]float32
+	voiceParamBytes [drum.TrackCount]js.Value
+	tomValues       [drum.TrackCount]js.Value
+	physicalParams  [drum.TrackCount][]float32
+	physicalBytes   [drum.TrackCount]js.Value
+}
 
 func main() {
 	api := js.Global().Get("Object").New()
@@ -66,6 +94,22 @@ func main() {
 
 		if running, ok := argBool(args, 0, "setRunning"); ok {
 			engine.SetRunning(running)
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("beginStart", export(func(args []js.Value) any {
+		if ready() {
+			engine.BeginStart()
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("pause", export(func(args []js.Value) any {
+		if ready() {
+			engine.Pause()
 		}
 
 		return js.Null()
@@ -123,6 +167,65 @@ func main() {
 		return js.Null()
 	}))
 
+	api.Set("setCellProbability", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		track, trackOK := argInt(args, 0, "setCellProbability")
+		step, stepOK := argInt(args, 1, "setCellProbability")
+		probability, probabilityOK := argFloat(args, 2, "setCellProbability")
+
+		if trackOK && stepOK && probabilityOK {
+			engine.SetCellProbability(track, step, probability)
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("setCellCondition", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		track, trackOK := argInt(args, 0, "setCellCondition")
+		step, stepOK := argInt(args, 1, "setCellCondition")
+		condition, conditionOK := argInt(args, 2, "setCellCondition")
+
+		if trackOK && stepOK && conditionOK {
+			engine.SetCellCondition(track, step, drum.TriggerCondition(condition))
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("setTrackLength", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		track, trackOK := argInt(args, 0, "setTrackLength")
+		length, lengthOK := argInt(args, 1, "setTrackLength")
+
+		if trackOK && lengthOK {
+			engine.SetTrackLength(track, length)
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("setFillMode", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		if enabled, ok := argBool(args, 0, "setFillMode"); ok {
+			engine.SetFillMode(enabled)
+		}
+
+		return js.Null()
+	}))
+
 	// setPattern takes a flat track-major Float32Array (index =
 	// track*MaxSteps + step) of velocities in [0, 1].
 	api.Set("setPattern", export(func(args []js.Value) any {
@@ -153,13 +256,13 @@ func main() {
 			return js.Null()
 		}
 
-		if count > drum.TrackCount*drum.MaxSteps {
-			count = drum.TrackCount * drum.MaxSteps
+		if count != drum.PatternSize {
+			warnBadArg("setPattern")
+
+			return js.Null()
 		}
 
-		velocities := make([]float64, count)
-
-		for i := range velocities {
+		for i := range patternInput {
 			elem := arr.Index(i)
 			if elem.Type() != js.TypeNumber {
 				warnBadArg("setPattern")
@@ -174,30 +277,39 @@ func main() {
 				return js.Null()
 			}
 
-			velocities[i] = vel
+			patternInput[i] = vel
 		}
 
-		engine.SetPattern(velocities)
+		engine.SetPattern(patternInput[:])
 
 		return js.Null()
 	}))
 
-	// getPattern returns the pattern in the same flat Float32Array layout
-	// that setPattern accepts. Called rarely (state sync), so the per-call
-	// allocation and element-wise copy are fine.
-	api.Set("getPattern", export(func(args []js.Value) any {
+	api.Set("setState", export(func(args []js.Value) any {
 		if !ready() {
-			return js.Global().Get("Float32Array").New(0)
+			return js.Null()
 		}
 
-		pattern := engine.Pattern()
+		state, ok := readEngineState(args, 0)
+		if !ok {
+			warnBadArg("setState")
 
-		out := js.Global().Get("Float32Array").New(len(pattern))
-		for i, vel := range pattern {
-			out.SetIndex(i, vel)
+			return js.Null()
 		}
 
-		return out
+		if err := engine.ReplaceState(state); err != nil {
+			warnBadArg("setState")
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("getState", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		return writeEngineState(engine.State())
 	}))
 
 	api.Set("setVolume", export(func(args []js.Value) any {
@@ -210,6 +322,21 @@ func main() {
 
 		if trackOK && volOK {
 			engine.SetVolume(track, volume)
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("setMuted", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		track, trackOK := argInt(args, 0, "setMuted")
+
+		muted, mutedOK := argBool(args, 1, "setMuted")
+		if trackOK && mutedOK {
+			engine.SetMuted(track, muted)
 		}
 
 		return js.Null()
@@ -365,6 +492,41 @@ func main() {
 		return engine.CurrentStep()
 	}))
 
+	api.Set("transportState", export(func(args []js.Value) any {
+		if !ready() {
+			return string(drum.TransportStopped)
+		}
+
+		return string(engine.TransportSnapshot().State)
+	}))
+
+	api.Set("transportRevision", export(func(args []js.Value) any {
+		if !ready() {
+			return 0
+		}
+
+		// JavaScript numbers exactly represent integers through 2^53. A browser
+		// session cannot produce enough user transport transitions to approach
+		// that boundary, and float64 is an explicitly supported syscall/js value.
+		return float64(engine.TransportSnapshot().Revision)
+	}))
+
+	// isIdle reports that the engine has nothing left to render, so the caller
+	// can stop pulling chunks (and suspend the AudioContext) instead of paying
+	// for silence. An uninitialized engine has produced nothing at all, which
+	// is the most idle state there is.
+	api.Set("isIdle", export(func(args []js.Value) any {
+		if !ready() {
+			return true
+		}
+
+		return engine.IsIdle()
+	}))
+
+	// A plain data property, not an exported func: the worker reads it
+	// during the load handshake and refuses to run on a mismatch.
+	api.Set("protocolVersion", drum.ProtocolVersion)
+
 	js.Global().Set("AlgoDrum", api)
 
 	select {} // keep Go runtime alive
@@ -462,6 +624,342 @@ func ensureRenderBuffers(sampleCount int) {
 	arrayBuf := js.Global().Get("ArrayBuffer").New(sampleCount * 4)
 	jsBytes = js.Global().Get("Uint8Array").New(arrayBuf)
 	jsFloats = js.Global().Get("Float32Array").New(arrayBuf)
+}
+
+func readEngineState(args []js.Value, index int) (drum.EngineState, bool) {
+	if index >= len(args) || args[index].Type() != js.TypeObject {
+		return drum.EngineState{}, false
+	}
+
+	value := args[index]
+	tempo, tempoOK := finiteJSNumber(value.Get("tempoBpm"))
+	swing, swingOK := finiteJSNumber(value.Get("swing"))
+	stepCount, stepsOK := integerJSNumber(value.Get("stepCount"))
+	reverbAmount, reverbOK := finiteJSNumber(value.Get("reverb"))
+	probability, probabilityOK := finiteJSNumber(value.Get("probability"))
+	humanize, humanizeOK := finiteJSNumber(value.Get("humanize"))
+	fillModeValue := value.Get("fillMode")
+	pattern, patternOK := readFloatArray(value.Get("pattern"), drum.PatternSize)
+	cellProbabilities, cellProbabilitiesOK := readFloatArray(
+		value.Get("cellProbabilities"), drum.PatternSize,
+	)
+	cellConditions, cellConditionsOK := readConditionArray(
+		value.Get("cellConditions"), drum.PatternSize,
+	)
+	trackLengths, trackLengthsOK := readIntArray(value.Get("trackLengths"), drum.TrackCount)
+
+	tracksValue := value.Get("tracks")
+	tracksOK := tracksValue.Type() == js.TypeObject &&
+		js.Global().Get("Array").Call("isArray", tracksValue).Bool() &&
+		tracksValue.Length() == drum.TrackCount
+
+	if !tempoOK || !swingOK || !stepsOK || !reverbOK || !probabilityOK || !humanizeOK ||
+		fillModeValue.Type() != js.TypeBoolean || !patternOK || !cellProbabilitiesOK ||
+		!cellConditionsOK || !trackLengthsOK || !tracksOK {
+		return drum.EngineState{}, false
+	}
+
+	state := drum.EngineState{
+		TempoBPM:          tempo,
+		Swing:             swing,
+		StepCount:         stepCount,
+		Reverb:            reverbAmount,
+		Probability:       probability,
+		Humanize:          humanize,
+		FillMode:          fillModeValue.Bool(),
+		Pattern:           pattern,
+		CellProbabilities: cellProbabilities,
+		CellConditions:    cellConditions,
+		TrackLengths:      trackLengths,
+		Tracks:            make([]drum.TrackState, drum.TrackCount),
+	}
+
+	for track := range state.Tracks {
+		trackValue := tracksValue.Index(track)
+		if trackValue.Type() != js.TypeObject {
+			return drum.EngineState{}, false
+		}
+
+		volume, volumeOK := finiteJSNumber(trackValue.Get("volume"))
+		decay, decayOK := finiteJSNumber(trackValue.Get("decay"))
+		mutedValue := trackValue.Get("muted")
+
+		params, paramsOK := readFloatArray(
+			trackValue.Get("voiceParams"), len(drum.SpecsForTrack(track)),
+		)
+		if !volumeOK || !decayOK || mutedValue.Type() != js.TypeBoolean || !paramsOK {
+			return drum.EngineState{}, false
+		}
+
+		state.Tracks[track] = drum.TrackState{
+			Volume:      volume,
+			Decay:       decay,
+			Muted:       mutedValue.Bool(),
+			VoiceParams: params,
+		}
+
+		tomValue := trackValue.Get("tom")
+
+		isTom := track == 3 || track == 5
+		if !isTom {
+			if tomValue.Type() != js.TypeUndefined && tomValue.Type() != js.TypeNull {
+				return drum.EngineState{}, false
+			}
+
+			continue
+		}
+
+		if tomValue.Type() != js.TypeObject {
+			return drum.EngineState{}, false
+		}
+
+		modelValue := tomValue.Get("model")
+		if modelValue.Type() != js.TypeString {
+			return drum.EngineState{}, false
+		}
+
+		var model drum.TomModel
+
+		switch modelValue.String() {
+		case "procedural":
+			model = drum.TomModelProcedural
+		case "physical":
+			model = drum.TomModelPhysical
+		default:
+			return drum.EngineState{}, false
+		}
+
+		physicalParams, paramsOK := readFloatArray(
+			tomValue.Get("physicalParams"), len(drum.PhysicalTomSpecs()),
+		)
+		if !paramsOK {
+			return drum.EngineState{}, false
+		}
+
+		state.Tracks[track].Tom = &drum.TomState{
+			Model:          model,
+			PhysicalParams: physicalParams,
+		}
+	}
+
+	return state, true
+}
+
+func finiteJSNumber(value js.Value) (float64, bool) {
+	if value.Type() != js.TypeNumber {
+		return 0, false
+	}
+
+	number := value.Float()
+
+	return number, !math.IsNaN(number) && !math.IsInf(number, 0)
+}
+
+func integerJSNumber(value js.Value) (int, bool) {
+	number, ok := finiteJSNumber(value)
+	if !ok || math.Trunc(number) != number || number < math.MinInt32 || number > math.MaxInt32 {
+		return 0, false
+	}
+
+	return int(number), true
+}
+
+func readFloatArray(value js.Value, expected int) ([]float64, bool) {
+	if value.Type() != js.TypeObject {
+		return nil, false
+	}
+
+	length := value.Get("length")
+
+	count, ok := integerJSNumber(length)
+	if !ok || count != expected {
+		return nil, false
+	}
+
+	result := make([]float64, expected)
+	for i := range result {
+		number, ok := finiteJSNumber(value.Index(i))
+		if !ok {
+			return nil, false
+		}
+
+		result[i] = number
+	}
+
+	return result, true
+}
+
+func readIntArray(value js.Value, expected int) ([]int, bool) {
+	if value.Type() != js.TypeObject {
+		return nil, false
+	}
+
+	count, ok := integerJSNumber(value.Get("length"))
+	if !ok || count != expected {
+		return nil, false
+	}
+
+	result := make([]int, expected)
+	for i := range result {
+		result[i], ok = integerJSNumber(value.Index(i))
+		if !ok {
+			return nil, false
+		}
+	}
+
+	return result, true
+}
+
+func readConditionArray(value js.Value, expected int) ([]drum.TriggerCondition, bool) {
+	values, ok := readIntArray(value, expected)
+	if !ok {
+		return nil, false
+	}
+
+	result := make([]drum.TriggerCondition, expected)
+
+	for i, value := range values {
+		if value < 0 || value > int(drum.TriggerNotPreviousFired) {
+			return nil, false
+		}
+
+		result[i] = drum.TriggerCondition(value)
+	}
+
+	return result, true
+}
+
+func writeEngineState(state drum.EngineState) js.Value {
+	ensureStateOutput(state)
+
+	stateOut.value.Set("tempoBpm", state.TempoBPM)
+	stateOut.value.Set("swing", state.Swing)
+	stateOut.value.Set("stepCount", state.StepCount)
+	stateOut.value.Set("reverb", state.Reverb)
+	stateOut.value.Set("probability", state.Probability)
+	stateOut.value.Set("humanize", state.Humanize)
+	stateOut.value.Set("fillMode", state.FillMode)
+	copyFloatOutput(stateOut.pattern, stateOut.patternBytes, state.Pattern)
+	copyFloatOutput(
+		stateOut.cellProbabilities, stateOut.cellProbabilityBytes, state.CellProbabilities,
+	)
+
+	for i, condition := range state.CellConditions {
+		stateOut.cellConditions[i] = byte(condition)
+	}
+
+	js.CopyBytesToJS(stateOut.cellConditionBytes, stateOut.cellConditions)
+
+	for i, length := range state.TrackLengths {
+		stateOut.trackLengths[i] = byte(length)
+	}
+
+	js.CopyBytesToJS(stateOut.trackLengthBytes, stateOut.trackLengths)
+
+	for track, trackState := range state.Tracks {
+		trackValue := stateOut.trackValues[track]
+		trackValue.Set("volume", trackState.Volume)
+		trackValue.Set("decay", trackState.Decay)
+		trackValue.Set("muted", trackState.Muted)
+		copyFloatOutput(
+			stateOut.voiceParams[track], stateOut.voiceParamBytes[track], trackState.VoiceParams,
+		)
+
+		if trackState.Tom == nil {
+			continue
+		}
+
+		tomValue := stateOut.tomValues[track]
+		if trackState.Tom.Model == drum.TomModelPhysical {
+			tomValue.Set("model", "physical")
+		} else {
+			tomValue.Set("model", "procedural")
+		}
+
+		copyFloatOutput(
+			stateOut.physicalParams[track], stateOut.physicalBytes[track],
+			trackState.Tom.PhysicalParams,
+		)
+	}
+
+	return stateOut.value
+}
+
+func ensureStateOutput(state drum.EngineState) {
+	if stateOut.value.Type() != js.TypeUndefined {
+		return
+	}
+
+	stateOut.value = js.Global().Get("Object").New()
+
+	var patternView js.Value
+
+	stateOut.pattern, stateOut.patternBytes, patternView = newFloatOutput(len(state.Pattern))
+	stateOut.value.Set("pattern", patternView)
+
+	var cellProbabilityView js.Value
+
+	stateOut.cellProbabilities, stateOut.cellProbabilityBytes, cellProbabilityView = newFloatOutput(len(state.CellProbabilities))
+	stateOut.value.Set("cellProbabilities", cellProbabilityView)
+
+	stateOut.cellConditions = make([]byte, len(state.CellConditions))
+	cellConditionView := js.Global().Get("Uint8Array").New(len(state.CellConditions))
+	stateOut.cellConditionBytes = cellConditionView
+	stateOut.value.Set("cellConditions", cellConditionView)
+
+	stateOut.trackLengths = make([]byte, len(state.TrackLengths))
+	trackLengthView := js.Global().Get("Uint8Array").New(len(state.TrackLengths))
+	stateOut.trackLengthBytes = trackLengthView
+	stateOut.value.Set("trackLengths", trackLengthView)
+
+	stateOut.tracks = js.Global().Get("Array").New(len(state.Tracks))
+	stateOut.value.Set("tracks", stateOut.tracks)
+
+	for track, trackState := range state.Tracks {
+		trackValue := js.Global().Get("Object").New()
+		stateOut.trackValues[track] = trackValue
+		stateOut.tracks.SetIndex(track, trackValue)
+
+		var paramsView js.Value
+
+		stateOut.voiceParams[track], stateOut.voiceParamBytes[track], paramsView = newFloatOutput(len(trackState.VoiceParams))
+		trackValue.Set("voiceParams", paramsView)
+
+		if trackState.Tom == nil {
+			continue
+		}
+
+		tomValue := js.Global().Get("Object").New()
+		stateOut.tomValues[track] = tomValue
+		trackValue.Set("tom", tomValue)
+
+		var physicalView js.Value
+
+		stateOut.physicalParams[track], stateOut.physicalBytes[track], physicalView = newFloatOutput(len(trackState.Tom.PhysicalParams))
+		tomValue.Set("physicalParams", physicalView)
+	}
+}
+
+func newFloatOutput(length int) ([]float32, js.Value, js.Value) {
+	values := make([]float32, length)
+	arrayBuf := js.Global().Get("ArrayBuffer").New(length * 4)
+	bytes := js.Global().Get("Uint8Array").New(arrayBuf)
+	floats := js.Global().Get("Float32Array").New(arrayBuf)
+
+	return values, bytes, floats
+}
+
+func copyFloatOutput(dst []float32, jsBytes js.Value, src []float64) {
+	for i, value := range src {
+		dst[i] = float32(value)
+	}
+
+	if len(dst) == 0 {
+		return
+	}
+
+	bytes := unsafe.Slice((*byte)(unsafe.Pointer(&dst[0])), len(dst)*4)
+	js.CopyBytesToJS(jsBytes, bytes)
 }
 
 func export(fn func([]js.Value) any) js.Func {
