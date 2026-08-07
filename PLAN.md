@@ -391,9 +391,11 @@ structural rather than sloppy.
 - [x] **F12: `AlgoPanel` leaks a timer** — `copiedTimer` (`AlgoPanel.tsx:32`) is never
       cleared on unmount; the component has no `useEffect` at all.
       Its unmount cleanup now cancels the pending clipboard-feedback timer.
-- [ ] **F13: `Knob` listener churn** — the non-passive wheel listener re-registers on
+- [x] **F13: `Knob` listener churn** — the non-passive wheel listener re-registers on
       every render (`Knob.tsx:112`, deps `[value, onChange]`), and pointer capture
       (`:76`) is never released.
+      The listener is installed once and reads the latest controlled value/callback
+      through refs; pointer up/cancel explicitly releases capture.
 - [ ] **F14: no CSS token layer.** Three custom properties exist (`DrumMachine.css:5-8`)
       while the palette repeats as raw hex across 870 lines; the accent colour lives in
       four places (`DrumMachine.css:5`, `DrumMachine.tsx:24`, `Knob.tsx:52`, and a fifth
@@ -403,8 +405,9 @@ structural rather than sloppy.
       highest-value flag here. Also missing `exactOptionalPropertyTypes`,
       `verbatimModuleSyntax`, `isolatedModules`. `include: ["src"]` means
       `vite.config.ts` / `vitest.config.ts` / `playwright.config.ts` are never typechecked.
-- [ ] **F16: ESLint coverage gaps** — no `eslint-plugin-jsx-a11y` despite heavily
-      hand-rolled ARIA; `recommendedTypeChecked` rather than `strictTypeChecked`; and
+- [ ] **F16: ESLint coverage gaps** — `eslint-plugin-jsx-a11y` now enforces the
+      hand-rolled ARIA through X14; the remaining gaps are `recommendedTypeChecked`
+      rather than `strictTypeChecked`, and
       `react-hooks/exhaustive-deps` is `warn` with no `--max-warnings 0`, so a deps
       regression would not fail CI.
 
@@ -415,24 +418,34 @@ shift-fine, wheel, double-click reset, drag readout, `touch-action: none`), tap 
 share, and `prefers-reduced-motion` in all four stylesheets. The playhead is a cheap
 per-cell attribute toggle — the right mechanism. Layout and feedback are what hurt.
 
-- [ ] **U7 (high): the grid does not fit a phone.** `DrumMachine.css:76` and `:399` keep
+- [x] **U7 (high): the grid does not fit a phone.** `DrumMachine.css:76` and `:399` keep
       `repeat(16, minmax(0, 1fr))` at **every** width; verified no container queries and
       no overflow wrapper anywhere. At a 390 px viewport ~120 px is left for 16 cells →
       **~7.5 px each**. The app's primary interaction surface is unusable below ~725 px.
       Needs an overflow-scroll wrapper, an 8+8 split, or a page-1/page-2 toggle.
-- [ ] **U8: breakpoint discontinuity** — 620 px yields ~21.8 px cells, 621 px yields
+      The board is now its own horizontal scroll area with 30 px minimum pads (44 px
+      for coarse pointers), while the page stays within the phone viewport.
+- [x] **U8: breakpoint discontinuity** — 620 px yields ~21.8 px cells, 621 px yields
       **~17.5 px**. `DrumMachine.css:393` should be `min-width`-driven.
-- [ ] **U9: the playhead is near-invisible** — `rgba(200,140,40,0.07)` tint is **1.09:1**
+      Narrow styles are mobile-first and the 621 px query only restores spacious desktop
+      dimensions, so pad width no longer drops at the boundary.
+- [x] **U9: the playhead is near-invisible** — `rgba(200,140,40,0.07)` tint is **1.09:1**
       (`DrumMachine.css:214`) and the marker line **1.95:1** (`:222`). On a sparse track
       it cannot be followed at all. Same for the bar-group aids (1.12:1, 1.09:1).
-- [ ] **U10: no value readout outside dragging.** `Knob.tsx:150` renders `.knob-readout`
+      Contrast-safe rails/dividers and an amber playhead tint/marker now clear 3:1
+      against the grid screen, including on empty cells.
+- [x] **U10: no value readout outside dragging.** `Knob.tsx:150` renders `.knob-readout`
       only while `dragging`, so keyboard and wheel changes to SWING/STEPS/PROB/HUMAN/
       REVERB/volumes/decays show **no number**. Only tempo embeds its value in the label.
       Partly addressed by G20: every knob inside the voice editor has a persistent
       `.dm-voice-value` readout under it. The main panel still does not.
-- [ ] **U11: the wheel handler hijacks page scroll unconditionally** (`Knob.tsx:112`
+      Main-panel readouts now stay visible for the complete focused interaction, so
+      pointer, keyboard and wheel edits all expose the value.
+- [x] **U11: the wheel handler hijacks page scroll unconditionally** (`Knob.tsx:112`
       always `preventDefault()`s, focused or not) — scrolling with the cursor over a knob
       silently changes the value.
+      Wheel changes require intentional focus; merely scrolling over a knob leaves page
+      scrolling untouched.
 - [ ] **U12: one keyboard shortcut.** `DrumMachine.tsx:261` handles Space and nothing
       else — no arrow navigation, no clear/mutate/preset keys, no `1`–`5` track mute.
 - [ ] **U13: no drag-paint on the grid** (`DrumMachine.tsx:337` is a per-cell `onClick`),
@@ -479,37 +492,50 @@ the knob is a textbook `role="slider"` with `aria-valuetext` and full Arrow/Page
 support, focus-visible rings exist everywhere, both failure panels use `role="alert"`.
 The gaps are structural.
 
-- [ ] **X5 (high): 80 flat tab stops, no grid semantics.** `DrumMachine.tsx:322` emits 80
+- [x] **X5 (high): 80 flat tab stops, no grid semantics.** `DrumMachine.tsx:322` emits 80
       tabbable buttons with the _primary_ control (Play, `:410`) last in the DOM — no
       `role="grid"`/`gridcell`, no roving `tabindex`, no arrow-key movement. Reaching the
       transport by keyboard costs ~95 Tab presses.
-- [ ] **X6: a tri-state control forced into a boolean toggle.** `DrumMachine.tsx:335` sets
+      The pattern is an ARIA grid with row/column metadata, one roving tab stop,
+      two-dimensional Arrow navigation and row/grid Home/End commands.
+- [x] **X6: a tri-state control forced into a boolean toggle.** `DrumMachine.tsx:335` sets
       `aria-pressed={velocity > 0}` and encodes off/on/accent in the label, so accent and
       normal announce the same role state and the accessible _name_ mutates on every
       activation.
-- [ ] **X7: the playhead is invisible to AT.** `data-playhead` (`:332`, `:353`) is purely
+      Cell names are stable; off/on/accent use `aria-pressed=false/true/mixed`, with the
+      exact continuous velocity in the accessible description.
+- [x] **X7: the playhead is invisible to AT.** `data-playhead` (`:332`, `:353`) is purely
       presentational — no `aria-current`, no live region. Combined with U9, low-vision
       users have no playhead at all.
-- [ ] **X8: no live regions for state changes.** Space toggles playback with **zero
+      Audible cells carry `aria-current="step"` alongside the higher-contrast marker.
+- [x] **X8: no live regions for state changes.** Space toggles playback with **zero
       announcement** (the Play label flips but it isn't focused), and PRESET / MUTATE /
       CLEAR / FILL rewrite up to 80 cells silently. Only the SHARE toast has
       `role="status"` (`AlgoPanel.tsx:214`). The loading→ready transition isn't announced
       either, while Play is `disabled` and so cannot explain why.
-- [ ] **X9: target size (SC 2.5.8) fails below ~725 px**, and `.dm-tap` fails at every
+      Engine readiness, transport transitions and every bulk/history pattern action now
+      publish concise polite status messages.
+- [x] **X9: target size (SC 2.5.8) fails below ~725 px**, and `.dm-tap` fails at every
       width — `font-size: 9px` + `padding: 3px 10px` ≈ **17 px** high
       (`DrumMachine.css:314`). `.dm-mute` and the algo controls sit at 26 px: over the
       24 px floor, well under the 44 px touch guidance, with no `@media (pointer: coarse)`.
-- [ ] **X10: non-text contrast (SC 1.4.11) failures** — playhead marker 1.95:1, playhead
+      Fine-pointer targets meet the 24 px floor; coarse-pointer controls and pads expand
+      to 44 px.
+- [x] **X10: non-text contrast (SC 1.4.11) failures** — playhead marker 1.95:1, playhead
       tint 1.09:1, bar divider 1.12:1, bar tint 1.09:1, all below the 3:1 required of
       meaningful UI indicators.
-- [ ] **X11: "beyond step count" is conveyed by opacity alone** (`DrumMachine.css:155`),
+      Closed with the same contrast-safe playhead and bar indicators as U9.
+- [x] **X11: "beyond step count" is conveyed by opacity alone** (`DrumMachine.css:155`),
       so a screen-reader user editing step 13 of an 8-step pattern gets no signal that it
       will never fire. `aria-disabled` or a name suffix would fix it.
+      Each such cell describes the track loop length and says the editable step will not
+      play.
 - [ ] **X12: no forced-colors / prefers-contrast support** anywhere in `src/`. Every state
       is a background, box-shadow or gradient — all stripped in Windows High Contrast,
       leaving 80 identical empty buttons.
-- [ ] **X13: dead accessible-name plumbing** — `DrumMachine.tsx:316` assigns
+- [x] **X13: dead accessible-name plumbing** — `DrumMachine.tsx:316` assigns
       `id={dm-track-…}` to each track label and nothing ever references it.
+      Track labels are real grid row headers; the unused IDs are gone.
 
 ### To raise this score — accessibility
 
@@ -517,11 +543,14 @@ The ARIA here was written carefully by hand and is largely correct, but nothing
 _verifies_ it, so the next refactor can quietly undo it. Add enforcement, then close the
 remaining "can a screen-reader user actually operate this?" gaps.
 
-- [ ] **X14: enforce accessibility automatically.** Nothing checks any of this today —
+- [x] **X14: enforce accessibility automatically.** Nothing checks any of this today —
       verified no `axe-core`, `eslint-plugin-jsx-a11y`, `jsdom` or Testing Library in
       `web/package.json`. Add `eslint-plugin-jsx-a11y` (static, free) and an `axe-core`
       scan in the Playwright run (runtime, catches contrast and name/role/value). This is
       the item that keeps X5–X13 fixed once they are fixed.
+      Recommended JSX accessibility rules now run in `bun run lint`, and the production
+      Playwright suite has a zero-violation axe scan. Its first run caught and fixed the
+      previously undefined `.dm-sr-only` utility.
 - [ ] **X15: a text alternative for the pattern.** The grid is 80 controls with no
       summary; an sr-only, `aria-live="polite"` description per track ("Bass drum: steps
       1, 5, 9, 13") makes the pattern comprehensible without 80 Tab presses, and doubles
@@ -529,8 +558,9 @@ remaining "can a screen-reader user actually operate this?" gaps.
 - [ ] **X16: focus management for bulk actions.** After PRESET / CLEAR / MUTATE / FILL the
       grid is rewritten under the user's feet; focus should stay put and the change be
       announced, rather than the current silent swap.
-- [ ] **X17: a skip link to the transport.** Directly addresses X5's ~95-Tab journey and
+- [x] **X17: a skip link to the transport.** Directly addresses X5's ~95-Tab journey and
       is a few lines, independent of the roving-tabindex work.
+      A focus-revealed skip link moves focus directly to the transport landmark.
 - [ ] **X18: state a target and test against it.** No conformance level is claimed
       anywhere. Commit to WCAG 2.2 AA, list the known exceptions, and record one manual
       screen-reader pass (NVDA or VoiceOver) — automation catches perhaps half of what
@@ -542,7 +572,7 @@ The Go engine is genuinely well tested: 44 test functions plus a fuzz target, **
 statement coverage,
 asserting real invariants (swing preserves bar length, clamping on every setter, output
 bounded and finite, humanize bounds, allocation-free render via `AllocsPerRun`). The
-frontend's tests are up to **80 passing**, now including a fake-Worker suite for the
+frontend's tests are up to **247 passing**, now including a fake-Worker suite for the
 main-thread bridge. The remaining island is the UI itself.
 
 - [ ] **T7: `cmd/wasm/main.go` is invisible to the test runner.** Its `js && wasm` build
@@ -562,16 +592,17 @@ main-thread bridge. The remaining island is the UI itself.
       before rendering, buffer reuse and its size-mismatch fallback), and
       `worklet.test.ts` stubs `AudioWorkletProcessor` to cover the credit watchdog,
       underrun throttling and buffer return. `wasmEngine.test.ts` gained idle-suspend and
-      underrun coverage. 171 frontend tests across 11 files, up from 148.
+      underrun coverage. The suite now stands at 247 tests across 15 files.
       Left open by design: `worklet.js` is reached from a test by URL import because it
       must stay in `public/` to be addressable by `addModule`.
 - [ ] **T10: no component tests at all**, and currently impossible: `vitest.config.ts:9`
       sets `environment: "node"` with no jsdom/happy-dom or Testing Library in
       `package.json`. Adding them would let X5–X8 be regression-tested.
-- [ ] **T11: e2e is two tests wide.** The assertions are real (aria-pressed flip, name
-      cycling off→on→accent, playhead appear/clear, Space transport) but nothing covers
-      preset load, MUTATE, Euclid fill, SHARE/URL restore, localStorage, knob drag, mute,
-      STEPS/PROB/HUMAN or reverb.
+- [ ] **T11: e2e breadth remains incomplete.** The production suite is now 15 tests wide,
+      including axe, keyboard-grid/skip-link behavior, phone overflow/target sizing,
+      SHARE/URL restore, localStorage, mute, voice editing, banks and chaining. Preset
+      load, MUTATE, Euclid fill, knob drag, STEPS/PROB/HUMAN and reverb still need direct
+      coverage.
 - [ ] **T12: no coverage measurement or threshold in CI** for either language, and no
       `coverage` block in `vitest.config.ts`.
 
@@ -839,10 +870,10 @@ the pipeline pass. Only **T7** survives from here: `cmd/wasm/main.go` is `js && 
 `go test ./...` still never compiles it, and its arg marshalling and `unsafe` buffer
 reuse remain 0 % covered.
 
-**P4 — reach:** U7/U8 (mobile grid, with U21's scale lever), X14 (a11y enforcement first,
-so the rest stays fixed), X5/X17 (roving tabindex + skip link), X7/X8/X15 (playhead and
-live regions), X9 (targets), P12 (generated SW → closes P5/P8) and P13 (update UX),
-T10 (a DOM test environment — the precondition for testing any of the above).
+**P4 — reach:** In progress. ✔ U7/U8 (mobile grid), X14 (a11y enforcement), X5/X17
+(roving tabindex + skip link), X7/X8 (playhead and live regions) and X9/X10 (targets and
+indicator contrast) landed 2026-08-08. Next: X15 (pattern summary), P12 (generated SW →
+closes P5/P8), P13 (update UX) and T10 (a DOM component-test environment).
 
 **P5 — depth:** ✔ Done 2026-08-07, extended 2026-08-08 with G17: A13/A14 (one persistent state shape and owner →
 closed A4/A8/A9), A16 (engine-owned transport arbitration), G8 (per-cell probability +

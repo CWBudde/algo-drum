@@ -1,5 +1,9 @@
+import { useEffect, useRef } from "react";
 import { TRIGGER_CONDITION_LABELS } from "../engine/engineState";
 import { TRACKS, TRACK_INDEX } from "./patternView";
+
+/* eslint-disable jsx-a11y/no-noninteractive-element-interactions -- This
+   non-modal settings dialog owns Escape handling bubbled from its controls. */
 
 interface Props {
   track: number;
@@ -30,9 +34,13 @@ export default function CellInspector({
 }: Props) {
   const visualRow = TRACK_INDEX.indexOf(track as (typeof TRACK_INDEX)[number]);
   const name = TRACKS[visualRow] ?? `Track ${track + 1}`;
+  const firstControl = useRef<HTMLInputElement>(null);
+  useEffect(() => firstControl.current?.focus(), []);
+
   return (
     <aside
       className="dm-cell-inspector"
+      role="dialog"
       aria-label="Step trigger settings"
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
@@ -46,7 +54,7 @@ export default function CellInspector({
       <label>
         PROBABILITY
         <input
-          autoFocus
+          ref={firstControl}
           type="range"
           min={0}
           max={100}

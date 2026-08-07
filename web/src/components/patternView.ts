@@ -23,10 +23,47 @@ export interface PlayheadClock {
   clockStep: number;
 }
 
+export interface GridPosition {
+  row: number;
+  col: number;
+}
+
 export const STOPPED_PLAYHEAD: PlayheadClock = {
   masterStep: -1,
   clockStep: -1,
 };
+
+export function moveGridFocus(
+  position: GridPosition,
+  key: string,
+  wholeGrid: boolean,
+): GridPosition | null {
+  switch (key) {
+    case "ArrowLeft":
+      return { ...position, col: Math.max(0, position.col - 1) };
+    case "ArrowRight":
+      return {
+        ...position,
+        col: Math.min(STEP_CAPACITY - 1, position.col + 1),
+      };
+    case "ArrowUp":
+      return { ...position, row: Math.max(0, position.row - 1) };
+    case "ArrowDown":
+      return {
+        ...position,
+        row: Math.min(TRACKS.length - 1, position.row + 1),
+      };
+    case "Home":
+      return { row: wholeGrid ? 0 : position.row, col: 0 };
+    case "End":
+      return {
+        row: wholeGrid ? TRACKS.length - 1 : position.row,
+        col: STEP_CAPACITY - 1,
+      };
+    default:
+      return null;
+  }
+}
 
 // The engine reports the master playhead modulo stepCount. Preserve the
 // elapsed clock across that wrap so a 3-step track keeps moving 0,1,2 while a

@@ -234,6 +234,14 @@ export default function DrumMachine({ wasmLoaded }: Props) {
 
   return (
     <div className="dm-machine">
+      <a className="dm-skip-link" href="#dm-transport">
+        Skip to transport
+      </a>
+      <span className="dm-sr-only" role="status" aria-live="polite">
+        {wasmLoaded
+          ? `Audio engine ready. Transport ${transport}.`
+          : "Audio engine loading."}
+      </span>
       <header className="dm-header">
         <h1 className="dm-title">
           <span className="dm-title-algo">algo</span>

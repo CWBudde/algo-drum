@@ -1,6 +1,79 @@
 import { expect, test } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 
 import { PHYSICAL_TOM_PARAMS } from "../src/engine/voiceParams.generated";
+
+test("has no automatically detectable accessibility violations", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await expect(
+    page.getByRole("button", { name: "Play", exact: true }),
+  ).toBeEnabled({ timeout: 30_000 });
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});
+
+test("grid and transport are efficiently keyboard navigable", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await expect(
+    page.getByRole("button", { name: "Play", exact: true }),
+  ).toBeEnabled({ timeout: 30_000 });
+
+  const grid = page.getByRole("grid", { name: "Drum pattern" });
+  await expect(grid.locator(".dm-cell[tabindex='0']")).toHaveCount(1);
+
+  await grid
+    .getByRole("button", { name: "Cymbal step 1", exact: true })
+    .focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(
+    grid.getByRole("button", { name: "Cymbal step 2", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(
+    grid.getByRole("button", { name: "Perc step 2", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Control+End");
+  await expect(
+    grid.getByRole("button", { name: "Bass step 16", exact: true }),
+  ).toBeFocused();
+
+  await page.getByRole("link", { name: "Skip to transport" }).click();
+  await expect(page.locator("#dm-transport")).toBeFocused();
+});
+
+test("phone layout keeps pads usable inside a local scroll area", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("./");
+  await expect(
+    page.getByRole("button", { name: "Play", exact: true }),
+  ).toBeEnabled({ timeout: 30_000 });
+
+  const board = page.locator(".dm-board");
+  const sizes = await board.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+    pageWidth: document.documentElement.scrollWidth,
+    viewportWidth: document.documentElement.clientWidth,
+  }));
+  expect(sizes.scrollWidth).toBeGreaterThan(sizes.clientWidth);
+  expect(sizes.pageWidth).toBeLessThanOrEqual(sizes.viewportWidth);
+
+  const pad = await page
+    .getByRole("button", { name: "Cymbal step 1", exact: true })
+    .boundingBox();
+  const tap = await page
+    .getByRole("button", { name: "Tap tempo" })
+    .boundingBox();
+  expect(pad?.width).toBeGreaterThanOrEqual(30);
+  expect(tap?.height).toBeGreaterThanOrEqual(24);
+});
 
 // End-to-end smoke test against the production build: the page loads, the WASM
 // engine reports ready, a grid cell toggles, Play starts the playhead, and
@@ -25,7 +98,7 @@ test("loads, plays, and responds to input", async ({ page }) => {
   // Toggle a grid cell (mouse click also blurs it, freeing Space for the
   // transport). Use the highest new engine track so the seven-track WASM
   // bridge is covered; aria-pressed must flip off → on.
-  const cell = page.getByRole("button", { name: /^Perc step 1:/ });
+  const cell = page.getByRole("button", { name: "Perc step 1", exact: true });
   await expect(cell).toHaveAttribute("aria-pressed", "false");
   await cell.click();
   await expect(cell).toHaveAttribute("aria-pressed", "true");
@@ -75,9 +148,12 @@ test("stops and can retry after a ready worker crashes", async ({ page }) => {
   const play = page.getByRole("button", { name: "Play", exact: true });
   await expect(play).toBeEnabled({ timeout: 30_000 });
 
-  const retainedCell = page.getByRole("button", { name: /^Bass step 16:/ });
+  const retainedCell = page.getByRole("button", {
+    name: "Bass step 16",
+    exact: true,
+  });
   await retainedCell.click();
-  await expect(retainedCell).toHaveAccessibleName("Bass step 16: on");
+  await expect(retainedCell).toHaveAttribute("aria-pressed", "true");
 
   await play.click();
   await expect(
@@ -107,7 +183,7 @@ test("stops and can retry after a ready worker crashes", async ({ page }) => {
   // Retry keeps React's state and seeds the replacement engine from it. Let
   // that authoritative echo settle before checking the edit survived.
   await page.waitForTimeout(250);
-  await expect(retainedCell).toHaveAccessibleName("Bass step 16: on");
+  await expect(retainedCell).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".dm-cell[data-playhead]")).toHaveCount(0);
 });
 
@@ -122,13 +198,16 @@ test("cell edits survive the engine's authoritative pattern echo", async ({
   const play = page.getByRole("button", { name: "Play", exact: true });
   await expect(play).toBeEnabled({ timeout: 30_000 });
 
-  const cell = page.getByRole("button", { name: /^Snare step 5:/ });
-  await expect(cell).toHaveAccessibleName("Snare step 5: off");
+  const cell = page.getByRole("button", {
+    name: "Snare step 5",
+    exact: true,
+  });
+  await expect(cell).toHaveAttribute("aria-pressed", "false");
 
-  for (const state of ["on", "accent", "off"]) {
+  for (const state of ["true", "mixed", "false"]) {
     await cell.click();
     await page.waitForTimeout(150); // worker echo round-trip
-    await expect(cell).toHaveAccessibleName(`Snare step 5: ${state}`);
+    await expect(cell).toHaveAttribute("aria-pressed", state);
   }
 });
 
@@ -173,11 +252,14 @@ test.describe("engine load retry", () => {
     // The machine mounts while the engine loads, so an edit can exist only in
     // React and the bridge's pending command queue when the worker fails.
     const shell = page.locator(".app-machine");
-    const cell = page.getByRole("button", { name: /^Cymbal step 16:/ });
+    const cell = page.getByRole("button", {
+      name: "Cymbal step 16",
+      exact: true,
+    });
     await expect(shell).toBeVisible();
-    await expect(cell).toHaveAccessibleName("Cymbal step 16: off");
+    await expect(cell).toHaveAttribute("aria-pressed", "false");
     await cell.click();
-    await expect(cell).toHaveAccessibleName("Cymbal step 16: on");
+    await expect(cell).toHaveAttribute("aria-pressed", "true");
 
     // A DOM sentinel proves Retry kept the same mounted subtree rather than
     // reconstructing an equivalent-looking machine from persistence.
@@ -212,7 +294,7 @@ test.describe("engine load retry", () => {
     // Let setState + setCell flush and both authoritative state echoes settle.
     // The final snapshot must still contain the edit made before the failure.
     await page.waitForTimeout(250);
-    await expect(cell).toHaveAccessibleName("Cymbal step 16: on");
+    await expect(cell).toHaveAttribute("aria-pressed", "true");
   });
 });
 
@@ -493,27 +575,30 @@ test("pattern banks copy, diverge, and persist independently", async ({
 
   const bankA = page.getByRole("button", { name: "A", exact: true });
   const bankB = page.getByRole("button", { name: "B", exact: true });
-  const bass = page.getByRole("button", { name: /^Bass step 1:/ });
+  const bass = page.getByRole("button", {
+    name: "Bass step 1",
+    exact: true,
+  });
   await bass.click();
-  await expect(bass).toHaveAccessibleName("Bass step 1: on");
+  await expect(bass).toHaveAttribute("aria-pressed", "true");
 
   await page.getByText("COPY", { exact: true }).click();
   await page.getByRole("button", { name: "Copy bank A to bank B" }).click();
   await bankB.click();
-  await expect(bass).toHaveAccessibleName("Bass step 1: on");
+  await expect(bass).toHaveAttribute("aria-pressed", "true");
   await bass.click();
-  await expect(bass).toHaveAccessibleName("Bass step 1: accent");
+  await expect(bass).toHaveAttribute("aria-pressed", "mixed");
 
   await bankA.click();
-  await expect(bass).toHaveAccessibleName("Bass step 1: on");
+  await expect(bass).toHaveAttribute("aria-pressed", "true");
   await page.waitForTimeout(500);
   await page.reload();
   await expect(
     page.getByRole("button", { name: "Play", exact: true }),
   ).toBeEnabled({ timeout: 30_000 });
-  await expect(bass).toHaveAccessibleName("Bass step 1: on");
+  await expect(bass).toHaveAttribute("aria-pressed", "true");
   await bankB.click();
-  await expect(bass).toHaveAccessibleName("Bass step 1: accent");
+  await expect(bass).toHaveAttribute("aria-pressed", "mixed");
 });
 
 test("per-cell humanize and ratchet survive a share link", async ({ page }) => {
@@ -522,7 +607,10 @@ test("per-cell humanize and ratchet survive a share link", async ({ page }) => {
     page.getByRole("button", { name: "Play", exact: true }),
   ).toBeEnabled({ timeout: 30_000 });
 
-  const cell = page.getByRole("button", { name: /^Snare step 5:/ });
+  const cell = page.getByRole("button", {
+    name: "Snare step 5",
+    exact: true,
+  });
   await cell.focus();
   await page.keyboard.press("F2");
   const humanize = page.getByRole("slider", {

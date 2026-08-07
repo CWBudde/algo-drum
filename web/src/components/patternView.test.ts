@@ -6,6 +6,7 @@ import {
   cycleVelocity,
   fillEuclidTrack,
   flatToVisual,
+  moveGridFocus,
   nudgeVelocity,
   patternsEqual,
   velocityFromPointer,
@@ -24,6 +25,37 @@ describe("pattern view helpers", () => {
     expect(velocityName(0.7)).toBe("on");
     expect(velocityName(0.35)).toBe("35%");
     expect(velocityName(1)).toBe("accent");
+  });
+
+  it("moves grid focus by cell, row, and row or grid edge", () => {
+    expect(moveGridFocus({ row: 3, col: 7 }, "ArrowLeft", false)).toEqual({
+      row: 3,
+      col: 6,
+    });
+    expect(moveGridFocus({ row: 3, col: 7 }, "ArrowDown", false)).toEqual({
+      row: 4,
+      col: 7,
+    });
+    expect(moveGridFocus({ row: 3, col: 7 }, "Home", false)).toEqual({
+      row: 3,
+      col: 0,
+    });
+    expect(moveGridFocus({ row: 3, col: 7 }, "End", true)).toEqual({
+      row: 6,
+      col: 15,
+    });
+  });
+
+  it("keeps grid focus inside the pattern", () => {
+    expect(moveGridFocus({ row: 0, col: 0 }, "ArrowLeft", false)).toEqual({
+      row: 0,
+      col: 0,
+    });
+    expect(moveGridFocus({ row: 6, col: 15 }, "ArrowDown", false)).toEqual({
+      row: 6,
+      col: 15,
+    });
+    expect(moveGridFocus({ row: 0, col: 0 }, "PageDown", false)).toBeNull();
   });
 
   it("maps engine-major tracks into the reversed visual order", () => {

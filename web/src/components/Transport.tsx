@@ -44,7 +44,7 @@ export default function Transport({
   const starting = transport === "starting";
   const playing = transport === "playing";
   return (
-    <footer className="dm-transport">
+    <footer id="dm-transport" className="dm-transport" tabIndex={-1}>
       <div className="dm-transport-buttons">
         <button
           type="button"

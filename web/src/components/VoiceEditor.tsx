@@ -5,6 +5,10 @@ import { PHYSICAL_TOM_PRESETS, presetValues } from "../algo/physicalTomPresets";
 import type { TomModel } from "../engine/tomModel";
 import "./VoiceEditor.css";
 
+/* eslint-disable jsx-a11y/no-noninteractive-element-interactions -- The native
+   modal dialog intentionally owns Escape arbitration and backdrop pointer
+   handling; those events bubble from its interactive descendants. */
+
 const AMBER = "#C87828";
 const BLUE = "#6D95C8";
 
@@ -42,6 +46,7 @@ export default function VoiceEditor({
   onRequestClose,
 }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   const physicalInfoId = useId();
   const presetId = useId();
@@ -95,6 +100,7 @@ export default function VoiceEditor({
     if (!dialog || dialog.open) return;
 
     dialog.showModal();
+    closeButton.current?.focus();
 
     return () => {
       if (dialog.open) dialog.close();
@@ -172,9 +178,9 @@ export default function VoiceEditor({
           {name} voice
         </h2>
         <button
+          ref={closeButton}
           type="button"
           className="dm-voice-close"
-          autoFocus
           aria-label={`Close ${name} voice settings`}
           onClick={onRequestClose}
         >

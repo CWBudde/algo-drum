@@ -45,3 +45,11 @@
   pointer-events: none;
   z-index: 10;
 }
+
+/* Focus persists across keyboard and wheel changes, keeping the current value
+   visible after either interaction without adding height to the dense mixer
+   rows. Pointer-down focuses the knob too, so this also replaces the former
+   drag-only visibility rule. */
+.knob:not(:focus-within) .knob-readout {
+  display: none;
+}

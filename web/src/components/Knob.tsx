@@ -22,7 +22,7 @@ interface KnobProps {
   size?: number; // diameter in px, default 48
   color?: string;
   /**
-   * Show the floating drag readout and the hover tooltip. Turn off where the
+   * Show the focused-interaction readout and hover tooltip. Turn off where the
    * value is already printed next to the knob (the voice editor), so the same
    * number is not shown twice.
    */
@@ -64,6 +64,12 @@ export default function Knob({
     startY: number;
     startVal: number;
   } | null>(null);
+  // The wheel listener is deliberately installed once: these refs keep it on
+  // the latest controlled value and callback without listener churn.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
   const [dragging, setDragging] = useState(false);
 
   // Unique per-instance ID for SVG gradient references — labels repeat
@@ -102,6 +108,10 @@ export default function Knob({
     };
     const onUp = (e: PointerEvent) => {
       if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return;
+      const svg = svgRef.current;
+      if (svg?.hasPointerCapture(e.pointerId)) {
+        svg.releasePointerCapture(e.pointerId);
+      }
       setDragging(false);
       dragRef.current = null;
     };
@@ -115,17 +125,23 @@ export default function Knob({
     };
   }, [dragging, onChange]);
 
-  // Wheel support needs a non-passive listener to preventDefault scrolling.
+  // Wheel support needs a non-passive listener to preventDefault scrolling,
+  // but it only consumes the event after an intentional focus interaction.
+  // Merely scrolling the page with the pointer over a knob remains ordinary
+  // page scrolling.
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
     const onWheel = (e: WheelEvent) => {
+      if (document.activeElement !== svg) return;
       e.preventDefault();
-      onChange(wheelValue(value, e.deltaY));
+      const next = wheelValue(valueRef.current, e.deltaY);
+      valueRef.current = next;
+      onChangeRef.current(next);
     };
     svg.addEventListener("wheel", onWheel, { passive: false });
     return () => svg.removeEventListener("wheel", onWheel);
-  }, [value, onChange]);
+  }, []);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<SVGSVGElement>) => {
@@ -160,9 +176,7 @@ export default function Knob({
 
   return (
     <div className="knob">
-      {showReadout && dragging && (
-        <span className="knob-readout">{readout}</span>
-      )}
+      {showReadout && <span className="knob-readout">{readout}</span>}
       <svg
         ref={svgRef}
         width={size}

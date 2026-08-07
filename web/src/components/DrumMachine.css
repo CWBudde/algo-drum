@@ -1,6 +1,18 @@
 /* algo-drum machine panel — skeuomorphic hardware look, all DOM/CSS.
    Colors and depths mirror the original canvas rendering. */
 
+.dm-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .dm-machine {
   --dm-led: #c87828;
   --dm-led-dim: rgba(140, 90, 30, 0.18);
@@ -8,7 +20,7 @@
   --dm-text: rgba(208, 199, 180, 0.86);
 
   width: min(100%, 1000px);
-  padding: 20px 28px 26px;
+  padding: 14px 14px 18px;
   border-radius: 22px;
   background: linear-gradient(135deg, #2e2e3c 0%, #212130 32%, #141420 100%);
   border: 1px solid rgba(0, 0, 0, 0.75);
@@ -26,15 +38,21 @@
 
 .dm-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   margin-bottom: 18px;
+}
+
+.dm-header .dm-algo {
+  flex-basis: 100%;
+  flex-wrap: wrap;
 }
 
 .dm-title {
   flex: none;
   margin: 0;
-  font-size: 21px;
+  font-size: 18px;
   font-weight: 600;
   letter-spacing: 0.01em;
 }
@@ -75,10 +93,18 @@
 .dm-board {
   position: relative;
   display: grid;
-  grid-template-columns: auto repeat(16, minmax(0, 1fr)) 26px auto;
+  grid-template-columns:
+    max-content repeat(16, minmax(30px, 1fr))
+    12px max-content;
   grid-auto-rows: min-content;
   column-gap: 2px;
   align-items: center;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: rgba(200, 140, 40, 0.7) rgba(8, 8, 14, 0.7);
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
 }
 
 .dm-screen {
@@ -98,8 +124,8 @@
 }
 
 .dm-track-label {
-  padding-right: 20px;
-  font-size: 11px;
+  padding-right: 10px;
+  font-size: 9px;
   font-weight: 500;
   letter-spacing: 0.04em;
   color: var(--dm-text);
@@ -128,8 +154,8 @@
   /* recessed hole */
   content: "";
   position: absolute;
-  inset: 7px;
-  border-radius: 7px;
+  inset: 3px;
+  border-radius: 5px;
   background: #06060c;
   box-shadow:
     inset 0 8px 10px -5px rgba(0, 0, 0, 0.7),
@@ -137,20 +163,23 @@
     inset 0 -4px 6px -4px rgba(255, 255, 255, 0.05);
 }
 
-.dm-cell[data-bar-start]:not(:first-of-type)::after {
+.dm-cell[data-bar-start]:not([data-first-step])::after {
   content: "";
   position: absolute;
   left: -2px;
   top: 8%;
   bottom: 8%;
   width: 2px;
-  background: rgba(180, 160, 130, 0.08);
+  /* 3.48:1 against the screen: this line is an orientation cue, not decor. */
+  background: #6e6556;
 }
 
-/* Alternate 4-step bar groups get a subtle tint for orientation at 16 steps
-   (overridden by the stronger playhead highlight below). */
+/* Mark alternate four-step groups with contrast-safe rails instead of a
+   low-contrast full-cell tint, which competed with active pads. */
 .dm-cell[data-bar-odd] {
-  background: rgba(200, 180, 150, 0.035);
+  box-shadow:
+    inset 0 2px 0 #6e6556,
+    inset 0 -2px 0 #6e6556;
 }
 
 /* Cells beyond the active pattern length: dimmed but still editable */
@@ -214,7 +243,8 @@
 
 /* Playhead column */
 .dm-cell[data-playhead] {
-  background: rgba(200, 140, 40, 0.07);
+  /* 3.07:1 against #08080e, so an empty column remains easy to follow. */
+  background: #7b571e;
 }
 
 .dm-cell[data-playhead]::before {
@@ -222,7 +252,7 @@
     inset 0 8px 10px -5px rgba(0, 0, 0, 0.7),
     inset 6px 0 8px -5px rgba(0, 0, 0, 0.4),
     inset 0 -4px 6px -4px rgba(255, 255, 255, 0.05),
-    inset 0 2px 0 rgba(200, 140, 40, 0.4);
+    inset 0 3px 0 #c88c28;
 }
 
 .dm-cell[data-playhead][data-active] .dm-led {
@@ -250,7 +280,7 @@
 .dm-track-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   padding-left: 2px;
 }
 
@@ -259,7 +289,7 @@
 }
 
 .dm-track-length {
-  width: 30px;
+  width: 27px;
   height: 26px;
   padding: 0 2px;
   border: 1px solid rgba(0, 0, 0, 0.7);
@@ -281,6 +311,7 @@
 .dm-cell-inspector {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 14px;
   min-height: 34px;
@@ -366,8 +397,8 @@
 /* Opens the per-voice synthesis editor (VoiceEditor.tsx). Same 26px footprint
    and optical offset as .dm-mute, brushed-metal face borrowed from .dm-tap. */
 .dm-voice-open {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -412,7 +443,8 @@
 .dm-transport {
   display: flex;
   align-items: flex-start;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 14px;
   margin-top: 28px;
   padding: 0 4px;
 }
@@ -430,6 +462,7 @@
 }
 
 .dm-tap {
+  min-height: 24px;
   padding: 3px 10px;
   border-radius: 5px;
   border: none;
@@ -569,61 +602,118 @@
 
 /* ── Small screens ──────────────────────────────────────────────────────── */
 
-@media (max-width: 620px) {
+@media (min-width: 621px) {
   .dm-machine {
-    padding: 14px 14px 18px;
+    padding: 20px 28px 26px;
   }
 
   .dm-header {
-    gap: 6px;
+    flex-wrap: nowrap;
+    gap: 10px;
+  }
+
+  .dm-header .dm-algo {
+    flex-basis: auto;
+    flex-wrap: nowrap;
   }
 
   .dm-title {
-    font-size: 18px;
+    font-size: 21px;
   }
 
   .dm-board {
-    grid-template-columns: auto repeat(16, minmax(0, 1fr)) 12px auto;
+    grid-template-columns:
+      max-content repeat(16, minmax(30px, 1fr))
+      26px max-content;
   }
 
   /* 16 columns leave little room per cell — shrink the recess margin */
   .dm-cell::before {
-    inset: 3px;
-    border-radius: 5px;
+    inset: 7px;
+    border-radius: 7px;
   }
 
   .dm-track-label {
-    padding-right: 10px;
-    font-size: 9px;
+    padding-right: 20px;
+    font-size: 11px;
   }
 
   /* A fourth control would widen the strip and steal width from an already
      tight 16-cell grid (PLAN U7), so shrink instead of dropping anything. */
   .dm-track-controls {
-    gap: 4px;
+    gap: 8px;
   }
 
   .dm-track-length {
-    width: 27px;
-  }
-
-  .dm-cell-inspector {
-    flex-wrap: wrap;
+    width: 30px;
   }
 
   .dm-voice-open {
-    width: 22px;
-    height: 22px;
-    margin-bottom: 11px;
+    width: 26px;
+    height: 26px;
   }
 
   .dm-transport {
-    flex-wrap: wrap;
-    gap: 14px;
+    flex-wrap: nowrap;
+    gap: 20px;
   }
 }
 
 /* ── Reduced motion ─────────────────────────────────────────────────────── */
+
+/* Coarse pointers benefit from comfortably tappable controls. The grid is
+   already horizontally scrollable, so larger pads never collapse the layout. */
+@media (pointer: coarse) {
+  .dm-board {
+    grid-template-columns:
+      max-content repeat(16, minmax(44px, 1fr))
+      12px max-content;
+  }
+
+  .dm-cell {
+    min-width: 44px;
+    min-height: 44px;
+    aspect-ratio: 1;
+  }
+
+  .dm-machine :where(button, select, summary) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .dm-machine input:not([type="range"]) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .dm-machine input[type="range"],
+  .dm-machine .knob svg {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .dm-header .dm-algo {
+    flex-wrap: wrap;
+  }
+}
+
+/* Keyboard shortcut around the pattern editor to the primary transport. */
+.dm-skip-link {
+  position: fixed;
+  z-index: 1000;
+  top: 8px;
+  left: 8px;
+  padding: 10px 14px;
+  border: 2px solid #c88c28;
+  border-radius: 6px;
+  background: #08080e;
+  color: #f2e6cf;
+  transform: translateY(calc(-100% - 10px));
+}
+
+.dm-skip-link:focus-visible {
+  transform: none;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .dm-machine *,

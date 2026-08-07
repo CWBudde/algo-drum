@@ -32,6 +32,7 @@ export default function AlgoPanel({
 }: Props) {
   const [presetIndex, setPresetIndex] = useState(-1);
   const [copied, setCopied] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
   const copiedTimer = useRef<number | null>(null);
   const [euclidTrack, setEuclidTrack] = useState(0);
   const [euclidPulses, setEuclidPulses] = useState(4);
@@ -48,7 +49,11 @@ export default function AlgoPanel({
     (value: string) => {
       const idx = Number(value);
       setPresetIndex(idx);
-      if (idx >= 0 && PRESETS[idx]) onApplyPattern(presetToFlat(PRESETS[idx]));
+      const preset = PRESETS[idx];
+      if (idx >= 0 && preset) {
+        onApplyPattern(presetToFlat(preset));
+        setAnnouncement(`${preset.name} preset loaded.`);
+      }
     },
     [onApplyPattern],
   );
@@ -56,11 +61,13 @@ export default function AlgoPanel({
   const handleMutate = useCallback(() => {
     setPresetIndex(-1);
     onApplyPattern(mutate(pattern, { stepCount }));
+    setAnnouncement("Pattern mutated.");
   }, [onApplyPattern, pattern, stepCount]);
 
   const handleClear = useCallback(() => {
     setPresetIndex(-1);
     onApplyPattern(new Array<number>(pattern.length).fill(0));
+    setAnnouncement("Pattern cleared.");
   }, [onApplyPattern, pattern.length]);
 
   const handleEuclid = useCallback(() => {
@@ -75,6 +82,10 @@ export default function AlgoPanel({
         euclidTrack,
         euclid(pulses, stepCount, rotation),
       ),
+    );
+    const visualRow = TRACK_INDEX.findIndex((track) => track === euclidTrack);
+    setAnnouncement(
+      `${TRACKS[visualRow] ?? "Track"} filled with ${pulses} Euclidean hits.`,
     );
   }, [
     euclidPulses,
@@ -194,7 +205,10 @@ export default function AlgoPanel({
           type="button"
           className="dm-algo-btn dm-history-btn"
           disabled={disabled || !canUndo}
-          onClick={onUndo}
+          onClick={() => {
+            onUndo();
+            setAnnouncement("Pattern action undone.");
+          }}
           aria-label="Undo pattern action"
           title="Undo pattern action (Ctrl/Cmd+Z)"
         >
@@ -204,7 +218,10 @@ export default function AlgoPanel({
           type="button"
           className="dm-algo-btn dm-history-btn"
           disabled={disabled || !canRedo}
-          onClick={onRedo}
+          onClick={() => {
+            onRedo();
+            setAnnouncement("Pattern action redone.");
+          }}
           aria-label="Redo pattern action"
           title="Redo pattern action (Ctrl/Cmd+Shift+Z)"
         >
@@ -222,7 +239,7 @@ export default function AlgoPanel({
         {copied ? "COPIED ✓" : "SHARE"}
       </button>
       <span className="dm-sr-only" role="status" aria-live="polite">
-        {copied ? "Link copied to clipboard" : ""}
+        {copied ? "Link copied to clipboard" : announcement}
       </span>
     </section>
   );
