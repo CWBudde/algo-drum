@@ -11,9 +11,10 @@ import (
 const (
 	TrackCount = 7
 
-	// MaxSteps is the pattern capacity; the active length is set at runtime
-	// via SetStepCount (1–MaxSteps). Steps are 16th notes, so 16 steps span
-	// one 4/4 bar.
+	// MaxSteps is the pattern capacity. SetStepCount sets the master/displayed
+	// loop and initializes every track to that length; SetTrackLength then lets
+	// tracks diverge for polymeter. Steps are 16th notes, so 16 steps span one
+	// 4/4 bar.
 	MaxSteps = 16
 
 	// mixHeadroom scales the summed voice mix before the master chain. It does
@@ -103,6 +104,23 @@ type pendingTrigger struct {
 	velocity  float64 // humanized velocity to trigger at
 }
 
+// TriggerCondition controls whether an active cell is eligible on a given
+// pass through its track's independent loop. The numeric values are part of
+// the EngineState/WASM wire contract; append new values rather than reordering
+// these constants.
+type TriggerCondition uint8
+
+const (
+	TriggerAlways TriggerCondition = iota
+	TriggerEvery2
+	TriggerEvery3
+	TriggerEvery4
+	TriggerFirstLoop
+	TriggerFillOnly
+	TriggerNotPreviousFired
+	triggerConditionCount
+)
+
 type transportState uint8
 
 const (
@@ -145,12 +163,14 @@ type Engine struct {
 	bpm               float64
 	swing             float64 // 0.0 = no swing, 0.5 = full shuffle
 
-	pattern [TrackCount][MaxSteps]float64 // per-cell velocity in [0, 1], 0 = off
-	volumes [TrackCount]float64           // targets set by SetVolume
-	muted   [TrackCount]bool              // mutes do not overwrite the stored volumes
-	liveVol [TrackCount]float64           // smoothed volumes applied in Render
-	volCoef float64                       // per-sample one-pole ramp coefficient
-	decays  [TrackCount]float64
+	pattern         [TrackCount][MaxSteps]float64 // per-cell velocity in [0, 1], 0 = off
+	cellProbability [TrackCount][MaxSteps]float64 // multiplied by the global probability
+	cellCondition   [TrackCount][MaxSteps]TriggerCondition
+	volumes         [TrackCount]float64 // targets set by SetVolume
+	muted           [TrackCount]bool    // mutes do not overwrite the stored volumes
+	liveVol         [TrackCount]float64 // smoothed volumes applied in Render
+	volCoef         float64             // per-sample one-pole ramp coefficient
+	decays          [TrackCount]float64
 
 	voices [TrackCount]Voice
 
@@ -163,15 +183,21 @@ type Engine struct {
 	// model allocations.
 	physicalTomParams [TrackCount][]float64
 
-	stepCount           int // active pattern length in [1, MaxSteps]
+	stepCount           int // master/displayed loop length in [1, MaxSteps]
 	currentStep         int
+	clockStep           uint64 // absolute step clock since the last Stop/master reset
 	stepPhase           uint64 // elapsed Q32.32 samples in the current step
 	currentStepDuration uint64 // latched Q32.32 duration of the current step
 	stepDuration        [MaxSteps]uint64
 	stepTriggered       bool
+	trackLength         [TrackCount]int
+	trackStep           [TrackCount]int
+	trackPass           [TrackCount]uint64
+	previousFired       [TrackCount]bool
 
 	prob        float64 // per-hit trigger probability in [0, 1]
 	humanize    float64 // timing/velocity randomization amount in [0, 1]
+	fillMode    bool    // enables cells carrying TriggerFillOnly
 	rng         *rand.Rand
 	pending     [maxPending]pendingTrigger
 	pendingMask uint32
@@ -211,6 +237,11 @@ func NewEngine(sr float64) *Engine {
 		e.volumes[i] = 1.0
 		e.liveVol[i] = 1.0
 		e.decays[i] = 0.5
+		e.trackLength[i] = MaxSteps
+
+		for step := range MaxSteps {
+			e.cellProbability[i][step] = 1
+		}
 	}
 
 	e.voices[0] = NewBassDrum(sr)
@@ -379,9 +410,16 @@ func (e *Engine) SetRunning(running bool) {
 
 	e.setTransport(transportStopped)
 	e.currentStep = 0
+	e.clockStep = 0
 	e.stepPhase = 0
 	e.currentStepDuration = e.stepDuration[0]
 	e.stepTriggered = false
+
+	for track := range TrackCount {
+		e.trackStep[track] = 0
+		e.trackPass[track] = 0
+		e.previousFired[track] = false
+	}
 
 	// Drop any humanize-delayed hits so they don't fire after restart.
 	e.pendingMask = 0
@@ -396,9 +434,11 @@ func (e *Engine) Pause() {
 	}
 }
 
-// SetProbability sets the chance each scheduled hit actually fires, clamped to
-// [0, 1]. 1 = every hit plays (default); 0 = silence. A non-finite value is
-// rejected and leaves the current probability unchanged.
+// SetProbability sets the global probability multiplier, clamped to [0, 1].
+// Each hit's effective chance is this value times its CellProbability. A
+// global value of 1 leaves cell probabilities unscaled (the default), while 0
+// silences every sequenced hit. A non-finite value is rejected and leaves the
+// current probability unchanged.
 func (e *Engine) SetProbability(p float64) {
 	prob, ok := validFloat(p, 0, 1)
 	if !ok {
@@ -445,9 +485,11 @@ func (e *Engine) SetSwing(swing float64) {
 	e.recomputeStepDurations()
 }
 
-// SetStepCount sets the active pattern length, clamped to [1, MaxSteps].
-// Cells beyond the new length keep their contents (see SetCell). Step durations
-// are recomputed because swing pairs steps within the active loop.
+// SetStepCount sets the master/displayed loop length, clamped to [1, MaxSteps],
+// and applies it to every track as the backwards-compatible global-length
+// operation. Call SetTrackLength afterward to create a polymeter. Cells beyond
+// a new length keep their contents (see SetCell). Step durations are recomputed
+// because swing pairs steps within the master loop.
 func (e *Engine) SetStepCount(count int) {
 	if count < 1 {
 		count = 1
@@ -468,7 +510,51 @@ func (e *Engine) SetStepCount(count int) {
 		e.currentStepDuration = 0
 	}
 
+	e.clockStep = uint64(e.currentStep)
+
+	// The legacy master-length control is also the quick way to bring a
+	// polymeter back into phase: all track loops adopt the master length and
+	// align to its current step. Independent edits made afterward continue
+	// across master wraps in SetTrackLength's polymetric mode.
+	for track := range TrackCount {
+		e.trackLength[track] = count
+		e.trackStep[track] = e.currentStep
+		e.trackPass[track] = 0
+		e.previousFired[track] = false
+	}
+
 	e.recomputeStepDurations()
+}
+
+// SetTrackLength sets one track's independent loop length, clamped to
+// [1, MaxSteps]. The master StepCount continues to define the displayed
+// playhead and swing loop; track playheads advance continuously across master
+// wraps, which is what makes non-dividing lengths a true polymeter.
+func (e *Engine) SetTrackLength(track, count int) {
+	if !validTrack(track) {
+		return
+	}
+
+	e.setTrackLength(track, count)
+}
+
+func (e *Engine) setTrackLength(track, count int) {
+	if count < 1 {
+		count = 1
+	} else if count > MaxSteps {
+		count = MaxSteps
+	}
+
+	if e.trackLength[track] == count {
+		return
+	}
+
+	e.trackLength[track] = count
+	e.trackStep[track] = int(e.clockStep % uint64(count))
+	// A length edit defines a new loop, so conditional-pass history starts
+	// over instead of inheriting a pass number from a different cycle shape.
+	e.trackPass[track] = 0
+	e.previousFired[track] = false
 }
 
 // SetCell sets a cell's velocity, clamped to [0, 1] (0 = off). Steps are
@@ -490,6 +576,39 @@ func (e *Engine) SetCell(track, step int, velocity float64) {
 	}
 
 	e.pattern[track][step] = vel
+}
+
+// SetCellProbability sets one cell's probability multiplier. It is combined
+// with the global Probability control at trigger time. Defaults are 1, so old
+// patterns and the mechanical render path remain sample-exact.
+func (e *Engine) SetCellProbability(track, step int, probability float64) {
+	if !validTrack(track) || !validStep(step) {
+		return
+	}
+
+	value, ok := validFloat(probability, 0, 1)
+	if !ok {
+		return
+	}
+
+	e.cellProbability[track][step] = value
+}
+
+// SetCellCondition sets one cell's loop/fill condition. Unknown numeric codes
+// are rejected so persisted state cannot silently acquire different semantics.
+func (e *Engine) SetCellCondition(track, step int, condition TriggerCondition) {
+	if !validTrack(track) || !validStep(step) || condition >= triggerConditionCount {
+		return
+	}
+
+	e.cellCondition[track][step] = condition
+}
+
+// SetFillMode enables or disables cells marked TriggerFillOnly. It is semantic
+// configuration state rather than transport state so snapshots and shares can
+// reproduce what the engine will play.
+func (e *Engine) SetFillMode(enabled bool) {
+	e.fillMode = enabled
 }
 
 const PatternSize = TrackCount * MaxSteps
@@ -819,16 +938,29 @@ func (e *Engine) TransportSnapshot() TransportSnapshot {
 // current step, applying probability and humanize.
 func (e *Engine) triggerStep() {
 	for t := range e.voices {
-		vel := e.pattern[t][e.currentStep]
+		step := e.trackStep[t]
+		vel := e.pattern[t][step]
+
 		if vel <= 0 {
+			e.previousFired[t] = false
 			continue
 		}
 
-		// Probability gate: drop the hit with chance 1-prob. At prob=1 the
-		// rng is left untouched so mechanical renders stay deterministic.
-		if e.prob < 1 && e.rng.Float64() >= e.prob {
+		if !e.conditionAllows(t, step) {
+			e.previousFired[t] = false
 			continue
 		}
+
+		// The global knob remains a master probability while the cell value
+		// supplies local variation. At the all-1 defaults the RNG is left
+		// untouched, preserving the procedural render digests.
+		probability := e.prob * e.cellProbability[t][step]
+		if probability < 1 && e.rng.Float64() >= probability {
+			e.previousFired[t] = false
+			continue
+		}
+
+		e.previousFired[t] = true
 
 		if e.humanize <= 0 {
 			e.voices[t].Trigger(vel)
@@ -846,6 +978,27 @@ func (e *Engine) triggerStep() {
 		}
 
 		e.schedule(t, vel, delay)
+	}
+}
+
+func (e *Engine) conditionAllows(track, step int) bool {
+	switch e.cellCondition[track][step] {
+	case TriggerAlways:
+		return true
+	case TriggerEvery2:
+		return (e.trackPass[track]+1)%2 == 0
+	case TriggerEvery3:
+		return (e.trackPass[track]+1)%3 == 0
+	case TriggerEvery4:
+		return (e.trackPass[track]+1)%4 == 0
+	case TriggerFirstLoop:
+		return e.trackPass[track] == 0
+	case TriggerFillOnly:
+		return e.fillMode
+	case TriggerNotPreviousFired:
+		return !e.previousFired[track]
+	default:
+		return false
 	}
 }
 
@@ -901,8 +1054,18 @@ func (e *Engine) Render(buf []float32) {
 			e.stepPhase += stepPhaseUnit
 			if e.stepPhase >= e.currentStepDuration {
 				e.stepPhase -= e.currentStepDuration
+				e.clockStep++
 				e.currentStep = (e.currentStep + 1) % e.stepCount
 				e.currentStepDuration = e.stepDuration[e.currentStep]
+
+				for track := range TrackCount {
+					e.trackStep[track]++
+					if e.trackStep[track] >= e.trackLength[track] {
+						e.trackStep[track] = 0
+						e.trackPass[track]++
+					}
+				}
+
 				e.stepTriggered = false
 			}
 

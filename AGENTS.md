@@ -98,14 +98,14 @@ internal/drum/assert.go   — assertValid(): a no-op in shipped builds; `-tags d
 cmd/gen-voiceparams/      — Generates web/src/engine/voiceParams.generated.ts from params.go (`just gen-params`; CI diffs it)
 internal/drum/*_test.go   — Go unit tests: sequencing, clamping, bit-exact render determinism, per-voice envelopes
 internal/drum/physical_tom.go — Adapter wrapping algo-tom's physical.DoubleHead as a Voice; the model itself lives in github.com/cwbudde/algo-tom → "The physical Tom voice"
-web/src/engine/engineState.ts — Canonical semantic EngineState shape shared by the bridge, React reducer and persistence; all tracks are engine-major
+web/src/engine/engineState.ts — Canonical semantic EngineState shape shared by the bridge, React reducer and persistence; includes velocity/probability/condition grids and per-track lengths, all engine-major
 web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands, exposes authoritative configuration/transport snapshots and dispose()
 web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; gates the load on the engine's protocol version and method list, renders audio chunks and echoes the complete authoritative state after every configuration edit
 web/src/engine/stateMirror.ts — Reconciles full engine snapshots with in-flight optimistic UI edits (Go engine = single source of truth)
 web/src/engine/voiceParams.ts   — Curve renderer + readout formatting over voiceParams.generated.ts (the committed mirror of internal/drum/params.go)
 web/public/worklet.js         — AudioWorkletProcessor: consumes chunks, reports the audible engine transport snapshot
-web/src/components/DrumMachine.tsx — Main UI: 7×16 step grid (DOM/CSS; clicking a cell cycles off → on → accent) mirroring the engine-owned pattern, transport (play/pause/stop, tempo + TAP, swing, STEPS, PROB, HUMAN, reverb), per-track volume/decay knobs + mute LEDs + a per-voice editor button; persistence/share wiring
-web/src/components/AlgoPanel.tsx    — Algorithmic tools panel: preset selector, CLEAR, MUTATE, per-track Euclidean fill (E(k,n) + rotation), SHARE (copy link)
+web/src/components/DrumMachine.tsx — Main UI shell over StepGrid/TrackStrip/Transport: continuous velocity, per-cell probability/conditions, polymetric lengths, Fill mode, voice editing and persistence/share wiring
+web/src/components/AlgoPanel.tsx    — Algorithmic tools panel: preset selector, CLEAR, MUTATE, per-track Euclidean fill (E(k,n) + rotation), undo/redo and SHARE (copy link)
 web/src/components/VoiceEditor.tsx — Per-voice synthesis editor: native <dialog> modal of knobs driven by the generated parameter table, plus AUDITION and RESET
 web/src/components/Knob.tsx        — Reusable rotary knob (SVG; drag, wheel, and keyboard accessible)
 web/src/components/knobMath.ts     — Pure knob math extracted from Knob.tsx: value↔angle, drag/wheel/key deltas (unit-tested without a DOM)
@@ -113,7 +113,7 @@ web/src/components/ErrorBoundary.tsx — App-wide React error boundary; a render
 web/src/algo/euclid.ts     — Pure Bjorklund/Euclidean E(pulses, steps) rhythm generator with rotation
 web/src/algo/mutate.ts     — Pure musical random-walk mutation of a flat pattern
 web/src/algo/presets.ts    — Classic 16-step preset patterns (rock, house, breakbeat, hip-hop, techno, funk) + Clear
-web/src/algo/persistence.ts — Pure versioned EngineState encode/decode → base64url (v14 is semantic + engine-major; v1–v13 still decode); localStorage + URL-hash glue
+web/src/algo/persistence.ts — Pure versioned EngineState encode/decode → base64url (v15 appends byte-precision velocities, cell probability/conditions and track lengths; v1–v14 still decode); localStorage + URL-hash glue
 web/src/algo/pattern.ts    — Shared pattern constants (dims, velocities, flat-index helper) for the algo modules
 web/src/App.tsx           — Root: loads WASM on mount, renders DrumMachine inside the ErrorBoundary, shows a retryable fault panel if the engine fails
 web/src/main.tsx          — Browser entry: mounts App and registers the service worker (production builds only)
@@ -155,8 +155,12 @@ UI displays Cymbal, Percussion, Tom 2, Tom, Hi-Hat, Snare, Bass from top to bott
 | `pause()`                      | Freeze sequencer time and pending hits; active voice/effect tails keep ringing     |
 | `setTempo(bpm)`                | Set tempo in BPM (clamped to 30–300)                                               |
 | `setSwing(0–0.5)`              | Set swing amount (0.5 = full shuffle)                                              |
-| `setStepCount(n)`              | Set active pattern length (clamped to 1–16); steps are 16th notes                  |
+| `setStepCount(n)`              | Set master length and reset every track length to it (clamped to 1–16)             |
 | `setCell(track, step, 0–1)`    | Set cell velocity (0 = off; UI uses 0.7 = normal, 1.0 = accent)                    |
+| `setCellProbability(t,s,0–1)`  | Set one cell's probability multiplier                                              |
+| `setCellCondition(t,s,0–6)`    | Set one cell's always/loop/fill/previous-step condition                            |
+| `setTrackLength(track,n)`      | Set one track's independent loop length (clamped to 1–16)                          |
+| `setFillMode(bool)`            | Enable or disable cells carrying the fill-only condition                           |
 | `setPattern(Float32Array)`     | Atomically replace the full flat track-major 7×16 pattern (`track*16+step`)        |
 | `setState(EngineState)`        | Validate/clamp and replace every persistent sound/configuration value              |
 | `getState()`                   | Return the complete authoritative semantic state snapshot                          |
@@ -166,7 +170,7 @@ UI displays Cymbal, Percussion, Tom 2, Tom, Hi-Hat, Snare, Bass from top to bott
 | `setVoiceParam(track, i, 0–1)` | Set one per-voice synthesis parameter (tables in `docs/voices.md`)                 |
 | `triggerVoice(track, 0–1)`     | Fire one voice immediately, independent of the sequencer (audition)                |
 | `setReverb(0–1)`               | Set the smoothed global reverb amount                                               |
-| `setProbability(0–1)`          | Per-hit trigger chance (1 = every hit fires, default; 0 = silence)                 |
+| `setProbability(0–1)`          | Global probability multiplier (1 = unchanged, default; 0 = silence)               |
 | `setHumanize(0–1)`             | Timing/velocity randomization (delay ≤ h·15 ms, velocity ±h·20%; 0 = mechanical)   |
 | `render(n)`                    | Render n samples → Float32Array                                                    |
 | `currentStep()`                | Returns active/paused step index (-1 if stopped or starting)                       |

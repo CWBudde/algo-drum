@@ -73,6 +73,19 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 			want:    "step count 17",
 		},
 		{
+			name:    "track length below one",
+			corrupt: func(engine *Engine) { engine.trackLength[2] = 0 },
+			want:    "track 2 length 0",
+		},
+		{
+			name: "track playhead past loop end",
+			corrupt: func(engine *Engine) {
+				engine.trackLength[2] = 3
+				engine.trackStep[2] = 3
+			},
+			want: "track 2 playhead 3 outside loop of 3 steps",
+		},
+		{
 			name: "pending trigger past its deadline",
 			corrupt: func(engine *Engine) {
 				engine.pending[2] = pendingTrigger{countdown: 0, track: 1, velocity: 0.7}
@@ -115,6 +128,16 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 			name:    "non-finite cell velocity",
 			corrupt: func(engine *Engine) { engine.pattern[1][2] = math.Inf(1) },
 			want:    "cell (1, 2) velocity",
+		},
+		{
+			name:    "non-finite cell probability",
+			corrupt: func(engine *Engine) { engine.cellProbability[1][2] = math.NaN() },
+			want:    "cell (1, 2) probability",
+		},
+		{
+			name:    "invalid cell condition",
+			corrupt: func(engine *Engine) { engine.cellCondition[1][2] = TriggerCondition(255) },
+			want:    "cell (1, 2) condition",
 		},
 		{
 			name:    "volume past unity",

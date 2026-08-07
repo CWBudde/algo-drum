@@ -58,6 +58,12 @@ const V14_VOICE_OFFSET = V14_MUTE_OFFSET + 1;
 const V14_MODEL_OFFSET = V14_VOICE_OFFSET + TRACK_COUNT * VOICE_PARAM_CAPACITY;
 const V14_PHYSICAL_OFFSET = V14_MODEL_OFFSET + 1;
 const V14_BYTES = V14_PHYSICAL_OFFSET + 2 * PHYSICAL_TOM_PARAM_CAPACITY;
+const V15_VELOCITY_OFFSET = V14_BYTES;
+const V15_PROBABILITY_OFFSET = V15_VELOCITY_OFFSET + PATTERN_SIZE;
+const V15_CONDITION_OFFSET = V15_PROBABILITY_OFFSET + PATTERN_SIZE;
+const V15_TRACK_LENGTH_OFFSET = V15_CONDITION_OFFSET + PATTERN_SIZE / 2;
+const V15_FLAGS_OFFSET = V15_TRACK_LENGTH_OFFSET + TRACK_COUNT;
+const V15_BYTES = V15_FLAGS_OFFSET + 1;
 
 const LEGACY_VISUAL_TO_CURRENT = [0, 3, 4, 5, 6] as const;
 const ENGINE_TO_VISUAL = [6, 5, 4, 3, 0, 2, 1] as const;
@@ -89,8 +95,13 @@ function makeState(): EngineState {
   state.humanize = q(0.33);
 
   for (let i = 0; i < PATTERN_SIZE; i++) {
-    state.pattern[i] = [VEL_OFF, VEL_NORMAL, VEL_ACCENT][i % 3];
+    state.pattern[i] = q([VEL_OFF, VEL_NORMAL, VEL_ACCENT][i % 3]);
+    state.cellProbabilities[i] = q((i % 11) / 10);
+    state.cellConditions[i] = i % 7;
   }
+
+  state.trackLengths.set([16, 15, 14, 13, 12, 11, 10]);
+  state.fillMode = true;
 
   for (let track = 0; track < TRACK_COUNT; track++) {
     const row = state.tracks[track];
@@ -319,7 +330,7 @@ function legacyBlob(state: LegacyFixtureState, version: number): string {
   return toB64Url(bytes);
 }
 
-describe("v14 canonical persistence", () => {
+describe("v15 canonical persistence", () => {
   it("roundtrips a representative EngineState", () => {
     const state = makeState();
     expect(decodeState(encodeState(state))).toEqual(state);
@@ -329,8 +340,8 @@ describe("v14 canonical persistence", () => {
     const state = makeState();
     const bytes = toBytes(encodeState(state));
 
-    expect(bytes).toHaveLength(V14_BYTES);
-    expect(bytes[0]).toBe(14);
+    expect(bytes).toHaveLength(V15_BYTES);
+    expect(bytes[0]).toBe(15);
     expect(bytes[1] | (bytes[2] << 8)).toBe(state.tempoBpm);
     expect(bytes[3]).toBe(state.stepCount);
     expect(bytes[V14_MIXER_OFFSET]).toBe(
@@ -350,6 +361,18 @@ describe("v14 canonical persistence", () => {
     expect(bytes[V14_PHYSICAL_OFFSET]).toBe(
       Math.round(state.tracks[3].tom.physicalParams[0] * 255),
     );
+    expect(bytes[V15_VELOCITY_OFFSET + 1]).toBe(
+      Math.round(state.pattern[1] * 255),
+    );
+    expect(bytes[V15_PROBABILITY_OFFSET + 10]).toBe(255);
+    expect(bytes[V15_CONDITION_OFFSET]).toBe(0x10);
+    expect(bytes[V15_CONDITION_OFFSET + 3]).toBe(0x06);
+    expect(
+      Array.from(
+        bytes.slice(V15_TRACK_LENGTH_OFFSET, V15_TRACK_LENGTH_OFFSET + 7),
+      ),
+    ).toEqual([16, 15, 14, 13, 12, 11, 10]);
+    expect(bytes[V15_FLAGS_OFFSET]).toBe(1);
   });
 
   it("stores BPM and step count semantically and exactly", () => {
@@ -367,6 +390,16 @@ describe("v14 canonical persistence", () => {
     }
   });
 
+  it("roundtrips continuous cell velocities at byte precision", () => {
+    const state = makeState();
+    state.pattern.set([0.23, 0.51, 0.88]);
+
+    const decoded = decodeState(encodeState(state))!;
+    expect(decoded.pattern[0]).toBeCloseTo(q(0.23), 6);
+    expect(decoded.pattern[1]).toBeCloseTo(q(0.51), 6);
+    expect(decoded.pattern[2]).toBeCloseTo(q(0.88), 6);
+  });
+
   it("quantizes, clamps, and sanitizes normalized fields", () => {
     const state = makeState();
     state.swing = Infinity;
@@ -374,6 +407,9 @@ describe("v14 canonical persistence", () => {
     state.probability = 2;
     state.humanize = NaN;
     state.tracks[0].voiceParams.set([NaN, -1, 2]);
+    state.cellProbabilities.set([NaN, -1, 2]);
+    state.cellConditions.set([255, 6]);
+    state.trackLengths.set([0, 255]);
 
     const decoded = decodeState(encodeState(state));
     expect(decoded?.swing).toBe(0);
@@ -383,6 +419,11 @@ describe("v14 canonical persistence", () => {
     expect(Array.from(decoded!.tracks[0].voiceParams.slice(0, 3))).toEqual([
       0, 0, 1,
     ]);
+    expect(Array.from(decoded!.cellProbabilities.slice(0, 3))).toEqual([
+      0, 0, 1,
+    ]);
+    expect(Array.from(decoded!.cellConditions.slice(0, 2))).toEqual([0, 6]);
+    expect(Array.from(decoded!.trackLengths.slice(0, 2))).toEqual([1, 16]);
   });
 
   it("emits URL-safe base64 and is a stable fixed point", () => {
@@ -408,6 +449,48 @@ describe("v14 canonical persistence", () => {
     const model = toBytes(encodeState(makeState()));
     model[V14_MODEL_OFFSET] = 4;
     expect(decodeState(toB64Url(model))).toBeNull();
+
+    const condition = toBytes(encodeState(makeState()));
+    condition[V15_CONDITION_OFFSET] = 0x70;
+    expect(decodeState(toB64Url(condition))).toBeNull();
+
+    const trackLength = toBytes(encodeState(makeState()));
+    trackLength[V15_TRACK_LENGTH_OFFSET] = 0;
+    expect(decodeState(toB64Url(trackLength))).toBeNull();
+
+    const flags = toBytes(encodeState(makeState()));
+    flags[V15_FLAGS_OFFSET] = 2;
+    expect(decodeState(toB64Url(flags))).toBeNull();
+  });
+
+  it("keeps the complete v14 record as an immutable prefix", () => {
+    const state = makeState();
+    const v15 = toBytes(encodeState(state));
+    const v14 = v15.slice(0, V14_BYTES);
+    v14[0] = 14;
+
+    const decoded = decodeState(toB64Url(v14))!;
+    expect(decoded.tempoBpm).toBe(state.tempoBpm);
+    expect(decoded.pattern).toEqual(
+      Float32Array.from(state.pattern, (velocity) =>
+        velocity >= VEL_ACCENT
+          ? VEL_ACCENT
+          : velocity > VEL_OFF
+            ? VEL_NORMAL
+            : VEL_OFF,
+      ),
+    );
+    expect(decoded.tracks).toEqual(state.tracks);
+    expect(Array.from(decoded.cellProbabilities)).toEqual(
+      new Array(PATTERN_SIZE).fill(1),
+    );
+    expect(Array.from(decoded.cellConditions)).toEqual(
+      new Array(PATTERN_SIZE).fill(0),
+    );
+    expect(Array.from(decoded.trackLengths)).toEqual(
+      new Array(TRACK_COUNT).fill(state.stepCount),
+    );
+    expect(decoded.fillMode).toBe(false);
   });
 });
 
@@ -424,6 +507,16 @@ describe("legacy v1-v13 migration", () => {
       expect(decoded?.reverb).toBe(legacy.reverb);
       expect(decoded?.probability).toBe(legacy.prob);
       expect(decoded?.humanize).toBe(legacy.humanize);
+      expect(Array.from(decoded!.cellProbabilities)).toEqual(
+        new Array(PATTERN_SIZE).fill(1),
+      );
+      expect(Array.from(decoded!.cellConditions)).toEqual(
+        new Array(PATTERN_SIZE).fill(0),
+      );
+      expect(Array.from(decoded!.trackLengths)).toEqual(
+        new Array(TRACK_COUNT).fill(decoded!.stepCount),
+      );
+      expect(decoded!.fillMode).toBe(false);
     },
   );
 
@@ -508,11 +601,11 @@ describe("legacy v1-v13 migration", () => {
     expect(decoded.tracks[5].tom.physicalParams[16]).toBeCloseTo(edited * 2, 6);
   });
 
-  it("upgrades legacy blobs to v14 on re-encode", () => {
+  it("upgrades legacy blobs to v15 on re-encode", () => {
     const decoded = decodeState(legacyBlob(makeLegacyState(), 1))!;
     const bytes = toBytes(encodeState(decoded));
-    expect(bytes[0]).toBe(14);
-    expect(bytes).toHaveLength(V14_BYTES);
+    expect(bytes[0]).toBe(15);
+    expect(bytes).toHaveLength(V15_BYTES);
   });
 });
 
@@ -525,6 +618,20 @@ describe("invalid input", () => {
     const future = toBytes(encodeState(makeState()));
     future[0] = 99;
     expect(decodeState(toB64Url(future))).toBeNull();
+
+    const truncatedV15 = toBytes(encodeState(makeState())).slice(0, -1);
+    expect(decodeState(toB64Url(truncatedV15))).toBeNull();
+
+    const extendedV15 = new Uint8Array(V15_BYTES + 1);
+    extendedV15.set(toBytes(encodeState(makeState())));
+    expect(decodeState(toB64Url(extendedV15))).toBeNull();
+
+    const truncatedV14 = toBytes(encodeState(makeState())).slice(
+      0,
+      V14_BYTES - 1,
+    );
+    truncatedV14[0] = 14;
+    expect(decodeState(toB64Url(truncatedV14))).toBeNull();
   });
 });
 

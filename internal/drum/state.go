@@ -6,19 +6,25 @@ import (
 	"github.com/cwbudde/algo-tom/tomparams"
 )
 
-// EngineState is the complete user-controlled engine state. Pattern and Tracks
-// are engine-major and have the exact widths PatternSize and TrackCount. The
-// transport/playhead, live smoothing values, active tails and RNG position are
-// deliberately runtime state rather than preset state.
+// EngineState is the complete user-controlled engine state. Pattern,
+// CellProbabilities and CellConditions are flat track-major arrays with width
+// PatternSize; TrackLengths and Tracks are engine-major with width TrackCount.
+// The transport/playheads, conditional pass history, live smoothing values,
+// active tails and RNG position are deliberately runtime state rather than
+// preset state.
 type EngineState struct {
-	TempoBPM    float64
-	Swing       float64
-	StepCount   int
-	Reverb      float64
-	Probability float64
-	Humanize    float64
-	Pattern     []float64
-	Tracks      []TrackState
+	TempoBPM          float64
+	Swing             float64
+	StepCount         int
+	Reverb            float64
+	Probability       float64
+	Humanize          float64
+	FillMode          bool
+	Pattern           []float64
+	CellProbabilities []float64
+	CellConditions    []TriggerCondition
+	TrackLengths      []int
+	Tracks            []TrackState
 }
 
 // TrackState is one engine-major track. Volume remains meaningful while Muted
@@ -45,18 +51,27 @@ type TomState struct {
 // all returned slices and may modify them without aliasing the live engine.
 func (e *Engine) State() EngineState {
 	state := EngineState{
-		TempoBPM:    e.bpm,
-		Swing:       e.swing,
-		StepCount:   e.stepCount,
-		Reverb:      e.reverbAmount,
-		Probability: e.prob,
-		Humanize:    e.humanize,
-		Pattern:     make([]float64, PatternSize),
-		Tracks:      make([]TrackState, TrackCount),
+		TempoBPM:          e.bpm,
+		Swing:             e.swing,
+		StepCount:         e.stepCount,
+		Reverb:            e.reverbAmount,
+		Probability:       e.prob,
+		Humanize:          e.humanize,
+		FillMode:          e.fillMode,
+		Pattern:           make([]float64, PatternSize),
+		CellProbabilities: make([]float64, PatternSize),
+		CellConditions:    make([]TriggerCondition, PatternSize),
+		TrackLengths:      make([]int, TrackCount),
+		Tracks:            make([]TrackState, TrackCount),
 	}
 
 	for track := range e.pattern {
-		copy(state.Pattern[track*MaxSteps:(track+1)*MaxSteps], e.pattern[track][:])
+		start := track * MaxSteps
+		end := (track + 1) * MaxSteps
+		copy(state.Pattern[start:end], e.pattern[track][:])
+		copy(state.CellProbabilities[start:end], e.cellProbability[track][:])
+		copy(state.CellConditions[start:end], e.cellCondition[track][:])
+		state.TrackLengths[track] = e.trackLength[track]
 	}
 
 	for track := range e.voices {
@@ -106,7 +121,19 @@ func (e *Engine) ReplaceState(state EngineState) error {
 	e.SetReverb(normalized.Reverb)
 	e.SetProbability(normalized.Probability)
 	e.SetHumanize(normalized.Humanize)
+	e.SetFillMode(normalized.FillMode)
 	e.SetPattern(normalized.Pattern)
+
+	for index := range normalized.CellProbabilities {
+		track := index / MaxSteps
+		step := index % MaxSteps
+		e.SetCellProbability(track, step, normalized.CellProbabilities[index])
+		e.SetCellCondition(track, step, normalized.CellConditions[index])
+	}
+
+	for track, length := range normalized.TrackLengths {
+		e.SetTrackLength(track, length)
+	}
 
 	for track, trackState := range normalized.Tracks {
 		e.SetVolume(track, trackState.Volume)
@@ -153,14 +180,33 @@ func (e *Engine) normalizeState(state EngineState) (EngineState, error) {
 		return EngineState{}, fmt.Errorf("pattern length %d, want %d", len(state.Pattern), PatternSize)
 	}
 
+	if len(state.CellProbabilities) != PatternSize {
+		return EngineState{}, fmt.Errorf("cell probability length %d, want %d",
+			len(state.CellProbabilities), PatternSize)
+	}
+
+	if len(state.CellConditions) != PatternSize {
+		return EngineState{}, fmt.Errorf("cell condition length %d, want %d",
+			len(state.CellConditions), PatternSize)
+	}
+
+	if len(state.TrackLengths) != TrackCount {
+		return EngineState{}, fmt.Errorf("track length count %d, want %d",
+			len(state.TrackLengths), TrackCount)
+	}
+
 	if len(state.Tracks) != TrackCount {
 		return EngineState{}, fmt.Errorf("track count %d, want %d", len(state.Tracks), TrackCount)
 	}
 
 	normalized := EngineState{
-		StepCount: state.StepCount,
-		Pattern:   make([]float64, PatternSize),
-		Tracks:    make([]TrackState, TrackCount),
+		StepCount:         state.StepCount,
+		FillMode:          state.FillMode,
+		Pattern:           make([]float64, PatternSize),
+		CellProbabilities: make([]float64, PatternSize),
+		CellConditions:    make([]TriggerCondition, PatternSize),
+		TrackLengths:      make([]int, TrackCount),
+		Tracks:            make([]TrackState, TrackCount),
 	}
 
 	var ok bool
@@ -197,6 +243,33 @@ func (e *Engine) normalizeState(state EngineState) (EngineState, error) {
 		}
 
 		normalized.Pattern[index] = clamped
+	}
+
+	for index, value := range state.CellProbabilities {
+		clamped, valid := validFloat(value, 0, 1)
+		if !valid {
+			return EngineState{}, fmt.Errorf("cell probability %d is not finite: %v", index, value)
+		}
+
+		normalized.CellProbabilities[index] = clamped
+	}
+
+	for index, condition := range state.CellConditions {
+		if condition >= triggerConditionCount {
+			return EngineState{}, fmt.Errorf("cell condition %d has invalid code %d", index, condition)
+		}
+
+		normalized.CellConditions[index] = condition
+	}
+
+	for track, length := range state.TrackLengths {
+		if length < 1 {
+			length = 1
+		} else if length > MaxSteps {
+			length = MaxSteps
+		}
+
+		normalized.TrackLengths[track] = length
 	}
 
 	for track, source := range state.Tracks {

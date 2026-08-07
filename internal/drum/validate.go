@@ -71,6 +71,22 @@ func (e *Engine) checkTransport(problems []error) []error {
 			fmt.Errorf("playhead %d outside loop of %d steps", e.currentStep, e.stepCount))
 	}
 
+	for track := range TrackCount {
+		length := e.trackLength[track]
+		if length < 1 || length > MaxSteps {
+			problems = append(problems,
+				fmt.Errorf("track %d length %d outside [1, %d]", track, length, MaxSteps))
+
+			continue
+		}
+
+		if e.trackStep[track] < 0 || e.trackStep[track] >= length {
+			problems = append(problems,
+				fmt.Errorf("track %d playhead %d outside loop of %d steps",
+					track, e.trackStep[track], length))
+		}
+	}
+
 	if e.currentStepDuration == 0 {
 		problems = append(problems, errors.New("current step duration is zero"))
 	} else if e.stepPhase >= e.currentStepDuration {
@@ -176,6 +192,18 @@ func (e *Engine) checkMix(problems []error) []error {
 			if !inRange(velocity, 0, 1) {
 				problems = append(problems,
 					fmt.Errorf("cell (%d, %d) velocity out of contract: %v", track, step, velocity))
+			}
+
+			if probability := e.cellProbability[track][step]; !inRange(probability, 0, 1) {
+				problems = append(problems,
+					fmt.Errorf("cell (%d, %d) probability out of contract: %v",
+						track, step, probability))
+			}
+
+			if condition := e.cellCondition[track][step]; condition >= triggerConditionCount {
+				problems = append(problems,
+					fmt.Errorf("cell (%d, %d) condition out of contract: %d",
+						track, step, condition))
 			}
 		}
 	}

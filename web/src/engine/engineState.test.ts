@@ -18,8 +18,14 @@ describe("EngineState", () => {
       reverb: 0,
       probability: 1,
       humanize: 0,
+      fillMode: false,
     });
     expect(state.pattern).toEqual(new Float32Array(PATTERN_SIZE));
+    expect(state.cellProbabilities).toEqual(
+      new Float32Array(PATTERN_SIZE).fill(1),
+    );
+    expect(state.cellConditions).toEqual(new Uint8Array(PATTERN_SIZE));
+    expect(state.trackLengths).toEqual(new Uint8Array(TRACK_COUNT).fill(16));
     expect(state.tracks).toHaveLength(TRACK_COUNT);
 
     state.tracks.forEach((track, index) => {
@@ -44,6 +50,9 @@ describe("EngineState", () => {
 
     expect(clone).not.toBe(state);
     expect(clone.pattern).not.toBe(state.pattern);
+    expect(clone.cellProbabilities).not.toBe(state.cellProbabilities);
+    expect(clone.cellConditions).not.toBe(state.cellConditions);
+    expect(clone.trackLengths).not.toBe(state.trackLengths);
     clone.tracks.forEach((track, index) => {
       expect(track).not.toBe(state.tracks[index]);
       expect(track.voiceParams).not.toBe(state.tracks[index].voiceParams);
@@ -72,6 +81,24 @@ describe("EngineState", () => {
       "fractional step count",
       (s: ReturnType<typeof createDefaultEngineState>) => {
         s.stepCount = 8.5;
+      },
+    ],
+    [
+      "short cell probability table",
+      (s: ReturnType<typeof createDefaultEngineState>) => {
+        s.cellProbabilities = new Float32Array(PATTERN_SIZE - 1);
+      },
+    ],
+    [
+      "invalid trigger condition",
+      (s: ReturnType<typeof createDefaultEngineState>) => {
+        s.cellConditions[0] = 7;
+      },
+    ],
+    [
+      "invalid track length",
+      (s: ReturnType<typeof createDefaultEngineState>) => {
+        s.trackLengths[0] = 0;
       },
     ],
     [

@@ -43,8 +43,35 @@ export interface EngineState {
   probability: number;
   humanize: number;
   pattern: Float32Array;
+  cellProbabilities: Float32Array;
+  cellConditions: Uint8Array;
+  trackLengths: Uint8Array;
+  fillMode: boolean;
   tracks: EngineTracks;
 }
+
+export const TRIGGER_CONDITION = {
+  always: 0,
+  every2: 1,
+  every3: 2,
+  every4: 3,
+  firstLoop: 4,
+  fillOnly: 5,
+  notPreviousFired: 6,
+} as const;
+
+export type TriggerCondition =
+  (typeof TRIGGER_CONDITION)[keyof typeof TRIGGER_CONDITION];
+
+export const TRIGGER_CONDITION_LABELS = [
+  "Always",
+  "Every 2nd loop",
+  "Every 3rd loop",
+  "Every 4th loop",
+  "First loop only",
+  "Fill only",
+  "If previous did not fire",
+] as const;
 
 export const TOM_TRACKS = [3, 5] as const;
 
@@ -54,6 +81,10 @@ export const CONFIGURATION_METHODS = [
   "setSwing",
   "setStepCount",
   "setCell",
+  "setCellProbability",
+  "setCellCondition",
+  "setTrackLength",
+  "setFillMode",
   "setPattern",
   "setVolume",
   "setDecay",
@@ -106,6 +137,10 @@ export function createDefaultEngineState(): EngineState {
     probability: 1,
     humanize: 0,
     pattern: new Float32Array(PATTERN_SIZE),
+    cellProbabilities: new Float32Array(PATTERN_SIZE).fill(1),
+    cellConditions: new Uint8Array(PATTERN_SIZE),
+    trackLengths: new Uint8Array(TRACK_COUNT).fill(STEP_CAPACITY),
+    fillMode: false,
     tracks,
   };
 }
@@ -119,6 +154,10 @@ export function cloneEngineState(state: EngineState): EngineState {
     probability: state.probability,
     humanize: state.humanize,
     pattern: state.pattern.slice(),
+    cellProbabilities: state.cellProbabilities.slice(),
+    cellConditions: state.cellConditions.slice(),
+    trackLengths: state.trackLengths.slice(),
+    fillMode: state.fillMode,
     tracks: state.tracks.map((track) => {
       const base: TrackState = {
         volume: track.volume,
@@ -185,6 +224,26 @@ function requireUnitArray(
   return value;
 }
 
+function requireByteArray(
+  value: unknown,
+  length: number,
+  path: string,
+  min: number,
+  max: number,
+): Uint8Array {
+  if (!(value instanceof Uint8Array) || value.length !== length) {
+    throw new TypeError(`${path} must be a Uint8Array of length ${length}`);
+  }
+
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] < min || value[i] > max) {
+      throw new TypeError(`${path}[${i}] must be in [${min}, ${max}]`);
+    }
+  }
+
+  return value;
+}
+
 // validateEngineState is the trust boundary for state returned by the foreign
 // Go object and for bulk state supplied by application code. It returns the
 // original object after validation so typed-array identity is preserved.
@@ -198,6 +257,28 @@ export function validateEngineState(value: unknown): EngineState {
   requireNumber(value, "probability", 0, 1);
   requireNumber(value, "humanize", 0, 1);
   requireUnitArray(value.pattern, PATTERN_SIZE, "engine state pattern");
+  requireUnitArray(
+    value.cellProbabilities,
+    PATTERN_SIZE,
+    "engine state cellProbabilities",
+  );
+  requireByteArray(
+    value.cellConditions,
+    PATTERN_SIZE,
+    "engine state cellConditions",
+    TRIGGER_CONDITION.always,
+    TRIGGER_CONDITION.notPreviousFired,
+  );
+  requireByteArray(
+    value.trackLengths,
+    TRACK_COUNT,
+    "engine state trackLengths",
+    1,
+    STEP_CAPACITY,
+  );
+  if (typeof value.fillMode !== "boolean") {
+    throw new TypeError("engine state fillMode must be boolean");
+  }
 
   if (!Array.isArray(value.tracks) || value.tracks.length !== TRACK_COUNT) {
     throw new TypeError(`engine state tracks must have length ${TRACK_COUNT}`);

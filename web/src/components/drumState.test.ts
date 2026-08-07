@@ -51,4 +51,40 @@ describe("reduceDrumState", () => {
       reduceDrumState(state, { type: "replace", state: authoritative }),
     ).toBe(authoritative);
   });
+
+  it("updates conditional-step and polymeter controls immutably", () => {
+    const state = defaultEngineState();
+    const probability = reduceDrumState(state, {
+      type: "cellProbability",
+      track: 2,
+      step: 4,
+      value: 0.35,
+    });
+    const condition = reduceDrumState(probability, {
+      type: "cellCondition",
+      track: 2,
+      step: 4,
+      value: 3,
+    });
+    const length = reduceDrumState(condition, {
+      type: "trackLength",
+      track: 2,
+      value: 7,
+    });
+    const fill = reduceDrumState(length, { type: "fillMode", value: true });
+
+    expect(fill.cellProbabilities[36]).toBeCloseTo(0.35);
+    expect(fill.cellConditions[36]).toBe(3);
+    expect(fill.trackLengths[2]).toBe(7);
+    expect(fill.fillMode).toBe(true);
+    expect(state.cellProbabilities[36]).toBe(1);
+  });
+
+  it("keeps per-track lengths aligned when the master length changes", () => {
+    const state = defaultEngineState();
+    const next = reduceDrumState(state, { type: "stepCount", value: 9 });
+
+    expect(next.stepCount).toBe(9);
+    expect(Array.from(next.trackLengths)).toEqual(new Array(7).fill(9));
+  });
 });

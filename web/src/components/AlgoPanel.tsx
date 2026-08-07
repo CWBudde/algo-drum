@@ -1,6 +1,8 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { euclid } from "../algo/euclid";
 import { mutate } from "../algo/mutate";
 import { PRESETS, presetToFlat } from "../algo/presets";
+import { fillEuclidTrack, TRACK_INDEX, TRACKS } from "./patternView";
 import "./AlgoPanel.css";
 
 interface Props {
@@ -8,6 +10,10 @@ interface Props {
   pattern: number[]; // current flat, engine-major pattern
   stepCount: number;
   onApplyPattern: (flat: number[]) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
   // Explicit share action: publishes the state in the address bar and returns
   // the same URL for the clipboard.
   onShare: () => string;
@@ -18,11 +24,25 @@ export default function AlgoPanel({
   pattern,
   stepCount,
   onApplyPattern,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
   onShare,
 }: Props) {
   const [presetIndex, setPresetIndex] = useState(-1);
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<number | null>(null);
+  const [euclidTrack, setEuclidTrack] = useState(0);
+  const [euclidPulses, setEuclidPulses] = useState(4);
+  const [euclidRotation, setEuclidRotation] = useState(0);
+
+  useEffect(
+    () => () => {
+      if (copiedTimer.current) window.clearTimeout(copiedTimer.current);
+    },
+    [],
+  );
 
   const applyPreset = useCallback(
     (value: string) => {
@@ -37,6 +57,33 @@ export default function AlgoPanel({
     setPresetIndex(-1);
     onApplyPattern(mutate(pattern, { stepCount }));
   }, [onApplyPattern, pattern, stepCount]);
+
+  const handleClear = useCallback(() => {
+    setPresetIndex(-1);
+    onApplyPattern(new Array<number>(pattern.length).fill(0));
+  }, [onApplyPattern, pattern.length]);
+
+  const handleEuclid = useCallback(() => {
+    setPresetIndex(-1);
+    const pulses = Number.isFinite(euclidPulses)
+      ? Math.max(0, Math.min(stepCount, euclidPulses))
+      : 0;
+    const rotation = Number.isFinite(euclidRotation) ? euclidRotation : 0;
+    onApplyPattern(
+      fillEuclidTrack(
+        pattern,
+        euclidTrack,
+        euclid(pulses, stepCount, rotation),
+      ),
+    );
+  }, [
+    euclidPulses,
+    euclidRotation,
+    euclidTrack,
+    onApplyPattern,
+    pattern,
+    stepCount,
+  ]);
 
   const handleShare = useCallback(() => {
     const url = onShare();
@@ -80,6 +127,90 @@ export default function AlgoPanel({
       >
         MUTATE
       </button>
+      <button
+        type="button"
+        className="dm-algo-btn dm-algo-btn-warn"
+        disabled={disabled}
+        onClick={handleClear}
+        aria-label="Clear pattern"
+        title="Clear every track"
+      >
+        CLEAR
+      </button>
+      <details className="dm-euclid">
+        <summary className="dm-algo-btn">EUCLID</summary>
+        <div className="dm-euclid-panel">
+          <label>
+            TRACK
+            <select
+              value={euclidTrack}
+              onChange={(event) => setEuclidTrack(Number(event.target.value))}
+              disabled={disabled}
+            >
+              {TRACKS.map((name, row) => (
+                <option key={name} value={TRACK_INDEX[row]}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            HITS
+            <input
+              type="number"
+              min={0}
+              max={stepCount}
+              value={euclidPulses}
+              onChange={(event) => setEuclidPulses(Number(event.target.value))}
+              disabled={disabled}
+            />
+          </label>
+          <label>
+            ROTATE
+            <input
+              type="number"
+              min={0}
+              max={Math.max(0, stepCount - 1)}
+              value={euclidRotation}
+              onChange={(event) =>
+                setEuclidRotation(Number(event.target.value))
+              }
+              disabled={disabled}
+            />
+          </label>
+          <button
+            type="button"
+            className="dm-algo-btn"
+            onClick={handleEuclid}
+            disabled={disabled}
+            title="Replace this track with the Euclidean rhythm"
+          >
+            FILL
+          </button>
+        </div>
+      </details>
+      <div className="dm-history" role="group" aria-label="Pattern history">
+        <button
+          type="button"
+          className="dm-algo-btn dm-history-btn"
+          disabled={disabled || !canUndo}
+          onClick={onUndo}
+          aria-label="Undo pattern action"
+          title="Undo pattern action (Ctrl/Cmd+Z)"
+        >
+          ↶
+        </button>
+        <button
+          type="button"
+          className="dm-algo-btn dm-history-btn"
+          disabled={disabled || !canRedo}
+          onClick={onRedo}
+          aria-label="Redo pattern action"
+          title="Redo pattern action (Ctrl/Cmd+Shift+Z)"
+        >
+          ↷
+        </button>
+      </div>
       <button
         type="button"
         className="dm-algo-btn dm-algo-share"

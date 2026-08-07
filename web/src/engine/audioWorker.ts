@@ -23,6 +23,14 @@ export interface AlgoDrumApi {
   setSwing: (swing: number) => void;
   setStepCount: (steps: number) => void;
   setCell: (track: number, step: number, velocity: number) => void;
+  setCellProbability: (
+    track: number,
+    step: number,
+    probability: number,
+  ) => void;
+  setCellCondition: (track: number, step: number, condition: number) => void;
+  setTrackLength: (track: number, length: number) => void;
+  setFillMode: (enabled: boolean) => void;
   setPattern: (pattern: Float32Array) => void;
   setState: (state: EngineState) => void;
   getState: () => EngineState;
@@ -61,7 +69,7 @@ export interface TransportSnapshot {
 // would load happily and play wrong. The engine publishes this number as
 // AlgoDrum.protocolVersion (internal/drum/protocol.go, the peer constant) and
 // the load refuses to proceed on a mismatch. Bump both together, or neither.
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 // The engine as it appears on the worker's global scope: the callable API plus
 // the version property. The property is deliberately kept out of AlgoDrumApi —
@@ -87,6 +95,10 @@ const REQUIRED_METHODS = [
   "setSwing",
   "setStepCount",
   "setCell",
+  "setCellProbability",
+  "setCellCondition",
+  "setTrackLength",
+  "setFillMode",
   "setPattern",
   "setState",
   "getState",

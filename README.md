@@ -11,19 +11,24 @@ No plugins, no backend — just a `.wasm` file and a browser.
 - 7 voices × up to 16 steps: Bass Drum, Snare, Hi-Hat, two independently
   tunable Toms, Cymbal, and metallic Percussion, with a runtime-adjustable
   pattern length (STEPS knob, 1–16)
-- Per-step velocity: click a cell to cycle off → hit → accent
+- Per-step velocity: click to cycle off → hit → accent, or Shift-drag / use
+  Shift+Arrow to set a continuous level
+- Per-cell probability and evolving trigger conditions (every 2nd/3rd/4th
+  loop, first loop, fill-only, or when the previous step did not fire)
+- Independent 1–16-step track lengths for polymetric patterns, with a live
+  Fill-mode performance control
 - Per-track volume (smoothed, zipper-free) and decay knobs, plus per-track mute
 - Tempo (30–300 BPM) and swing, with tap tempo
-- Trigger probability and humanize (timing jitter) knobs for less mechanical
-  patterns
-- Pattern mutate (random-walk the current pattern) and 6 built-in presets
+- Global probability and humanize knobs for less mechanical patterns
+- Pattern mutate, per-track Euclidean fill, Clear, undo/redo, and 6 built-in
+  presets
 - Global reverb control
 - Shareable patterns: state round-trips through a URL hash and
   `localStorage`, so reloading or sending a link restores the pattern, tempo,
   and knobs
-- Keyboard-accessible: Space toggles play/pause, every grid cell and button is
-  focusable and activates with Enter/Space, and the knobs are ARIA sliders that
-  respond to arrow keys, Page Up/Down, Home/End, and Escape to reset
+- Keyboard-accessible: Space toggles play/pause; F2 opens a cell's probability
+  and condition inspector; pattern undo/redo uses the standard shortcuts; and
+  the knobs are ARIA sliders with full keyboard controls
 - Installable as a PWA: a web app manifest plus a service worker that caches
   the app shell, the WASM engine, and the audio worklet (a fully offline reload
   isn't guaranteed yet — the hashed JS/CSS bundle is not precached)

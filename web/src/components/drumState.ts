@@ -17,6 +17,10 @@ export type DrumStateAction =
   | { type: "probability"; value: number }
   | { type: "humanize"; value: number }
   | { type: "cell"; track: number; step: number; value: number }
+  | { type: "cellProbability"; track: number; step: number; value: number }
+  | { type: "cellCondition"; track: number; step: number; value: number }
+  | { type: "trackLength"; track: number; value: number }
+  | { type: "fillMode"; value: boolean }
   | { type: "pattern"; value: Float32Array }
   | { type: "volume"; track: number; value: number }
   | { type: "decay"; track: number; value: number }
@@ -53,7 +57,11 @@ export function reduceDrumState(
     case "swing":
       return { ...state, swing: action.value };
     case "stepCount":
-      return { ...state, stepCount: action.value };
+      return {
+        ...state,
+        stepCount: action.value,
+        trackLengths: new Uint8Array(TRACK_COUNT).fill(action.value),
+      };
     case "reverb":
       return { ...state, reverb: action.value };
     case "probability":
@@ -74,6 +82,41 @@ export function reduceDrumState(
       pattern[index] = action.value;
       return { ...state, pattern };
     }
+    case "cellProbability": {
+      if (
+        action.track < 0 ||
+        action.track >= TRACK_COUNT ||
+        action.step < 0 ||
+        action.step >= STEP_CAPACITY
+      ) {
+        return state;
+      }
+      const cellProbabilities = state.cellProbabilities.slice();
+      cellProbabilities[action.track * STEP_CAPACITY + action.step] =
+        action.value;
+      return { ...state, cellProbabilities };
+    }
+    case "cellCondition": {
+      if (
+        action.track < 0 ||
+        action.track >= TRACK_COUNT ||
+        action.step < 0 ||
+        action.step >= STEP_CAPACITY
+      ) {
+        return state;
+      }
+      const cellConditions = state.cellConditions.slice();
+      cellConditions[action.track * STEP_CAPACITY + action.step] = action.value;
+      return { ...state, cellConditions };
+    }
+    case "trackLength": {
+      if (action.track < 0 || action.track >= TRACK_COUNT) return state;
+      const trackLengths = state.trackLengths.slice();
+      trackLengths[action.track] = action.value;
+      return { ...state, trackLengths };
+    }
+    case "fillMode":
+      return { ...state, fillMode: action.value };
     case "pattern":
       return { ...state, pattern: new Float32Array(action.value) };
     case "volume":

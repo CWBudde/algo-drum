@@ -361,28 +361,36 @@ describe it differently. One type fixes the category rather than the instances.
 two casts are defensible, and the pure algo modules are well tested. The weaknesses are
 structural rather than sloppy.
 
-- [ ] **F7: `DrumMachine.tsx` is a 502-line god component** — persistence restore, eight
+- [x] **F7: `DrumMachine.tsx` is a 502-line god component** — persistence restore, eight
       parameter-push effects, engine seeding, mirror subscription, tap tempo, the global
       keybinding, grid, track strips, transport and share plumbing, with ~210 lines of
       unbroken JSX. Seams: a `useEngineSync` hook for `:113-167`, and
       `<StepGrid>` / `<TrackStrip>` / `<Transport>` for `:311-398` and `:409-499`.
-- [ ] **F8: pure logic trapped in the component.** `cycleVelocity`, `velocityName`,
+      Closed with `useEngineSync`, `StepGrid`, `TrackStrip`, `Transport` and
+      `CellInspector`; `DrumMachine.tsx` fell from 757 lines at implementation time to
+      368, and the extracted pattern/history behavior is tested independently.
+- [x] **F8: pure logic trapped in the component.** `cycleVelocity`, `velocityName`,
       `visualToFlat`, `flatToVisual`, `snapVelocity`, `visualPatternsEqual`
       (`DrumMachine.tsx:27-69`) are pure, untested, and belong beside `algo/pattern.ts`.
-- [ ] **F9: duplicated constants** — `DrumMachine.tsx:17-22` redefines `COLS`, `ROWS`,
+      Moved to `patternView.ts` and `patternHistory.ts`, with focused Vitest coverage.
+- [x] **F9: duplicated constants** — `DrumMachine.tsx:17-22` redefines `COLS`, `ROWS`,
       `VEL_NORMAL`, `VEL_ACCENT`, which already exist in `algo/pattern.ts:8-17` where they
       define the persistence byte format.
+      The extracted grid uses the shared `algo/pattern.ts` capacities and velocities.
 - [x] **F10: ~45 lines of dead code.** Verified zero callers for `getPattern()`
       (`wasmEngine.ts:223`), `nextRequestId`/`patternResolvers` (`:73`),
       `settlePendingPatternRequests` (`:78`), the worker's `"getPattern"` case
       (`audioWorker.ts:197`) and the `"pattern"` response variant (`:94`).
       `currentStep()` (`:256`) is unused too — the UI uses `onStep`.
-- [ ] **F11: the whole machine re-renders per playhead tick.** `currentStep`
+- [x] **F11: the whole machine re-renders per playhead tick.** `currentStep`
       (`DrumMachine.tsx:108`) lives in the top component, so ~8×/s React re-renders 80
       buttons, 16 step numbers, 10 SVG knobs and `AlgoPanel`. Nothing is memoized, and
       the share callback (`:217`) changes identity on every edit.
-- [ ] **F12: `AlgoPanel` leaks a timer** — `copiedTimer` (`AlgoPanel.tsx:32`) is never
+      The worklet subscription and playhead state now live inside `StepGrid`, so the
+      transport tick no longer re-renders the machine shell, editor, transport or tools.
+- [x] **F12: `AlgoPanel` leaks a timer** — `copiedTimer` (`AlgoPanel.tsx:32`) is never
       cleared on unmount; the component has no `useEffect` at all.
+      Its unmount cleanup now cancels the pending clipboard-feedback timer.
 - [ ] **F13: `Knob` listener churn** — the non-passive wheel listener re-registers on
       every render (`Knob.tsx:112`, deps `[value, onChange]`), and pointer capture
       (`:76`) is never released.
@@ -744,12 +752,20 @@ drum machine.
       holds one scalar applied to every hit on every track. The original G2 asked for
       _per-step_ probability — this is the single biggest gap against the product name.
       Humanize is also strictly _late_ (`engine.go:328`), so the groove drags as it rises.
-- [ ] **G9: no per-track length / polymeter.** One `stepCount` (`engine.go:71`) wraps all
+      **Partly closed:** every cell now has an independent probability multiplier,
+      persisted at byte precision and editable through the F2/context inspector. The
+      global probability remains a master multiplier. Per-step humanize and centered
+      timing remain open, so the item stays unchecked.
+- [x] **G9: no per-track length / polymeter.** One `stepCount` (`engine.go:71`) wraps all
       voices together (`:385`). Table stakes for algorithmic drums.
+      Each track now has its own 1–16-step loop, playhead and pass counter; non-dividing
+      lengths continue across master wraps, and Stop resets their phase.
 - [ ] **G10: no pattern banks, song or chain mode.** Exactly one pattern exists in the
       engine (`engine.go:63`) and the UI — no A/B, copy, queueing or chaining.
-- [ ] **G11: no undo/redo.** MUTATE, CLEAR, preset load and Euclid FILL all destroy the
+- [x] **G11: no undo/redo.** MUTATE, CLEAR, preset load and Euclid FILL all destroy the
       current pattern irreversibly.
+      A bounded 50-snapshot history covers all four destructive actions, with toolbar
+      buttons and the standard Ctrl/Cmd-Z, Shift-Z and Y bindings.
 - [ ] **G12: no export or sync** — no offline WAV render, no MIDI export, no MIDI clock or
       input. Notable for an app whose engine is already a deterministic `Render(buf)`.
 - [ ] **G13: Euclid is shallow** — `n` is forced to the global step count
@@ -767,17 +783,22 @@ rather than aspirational, roughly in order of impact per unit of work — and al
 build on an engine that already stores continuous per-cell velocity and renders
 deterministically.
 
-- [ ] **G16: conditional trigs.** Per-step conditions — every 2nd/3rd/4th pass, first-loop
+- [x] **G16: conditional trigs.** Per-step conditions — every 2nd/3rd/4th pass, first-loop
       only, fill-only, not-if-previous-fired — are the single highest-value algorithmic
       feature per line of code, and the engine already has the per-step data structure to
       hang them on. This is what makes a pattern evolve without the user touching it.
+      All six conditions ship with per-track pass accounting; accepted probability gates
+      count as fired for the previous-step condition, and a persisted FILL toggle controls
+      fill-only cells.
 - [ ] **G17: ratcheting / sub-step retrigger.** A per-step repeat count (2–4 hits inside
       one step, optionally with a velocity ramp) reuses the existing pending-trigger list
       (`engine.go:360`) and is the other classic generative gesture.
-- [ ] **G18: expose continuous velocity.** The engine accepts any 0–1 value per cell, but
+- [x] **G18: expose continuous velocity.** The engine accepts any 0–1 value per cell, but
       the UI quantises to exactly three (`cycleVelocity`, `DrumMachine.tsx:27`). Let a
       drag or modifier set velocity freely — depth already paid for in the engine and
       currently thrown away at the UI layer.
+      Shift-drag maps vertical position to 0–100 %, Shift-Up/Down nudges by 5 %, and the
+      v15 share format appends byte-precision velocities while preserving the click cycle.
 - [ ] **G19: a density/seed generator.** One control pair — density plus a visible seed —
       that fills a track reproducibly would tie euclid, mutate and probability into a
       coherent generative story, and make shared links reproduce a _generator_ rather
@@ -818,10 +839,9 @@ live regions), X9 (targets), P12 (generated SW → closes P5/P8) and P13 (update
 T10 (a DOM test environment — the precondition for testing any of the above).
 
 **P5 — depth:** ✔ A13/A14 (one persistent state shape and owner → closed A4/A8/A9),
-✔ A16 (engine-owned transport arbitration); next
-G8 (per-step probability), G16 (conditional trigs), G9 (per-track length), G10 (pattern
-banks), G11 (undo), G18 (continuous velocity — already in the engine), F7 (split
-`DrumMachine.tsx` once its state model settles).
+✔ A16 (engine-owned transport arbitration), ✔ G8 probability half, ✔ G16 (conditional
+trigs), ✔ G9 (per-track length), ✔ G11 (undo), ✔ G18 (continuous velocity), ✔ F7 (split
+`DrumMachine.tsx`). Next: G8 per-step humanize/centered timing and G10 (pattern banks).
 
 **Quick wins, any time:** G14 (Tom absent from every preset), G21 + U19 (a default
 pattern so the app makes a sound on first click), U18 (`?` shortcut overlay), CI11 (a

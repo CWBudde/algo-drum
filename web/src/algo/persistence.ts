@@ -13,10 +13,12 @@ import {
 } from "../engine/voiceParams";
 import {
   createDefaultEngineState,
+  TRIGGER_CONDITION,
   type EngineState,
 } from "../engine/engineState";
 import {
   PATTERN_SIZE,
+  STEP_CAPACITY,
   TRACK_COUNT,
   VEL_ACCENT,
   VEL_NORMAL,
@@ -37,8 +39,9 @@ import type { TomModel } from "../engine/tomModel";
 // the attack layer's level and tone. V13 keeps v12's bytes and rescales the
 // attack level, whose range narrowed from 0–0.3 to 0–0.15 once the layer became
 // three bands instead of one. Older links still decode with values attached to
-// the same voices.
-const FORMAT_VERSION = 14;
+// the same voices. V15 strictly appends the per-cell probability/condition
+// grids, per-track lengths and the fill-mode latch used by conditional trigs.
+const FORMAT_VERSION = 15;
 
 // Byte layout: version, 6 scalar knobs, 5 volumes, 5 decays, 1 mute mask,
 // then the 80-cell pattern packed 2 bits per cell (20 bytes)...
@@ -141,6 +144,35 @@ const V14_BYTES =
   V14_MIXER_BYTES +
   V14_VOICE_PARAM_BYTES +
   V14_TOM_BYTES;
+
+// V15 is a strict append to the complete v14 record. Keeping the old record as
+// an immutable prefix means old offsets remain useful documentation and, more
+// importantly, later features cannot accidentally retune an existing field.
+//
+//   bytes V14_BYTES..+111       per-cell velocity refinement, engine-major uint8
+//   next 112 bytes              per-cell probability, engine-major uint8
+//   next 56 bytes               two 4-bit condition codes per byte, low first
+//   next 7 bytes                per-track lengths, engine-major uint8
+//   final byte                  flags; bit 0 = fill mode, bits 1..7 reserved
+//
+// Four bits leave codes 7..15 available for future conditions without moving
+// the track-length offset. Unknown codes and non-zero reserved bits are rejected
+// until a version explicitly assigns them semantics.
+const V15_CELL_VELOCITY_BYTES = PATTERN_SIZE;
+const V15_CELL_PROBABILITY_BYTES = PATTERN_SIZE;
+const V15_CELL_CONDITION_BYTES = PATTERN_SIZE / 2;
+const V15_TRACK_LENGTH_BYTES = TRACK_COUNT;
+const V15_FLAG_BYTES = 1;
+const V15_CELL_VELOCITY_OFFSET = V14_BYTES;
+const V15_CELL_PROBABILITY_OFFSET =
+  V15_CELL_VELOCITY_OFFSET + V15_CELL_VELOCITY_BYTES;
+const V15_CELL_CONDITION_OFFSET =
+  V15_CELL_PROBABILITY_OFFSET + V15_CELL_PROBABILITY_BYTES;
+const V15_TRACK_LENGTH_OFFSET =
+  V15_CELL_CONDITION_OFFSET + V15_CELL_CONDITION_BYTES;
+const V15_FLAGS_OFFSET = V15_TRACK_LENGTH_OFFSET + V15_TRACK_LENGTH_BYTES;
+const V15_BYTES = V15_FLAGS_OFFSET + V15_FLAG_BYTES;
+const MAX_TRIGGER_CONDITION = TRIGGER_CONDITION.notPreviousFired;
 
 // migrateStrikeRadius moves the *exact* shipped strike-radius detent onto the
 // current default, twice over, and leaves every edited position alone.
@@ -308,9 +340,9 @@ function base64UrlToBytes(text: string): Uint8Array | null {
   }
 }
 
-// encodeState serializes the canonical engine-owned state into v14.
+// encodeState serializes the canonical engine-owned state into v15.
 export function encodeState(state: EngineState): string {
-  const bytes = new Uint8Array(V14_BYTES);
+  const bytes = new Uint8Array(V15_BYTES);
   let offset = 0;
 
   bytes[offset++] = FORMAT_VERSION;
@@ -325,7 +357,8 @@ export function encodeState(state: EngineState): string {
   const stepCount = Number.isFinite(state.stepCount)
     ? Math.round(state.stepCount)
     : 1;
-  bytes[offset++] = Math.min(16, Math.max(1, stepCount));
+  const encodedStepCount = Math.min(STEP_CAPACITY, Math.max(1, stepCount));
+  bytes[offset++] = encodedStepCount;
   bytes[offset++] = toByte(state.swing / 0.5);
   bytes[offset++] = toByte(state.reverb);
   bytes[offset++] = toByte(state.probability);
@@ -372,7 +405,47 @@ export function encodeState(state: EngineState): string {
     bytes[offset++] = toByte(tom2.tom.physicalParams[i] ?? 0);
   }
 
+  // The v14 record above is frozen. All Phase-5 semantics begin here.
+  // V15's byte-precision velocity grid overrides the coarse 2-bit v14 pattern
+  // on decode, while the old prefix keeps v14 readers and offsets coherent.
+  for (let i = 0; i < PATTERN_SIZE; i++) {
+    bytes[offset++] = toByte(state.pattern[i] ?? VEL_OFF);
+  }
+
+  for (let i = 0; i < PATTERN_SIZE; i++) {
+    bytes[offset++] = toByte(state.cellProbabilities[i] ?? 1);
+  }
+
+  for (let i = 0; i < PATTERN_SIZE; i += 2) {
+    const low = conditionCode(state.cellConditions[i]);
+    const high = conditionCode(state.cellConditions[i + 1]);
+    bytes[offset++] = low | (high << 4);
+  }
+
+  for (let track = 0; track < TRACK_COUNT; track++) {
+    bytes[offset++] = trackLength(state.trackLengths[track], encodedStepCount);
+  }
+  bytes[offset] = state.fillMode ? 1 : 0;
+
   return bytesToBase64Url(bytes);
+}
+
+function conditionCode(value: number | undefined): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 0 ||
+    value > MAX_TRIGGER_CONDITION
+  ) {
+    return 0;
+  }
+  return value;
+}
+
+function trackLength(value: number | undefined, fallback: number): number {
+  const finite =
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  return Math.min(STEP_CAPACITY, Math.max(1, Math.round(finite)));
 }
 
 // decodeState parses any supported blob into the canonical EngineState,
@@ -381,10 +454,51 @@ export function decodeState(text: string): EngineState | null {
   const bytes = base64UrlToBytes(text);
   if (!bytes || bytes.length === 0) return null;
 
-  if (bytes[0] === FORMAT_VERSION) return decodeV14(bytes);
+  if (bytes[0] === FORMAT_VERSION) return decodeV15(bytes);
+  if (bytes[0] === 14) return decodeV14(bytes);
 
   const legacy = decodeLegacyState(bytes);
   return legacy ? canonicalizeLegacy(legacy) : null;
+}
+
+function decodeV15(bytes: Uint8Array): EngineState | null {
+  if (bytes.length !== V15_BYTES) return null;
+
+  // decodeV14 does not inspect the version byte. A view of the immutable v14
+  // prefix therefore gives the new format one canonical core decoder.
+  const state = decodeV14(bytes.subarray(0, V14_BYTES));
+  if (!state) return null;
+
+  let offset = V15_CELL_VELOCITY_OFFSET;
+  for (let i = 0; i < PATTERN_SIZE; i++) {
+    state.pattern[i] = fromByte(bytes[offset++]);
+  }
+
+  for (let i = 0; i < PATTERN_SIZE; i++) {
+    state.cellProbabilities[i] = fromByte(bytes[offset++]);
+  }
+
+  for (let i = 0; i < PATTERN_SIZE; i += 2) {
+    const packed = bytes[offset++];
+    const low = packed & 0x0f;
+    const high = packed >>> 4;
+    if (low > MAX_TRIGGER_CONDITION || high > MAX_TRIGGER_CONDITION)
+      return null;
+    state.cellConditions[i] = low;
+    state.cellConditions[i + 1] = high;
+  }
+
+  for (let track = 0; track < TRACK_COUNT; track++) {
+    const length = bytes[offset++];
+    if (length < 1 || length > STEP_CAPACITY) return null;
+    state.trackLengths[track] = length;
+  }
+
+  const flags = bytes[offset];
+  if ((flags & ~1) !== 0) return null;
+  state.fillMode = (flags & 1) !== 0;
+
+  return state;
 }
 
 function decodeV14(bytes: Uint8Array): EngineState | null {
@@ -399,6 +513,9 @@ function decodeV14(bytes: Uint8Array): EngineState | null {
   const state = createDefaultEngineState();
   state.tempoBpm = tempoBpm;
   state.stepCount = stepCount;
+  // Before v15 every track wrapped at the one global length. Migrating to that
+  // value is behavior-preserving even when it differs from the fresh default.
+  state.trackLengths.fill(stepCount);
   state.swing = fromByte(bytes[offset++]) * 0.5;
   state.reverb = fromByte(bytes[offset++]);
   state.probability = fromByte(bytes[offset++]);
@@ -461,6 +578,7 @@ function canonicalizeLegacy(legacy: LegacyState): EngineState {
   state.probability = clamp01(legacy.prob);
   state.humanize = clamp01(legacy.humanize);
   state.pattern.set(legacy.pattern);
+  state.trackLengths.fill(state.stepCount);
 
   for (let track = 0; track < TRACK_COUNT; track++) {
     const visual = visualIndexForEngineTrack(track);

@@ -14,6 +14,15 @@ func TestStateHasCompleteEngineMajorShapeWithoutConstructingPhysicalToms(t *test
 	if len(state.Pattern) != PatternSize {
 		t.Fatalf("pattern length = %d, want %d", len(state.Pattern), PatternSize)
 	}
+	if len(state.CellProbabilities) != PatternSize {
+		t.Fatalf("cell probability length = %d, want %d", len(state.CellProbabilities), PatternSize)
+	}
+	if len(state.CellConditions) != PatternSize {
+		t.Fatalf("cell condition length = %d, want %d", len(state.CellConditions), PatternSize)
+	}
+	if len(state.TrackLengths) != TrackCount {
+		t.Fatalf("track length count = %d, want %d", len(state.TrackLengths), TrackCount)
+	}
 	if len(state.Tracks) != TrackCount {
 		t.Fatalf("track count = %d, want %d", len(state.Tracks), TrackCount)
 	}
@@ -47,6 +56,9 @@ func TestStateIsADeepCopy(t *testing.T) {
 	got := engine.State()
 
 	got.Pattern[0] = 1
+	got.CellProbabilities[0] = 0
+	got.CellConditions[0] = TriggerEvery4
+	got.TrackLengths[0] = 1
 	got.Tracks[0].VoiceParams[0] = 1
 	got.Tracks[tomTrackIndex].Tom.PhysicalParams[0] = 1
 	got.Tracks[tomTrackIndex].Tom.Model = TomModelPhysical
@@ -65,6 +77,9 @@ func TestReplaceStateDoesNotRetainCallerSlices(t *testing.T) {
 	want := engine.State()
 
 	input.Pattern[0] = 1
+	input.CellProbabilities[0] = 0
+	input.CellConditions[0] = TriggerEvery4
+	input.TrackLengths[0] = 1
 	input.Tracks[0].VoiceParams[0] = 1
 	input.Tracks[tomTrackIndex].Tom.PhysicalParams[0] = 1
 
@@ -81,6 +96,7 @@ func TestReplaceStateRoundTripsEveryBank(t *testing.T) {
 	source.SetReverb(0.62)
 	source.SetProbability(0.73)
 	source.SetHumanize(0.28)
+	source.SetFillMode(true)
 
 	for track := range TrackCount {
 		source.SetVolume(track, 0.13+0.1*float64(track))
@@ -89,7 +105,11 @@ func TestReplaceStateRoundTripsEveryBank(t *testing.T) {
 
 		for step := range MaxSteps {
 			source.SetCell(track, step, float64((track+step)%5)/4)
+			source.SetCellProbability(track, step, float64((track+step)%7)/6)
+			source.SetCellCondition(track, step,
+				TriggerCondition((track+step)%int(triggerConditionCount)))
 		}
+		source.SetTrackLength(track, MaxSteps-track)
 		for index := range SpecsForTrack(track) {
 			source.SetVoiceParam(track, index, math.Mod(0.17+0.11*float64(track+index), 1))
 		}
@@ -135,6 +155,10 @@ func TestReplaceStateClampsEveryFiniteNumericClass(t *testing.T) {
 	state.Reverb = 2
 	state.Probability = -2
 	state.Humanize = 3
+	state.CellProbabilities[0] = -1
+	state.CellProbabilities[1] = 2
+	state.TrackLengths[0] = -4
+	state.TrackLengths[1] = MaxSteps + 4
 	state.Pattern[0] = -1
 	state.Pattern[1] = 2
 	state.Tracks[0].Volume = 4
@@ -159,6 +183,8 @@ func TestReplaceStateClampsEveryFiniteNumericClass(t *testing.T) {
 		{"humanize", got.Humanize, 1},
 		{"pattern low", got.Pattern[0], 0},
 		{"pattern high", got.Pattern[1], 1},
+		{"cell probability low", got.CellProbabilities[0], 0},
+		{"cell probability high", got.CellProbabilities[1], 1},
 		{"volume", got.Tracks[0].Volume, 1},
 		{"decay", got.Tracks[0].Decay, 0},
 		{"voice param", got.Tracks[0].VoiceParams[0], 1},
@@ -172,6 +198,9 @@ func TestReplaceStateClampsEveryFiniteNumericClass(t *testing.T) {
 	if got.StepCount != MaxSteps {
 		t.Errorf("step count = %d, want %d", got.StepCount, MaxSteps)
 	}
+	if got.TrackLengths[0] != 1 || got.TrackLengths[1] != MaxSteps {
+		t.Errorf("track lengths = %v, want first two clamped to [1, %d]", got.TrackLengths, MaxSteps)
+	}
 }
 
 func TestReplaceStateRejectsMalformedOrNonFiniteBeforeMutation(t *testing.T) {
@@ -181,6 +210,15 @@ func TestReplaceStateRejectsMalformedOrNonFiniteBeforeMutation(t *testing.T) {
 		want   string
 	}{
 		{"short pattern", func(s *EngineState) { s.Pattern = s.Pattern[:PatternSize-1] }, "pattern length"},
+		{"short cell probabilities", func(s *EngineState) {
+			s.CellProbabilities = s.CellProbabilities[:PatternSize-1]
+		}, "cell probability length"},
+		{"short cell conditions", func(s *EngineState) {
+			s.CellConditions = s.CellConditions[:PatternSize-1]
+		}, "cell condition length"},
+		{"short track lengths", func(s *EngineState) {
+			s.TrackLengths = s.TrackLengths[:TrackCount-1]
+		}, "track length count"},
 		{"short tracks", func(s *EngineState) { s.Tracks = s.Tracks[:TrackCount-1] }, "track count"},
 		{"non-finite tempo", func(s *EngineState) { s.TempoBPM = math.NaN() }, "tempo"},
 		{"non-finite swing", func(s *EngineState) { s.Swing = math.Inf(1) }, "swing"},
@@ -188,6 +226,12 @@ func TestReplaceStateRejectsMalformedOrNonFiniteBeforeMutation(t *testing.T) {
 		{"non-finite probability", func(s *EngineState) { s.Probability = math.NaN() }, "probability"},
 		{"non-finite humanize", func(s *EngineState) { s.Humanize = math.NaN() }, "humanize"},
 		{"non-finite pattern", func(s *EngineState) { s.Pattern[80] = math.NaN() }, "pattern value 80"},
+		{"non-finite cell probability", func(s *EngineState) {
+			s.CellProbabilities[80] = math.NaN()
+		}, "cell probability 80"},
+		{"invalid cell condition", func(s *EngineState) {
+			s.CellConditions[80] = TriggerCondition(255)
+		}, "cell condition 80"},
 		{"non-finite volume", func(s *EngineState) { s.Tracks[2].Volume = math.NaN() }, "track 2 volume"},
 		{"non-finite decay", func(s *EngineState) { s.Tracks[4].Decay = math.Inf(1) }, "track 4 decay"},
 		{"short voice bank", func(s *EngineState) { s.Tracks[1].VoiceParams = nil }, "track 1 voice parameter count"},

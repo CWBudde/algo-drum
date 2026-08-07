@@ -58,6 +58,10 @@ const OTHER_METHODS: (keyof AlgoDrumApi)[] = [
   "setSwing",
   "setStepCount",
   "setCell",
+  "setCellProbability",
+  "setCellCondition",
+  "setTrackLength",
+  "setFillMode",
   "setPattern",
   "setState",
   "setVolume",
@@ -287,7 +291,7 @@ describe("engine version gate", () => {
       return api;
     });
 
-    expect(message).toContain("missing setPattern");
+    expect(message).toContain("setPattern");
   });
 });
 
@@ -417,6 +421,10 @@ describe("state echoes", () => {
     ["setSwing", [0.2]],
     ["setStepCount", [12]],
     ["setCell", [0, 0, 1]],
+    ["setCellProbability", [0, 0, 0.5]],
+    ["setCellCondition", [0, 0, 2]],
+    ["setTrackLength", [0, 7]],
+    ["setFillMode", [true]],
     ["setPattern", [createDefaultEngineState().pattern]],
     ["setVolume", [0, 0.5]],
     ["setDecay", [0, 0.5]],

@@ -646,6 +646,30 @@ export function setCell(track: number, step: number, velocity: number): void {
   configurationCommand("setCell", track, step, velocity);
 }
 
+export function setCellProbability(
+  track: number,
+  step: number,
+  probability: number,
+): void {
+  configurationCommand("setCellProbability", track, step, probability);
+}
+
+export function setCellCondition(
+  track: number,
+  step: number,
+  condition: number,
+): void {
+  configurationCommand("setCellCondition", track, step, condition);
+}
+
+export function setTrackLength(track: number, length: number): void {
+  configurationCommand("setTrackLength", track, length);
+}
+
+export function setFillMode(enabled: boolean): void {
+  configurationCommand("setFillMode", enabled);
+}
+
 // setPattern replaces the whole pattern: a flat track-major Float32Array of
 // TrackCount×MaxSteps (7×16) velocities in [0, 1], index = track*16 + step.
 export function setPattern(pattern: Float32Array): void {
