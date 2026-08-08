@@ -40,7 +40,7 @@ class FakePort {
     const before = this.posted.length;
     this.send({ type: "need", samples });
     expect(this.posted).toHaveLength(before + 1);
-    return this.posted[before].data;
+    return this.posted[before]!.data;
   }
 }
 
@@ -203,12 +203,12 @@ async function connect(engine: FakeEngine): Promise<FakePort> {
   dispatch(loadCommand());
 
   // Readiness is reached across the instantiate promise chain.
-  await vi.waitFor(() =>
+  await vi.waitFor(() => {
     expect(responses).toContainEqual({
       type: "ready",
       protocolVersion: PROTOCOL_VERSION,
-    }),
-  );
+    });
+  });
 
   const port = new FakePort();
   dispatch({ type: "connect" }, [port]);
@@ -263,9 +263,11 @@ describe("engine version gate", () => {
     vi.stubGlobal("AlgoDrum", build(PROTOCOL_VERSION));
 
     dispatch(loadCommand());
-    await vi.waitFor(() => expect(errors()).toHaveLength(1));
+    await vi.waitFor(() => {
+      expect(errors()).toHaveLength(1);
+    });
 
-    return errors()[0];
+    return errors()[0]!;
   }
 
   function engineApi(): Record<string, unknown> {

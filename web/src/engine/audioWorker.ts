@@ -334,9 +334,11 @@ function takeChunk(length: number): Float32Array {
   const bytes = length * Float32Array.BYTES_PER_ELEMENT;
 
   for (let i = bufferPool.length - 1; i >= 0; i--) {
-    if (bufferPool[i].byteLength !== bytes) continue;
+    const buffer = bufferPool[i];
+    if (!buffer || buffer.byteLength !== bytes) continue;
 
-    return new Float32Array(bufferPool.splice(i, 1)[0]);
+    bufferPool.splice(i, 1);
+    return new Float32Array(buffer);
   }
 
   return new Float32Array(length);
@@ -476,7 +478,7 @@ function isTransportCommand(name: keyof AlgoDrumApi): boolean {
 }
 
 function readTransport(): TransportSnapshot {
-  const state = workerScope.AlgoDrum.transportState();
+  const state: unknown = workerScope.AlgoDrum.transportState();
   const step = workerScope.AlgoDrum.currentStep();
   const revision = workerScope.AlgoDrum.transportRevision();
   const activeBank = workerScope.AlgoDrum.activeBank();

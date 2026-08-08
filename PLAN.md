@@ -18,7 +18,7 @@ Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pa
 | 2   | Audio pipeline & WASM     | **9/10** | +2  | Self-healing pull protocol, reported underruns, recycled buffers, idle suspends the graph   |
 | 3   | Go engine / DSP           | **9/10** | +2  | True peak limiting, drift-free timing, explicit pause, continuous reverb, lean hot paths    |
 | 4   | Architecture & state      | **9/10** | +3  | Engine-owned snapshots now arbitrate configuration, transport and the audible playhead       |
-| 5   | Frontend code quality     | **7/10** | —   | Dead bridge plumbing gone; the 502-line component and missing CSS tokens remain             |
+| 5   | Frontend code quality     | **9/10** | +2  | Shared theme tokens, strict dual-project TypeScript and strict type-aware linting             |
 | 6   | UI / UX                   | **6/10** | —   | Good knob and playhead mechanics; the grid is still unusable below ~725 px                  |
 | 7   | Accessibility             | **6/10** | —   | Real buttons, real sliders, AA text contrast; 80 flat tab stops and no AT playhead          |
 | 8   | Testing                   | **8/10** | +1  | Fuzzed engine + a fake-Worker bridge suite; components still untestable (no DOM env)        |
@@ -28,7 +28,7 @@ Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pa
 | 12  | PWA & deployment          | **6/10** | —   | Stamp verified and deploy no longer races CI; the bundle is still never precached           |
 | 13  | Feature depth vs the name | **6/10** | —   | Per-cell variation, polymeter and chained rhythm banks now provide real depth                |
 
-**Overall: 7.7/10** (was 6.6 at re-review, 4.0 at first review). The hardening, engine,
+**Overall: 7.8/10** (was 6.6 at re-review, 4.0 at first review). The hardening, engine,
 pipeline and state passes closed the correctness, DSP, transport-plumbing and split-state
 gaps; what is left is mostly reach — mobile layout, offline, accessibility depth and the
 per-step algorithms the name promises.
@@ -355,11 +355,13 @@ describe it differently. One type fixes the category rather than the instances.
       the current revision. Stop → Play races therefore cannot relight the playhead from
       old queued audio, and browser audio startup is an explicit non-advancing state.
 
-## 5. Frontend code quality — 7/10
+## 5. Frontend code quality — 9/10
 
-`bunx tsc --noEmit` and `eslint .` both pass with zero warnings, there is no `any`, the
-two casts are defensible, and the pure algo modules are well tested. The weaknesses are
-structural rather than sloppy.
+The component split now has a shared theme vocabulary beneath it, both browser and
+Node/config TypeScript projects compile under the highest-value strictness flags, and
+strict type-aware ESLint fails on warnings and missing hook dependencies. The compiler
+rollout also replaced unchecked production indexing with explicit fallbacks, guards or
+checked invariant access rather than leaving the flags as configuration-only theatre.
 
 - [x] **F7: `DrumMachine.tsx` is a 502-line god component** — persistence restore, eight
       parameter-push effects, engine seeding, mirror subscription, tap tempo, the global
@@ -396,20 +398,30 @@ structural rather than sloppy.
       (`:76`) is never released.
       The listener is installed once and reads the latest controlled value/callback
       through refs; pointer up/cancel explicitly releases capture.
-- [ ] **F14: no CSS token layer.** Three custom properties exist (`DrumMachine.css:5-8`)
+- [x] **F14: no CSS token layer.** Three custom properties exist (`DrumMachine.css:5-8`)
       while the palette repeats as raw hex across 870 lines; the accent colour lives in
       four places (`DrumMachine.css:5`, `DrumMachine.tsx:24`, `Knob.tsx:52`, and a fifth
       mismatched background in `index.html` vs `App.css:13`).
-- [ ] **F15: tsconfig strictness gaps** — `noUncheckedIndexedAccess` is **off** despite
+      Closed with a shared semantic token layer for page, panel, control, text, focus
+      and accent colours. Component-specific states stay local, SVG knobs consume the
+      same accent variables, and the HTML, manifest and rendered page share one launch
+      background.
+- [x] **F15: tsconfig strictness gaps** — `noUncheckedIndexedAccess` is **off** despite
       pervasive raw indexing (`pattern[row][col]`, `bytes[offset++]`); that is the single
       highest-value flag here. Also missing `exactOptionalPropertyTypes`,
       `verbatimModuleSyntax`, `isolatedModules`. `include: ["src"]` means
       `vite.config.ts` / `vitest.config.ts` / `playwright.config.ts` are never typechecked.
-- [ ] **F16: ESLint coverage gaps** — `eslint-plugin-jsx-a11y` now enforces the
+      All four flags are enabled. A second Node-side project covers the Vite, Vitest and
+      Playwright configs plus e2e sources, and the canonical typecheck command runs both;
+      the resulting production and fixture accesses are now proved or handled explicitly.
+- [x] **F16: ESLint coverage gaps** — `eslint-plugin-jsx-a11y` now enforces the
       hand-rolled ARIA through X14; the remaining gaps are `recommendedTypeChecked`
       rather than `strictTypeChecked`, and
       `react-hooks/exhaustive-deps` is `warn` with no `--max-warnings 0`, so a deps
       regression would not fail CI.
+      The source project now uses `strictTypeChecked`, hook dependencies are errors, and
+      `eslint . --max-warnings 0` makes the zero-warning policy executable. Production
+      non-null assertions were replaced by checked access; the exemption is test-only.
 
 ## 6. UI / UX — 6/10
 

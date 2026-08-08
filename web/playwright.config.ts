@@ -26,7 +26,7 @@ export default defineConfig({
     baseURL: BASE_URL,
     trace: "on-first-retry",
     launchOptions: {
-      executablePath,
+      ...(executablePath ? { executablePath } : {}),
       // Let the AudioContext start without a user gesture so the sequencer
       // (and its step/playhead messages) run under headless Chromium.
       args: ["--autoplay-policy=no-user-gesture-required"],
@@ -35,7 +35,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"], executablePath },
+      use: { ...devices["Desktop Chrome"] },
     },
   ],
   // Build the WASM engine + a production bundle, then serve it with

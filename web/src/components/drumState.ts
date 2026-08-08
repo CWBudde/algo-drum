@@ -73,7 +73,9 @@ function updateTrack(
   if (track < 0 || track >= state.tracks.length) return state;
 
   const tracks = [...state.tracks];
-  tracks[track] = update(tracks[track]);
+  const current = tracks[track];
+  if (!current) return state;
+  tracks[track] = update(current);
   return { ...state, tracks: tracks as EngineTracks };
 }
 
@@ -96,7 +98,9 @@ function updateBank(
 ): EngineState {
   if (bank < 0 || bank >= state.banks.length) return state;
   const banks = [...state.banks];
-  banks[bank] = update(banks[bank]);
+  const current = banks[bank];
+  if (!current) return state;
+  banks[bank] = update(current);
   return { ...state, banks: banks as EngineState["banks"] };
 }
 

@@ -1,0 +1,64 @@
+/* Shared visual vocabulary for the app shell and hardware controls. Keep these
+   tokens semantic: component-local LED, transport and model colours stay next
+   to the rules that give them meaning. */
+:root {
+  color-scheme: dark;
+
+  --color-page: #05050a;
+  --color-page-mid: #111118;
+  --color-page-highlight: #252535;
+  --color-panel-highlight: #2e2e3c;
+  --color-panel-mid: #212130;
+  --color-panel-deep: #141420;
+  --color-screen: #08080e;
+  --color-input: #11111a;
+
+  --color-control: #3a3a48;
+  --color-control-low: #23232e;
+  --color-control-hover: #45454f;
+  --color-control-hover-low: #2b2b36;
+  --color-control-active-low: #1a1a24;
+
+  --color-accent: #c87828;
+  --color-accent-blue: #6d95c8;
+  --color-focus-ring: rgba(200, 140, 60, 0.85);
+  --color-focus-ring-strong: rgba(200, 140, 60, 0.9);
+  --color-text-primary: #d8c9a8;
+  --color-text-strong: #f0e7d4;
+  --color-text-body: #cdc3ad;
+  --color-text-control: rgba(220, 210, 190, 0.92);
+  --color-text-machine: rgba(208, 199, 180, 0.86);
+  --color-text-knob: rgba(206, 197, 178, 0.85);
+
+  --border-panel: rgba(0, 0, 0, 0.75);
+  --border-control: rgba(0, 0, 0, 0.7);
+  --outline-control: rgba(0, 0, 0, 0.55);
+  --shadow-control: rgba(0, 0, 0, 0.45);
+
+  --surface-panel: linear-gradient(
+    135deg,
+    var(--color-panel-highlight) 0%,
+    var(--color-panel-mid) 32%,
+    var(--color-panel-deep) 100%
+  );
+  --surface-recessed: linear-gradient(180deg, #0c0c12, var(--color-page));
+  --surface-control: linear-gradient(
+    180deg,
+    var(--color-control),
+    var(--color-control-low)
+  );
+  --surface-control-hover: linear-gradient(
+    180deg,
+    var(--color-control-hover),
+    var(--color-control-hover-low)
+  );
+  --surface-control-active: linear-gradient(
+    180deg,
+    var(--color-control-low),
+    var(--color-control-active-low)
+  );
+}
+
+body {
+  background: var(--color-page);
+}

@@ -99,7 +99,7 @@ export function presetToFlat(preset: Preset): number[] {
     if (!row) continue;
 
     for (let step = 0; step < STEP_CAPACITY && step < row.length; step++) {
-      flat[index(track, step)] = charToVelocity(row[step]);
+      flat[index(track, step)] = charToVelocity(row[step] ?? ".");
     }
   }
 

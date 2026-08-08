@@ -36,14 +36,14 @@ describe("physical tom presets", () => {
       {
         name: "t",
         description: "t",
-        values: { [PHYSICAL_TOM_PARAMS[2].id]: 0.25 },
+        values: { [PHYSICAL_TOM_PARAMS[2]!.id]: 0.25 },
       },
       PHYSICAL_TOM_PARAMS,
     );
 
     expect(values).toHaveLength(PHYSICAL_TOM_PARAMS.length);
     expect(values[2]).toBe(0.25);
-    expect(values[0]).toBe(PHYSICAL_TOM_PARAMS[0].default);
+    expect(values[0]).toBe(PHYSICAL_TOM_PARAMS[0]!.default);
   });
 
   it("ignores an unknown id rather than throwing", () => {
@@ -58,7 +58,7 @@ describe("physical tom presets", () => {
   });
 
   it("clamps an out-of-range value", () => {
-    const id = PHYSICAL_TOM_PARAMS[0].id;
+    const id = PHYSICAL_TOM_PARAMS[0]!.id;
 
     expect(
       presetValues(

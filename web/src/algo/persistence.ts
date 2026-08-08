@@ -219,7 +219,10 @@ const MAX_TRIGGER_CONDITION = TRIGGER_CONDITION.notPreviousFired;
 // One accepted false positive: a v4/v5 blob edited to exactly 0.1255 is treated
 // as the shipped detent. There is no way to tell those apart from one byte.
 function migrateStrikeRadius(version: number, bank: number[]): void {
-  const shipped = PHYSICAL_TOM_PARAMS[PHYSICAL_STRIKE_RADIUS_INDEX].default;
+  const shipped = requiredAt(
+    PHYSICAL_TOM_PARAMS,
+    PHYSICAL_STRIKE_RADIUS_INDEX,
+  ).default;
   if (
     version < 6 &&
     bank[PHYSICAL_STRIKE_RADIUS_INDEX] === OLD_PHYSICAL_STRIKE_RADIUS_DEFAULT
@@ -263,9 +266,12 @@ function migrateAttackLevel(version: number, bank: number[]): void {
   if (version >= 13 || bank.length <= PHYSICAL_ATTACK_LEVEL_INDEX) return;
 
   const stored = bank[PHYSICAL_ATTACK_LEVEL_INDEX];
+  if (stored === undefined) return;
   if (stored === OLD_PHYSICAL_ATTACK_LEVEL_DEFAULT) {
-    bank[PHYSICAL_ATTACK_LEVEL_INDEX] =
-      PHYSICAL_TOM_PARAMS[PHYSICAL_ATTACK_LEVEL_INDEX].default;
+    bank[PHYSICAL_ATTACK_LEVEL_INDEX] = requiredAt(
+      PHYSICAL_TOM_PARAMS,
+      PHYSICAL_ATTACK_LEVEL_INDEX,
+    ).default;
 
     return;
   }
@@ -325,8 +331,16 @@ function toByte(v: number): number {
   return Math.round(clamp01(v) * 255);
 }
 
-function fromByte(b: number): number {
-  return b / 255;
+function fromByte(b: number | undefined): number {
+  return (b ?? 0) / 255;
+}
+
+function requiredAt<T>(values: ArrayLike<T>, index: number): T {
+  const value = values[index];
+  if (value === undefined) {
+    throw new RangeError(`Missing value at index ${index}`);
+  }
+  return value;
 }
 
 function velToCode(v: number): number {
@@ -466,7 +480,7 @@ export function encodeState(state: EngineState): string {
   }
 
   for (let bank = 1; bank < PATTERN_BANK_COUNT; bank++) {
-    offset = writePatternBank(bytes, offset, state.banks[bank]);
+    offset = writePatternBank(bytes, offset, requiredAt(state.banks, bank));
   }
 
   bytes[offset++] = validBankIndex(state.standaloneBank);
@@ -478,7 +492,9 @@ export function encodeState(state: EngineState): string {
   bytes[offset++] = chainLength;
   for (let index = 0; index < chainLength; index++) {
     const bank = validBankIndex(state.chain[index] ?? 0);
-    bytes[offset + Math.floor(index / 4)] |= bank << ((index % 4) * 2);
+    const packedOffset = offset + Math.floor(index / 4);
+    bytes[packedOffset] =
+      (bytes[packedOffset] ?? 0) | (bank << ((index % 4) * 2));
   }
 
   offset = V16_BYTES;
@@ -586,7 +602,7 @@ function decodeV17(bytes: Uint8Array): EngineState | null {
   let offset = V16_BYTES;
   for (const bank of state.banks) {
     for (let index = 0; index < PATTERN_SIZE; index += 4) {
-      const packed = bytes[offset++];
+      const packed = requiredAt(bytes, offset++);
       for (let lane = 0; lane < 4; lane++) {
         bank.cellRepeats[index + lane] = ((packed >>> (lane * 2)) & 0b11) + 1;
       }
@@ -603,8 +619,9 @@ function decodeV16(bytes: Uint8Array): EngineState | null {
   if (!state) return null;
 
   let offset = V16_BANK_A_HUMANIZE_OFFSET;
+  const bankA = state.banks[0];
   for (let i = 0; i < PATTERN_SIZE; i++) {
-    state.banks[0].cellHumanize[i] = fromByte(bytes[offset++]);
+    bankA.cellHumanize[i] = fromByte(bytes[offset++]);
   }
 
   for (let bank = 1; bank < PATTERN_BANK_COUNT; bank++) {
@@ -614,20 +631,20 @@ function decodeV16(bytes: Uint8Array): EngineState | null {
     offset = next.offset;
   }
 
-  const standaloneBank = bytes[offset++];
+  const standaloneBank = requiredAt(bytes, offset++);
   if (standaloneBank >= PATTERN_BANK_COUNT) return null;
   state.standaloneBank = standaloneBank;
 
-  const flags = bytes[offset++];
+  const flags = requiredAt(bytes, offset++);
   if ((flags & ~1) !== 0) return null;
   state.chainEnabled = (flags & 1) !== 0;
 
-  const chainLength = bytes[offset++];
+  const chainLength = requiredAt(bytes, offset++);
   if (chainLength < 1 || chainLength > MAX_CHAIN_LENGTH) return null;
 
   const chain = new Uint8Array(chainLength);
   for (let index = 0; index < MAX_CHAIN_LENGTH; index++) {
-    const packed = bytes[offset + Math.floor(index / 4)];
+    const packed = requiredAt(bytes, offset + Math.floor(index / 4));
     const bank = (packed >>> ((index % 4) * 2)) & 0b11;
     if (index < chainLength) chain[index] = bank;
     else if (bank !== 0) return null;
@@ -642,7 +659,7 @@ function readPatternBank(
   start: number,
 ): { bank: PatternBankState; offset: number } | null {
   let offset = start;
-  const stepCount = bytes[offset++];
+  const stepCount = requiredAt(bytes, offset++);
   if (stepCount < 1 || stepCount > STEP_CAPACITY) return null;
 
   const bank: PatternBankState = {
@@ -661,7 +678,7 @@ function readPatternBank(
   for (let i = 0; i < PATTERN_SIZE; i++)
     bank.cellHumanize[i] = fromByte(bytes[offset++]);
   for (let i = 0; i < PATTERN_SIZE; i += 2) {
-    const packed = bytes[offset++];
+    const packed = requiredAt(bytes, offset++);
     const low = packed & 0x0f;
     const high = packed >>> 4;
     if (low > MAX_TRIGGER_CONDITION || high > MAX_TRIGGER_CONDITION)
@@ -670,7 +687,7 @@ function readPatternBank(
     bank.cellConditions[i + 1] = high;
   }
   for (let track = 0; track < TRACK_COUNT; track++) {
-    const length = bytes[offset++];
+    const length = requiredAt(bytes, offset++);
     if (length < 1 || length > STEP_CAPACITY) return null;
     bank.trackLengths[track] = length;
   }
@@ -697,7 +714,7 @@ function decodeV15(bytes: Uint8Array): EngineState | null {
   }
 
   for (let i = 0; i < PATTERN_SIZE; i += 2) {
-    const packed = bytes[offset++];
+    const packed = requiredAt(bytes, offset++);
     const low = packed & 0x0f;
     const high = packed >>> 4;
     if (low > MAX_TRIGGER_CONDITION || high > MAX_TRIGGER_CONDITION)
@@ -707,12 +724,12 @@ function decodeV15(bytes: Uint8Array): EngineState | null {
   }
 
   for (let track = 0; track < TRACK_COUNT; track++) {
-    const length = bytes[offset++];
+    const length = requiredAt(bytes, offset++);
     if (length < 1 || length > STEP_CAPACITY) return null;
     bank.trackLengths[track] = length;
   }
 
-  const flags = bytes[offset];
+  const flags = requiredAt(bytes, offset);
   if ((flags & ~1) !== 0) return null;
   state.fillMode = (flags & 1) !== 0;
 
@@ -723,8 +740,9 @@ function decodeV14(bytes: Uint8Array): EngineState | null {
   if (bytes.length !== V14_BYTES) return null;
 
   let offset = 1;
-  const tempoBpm = bytes[offset++] | (bytes[offset++] << 8);
-  const stepCount = bytes[offset++];
+  const tempoBpm =
+    requiredAt(bytes, offset++) | (requiredAt(bytes, offset++) << 8);
+  const stepCount = requiredAt(bytes, offset++);
   if (tempoBpm < 30 || tempoBpm > 300 || stepCount < 1 || stepCount > 16)
     return null;
 
@@ -741,7 +759,7 @@ function decodeV14(bytes: Uint8Array): EngineState | null {
   state.humanize = fromByte(bytes[offset++]);
 
   for (let i = 0; i < V14_PATTERN_BYTES; i++) {
-    const packed = bytes[offset++];
+    const packed = requiredAt(bytes, offset++);
     for (let j = 0; j < 4; j++) {
       const code = (packed >> (j * 2)) & 0b11;
       // Code 3 has never represented a velocity. Treat it as corruption
@@ -752,26 +770,28 @@ function decodeV14(bytes: Uint8Array): EngineState | null {
   }
 
   for (let track = 0; track < TRACK_COUNT; track++) {
-    state.tracks[track].volume = fromByte(bytes[offset++]);
-    state.tracks[track].decay = fromByte(bytes[offset++]);
+    const trackState = requiredAt(state.tracks, track);
+    trackState.volume = fromByte(bytes[offset++]);
+    trackState.decay = fromByte(bytes[offset++]);
   }
 
-  const muteMask = bytes[offset++];
+  const muteMask = requiredAt(bytes, offset++);
   if ((muteMask & 0x80) !== 0) return null;
   for (let track = 0; track < TRACK_COUNT; track++) {
-    state.tracks[track].muted = (muteMask & (1 << track)) !== 0;
+    requiredAt(state.tracks, track).muted = (muteMask & (1 << track)) !== 0;
   }
 
   for (let track = 0; track < TRACK_COUNT; track++) {
     for (let i = 0; i < VOICE_PARAM_CAPACITY; i++) {
       const value = fromByte(bytes[offset++]);
-      if (i < state.tracks[track].voiceParams.length) {
-        state.tracks[track].voiceParams[i] = value;
+      const voiceParams = requiredAt(state.tracks, track).voiceParams;
+      if (i < voiceParams.length) {
+        voiceParams[i] = value;
       }
     }
   }
 
-  const modelMask = bytes[offset++];
+  const modelMask = requiredAt(bytes, offset++);
   if ((modelMask & ~0b11) !== 0) return null;
 
   const tom = state.tracks[3];
@@ -802,15 +822,16 @@ function canonicalizeLegacy(legacy: LegacyState): EngineState {
 
   for (let track = 0; track < TRACK_COUNT; track++) {
     const visual = visualIndexForEngineTrack(track);
-    state.tracks[track].volume = legacy.volumes[visual];
-    state.tracks[track].decay = legacy.decays[visual];
-    state.tracks[track].muted = legacy.muted[visual];
+    const trackState = requiredAt(state.tracks, track);
+    trackState.volume = requiredAt(legacy.volumes, visual);
+    trackState.decay = requiredAt(legacy.decays, visual);
+    trackState.muted = requiredAt(legacy.muted, visual);
 
     const storedParams = legacy.voiceParams?.[track];
     if (storedParams) {
-      const params = state.tracks[track].voiceParams;
+      const params = trackState.voiceParams;
       for (let i = 0; i < Math.min(params.length, storedParams.length); i++) {
-        params[i] = storedParams[i];
+        params[i] = requiredAt(storedParams, i);
       }
     }
   }
@@ -832,7 +853,7 @@ function decodeLegacyState(bytes: Uint8Array): LegacyState | null {
   // The expected length is version-specific: a v1 blob is not a truncated v2
   // blob, and a full-length blob claiming v1 is corrupt rather than v1 with
   // junk appended.
-  const version = bytes[0];
+  const version = requiredAt(bytes, 0);
   const expected =
     version === 1
       ? V1_BYTES
@@ -876,14 +897,14 @@ function decodeLegacyState(bytes: Uint8Array): LegacyState | null {
   for (let i = 0; i < LEGACY_TRACK_COUNT; i++)
     legacyDecays.push(fromByte(bytes[offset++]));
 
-  const muteMask = bytes[offset++];
+  const muteMask = requiredAt(bytes, offset++);
   const legacyMuted: boolean[] = [];
   for (let i = 0; i < LEGACY_TRACK_COUNT; i++)
     legacyMuted.push((muteMask & (1 << i)) !== 0);
 
   const pattern = new Array<number>(PATTERN_SIZE).fill(VEL_OFF);
   for (let i = 0; i < LEGACY_PATTERN_BYTES; i++) {
-    const packed = bytes[offset++];
+    const packed = requiredAt(bytes, offset++);
     for (let j = 0; j < 4; j++) {
       pattern[i * 4 + j] = codeToVel((packed >> (j * 2)) & 0b11);
     }
@@ -893,10 +914,10 @@ function decodeLegacyState(bytes: Uint8Array): LegacyState | null {
   const decays = new Array<number>(TRACK_COUNT).fill(0.5);
   const muted = new Array<boolean>(TRACK_COUNT).fill(false);
   for (let i = 0; i < LEGACY_TRACK_COUNT; i++) {
-    const visualIndex = LEGACY_VISUAL_TO_CURRENT[i];
-    volumes[visualIndex] = legacyVolumes[i];
-    decays[visualIndex] = legacyDecays[i];
-    muted[visualIndex] = legacyMuted[i];
+    const visualIndex = requiredAt(LEGACY_VISUAL_TO_CURRENT, i);
+    volumes[visualIndex] = requiredAt(legacyVolumes, i);
+    decays[visualIndex] = requiredAt(legacyDecays, i);
+    muted[visualIndex] = requiredAt(legacyMuted, i);
   }
 
   const state: LegacyState = {
@@ -924,7 +945,7 @@ function decodeLegacyState(bytes: Uint8Array): LegacyState | null {
 
   if (version === 2) return { ...state, voiceParams };
 
-  const tomModelCode = bytes[offset++];
+  const tomModelCode = requiredAt(bytes, offset++);
   if (tomModelCode > 1) return null;
 
   const stateWithModel: LegacyState = {
@@ -958,14 +979,14 @@ function decodeLegacyState(bytes: Uint8Array): LegacyState | null {
     );
   }
 
-  const extraMuteMask = bytes[offset++];
+  const extraMuteMask = requiredAt(bytes, offset++);
   for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
     stateWithPhysical.muted[visualIndexForEngineTrack(track)] =
       (extraMuteMask & (1 << (track - LEGACY_TRACK_COUNT))) !== 0;
   }
 
   for (let i = 0; i < EXTRA_PATTERN_BYTES; i++) {
-    const packed = bytes[offset++];
+    const packed = requiredAt(bytes, offset++);
     for (let j = 0; j < 4; j++) {
       pattern[LEGACY_PATTERN_SIZE + i * 4 + j] = codeToVel(
         (packed >> (j * 2)) & 0b11,
@@ -982,7 +1003,7 @@ function decodeLegacyState(bytes: Uint8Array): LegacyState | null {
 
   if (version < 9) return stateWithPhysical;
 
-  const tom2ModelCode = bytes[offset++];
+  const tom2ModelCode = requiredAt(bytes, offset++);
   if (tom2ModelCode > 1) return null;
 
   // Both banks were widened together, so they share physicalParamCount.

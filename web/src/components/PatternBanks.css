@@ -23,7 +23,7 @@
   min-height: 28px;
   border: 1px solid rgba(0, 0, 0, 0.72);
   border-radius: 5px;
-  background: linear-gradient(180deg, #3a3a48, #20202b);
+  background: linear-gradient(180deg, var(--color-control), #20202b);
   color: rgba(224, 215, 196, 0.94);
   font: inherit;
   cursor: pointer;
@@ -145,7 +145,7 @@
 .dm-chain-panel button:focus-visible,
 .dm-chain-panel select:focus-visible,
 .dm-chain-toggle input:focus-visible {
-  outline: 2px solid rgba(200, 140, 60, 0.9);
+  outline: 2px solid var(--color-focus-ring-strong);
   outline-offset: 2px;
 }
 

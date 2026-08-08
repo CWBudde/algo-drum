@@ -23,7 +23,7 @@
   padding: 0;
   border: 1px solid rgba(0, 0, 0, 0.8);
   border-radius: 16px;
-  background: linear-gradient(135deg, #2e2e3c 0%, #212130 32%, #141420 100%);
+  background: var(--surface-panel);
   color: var(--dm-text);
   font-family: "Inter", "Helvetica Neue", sans-serif;
   box-shadow:
@@ -60,7 +60,7 @@
      accessible name from rendered text, so this only affects the visual. */
   text-transform: uppercase;
   /* X3: #d8c9a8 on #212130 → 9.6:1, well past the 4.5:1 floor for this size. */
-  color: #d8c9a8;
+  color: var(--color-text-primary);
 }
 
 .dm-voice-close {
@@ -71,7 +71,7 @@
   border-radius: 5px;
   background: transparent;
   /* X3: rgba(206,197,178,0.85) over #2e2e3c → 7.4:1. */
-  color: rgba(206, 197, 178, 0.85);
+  color: var(--color-text-knob);
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
@@ -98,7 +98,7 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(206, 197, 178, 0.85);
+  color: var(--color-text-knob);
 }
 
 .dm-voice-model label {
@@ -140,7 +140,7 @@
 }
 
 .dm-voice-model input:focus-visible + span {
-  outline: 2px solid rgba(200, 140, 60, 0.85);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 
@@ -167,7 +167,7 @@
 }
 
 .dm-voice-model-help > button:focus-visible {
-  outline: 2px solid rgba(200, 140, 60, 0.85);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 
@@ -240,7 +240,7 @@
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   /* X3: rgba(206,197,178,0.85) over the panel gradient → ≥7:1 throughout. */
-  color: rgba(206, 197, 178, 0.85);
+  color: var(--color-text-knob);
   white-space: nowrap;
 }
 
@@ -287,7 +287,7 @@
 
 .dm-voice:focus-visible,
 .dm-voice-close:focus-visible {
-  outline: 2px solid rgba(200, 140, 60, 0.85);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 

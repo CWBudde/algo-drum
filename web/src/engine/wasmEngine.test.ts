@@ -181,7 +181,7 @@ const importEngine = async () => {
   return await import("./wasmEngine");
 };
 
-const workers = () => FakeWorker.created;
+const workers = () => FakeWorker.created as [FakeWorker, ...FakeWorker[]];
 
 beforeEach(() => {
   FakeWorker.created = [];
@@ -242,16 +242,23 @@ describe("loadWasm", () => {
     expect(workers()).toHaveLength(2);
     expect(workers()[0].terminated).toBe(true);
 
-    workers()[1].ready();
+    workers()[1]!.ready();
     await expect(retry).resolves.toBeUndefined();
   });
 
   it.each([
     [
       "an error response",
-      (w: FakeWorker) => w.emit({ type: "error", error: "wasm fetch failed" }),
+      (w: FakeWorker) => {
+        w.emit({ type: "error", error: "wasm fetch failed" });
+      },
     ],
-    ["onerror", (w: FakeWorker) => w.fail("boom")],
+    [
+      "onerror",
+      (w: FakeWorker) => {
+        w.fail("boom");
+      },
+    ],
     [
       "onmessageerror",
       (w: FakeWorker) => w.onmessageerror?.({} as MessageEvent),
@@ -354,21 +361,21 @@ describe("command queue", () => {
     // Retry, then edit B before the replacement worker is ready.
     const retry = engine.loadWasm();
     engine.setCell(0, 1, 1, 1.0);
-    workers()[1].ready();
+    workers()[1]!.ready();
     await retry;
 
     // Both edits are replayed, so both are echoed exactly once.
-    expect(workers()[1].commands()).toEqual([
+    expect(workers()[1]!.commands()).toEqual([
       { type: "cmd", name: "setCell", args: [0, 0, 0, 0.7] },
       { type: "cmd", name: "setCell", args: [0, 1, 1, 1.0] },
     ]);
 
     // The echo for A alone must not be published: it predates B.
-    workers()[1].emit({ type: "stateSync", state: state(130) });
+    workers()[1]!.emit({ type: "stateSync", state: state(130) });
     expect(listener).not.toHaveBeenCalled();
 
     const current = state(140);
-    workers()[1].emit({ type: "stateSync", state: current });
+    workers()[1]!.emit({ type: "stateSync", state: current });
     expect(listener).toHaveBeenCalledExactlyOnceWith(current);
   });
 
@@ -394,7 +401,9 @@ describe("command queue", () => {
     const invalid = state();
     invalid.banks[0].pattern = new Float32Array(1);
 
-    expect(() => engine.setState(invalid)).toThrow(TypeError);
+    expect(() => {
+      engine.setState(invalid);
+    }).toThrow(TypeError);
     expect(workers()[0].commands()).toHaveLength(0);
 
     const unsolicited = state(150);
@@ -409,7 +418,7 @@ describe("command queue", () => {
     const supplied = state();
 
     engine.setState(supplied);
-    const posted = workers()[0].commands()[0];
+    const posted = workers()[0].commands()[0]!;
     const snapshot = posted.args[0] as typeof supplied;
 
     expect(snapshot).not.toBe(supplied);
@@ -494,8 +503,8 @@ describe("command queue", () => {
     engine.setChain(chain);
 
     const commands = workers()[0].commands();
-    expect(commands[0].args[1]).not.toBe(bank.pattern);
-    const snapshot = commands[1].args[1] as typeof bank;
+    expect(commands[0]!.args[1]).not.toBe(bank.pattern);
+    const snapshot = commands[1]!.args[1] as typeof bank;
     expect(snapshot).not.toBe(bank);
     expect(snapshot.pattern).not.toBe(bank.pattern);
     expect(snapshot.cellProbabilities).not.toBe(bank.cellProbabilities);
@@ -503,7 +512,7 @@ describe("command queue", () => {
     expect(snapshot.cellConditions).not.toBe(bank.cellConditions);
     expect(snapshot.cellRepeats).not.toBe(bank.cellRepeats);
     expect(snapshot.trackLengths).not.toBe(bank.trackLengths);
-    expect(commands[2].args[0]).not.toBe(chain);
+    expect(commands[2]!.args[0]).not.toBe(chain);
   });
 });
 
@@ -516,7 +525,7 @@ const loaded = async () => {
   return engine;
 };
 
-const node = () => FakeWorkletNode.created[0];
+const node = () => FakeWorkletNode.created[0]!;
 
 describe("transport", () => {
   it("loads the worklet under the live protocol version", async () => {
@@ -525,7 +534,7 @@ describe("transport", () => {
     await engine.play();
 
     expect(FakeAudioContext.modules).toHaveLength(1);
-    expect(FakeAudioContext.modules[0]).toMatch(
+    expect(FakeAudioContext.modules[0]!).toMatch(
       new RegExp(`worklet\\.js\\?v=${PROTOCOL_VERSION}$`),
     );
   });
@@ -585,7 +594,7 @@ describe("transport", () => {
       queuedBank: -1,
       chainPosition: -1,
     });
-    expect(snapshots[snapshots.length - 1].queuedBank).toBe(3);
+    expect(snapshots[snapshots.length - 1]!.queuedBank).toBe(3);
 
     node().transport("playing", 0, 1, {
       activeBank: 2,
@@ -602,14 +611,20 @@ describe("transport", () => {
   it.each([
     [
       "a fatal response",
-      (worker: FakeWorker) =>
+      (worker: FakeWorker) => {
         worker.emit({
           type: "error",
           error: "rendering failed",
           fatal: true,
-        }),
+        });
+      },
     ],
-    ["onerror", (worker: FakeWorker) => worker.fail("worker crashed")],
+    [
+      "onerror",
+      (worker: FakeWorker) => {
+        worker.fail("worker crashed");
+      },
+    ],
     [
       "onmessageerror",
       (worker: FakeWorker) => worker.onmessageerror?.({} as MessageEvent),
@@ -654,9 +669,9 @@ describe("transport", () => {
 
     first.fail("worker crashed");
     const retry = engine.loadWasm();
-    workers()[1].ready();
+    workers()[1]!.ready();
     await retry;
-    sync(workers()[1], "playing", 0, 2);
+    sync(workers()[1]!, "playing", 0, 2);
 
     // This message was already queued when terminate() ran. It belongs to the
     // failed worker and must not replace the new worker's confirmed state.
@@ -767,7 +782,7 @@ describe("playhead", () => {
   });
 });
 
-const ctx = () => FakeAudioContext.created[0];
+const ctx = () => FakeAudioContext.created[0]!;
 
 // flush lets the suspend/resume promise chains settle.
 const flush = async () => {
@@ -877,7 +892,7 @@ describe("dispose", () => {
     expect(workers()[0].terminated).toBe(true);
     expect(node().disconnected).toBe(1);
     expect(node().port.onmessage).toBeNull();
-    expect(FakeAudioContext.created[0].closed).toBe(true);
+    expect(FakeAudioContext.created[0]!.closed).toBe(true);
   });
 
   it("darkens the playhead", async () => {
@@ -900,7 +915,7 @@ describe("dispose", () => {
     const reload = engine.loadWasm();
     expect(workers()).toHaveLength(2);
 
-    workers()[1].ready();
+    workers()[1]!.ready();
     await expect(reload).resolves.toBeUndefined();
   });
 
@@ -927,9 +942,9 @@ describe("dispose", () => {
     await expect(cancelled).rejects.toThrow(/disposed/);
 
     expect(workers()).toHaveLength(2);
-    expect(workers()[1].terminated).toBe(false);
+    expect(workers()[1]!.terminated).toBe(false);
 
-    workers()[1].ready();
+    workers()[1]!.ready();
     await expect(reload).resolves.toBeUndefined();
   });
 

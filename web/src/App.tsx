@@ -22,10 +22,12 @@ export default function App() {
   const attemptLoad = useCallback(() => {
     setLoad({ status: "loading" });
     loadWasm()
-      .then(() => setLoad({ status: "ready" }))
-      .catch((e: unknown) =>
-        setLoad({ status: "error", message: describeError(e) }),
-      );
+      .then(() => {
+        setLoad({ status: "ready" });
+      })
+      .catch((e: unknown) => {
+        setLoad({ status: "error", message: describeError(e) });
+      });
   }, []);
 
   useEffect(

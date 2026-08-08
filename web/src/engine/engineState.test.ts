@@ -41,7 +41,7 @@ describe("EngineState", () => {
 
     state.tracks.forEach((track, index) => {
       expect(track).toMatchObject({ volume: 0.75, decay: 0.5, muted: false });
-      expect(track.voiceParams).toHaveLength(VOICE_PARAMS[index].length);
+      expect(track.voiceParams).toHaveLength(VOICE_PARAMS[index]!.length);
       if (index === 3 || index === 5) {
         expect(track.tom?.model).toBe("procedural");
         expect(track.tom?.physicalParams).toHaveLength(
@@ -63,22 +63,22 @@ describe("EngineState", () => {
     expect(clone.banks).not.toBe(state.banks);
     clone.banks.forEach((bank, index) => {
       expect(bank).not.toBe(state.banks[index]);
-      expect(bank.pattern).not.toBe(state.banks[index].pattern);
+      expect(bank.pattern).not.toBe(state.banks[index]!.pattern);
       expect(bank.cellProbabilities).not.toBe(
-        state.banks[index].cellProbabilities,
+        state.banks[index]!.cellProbabilities,
       );
-      expect(bank.cellHumanize).not.toBe(state.banks[index].cellHumanize);
-      expect(bank.cellConditions).not.toBe(state.banks[index].cellConditions);
-      expect(bank.cellRepeats).not.toBe(state.banks[index].cellRepeats);
-      expect(bank.trackLengths).not.toBe(state.banks[index].trackLengths);
+      expect(bank.cellHumanize).not.toBe(state.banks[index]!.cellHumanize);
+      expect(bank.cellConditions).not.toBe(state.banks[index]!.cellConditions);
+      expect(bank.cellRepeats).not.toBe(state.banks[index]!.cellRepeats);
+      expect(bank.trackLengths).not.toBe(state.banks[index]!.trackLengths);
     });
     expect(clone.chain).not.toBe(state.chain);
     clone.tracks.forEach((track, index) => {
       expect(track).not.toBe(state.tracks[index]);
-      expect(track.voiceParams).not.toBe(state.tracks[index].voiceParams);
+      expect(track.voiceParams).not.toBe(state.tracks[index]!.voiceParams);
       if (track.tom) {
         expect(track.tom.physicalParams).not.toBe(
-          state.tracks[index].tom?.physicalParams,
+          state.tracks[index]!.tom?.physicalParams,
         );
       }
     });
@@ -148,7 +148,7 @@ describe("EngineState", () => {
     [
       "bad parameter width",
       (s: ReturnType<typeof createDefaultEngineState>) => {
-        s.tracks[2].voiceParams = new Float32Array(VOICE_PARAMS[2].length - 1);
+        s.tracks[2].voiceParams = new Float32Array(VOICE_PARAMS[2]!.length - 1);
       },
     ],
   ])("rejects %s", (_name, corrupt) => {

@@ -14,7 +14,7 @@ describe("pattern bank history", () => {
     next.pattern[0] = 1;
     next.cellProbabilities[0] = 0.5;
     const history = recordPatternBank(EMPTY_PATTERN_HISTORY, current, next);
-    expect(history.past[0].pattern[0]).toBe(0);
+    expect(history.past[0]!.pattern[0]).toBe(0);
     expect(history.future).toEqual([]);
     expect(recordPatternBank(history, next, next)).toBe(history);
   });
@@ -26,10 +26,10 @@ describe("pattern bank history", () => {
     const recorded = recordPatternBank(EMPTY_PATTERN_HISTORY, before, after);
     const undone = undoPatternBank(recorded, after);
     expect(undone.bank?.pattern[0]).toBe(0);
-    expect(undone.history.future[0].pattern[0]).toBe(1);
+    expect(undone.history.future[0]!.pattern[0]).toBe(1);
 
     undone.bank!.pattern[0] = 0.25;
-    expect(recorded.past[0].pattern[0]).toBe(0);
+    expect(recorded.past[0]!.pattern[0]).toBe(0);
 
     const redone = redoPatternBank(undone.history, undone.bank!);
     expect(redone.bank?.pattern[0]).toBe(1);

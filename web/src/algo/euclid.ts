@@ -28,7 +28,9 @@ export function euclid(pulses: number, steps: number, rotation = 0): boolean[] {
     const pairs = Math.min(counts.length, remainders.length);
     const nextCounts: boolean[][] = [];
     for (let i = 0; i < pairs; i++) {
-      nextCounts.push([...counts[i], ...remainders[i]]);
+      const count = counts[i];
+      const remainder = remainders[i];
+      if (count && remainder) nextCounts.push([...count, ...remainder]);
     }
 
     const nextRemainders =
@@ -46,7 +48,7 @@ export function euclid(pulses: number, steps: number, rotation = 0): boolean[] {
   const shift = ((Math.floor(rotation) % n) + n) % n;
   const out = new Array<boolean>(n);
   for (let i = 0; i < n; i++) {
-    out[i] = flat[(i + shift) % n];
+    out[i] = flat[(i + shift) % n] ?? false;
   }
 
   return out;

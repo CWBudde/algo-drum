@@ -55,7 +55,7 @@ export default function Knob({
   valueText,
   defaultValue,
   size = 48,
-  color = "#C87828",
+  color = "var(--color-accent)",
   showReadout = true,
 }: KnobProps) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -86,7 +86,7 @@ export default function Knob({
         startY: e.clientY,
         startVal: value,
       };
-      e.currentTarget.setPointerCapture?.(e.pointerId);
+      e.currentTarget.setPointerCapture(e.pointerId);
       e.currentTarget.focus();
       setDragging(true);
     },
@@ -140,7 +140,9 @@ export default function Knob({
       onChangeRef.current(next);
     };
     svg.addEventListener("wheel", onWheel, { passive: false });
-    return () => svg.removeEventListener("wheel", onWheel);
+    return () => {
+      svg.removeEventListener("wheel", onWheel);
+    };
   }, []);
 
   const handleKeyDown = useCallback(

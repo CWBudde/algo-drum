@@ -61,8 +61,8 @@ describe("pattern view helpers", () => {
   it("maps engine-major tracks into the reversed visual order", () => {
     const flat = Array.from({ length: PATTERN_SIZE }, (_, index) => index);
     const visual = flatToVisual(flat);
-    expect(visual[0][0]).toBe(4 * STEP_CAPACITY);
-    expect(visual[6][15]).toBe(15);
+    expect(visual[0]![0]).toBe(4 * STEP_CAPACITY);
+    expect(visual[6]![15]).toBe(15);
   });
 
   it("maps and nudges continuous velocities at bounded precision", () => {

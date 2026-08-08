@@ -162,13 +162,20 @@ export function useEngineSync({
   useEffect(() => engine.onTransport(setTransport), []);
   useEffect(() => engine.onBankPlayback(setBankPlayback), []);
   useEffect(
-    () => engine.onState((next) => dispatch({ type: "replace", state: next })),
+    () =>
+      engine.onState((next) => {
+        dispatch({ type: "replace", state: next });
+      }),
     [dispatch],
   );
 
   useEffect(() => {
-    const id = window.setTimeout(() => saveLocal(state), 300);
-    return () => window.clearTimeout(id);
+    const id = window.setTimeout(() => {
+      saveLocal(state);
+    }, 300);
+    return () => {
+      window.clearTimeout(id);
+    };
   }, [state]);
 
   return { applyStateAction, transport, bankPlayback };

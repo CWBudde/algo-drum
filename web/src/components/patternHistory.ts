@@ -117,8 +117,9 @@ export function usePatternHistory(
     (bank: number, next: PatternBankState) => {
       const current = banksRef.current[bank];
       if (!current) return;
-      const history = recordPatternBank(histories.current[bank], current, next);
-      if (history === histories.current[bank]) return;
+      const currentHistory = histories.current[bank] ?? EMPTY_PATTERN_HISTORY;
+      const history = recordPatternBank(currentHistory, current, next);
+      if (history === currentHistory) return;
       updateHistory(bank, history);
       applyBank(bank, cloneBank(next));
     },
@@ -151,7 +152,10 @@ export function usePatternHistory(
     const bank = selectedRef.current;
     const current = banksRef.current[bank];
     if (!current) return;
-    const transition = undoPatternBank(histories.current[bank], current);
+    const transition = undoPatternBank(
+      histories.current[bank] ?? EMPTY_PATTERN_HISTORY,
+      current,
+    );
     if (!transition.bank) return;
     updateHistory(bank, transition.history);
     applyBank(bank, transition.bank);
@@ -161,7 +165,10 @@ export function usePatternHistory(
     const bank = selectedRef.current;
     const current = banksRef.current[bank];
     if (!current) return;
-    const transition = redoPatternBank(histories.current[bank], current);
+    const transition = redoPatternBank(
+      histories.current[bank] ?? EMPTY_PATTERN_HISTORY,
+      current,
+    );
     if (!transition.bank) return;
     updateHistory(bank, transition.history);
     applyBank(bank, transition.bank);

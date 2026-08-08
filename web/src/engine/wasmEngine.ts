@@ -109,7 +109,9 @@ function notifyBankPlayback(snapshot: BankPlayback): void {
   }
 
   bankPlayback = snapshot;
-  bankPlaybackListeners.forEach((listener) => listener(snapshot));
+  bankPlaybackListeners.forEach((listener) => {
+    listener(snapshot);
+  });
 }
 
 function notifyTransport(state: TransportState): void {
@@ -117,7 +119,9 @@ function notifyTransport(state: TransportState): void {
   if (state === transportState) return;
 
   transportState = state;
-  transportListeners.forEach((listener) => listener(state));
+  transportListeners.forEach((listener) => {
+    listener(state);
+  });
 }
 
 // Messages the worklet posts to the main thread over the node's port.
@@ -141,7 +145,9 @@ export function onStep(listener: StepListener): () => void {
 
 function notifyStep(step: number): void {
   audibleStep = step;
-  stepListeners.forEach((listener) => listener(step));
+  stepListeners.forEach((listener) => {
+    listener(step);
+  });
 }
 
 function validTransportSnapshot(value: TransportSnapshot): boolean {
@@ -256,7 +262,9 @@ function reportUnderrun(samples: number, count: number): void {
     );
   }
 
-  underrunListeners.forEach((listener) => listener({ samples, count }));
+  underrunListeners.forEach((listener) => {
+    listener({ samples, count });
+  });
 }
 
 // reportIdle acts on the engine going quiet: with nothing left ringing there
@@ -543,7 +551,9 @@ function reportWorkerUnavailable(active: Worker, error: Error): void {
   transportRevision = 0;
   notifyBankPlayback({ activeBank: 0, queuedBank: -1, chainPosition: -1 });
   notifyStep(-1);
-  failureListeners.forEach((listener) => listener(error));
+  failureListeners.forEach((listener) => {
+    listener(error);
+  });
 }
 
 // teardownAudio tears the audio graph down so the next play() can rebuild it.

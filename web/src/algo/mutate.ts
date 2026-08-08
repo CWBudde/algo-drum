@@ -38,30 +38,31 @@ function shiftOneHit(
 ): void {
   const hits: number[] = [];
   for (let step = 0; step < stepCount; step++) {
-    if (pattern[index(track, step)] > VEL_OFF) hits.push(step);
+    if ((pattern[index(track, step)] ?? VEL_OFF) > VEL_OFF) hits.push(step);
   }
   if (hits.length === 0) return;
 
   const step = hits[Math.floor(rng() * hits.length)];
+  if (step === undefined) return;
   const dir = rng() < 0.5 ? -1 : 1;
   const target = (step + dir + stepCount) % stepCount;
 
   // Don't stomp an existing hit; skip the move if the neighbour is taken.
-  if (pattern[index(track, target)] > VEL_OFF) return;
+  if ((pattern[index(track, target)] ?? VEL_OFF) > VEL_OFF) return;
 
   // Protect the only downbeat bass hit from wandering off step 0.
   if (track === BASS_TRACK && step === 0 && countBassHits(pattern) === 1) {
     return;
   }
 
-  pattern[index(track, target)] = pattern[index(track, step)];
+  pattern[index(track, target)] = pattern[index(track, step)] ?? VEL_OFF;
   pattern[index(track, step)] = VEL_OFF;
 }
 
 function countBassHits(pattern: number[]): number {
   let n = 0;
   for (let step = 0; step < STEP_CAPACITY; step++) {
-    if (pattern[index(BASS_TRACK, step)] > VEL_OFF) n++;
+    if ((pattern[index(BASS_TRACK, step)] ?? VEL_OFF) > VEL_OFF) n++;
   }
   return n;
 }
@@ -85,7 +86,7 @@ export function mutate(pattern: number[], opts: MutateOptions = {}): number[] {
   const track = Math.floor(rng() * TRACK_COUNT);
   const step = Math.floor(rng() * stepCount);
   const cell = index(track, step);
-  if (next[cell] > VEL_OFF) {
+  if ((next[cell] ?? VEL_OFF) > VEL_OFF) {
     const isLoneBassDownbeat =
       track === BASS_TRACK && step === 0 && countBassHits(next) === 1;
     if (countHits(next) > 1 && !isLoneBassDownbeat) next[cell] = VEL_OFF;
@@ -98,13 +99,15 @@ export function mutate(pattern: number[], opts: MutateOptions = {}): number[] {
     const hits: number[] = [];
     for (let t = 0; t < TRACK_COUNT; t++) {
       for (let s = 0; s < stepCount; s++) {
-        if (next[index(t, s)] > VEL_OFF) hits.push(index(t, s));
+        if ((next[index(t, s)] ?? VEL_OFF) > VEL_OFF) hits.push(index(t, s));
       }
     }
     if (hits.length > 0) {
       const cellToFlip = hits[Math.floor(rng() * hits.length)];
-      next[cellToFlip] =
-        next[cellToFlip] >= VEL_ACCENT ? VEL_NORMAL : VEL_ACCENT;
+      if (cellToFlip !== undefined) {
+        next[cellToFlip] =
+          (next[cellToFlip] ?? VEL_OFF) >= VEL_ACCENT ? VEL_NORMAL : VEL_ACCENT;
+      }
     }
   }
 

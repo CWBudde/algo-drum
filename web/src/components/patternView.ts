@@ -109,10 +109,10 @@ export function velocityName(velocity: number): string {
 }
 
 export function flatToVisual(flat: ArrayLike<number>): number[][] {
-  return TRACKS.map((_, row) =>
+  return TRACK_INDEX.map((track) =>
     Array.from(
       { length: STEP_CAPACITY },
-      (_, col) => flat[TRACK_INDEX[row] * STEP_CAPACITY + col] ?? 0,
+      (_, col) => flat[track * STEP_CAPACITY + col] ?? 0,
     ),
   );
 }

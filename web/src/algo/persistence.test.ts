@@ -107,11 +107,11 @@ function makeState(): EngineState {
   state.humanize = q(0.33);
 
   for (let bankIndex = 0; bankIndex < PATTERN_BANK_COUNT; bankIndex++) {
-    const bank = state.banks[bankIndex];
+    const bank = state.banks[bankIndex]!;
     bank.stepCount = 7 + bankIndex;
     for (let i = 0; i < PATTERN_SIZE; i++) {
       bank.pattern[i] = q(
-        [VEL_OFF, VEL_NORMAL, VEL_ACCENT][(i + bankIndex) % 3],
+        [VEL_OFF, VEL_NORMAL, VEL_ACCENT][(i + bankIndex) % 3]!,
       );
       bank.cellProbabilities[i] = q(((i + bankIndex) % 11) / 10);
       bank.cellHumanize[i] = q(((i + bankIndex * 2) % 13) / 12);
@@ -128,7 +128,7 @@ function makeState(): EngineState {
   state.chain = Uint8Array.from([0, 1, 1, 3]);
 
   for (let track = 0; track < TRACK_COUNT; track++) {
-    const row = state.tracks[track];
+    const row = state.tracks[track]!;
     row.volume = q((track + 1) / 9);
     row.decay = q((8 - track) / 10);
     row.muted = track % 3 === 1;
@@ -223,12 +223,12 @@ function legacyV13Bytes(state: LegacyFixtureState): Uint8Array {
   }
 
   for (const visual of LEGACY_VISUAL_TO_CURRENT)
-    bytes[offset++] = toByte(state.volumes[visual]);
+    bytes[offset++] = toByte(state.volumes[visual]!);
   for (const visual of LEGACY_VISUAL_TO_CURRENT)
-    bytes[offset++] = toByte(state.decays[visual]);
+    bytes[offset++] = toByte(state.decays[visual]!);
   let muteMask = 0;
   for (let i = 0; i < LEGACY_TRACK_COUNT; i++) {
-    if (state.muted[LEGACY_VISUAL_TO_CURRENT[i]]) muteMask |= 1 << i;
+    if (state.muted[LEGACY_VISUAL_TO_CURRENT[i]!]) muteMask |= 1 << i;
   }
   bytes[offset++] = muteMask;
 
@@ -248,7 +248,7 @@ function legacyV13Bytes(state: LegacyFixtureState): Uint8Array {
   const writeVoiceRows = (from: number, to: number) => {
     for (let track = from; track < to; track++) {
       for (let i = 0; i < VOICE_PARAM_CAPACITY; i++)
-        bytes[offset++] = toByte(state.voiceParams[track][i]);
+        bytes[offset++] = toByte(state.voiceParams[track]![i]!);
     }
   };
   writeVoiceRows(0, LEGACY_TRACK_COUNT);
@@ -256,14 +256,14 @@ function legacyV13Bytes(state: LegacyFixtureState): Uint8Array {
   for (const value of state.physicalTomParams) bytes[offset++] = toByte(value);
 
   for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
-    bytes[offset++] = toByte(state.volumes[ENGINE_TO_VISUAL[track]]);
+    bytes[offset++] = toByte(state.volumes[ENGINE_TO_VISUAL[track]!]!);
   }
   for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
-    bytes[offset++] = toByte(state.decays[ENGINE_TO_VISUAL[track]]);
+    bytes[offset++] = toByte(state.decays[ENGINE_TO_VISUAL[track]!]!);
   }
   let extraMuteMask = 0;
   for (let track = LEGACY_TRACK_COUNT; track < TRACK_COUNT; track++) {
-    if (state.muted[ENGINE_TO_VISUAL[track]])
+    if (state.muted[ENGINE_TO_VISUAL[track]!])
       extraMuteMask |= 1 << (track - LEGACY_TRACK_COUNT);
   }
   bytes[offset++] = extraMuteMask;
@@ -366,7 +366,7 @@ describe("v17 canonical persistence", () => {
 
     expect(bytes).toHaveLength(V17_BYTES);
     expect(bytes[0]).toBe(17);
-    expect(bytes[1] | (bytes[2] << 8)).toBe(state.tempoBpm);
+    expect(bytes[1]! | (bytes[2]! << 8)).toBe(state.tempoBpm);
     expect(bytes[3]).toBe(state.banks[0].stepCount);
     expect(bytes[V14_MIXER_OFFSET]).toBe(
       Math.round(state.tracks[0].volume * 255),
@@ -376,17 +376,17 @@ describe("v17 canonical persistence", () => {
     );
     expect(bytes[V14_MUTE_OFFSET]).toBe(0b0010010);
     expect(bytes[V14_VOICE_OFFSET]).toBe(
-      Math.round(state.tracks[0].voiceParams[0] * 255),
+      Math.round(state.tracks[0].voiceParams[0]! * 255),
     );
     expect(bytes[V14_VOICE_OFFSET + VOICE_PARAM_CAPACITY]).toBe(
-      Math.round(state.tracks[1].voiceParams[0] * 255),
+      Math.round(state.tracks[1].voiceParams[0]! * 255),
     );
     expect(bytes[V14_MODEL_OFFSET]).toBe(0b01);
     expect(bytes[V14_PHYSICAL_OFFSET]).toBe(
-      Math.round(state.tracks[3].tom.physicalParams[0] * 255),
+      Math.round(state.tracks[3].tom.physicalParams[0]! * 255),
     );
     expect(bytes[V15_VELOCITY_OFFSET + 1]).toBe(
-      Math.round(state.banks[0].pattern[1] * 255),
+      Math.round(state.banks[0].pattern[1]! * 255),
     );
     expect(bytes[V15_PROBABILITY_OFFSET + 10]).toBe(255);
     expect(bytes[V15_CONDITION_OFFSET]).toBe(0x10);
@@ -398,7 +398,7 @@ describe("v17 canonical persistence", () => {
     ).toEqual([16, 15, 14, 13, 12, 11, 10]);
     expect(bytes[V15_FLAGS_OFFSET]).toBe(1);
     expect(bytes[V16_HUMANIZE_OFFSET + 1]).toBe(
-      Math.round(state.banks[0].cellHumanize[1] * 255),
+      Math.round(state.banks[0].cellHumanize[1]! * 255),
     );
     expect(bytes[V16_EXTRA_BANKS_OFFSET]).toBe(state.banks[1].stepCount);
     expect(bytes[V16_STANDALONE_OFFSET]).toBe(2);
@@ -475,7 +475,7 @@ describe("v17 canonical persistence", () => {
 
   it("rejects corrupt reserved codes and invalid semantic fields", () => {
     const pattern = toBytes(encodeState(makeState()));
-    pattern[V14_PATTERN_OFFSET] |= 0b11;
+    pattern[V14_PATTERN_OFFSET] = (pattern[V14_PATTERN_OFFSET] ?? 0) | 0b11;
     expect(decodeState(toB64Url(pattern))).toBeNull();
 
     const tempo = toBytes(encodeState(makeState()));
@@ -632,9 +632,9 @@ describe("legacy v1-v13 migration", () => {
 
     for (let track = 0; track < TRACK_COUNT; track++) {
       const visual = ENGINE_TO_VISUAL[track];
-      expect(decoded.tracks[track].volume).toBe(legacy.volumes[visual]);
-      expect(decoded.tracks[track].decay).toBe(legacy.decays[visual]);
-      expect(decoded.tracks[track].muted).toBe(legacy.muted[visual]);
+      expect(decoded.tracks[track]!.volume).toBe(legacy.volumes[visual!]);
+      expect(decoded.tracks[track]!.decay).toBe(legacy.decays[visual!]);
+      expect(decoded.tracks[track]!.muted).toBe(legacy.muted[visual!]);
     }
   });
 
@@ -650,8 +650,8 @@ describe("legacy v1-v13 migration", () => {
       expect(v1.tracks[track]).toEqual(defaults.tracks[track]);
     }
     for (let track = 0; track < TRACK_COUNT; track++) {
-      expect(v1.tracks[track].voiceParams).toEqual(
-        defaults.tracks[track].voiceParams,
+      expect(v1.tracks[track]!.voiceParams).toEqual(
+        defaults.tracks[track]!.voiceParams,
       );
     }
     expect(v1.tracks[3].tom.model).toBe("procedural");
@@ -663,9 +663,9 @@ describe("legacy v1-v13 migration", () => {
     const decoded = decodeState(legacyBlob(legacy, 13))!;
 
     for (let track = 0; track < TRACK_COUNT; track++) {
-      const length = decoded.tracks[track].voiceParams.length;
-      expect(Array.from(decoded.tracks[track].voiceParams)).toEqual(
-        legacy.voiceParams[track].slice(0, length).map(Math.fround),
+      const length = decoded.tracks[track]!.voiceParams.length;
+      expect(Array.from(decoded.tracks[track]!.voiceParams)).toEqual(
+        legacy.voiceParams[track]!.slice(0, length).map(Math.fround),
       );
     }
     expect(decoded.tracks[3].tom.model).toBe("physical");
@@ -683,16 +683,16 @@ describe("legacy v1-v13 migration", () => {
     legacy.physicalTomParams[4] = q(0.45 / 0.95);
     expect(
       decodeState(legacyBlob(legacy, 5))?.tracks[3].tom.physicalParams[4],
-    ).toBe(Math.fround(PHYSICAL_TOM_PARAMS[4].default));
+    ).toBe(Math.fround(PHYSICAL_TOM_PARAMS[4]!.default));
 
     legacy.physicalTomParams[4] = q(0.12 / 0.95);
     legacy.physicalTom2Params[4] = q(0.12 / 0.95);
     const v10 = decodeState(legacyBlob(legacy, 10))!;
     expect(v10.tracks[3].tom.physicalParams[4]).toBe(
-      Math.fround(PHYSICAL_TOM_PARAMS[4].default),
+      Math.fround(PHYSICAL_TOM_PARAMS[4]!.default),
     );
     expect(v10.tracks[5].tom.physicalParams[4]).toBe(
-      Math.fround(PHYSICAL_TOM_PARAMS[4].default),
+      Math.fround(PHYSICAL_TOM_PARAMS[4]!.default),
     );
   });
 

@@ -106,7 +106,9 @@ export default function AlgoPanel({
     }
     setCopied(true);
     if (copiedTimer.current) window.clearTimeout(copiedTimer.current);
-    copiedTimer.current = window.setTimeout(() => setCopied(false), 1600);
+    copiedTimer.current = window.setTimeout(() => {
+      setCopied(false);
+    }, 1600);
   }, [onShare]);
 
   return (
@@ -117,7 +119,9 @@ export default function AlgoPanel({
         disabled={disabled}
         aria-label="Load preset pattern"
         title="Load preset pattern"
-        onChange={(e) => applyPreset(e.target.value)}
+        onChange={(e) => {
+          applyPreset(e.target.value);
+        }}
       >
         <option value={-1} disabled>
           PRESET…
@@ -155,7 +159,9 @@ export default function AlgoPanel({
             TRACK
             <select
               value={euclidTrack}
-              onChange={(event) => setEuclidTrack(Number(event.target.value))}
+              onChange={(event) => {
+                setEuclidTrack(Number(event.target.value));
+              }}
               disabled={disabled}
             >
               {TRACKS.map((name, row) => (
@@ -172,7 +178,9 @@ export default function AlgoPanel({
               min={0}
               max={stepCount}
               value={euclidPulses}
-              onChange={(event) => setEuclidPulses(Number(event.target.value))}
+              onChange={(event) => {
+                setEuclidPulses(Number(event.target.value));
+              }}
               disabled={disabled}
             />
           </label>
@@ -183,9 +191,9 @@ export default function AlgoPanel({
               min={0}
               max={Math.max(0, stepCount - 1)}
               value={euclidRotation}
-              onChange={(event) =>
-                setEuclidRotation(Number(event.target.value))
-              }
+              onChange={(event) => {
+                setEuclidRotation(Number(event.target.value));
+              }}
               disabled={disabled}
             />
           </label>

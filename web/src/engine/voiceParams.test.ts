@@ -185,7 +185,7 @@ describe("defaults", () => {
       const row = defaultParamsFor(track);
       expect(row).toHaveLength(VOICE_PARAM_CAPACITY);
 
-      VOICE_PARAMS[track].forEach((spec, i) => {
+      VOICE_PARAMS[track]!.forEach((spec, i) => {
         expect(row[i]).toBe(spec.default);
       });
     }

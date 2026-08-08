@@ -46,7 +46,9 @@ test("grid and transport are efficiently keyboard navigable", async ({
     grid.getByRole("button", { name: "Bass step 16", exact: true }),
   ).toBeFocused();
 
-  await page.getByRole("link", { name: "Skip to transport" }).click();
+  const skipLink = page.getByRole("link", { name: "Skip to transport" });
+  await skipLink.focus();
+  await page.keyboard.press("Enter");
   await expect(page.locator("#dm-transport")).toBeFocused();
 });
 

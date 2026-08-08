@@ -26,11 +26,13 @@ describe("engine state factories", () => {
     );
     for (let bank = 0; bank < demo.banks.length; bank++) {
       if (bank > 0) {
-        expect(demo.banks[bank].pattern).toEqual(defaults.banks[bank].pattern);
+        expect(demo.banks[bank]!.pattern).toEqual(
+          defaults.banks[bank]!.pattern,
+        );
       }
       expect({
-        ...demo.banks[bank],
-        pattern: defaults.banks[bank].pattern,
+        ...demo.banks[bank]!,
+        pattern: defaults.banks[bank]!.pattern,
       }).toEqual(defaults.banks[bank]);
     }
 
@@ -47,27 +49,27 @@ describe("engine state factories", () => {
 
     for (let bank = 0; bank < first.banks.length; bank++) {
       expect(first.banks[bank]).not.toBe(second.banks[bank]);
-      expect(first.banks[bank].pattern).not.toBe(second.banks[bank].pattern);
-      expect(first.banks[bank].cellProbabilities).not.toBe(
-        second.banks[bank].cellProbabilities,
+      expect(first.banks[bank]!.pattern).not.toBe(second.banks[bank]!.pattern);
+      expect(first.banks[bank]!.cellProbabilities).not.toBe(
+        second.banks[bank]!.cellProbabilities,
       );
-      expect(first.banks[bank].cellHumanize).not.toBe(
-        second.banks[bank].cellHumanize,
+      expect(first.banks[bank]!.cellHumanize).not.toBe(
+        second.banks[bank]!.cellHumanize,
       );
-      expect(first.banks[bank].cellConditions).not.toBe(
-        second.banks[bank].cellConditions,
+      expect(first.banks[bank]!.cellConditions).not.toBe(
+        second.banks[bank]!.cellConditions,
       );
-      expect(first.banks[bank].cellRepeats).not.toBe(
-        second.banks[bank].cellRepeats,
+      expect(first.banks[bank]!.cellRepeats).not.toBe(
+        second.banks[bank]!.cellRepeats,
       );
-      expect(first.banks[bank].trackLengths).not.toBe(
-        second.banks[bank].trackLengths,
+      expect(first.banks[bank]!.trackLengths).not.toBe(
+        second.banks[bank]!.trackLengths,
       );
     }
 
     for (let track = 0; track < first.tracks.length; track++) {
-      const firstTrack = first.tracks[track];
-      const secondTrack = second.tracks[track];
+      const firstTrack = first.tracks[track]!;
+      const secondTrack = second.tracks[track]!;
       expect(firstTrack).not.toBe(secondTrack);
       expect(firstTrack.voiceParams).not.toBe(secondTrack.voiceParams);
       if (firstTrack.tom && secondTrack.tom) {
@@ -118,8 +120,8 @@ describe("reduceDrumState", () => {
       value: 0.9,
     });
 
-    expect(next.tracks[5].tom?.physicalParams[2]).toBeCloseTo(0.9);
-    expect(state.tracks[5].tom?.physicalParams[2]).not.toBeCloseTo(0.9);
+    expect(next.tracks[5].tom.physicalParams[2]).toBeCloseTo(0.9);
+    expect(state.tracks[5].tom.physicalParams[2]).not.toBeCloseTo(0.9);
     expect(next.tracks[3].tom).toBe(state.tracks[3].tom);
   });
 

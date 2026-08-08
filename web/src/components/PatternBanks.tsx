@@ -67,7 +67,9 @@ export default function PatternBanks({
             aria-pressed={bank === selectedBank}
             aria-current={bank === activeBank ? "true" : undefined}
             disabled={disabled}
-            onClick={() => onSelectBank(bank)}
+            onClick={() => {
+              onSelectBank(bank);
+            }}
             title={
               chainEnabled
                 ? `Edit bank ${label}`
@@ -110,7 +112,9 @@ export default function PatternBanks({
           type="checkbox"
           checked={chainEnabled}
           disabled={disabled || !stopped}
-          onChange={(event) => onChainEnabledChange(event.target.checked)}
+          onChange={(event) => {
+            onChainEnabledChange(event.target.checked);
+          }}
         />
         CHAIN
       </label>
@@ -131,9 +135,9 @@ export default function PatternBanks({
                   aria-label={`Chain entry ${index + 1}`}
                   value={bank}
                   disabled={disabled || !stopped}
-                  onChange={(event) =>
-                    updateEntry(index, Number(event.target.value))
-                  }
+                  onChange={(event) => {
+                    updateEntry(index, Number(event.target.value));
+                  }}
                 >
                   {BANK_LABELS.map((label, value) => (
                     <option key={label} value={value}>
@@ -144,7 +148,9 @@ export default function PatternBanks({
                 <button
                   type="button"
                   disabled={disabled || !stopped || chain.length <= 1}
-                  onClick={() => removeEntry(index)}
+                  onClick={() => {
+                    removeEntry(index);
+                  }}
                   aria-label={`Remove chain entry ${index + 1}`}
                 >
                   ×
@@ -155,11 +161,11 @@ export default function PatternBanks({
           <button
             type="button"
             disabled={disabled || !stopped || chain.length >= MAX_CHAIN_LENGTH}
-            onClick={() =>
+            onClick={() => {
               onChainChange(
                 Uint8Array.from([...chain, chain[chain.length - 1] ?? 0]),
-              )
-            }
+              );
+            }}
           >
             ADD ENTRY
           </button>

@@ -61,9 +61,9 @@ export default function CellInspector({
           step={1}
           value={Math.round(probability * 100)}
           aria-valuetext={`${Math.round(probability * 100)} percent`}
-          onChange={(event) =>
-            onProbabilityChange(Number(event.target.value) / 100)
-          }
+          onChange={(event) => {
+            onProbabilityChange(Number(event.target.value) / 100);
+          }}
         />
         <output>{Math.round(probability * 100)}%</output>
       </label>
@@ -76,9 +76,9 @@ export default function CellInspector({
           step={1}
           value={Math.round(humanize * 100)}
           aria-valuetext={`${Math.round(humanize * 100)} percent`}
-          onChange={(event) =>
-            onHumanizeChange(Number(event.target.value) / 100)
-          }
+          onChange={(event) => {
+            onHumanizeChange(Number(event.target.value) / 100);
+          }}
         />
         <output>{Math.round(humanize * 100)}%</output>
       </label>
@@ -86,7 +86,9 @@ export default function CellInspector({
         CONDITION
         <select
           value={condition}
-          onChange={(event) => onConditionChange(Number(event.target.value))}
+          onChange={(event) => {
+            onConditionChange(Number(event.target.value));
+          }}
         >
           {TRIGGER_CONDITION_LABELS.map((label, value) => (
             <option key={label} value={value}>
@@ -100,7 +102,9 @@ export default function CellInspector({
         <select
           value={repeats}
           aria-label="Ratchet repeats"
-          onChange={(event) => onRepeatsChange(Number(event.target.value))}
+          onChange={(event) => {
+            onRepeatsChange(Number(event.target.value));
+          }}
         >
           <option value={1}>1 hit</option>
           <option value={2}>2 hits</option>

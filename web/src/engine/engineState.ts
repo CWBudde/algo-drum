@@ -94,6 +94,14 @@ export const TRIGGER_CONDITION_LABELS = [
 
 export const TOM_TRACKS = [3, 5] as const;
 
+function requiredAt<T>(values: ArrayLike<T>, index: number): T {
+  const value = values[index];
+  if (value === undefined) {
+    throw new RangeError(`Missing value at index ${index}`);
+  }
+  return value;
+}
+
 export const CONFIGURATION_METHODS = [
   "setState",
   "setTempo",
@@ -139,7 +147,7 @@ export function createDefaultEngineState(): EngineState {
       decay: 0.5,
       muted: false,
       voiceParams: Float32Array.from(
-        VOICE_PARAMS[track].map((spec) => spec.default),
+        requiredAt(VOICE_PARAMS, track).map((spec) => spec.default),
       ),
     };
 
@@ -267,7 +275,8 @@ function requireUnitArray(
   }
 
   for (let i = 0; i < value.length; i++) {
-    if (!Number.isFinite(value[i]) || value[i] < 0 || value[i] > 1) {
+    const item = value[i];
+    if (item === undefined || !Number.isFinite(item) || item < 0 || item > 1) {
       throw new TypeError(`${path}[${i}] must be finite and in [0, 1]`);
     }
   }
@@ -287,7 +296,8 @@ function requireByteArray(
   }
 
   for (let i = 0; i < value.length; i++) {
-    if (value[i] < min || value[i] > max) {
+    const item = value[i];
+    if (item === undefined || item < min || item > max) {
       throw new TypeError(`${path}[${i}] must be in [${min}, ${max}]`);
     }
   }
@@ -375,7 +385,8 @@ export function validateEngineState(value: unknown): EngineState {
     );
   }
   for (let index = 0; index < value.chain.length; index++) {
-    if (value.chain[index] >= PATTERN_BANK_COUNT) {
+    const bank = value.chain[index];
+    if (bank === undefined || bank >= PATTERN_BANK_COUNT) {
       throw new TypeError(
         `engine state chain[${index}] must be in [0, ${PATTERN_BANK_COUNT - 1}]`,
       );
@@ -400,7 +411,7 @@ export function validateEngineState(value: unknown): EngineState {
     }
     requireUnitArray(
       candidate.voiceParams,
-      VOICE_PARAMS[track].length,
+      requiredAt(VOICE_PARAMS, track).length,
       `engine state tracks[${track}].voiceParams`,
     );
 

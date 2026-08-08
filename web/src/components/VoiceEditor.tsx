@@ -9,8 +9,8 @@ import "./VoiceEditor.css";
    modal dialog intentionally owns Escape arbitration and backdrop pointer
    handling; those events bubble from its interactive descendants. */
 
-const AMBER = "#C87828";
-const BLUE = "#6D95C8";
+const AMBER = "var(--color-accent)";
+const BLUE = "var(--color-accent-blue)";
 
 // How long the reset confirmation stays in the live region.
 const RESET_NOTICE_MS = 2000;
@@ -25,8 +25,8 @@ interface Props {
   /** True while the engine is still loading — disables the audition button. */
   disabled: boolean;
   /** Present only for Tom voices, whose implementation can be selected. */
-  model?: TomModel;
-  onModelChange?: (model: TomModel) => void;
+  model?: TomModel | undefined;
+  onModelChange?: ((model: TomModel) => void) | undefined;
   onChange: (index: number, value: number) => void;
   onReset: () => void;
   onAudition: (amount: number) => void;
@@ -72,10 +72,9 @@ export default function VoiceEditor({
       if (noticeTimer.current !== undefined) {
         window.clearTimeout(noticeTimer.current);
       }
-      noticeTimer.current = window.setTimeout(
-        () => setResetNotice(""),
-        RESET_NOTICE_MS,
-      );
+      noticeTimer.current = window.setTimeout(() => {
+        setResetNotice("");
+      }, RESET_NOTICE_MS);
     },
     [onChange, specs, values],
   );
@@ -149,10 +148,9 @@ export default function VoiceEditor({
       window.clearTimeout(noticeTimer.current);
     }
 
-    noticeTimer.current = window.setTimeout(
-      () => setResetNotice(""),
-      RESET_NOTICE_MS,
-    );
+    noticeTimer.current = window.setTimeout(() => {
+      setResetNotice("");
+    }, RESET_NOTICE_MS);
   }, [name, onReset]);
 
   return (
@@ -197,7 +195,9 @@ export default function VoiceEditor({
               name={`${titleId}-model`}
               value="procedural"
               checked={model === "procedural"}
-              onChange={() => onModelChange("procedural")}
+              onChange={() => {
+                onModelChange("procedural");
+              }}
             />
             <span>Algorithmic</span>
           </label>
@@ -207,7 +207,9 @@ export default function VoiceEditor({
               name={`${titleId}-model`}
               value="physical"
               checked={model === "physical"}
-              onChange={() => onModelChange("physical")}
+              onChange={() => {
+                onModelChange("physical");
+              }}
             />
             <span>
               Physical <small>EXPERIMENTAL</small>
@@ -254,8 +256,10 @@ export default function VoiceEditor({
         {specs.map((spec, i) => (
           <div className="dm-voice-param" key={spec.id}>
             <Knob
-              value={values[i]}
-              onChange={(v) => onChange(i, v)}
+              value={values[i] ?? spec.default}
+              onChange={(v) => {
+                onChange(i, v);
+              }}
               label={spec.label}
               ariaLabel={`${name} ${spec.name}`}
               valueText={(v) => formatParam(spec, v)}
@@ -267,7 +271,7 @@ export default function VoiceEditor({
               showReadout={false}
             />
             <span className="dm-voice-value">
-              {formatParam(spec, values[i])}
+              {formatParam(spec, values[i] ?? spec.default)}
             </span>
           </div>
         ))}

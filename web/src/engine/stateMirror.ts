@@ -29,7 +29,9 @@ export class StateMirror {
       return;
     }
 
-    this.listeners.forEach((listener) => listener(state));
+    this.listeners.forEach((listener) => {
+      listener(state);
+    });
   }
 
   reset(queuedMutations = 0): void {

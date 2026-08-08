@@ -13,7 +13,7 @@ import {
 } from "../algo/persistence";
 import * as engine from "../engine/wasmEngine";
 import type { PatternBankState } from "../engine/engineState";
-import { DEFAULT_TOM_MODEL, type TomModel } from "../engine/tomModel";
+import type { TomModel } from "../engine/tomModel";
 import {
   defaultPhysicalTomParams,
   PHYSICAL_TOM_PARAMS,
@@ -38,6 +38,14 @@ const BPM_MIN = 30;
 const BPM_MAX = 300;
 const TAP_RESET_MS = 2000;
 const TAP_WINDOW = 4;
+
+function requiredAt<T>(values: ArrayLike<T>, index: number): T {
+  const value = values[index];
+  if (value === undefined) {
+    throw new RangeError(`Missing value at index ${index}`);
+  }
+  return value;
+}
 
 interface Props {
   wasmLoaded: boolean;
@@ -65,8 +73,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   const currentBank = drumState.banks[selectedBank] ?? drumState.banks[0];
 
   const applyPatternBank = useCallback(
-    (bank: number, value: PatternBankState) =>
-      applyStateAction({ type: "patternBank", bank, value }),
+    (bank: number, value: PatternBankState) => {
+      applyStateAction({ type: "patternBank", bank, value });
+    },
     [applyStateAction],
   );
   const patternHistory = usePatternHistory(
@@ -121,7 +130,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
       void handlePlayPause();
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, [editorTrack, handlePlayPause, redoPattern, undoPattern]);
 
   const tapTimes = useRef<number[]>([]);
@@ -137,7 +148,7 @@ export default function DrumMachine({ wasmLoaded }: Props) {
 
     let sum = 0;
     for (let index = 1; index < times.length; index++) {
-      sum += times[index] - times[index - 1];
+      sum += requiredAt(times, index) - requiredAt(times, index - 1);
     }
     const bpm = Math.round(
       Math.max(BPM_MIN, Math.min(BPM_MAX, 60000 / (sum / (times.length - 1)))),
@@ -162,39 +173,44 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   }, []);
 
   const setVoiceParam = useCallback(
-    (track: number, index: number, value: number) =>
-      applyStateAction({ type: "voiceParam", track, index, value }),
+    (track: number, index: number, value: number) => {
+      applyStateAction({ type: "voiceParam", track, index, value });
+    },
     [applyStateAction],
   );
   const resetVoice = useCallback(
-    (track: number) =>
+    (track: number) => {
       applyStateAction({
         type: "voiceParams",
         track,
         value: Float32Array.from(
-          VOICE_PARAMS[track],
+          requiredAt(VOICE_PARAMS, track),
           (parameter) => parameter.default,
         ),
-      }),
+      });
+    },
     [applyStateAction],
   );
   const setPhysicalTomParam = useCallback(
-    (track: number, index: number, value: number) =>
-      applyStateAction({ type: "physicalTomParam", track, index, value }),
+    (track: number, index: number, value: number) => {
+      applyStateAction({ type: "physicalTomParam", track, index, value });
+    },
     [applyStateAction],
   );
   const resetPhysicalTom = useCallback(
-    (track: number) =>
+    (track: number) => {
       applyStateAction({
         type: "physicalTomParams",
         track,
         value: Float32Array.from(defaultPhysicalTomParams()),
-      }),
+      });
+    },
     [applyStateAction],
   );
   const setTomModel = useCallback(
-    (track: number, value: TomModel) =>
-      applyStateAction({ type: "tomModel", track, value }),
+    (track: number, value: TomModel) => {
+      applyStateAction({ type: "tomModel", track, value });
+    },
     [applyStateAction],
   );
 
@@ -213,9 +229,8 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     (track) => currentBank.trackLengths[track] ?? STEP_CAPACITY,
   );
 
-  const tomModel = drumState.tracks[TOM_TRACK].tom?.model ?? DEFAULT_TOM_MODEL;
-  const tom2Model =
-    drumState.tracks[TOM2_TRACK].tom?.model ?? DEFAULT_TOM_MODEL;
+  const tomModel = drumState.tracks[TOM_TRACK].tom.model;
+  const tom2Model = drumState.tracks[TOM2_TRACK].tom.model;
   const editorTomModel =
     editorTrack === TOM_TRACK
       ? tomModel
@@ -223,12 +238,8 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         ? tom2Model
         : undefined;
   const editorUsesPhysical = editorTomModel === "physical";
-  const physicalTomParams =
-    drumState.tracks[TOM_TRACK].tom?.physicalParams ??
-    Float32Array.from(defaultPhysicalTomParams());
-  const physicalTom2Params =
-    drumState.tracks[TOM2_TRACK].tom?.physicalParams ??
-    Float32Array.from(defaultPhysicalTomParams());
+  const physicalTomParams = drumState.tracks[TOM_TRACK].tom.physicalParams;
+  const physicalTom2Params = drumState.tracks[TOM2_TRACK].tom.physicalParams;
   const editorPhysicalParams =
     editorTrack === TOM2_TRACK ? physicalTom2Params : physicalTomParams;
 
@@ -281,9 +292,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
             applyStateAction({ type: "requestBank", value: bank });
           }
         }}
-        onCopyBank={(destination) =>
-          patternHistory.copyBank(selectedBank, destination)
-        }
+        onCopyBank={(destination) => {
+          patternHistory.copyBank(selectedBank, destination);
+        }}
         onChainEnabledChange={(value) => {
           applyStateAction({ type: "chainEnabled", value });
           if (value) {
@@ -291,7 +302,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
             setSelectedBank(drumState.chain[0] ?? 0);
           }
         }}
-        onChainChange={(value) => applyStateAction({ type: "chain", value })}
+        onChainChange={(value) => {
+          applyStateAction({ type: "chain", value });
+        }}
       />
 
       <StepGrid
@@ -303,38 +316,48 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         decays={decays}
         muted={muted}
         trackLengths={trackLengths}
-        onCellChange={(track, step, value) =>
+        onCellChange={(track, step, value) => {
           applyStateAction({
             type: "cell",
             bank: selectedBank,
             track,
             step,
             value,
-          })
-        }
-        onVolumeChange={(row, value) =>
-          applyStateAction({ type: "volume", track: TRACK_INDEX[row], value })
-        }
-        onDecayChange={(row, value) =>
-          applyStateAction({ type: "decay", track: TRACK_INDEX[row], value })
-        }
+          });
+        }}
+        onVolumeChange={(row, value) => {
+          applyStateAction({
+            type: "volume",
+            track: requiredAt(TRACK_INDEX, row),
+            value,
+          });
+        }}
+        onDecayChange={(row, value) => {
+          applyStateAction({
+            type: "decay",
+            track: requiredAt(TRACK_INDEX, row),
+            value,
+          });
+        }}
         onToggleMute={(row) => {
-          const track = TRACK_INDEX[row];
+          const track = requiredAt(TRACK_INDEX, row);
           applyStateAction({
             type: "muted",
             track,
             value: !drumState.tracks[track].muted,
           });
         }}
-        onTrackLengthChange={(row, value) =>
+        onTrackLengthChange={(row, value) => {
           applyStateAction({
             type: "trackLength",
             bank: selectedBank,
-            track: TRACK_INDEX[row],
+            track: requiredAt(TRACK_INDEX, row),
             value,
-          })
-        }
-        onInspectCell={(track, step) => setSelectedCell({ track, step })}
+          });
+        }}
+        onInspectCell={(track, step) => {
+          setSelectedCell({ track, step });
+        }}
         onOpenEditor={openEditor}
       />
 
@@ -345,91 +368,101 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           probability={
             currentBank.cellProbabilities[
               cellIndex(selectedCell.track, selectedCell.step)
-            ]
+            ] ?? 1
           }
           humanize={
             currentBank.cellHumanize[
               cellIndex(selectedCell.track, selectedCell.step)
-            ]
+            ] ?? 0
           }
           condition={
             currentBank.cellConditions[
               cellIndex(selectedCell.track, selectedCell.step)
-            ]
+            ] ?? 0
           }
           repeats={
             currentBank.cellRepeats[
               cellIndex(selectedCell.track, selectedCell.step)
-            ]
+            ] ?? 1
           }
-          onProbabilityChange={(value) =>
+          onProbabilityChange={(value) => {
             applyStateAction({
               type: "cellProbability",
               bank: selectedBank,
               track: selectedCell.track,
               step: selectedCell.step,
               value,
-            })
-          }
-          onHumanizeChange={(value) =>
+            });
+          }}
+          onHumanizeChange={(value) => {
             applyStateAction({
               type: "cellHumanize",
               bank: selectedBank,
               track: selectedCell.track,
               step: selectedCell.step,
               value,
-            })
-          }
-          onConditionChange={(value) =>
+            });
+          }}
+          onConditionChange={(value) => {
             applyStateAction({
               type: "cellCondition",
               bank: selectedBank,
               track: selectedCell.track,
               step: selectedCell.step,
               value,
-            })
-          }
-          onRepeatsChange={(value) =>
+            });
+          }}
+          onRepeatsChange={(value) => {
             applyStateAction({
               type: "cellRepeats",
               bank: selectedBank,
               track: selectedCell.track,
               step: selectedCell.step,
               value,
-            })
-          }
-          onClose={() => setSelectedCell(null)}
+            });
+          }}
+          onClose={() => {
+            setSelectedCell(null);
+          }}
         />
       )}
 
       {editorTrack !== null && (
         <VoiceEditor
-          name={VOICE_NAMES[editorTrack]}
+          name={requiredAt(VOICE_NAMES, editorTrack)}
           specs={
-            editorUsesPhysical ? PHYSICAL_TOM_PARAMS : VOICE_PARAMS[editorTrack]
+            editorUsesPhysical
+              ? PHYSICAL_TOM_PARAMS
+              : requiredAt(VOICE_PARAMS, editorTrack)
           }
           values={
             editorUsesPhysical
               ? editorPhysicalParams
-              : drumState.tracks[editorTrack].voiceParams
+              : requiredAt(drumState.tracks, editorTrack).voiceParams
           }
           disabled={!wasmLoaded}
           model={editorTomModel}
           onModelChange={
             editorTrack === TOM_TRACK || editorTrack === TOM2_TRACK
-              ? (model) => setTomModel(editorTrack, model)
+              ? (model) => {
+                  setTomModel(editorTrack, model);
+                }
               : undefined
           }
-          onChange={(index, value) =>
-            editorUsesPhysical
-              ? setPhysicalTomParam(editorTrack, index, value)
-              : setVoiceParam(editorTrack, index, value)
-          }
-          onReset={() =>
-            editorUsesPhysical
-              ? resetPhysicalTom(editorTrack)
-              : resetVoice(editorTrack)
-          }
+          onChange={(index, value) => {
+            if (editorUsesPhysical) {
+              setPhysicalTomParam(editorTrack, index, value);
+            } else {
+              setVoiceParam(editorTrack, index, value);
+            }
+          }}
+          onReset={() => {
+            if (editorUsesPhysical) {
+              resetPhysicalTom(editorTrack);
+            } else {
+              resetVoice(editorTrack);
+            }
+          }}
           onAudition={(amount) => void engine.triggerVoice(editorTrack, amount)}
           onRequestClose={closeEditor}
         />

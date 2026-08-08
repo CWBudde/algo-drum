@@ -8,7 +8,7 @@ import tseslint from "typescript-eslint";
 // Flat-config ESLint for the frontend.
 //
 // - Application/library sources under src/ are linted with full type-aware
-//   rules (typescript-eslint's recommendedTypeChecked), plus the classic
+//   rules (typescript-eslint's strictTypeChecked), plus the classic
 //   react-hooks rules (rules-of-hooks + exhaustive-deps) and react-refresh.
 //   The newer React-Compiler rules bundled in react-hooks v7's presets are
 //   deliberately left off: several fight intentional engine-sync effects here
@@ -30,10 +30,7 @@ export default tseslint.config(
   },
   {
     files: ["src/**/*.{ts,tsx}"],
-    extends: [
-      js.configs.recommended,
-      ...tseslint.configs.recommendedTypeChecked,
-    ],
+    extends: [js.configs.recommended, ...tseslint.configs.strictTypeChecked],
     languageOptions: {
       ecmaVersion: 2022,
       globals: { ...globals.browser, ...globals.worker },
@@ -50,11 +47,22 @@ export default tseslint.config(
     rules: {
       ...jsxA11y.flatConfigs.recommended.rules,
       "react-hooks/rules-of-hooks": "error",
-      "react-hooks/exhaustive-deps": "warn",
+      "react-hooks/exhaustive-deps": "error",
+      "@typescript-eslint/restrict-template-expressions": [
+        "error",
+        { allowNumber: true },
+      ],
       "react-refresh/only-export-components": [
         "warn",
         { allowConstantExport: true },
       ],
+    },
+  },
+  {
+    files: ["src/**/*.test.{ts,tsx}"],
+    rules: {
+      // Indexed fixtures are asserted through the surrounding expectations.
+      "@typescript-eslint/no-non-null-assertion": "off",
     },
   },
   {

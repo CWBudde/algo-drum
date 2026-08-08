@@ -3,9 +3,6 @@ import { STEP_CAPACITY } from "../algo/pattern";
 import Knob from "./Knob";
 import { TRACK_INDEX } from "./patternView";
 
-const AMBER = "#C87828";
-const BLUE = "#6D95C8";
-
 interface Props {
   name: string;
   row: number;
@@ -40,6 +37,7 @@ export default function TrackStrip({
   onOpenEditor,
 }: Props) {
   const track = TRACK_INDEX[row];
+  if (track === undefined) return null;
   return (
     <div
       className="dm-track-controls"
@@ -63,7 +61,9 @@ export default function TrackStrip({
         <select
           className="dm-track-length"
           value={trackLength}
-          onChange={(event) => onTrackLengthChange(Number(event.target.value))}
+          onChange={(event) => {
+            onTrackLengthChange(Number(event.target.value));
+          }}
           title={`${name} pattern length: ${trackLength} steps`}
         >
           {Array.from({ length: STEP_CAPACITY }, (_, index) => index + 1).map(
@@ -82,7 +82,6 @@ export default function TrackStrip({
         ariaLabel={`${name} volume`}
         defaultValue={0.75}
         size={42}
-        color={AMBER}
       />
       <Knob
         value={decay}
@@ -91,7 +90,7 @@ export default function TrackStrip({
         ariaLabel={`${name} decay`}
         defaultValue={0.5}
         size={42}
-        color={BLUE}
+        color="var(--color-accent-blue)"
       />
       <button
         type="button"
@@ -100,9 +99,9 @@ export default function TrackStrip({
         aria-haspopup="dialog"
         title={`Edit the ${VOICE_NAMES[track]} synth voice`}
         disabled={disabled}
-        onClick={(event) =>
-          onOpenEditor(track, event.currentTarget, event.detail > 0)
-        }
+        onClick={(event) => {
+          onOpenEditor(track, event.currentTarget, event.detail > 0);
+        }}
       >
         <svg width={13} height={13} viewBox="0 0 14 14" aria-hidden="true">
           <g

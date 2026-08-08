@@ -54,7 +54,13 @@ export function mapParam(spec: VoiceParamSpec, value01: number): number {
 export function formatParam(spec: VoiceParamSpec, value01: number): string {
   const value = mapParam(spec, value01);
 
-  if (spec.choices) return spec.choices[value] ?? spec.choices[0];
+  if (spec.choices) {
+    const choice = spec.choices[value] ?? spec.choices[0];
+    if (choice === undefined) {
+      throw new RangeError(`Parameter ${spec.id} has no choices`);
+    }
+    return choice;
+  }
 
   if (spec.unit === "Hz" && value >= 1000) {
     return `${(value / 1000).toFixed(2)} kHz`;
@@ -71,7 +77,7 @@ export function defaultParamsFor(track: number): number[] {
   const specs = VOICE_PARAMS[track] ?? [];
 
   return Array.from({ length: VOICE_PARAM_CAPACITY }, (_, i) =>
-    i < specs.length ? specs[i].default : 0,
+    i < specs.length ? (specs[i]?.default ?? 0) : 0,
   );
 }
 

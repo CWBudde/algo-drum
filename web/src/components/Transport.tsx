@@ -3,7 +3,6 @@ import type { TransportState } from "../engine/wasmEngine";
 import { STEP_CAPACITY } from "../algo/pattern";
 import Knob from "./Knob";
 
-const AMBER = "#C87828";
 const BPM_MIN = 30;
 const BPM_MAX = 300;
 const BPM_RANGE = BPM_MAX - BPM_MIN;
@@ -86,7 +85,9 @@ export default function Transport({
           className="dm-fill"
           aria-pressed={fillMode}
           disabled={disabled}
-          onClick={() => onAction({ type: "fillMode", value: !fillMode })}
+          onClick={() => {
+            onAction({ type: "fillMode", value: !fillMode });
+          }}
           title="Enable Fill-only conditional triggers"
         >
           FILL
@@ -96,18 +97,17 @@ export default function Transport({
       <div className="dm-tempo-group">
         <Knob
           value={(bpm - BPM_MIN) / BPM_RANGE}
-          onChange={(position) =>
+          onChange={(position) => {
             onAction({
               type: "tempo",
               value: Math.round(BPM_MIN + position * BPM_RANGE),
-            })
-          }
+            });
+          }}
           label={`${bpm} BPM`}
           ariaLabel="Tempo"
           valueText={() => `${bpm} BPM`}
           defaultValue={(DEFAULT_TEMPO_BPM - BPM_MIN) / BPM_RANGE}
           size={54}
-          color={AMBER}
         />
         <button
           type="button"
@@ -122,58 +122,59 @@ export default function Transport({
       </div>
       <Knob
         value={swing / 0.5}
-        onChange={(position) =>
-          onAction({ type: "swing", value: position * 0.5 })
-        }
+        onChange={(position) => {
+          onAction({ type: "swing", value: position * 0.5 });
+        }}
         label="SWING"
         defaultValue={0}
         size={54}
-        color={AMBER}
       />
       <Knob
         value={(stepCount - 1) / (STEP_CAPACITY - 1)}
-        onChange={(position) =>
+        onChange={(position) => {
           onAction({
             type: "stepCount",
             bank,
             value: Math.round(1 + position * (STEP_CAPACITY - 1)),
-          })
-        }
+          });
+        }}
         label="STEPS"
         ariaLabel="Pattern length"
         valueText={() => `${stepCount} steps`}
         defaultValue={1}
         size={54}
-        color={AMBER}
       />
       <Knob
         value={probability}
-        onChange={(value) => onAction({ type: "probability", value })}
+        onChange={(value) => {
+          onAction({ type: "probability", value });
+        }}
         label="PROB"
         ariaLabel="Trigger probability"
         defaultValue={1}
         size={54}
-        color={AMBER}
       />
       <Knob
         value={humanize}
-        onChange={(value) => onAction({ type: "humanize", value })}
+        onChange={(value) => {
+          onAction({ type: "humanize", value });
+        }}
         label="HUMAN"
         ariaLabel="Humanize"
         defaultValue={0}
         size={54}
-        color={AMBER}
       />
 
       <div className="dm-transport-spacer" />
 
       <Knob
         value={reverb}
-        onChange={(value) => onAction({ type: "reverb", value })}
+        onChange={(value) => {
+          onAction({ type: "reverb", value });
+        }}
         label="REVERB"
         defaultValue={0}
         size={54}
-        color={AMBER}
       />
     </footer>
   );

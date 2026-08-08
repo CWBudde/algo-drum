@@ -36,6 +36,14 @@ interface Props {
   ) => void;
 }
 
+function requiredTrack(row: number): number {
+  const track = TRACK_INDEX[row];
+  if (track === undefined) {
+    throw new RangeError(`Missing track for row ${row}`);
+  }
+  return track;
+}
+
 export default function StepGrid({
   disabled,
   showPlayhead,
@@ -77,8 +85,10 @@ export default function StepGrid({
     col: number,
   ) => {
     const rect = element.getBoundingClientRect();
+    const track = TRACK_INDEX[row];
+    if (track === undefined) return;
     onCellChange(
-      TRACK_INDEX[row],
+      track,
       col,
       velocityFromPointer(clientY, rect.top, rect.height),
     );
@@ -122,18 +132,20 @@ export default function StepGrid({
             </span>
 
             {Array.from({ length: STEP_CAPACITY }, (_, col) => {
-              const velocity = pattern[row][col];
-              const beyondLoop = col >= trackLengths[row];
+              const track = requiredTrack(row);
+              const trackLength = trackLengths[row] ?? stepCount;
+              const velocity = pattern[row]?.[col] ?? 0;
+              const beyondLoop = col >= trackLength;
               const isPlayhead =
                 showPlayhead &&
                 playhead.clockStep >= 0 &&
-                col === playhead.clockStep % trackLengths[row];
+                col === playhead.clockStep % trackLength;
               const stateId = `dm-cell-state-${row}-${col}`;
               const stateDescription = [
                 `${velocityName(velocity)} velocity.`,
                 isPlayhead ? "Current playhead." : "",
                 beyondLoop
-                  ? `Outside this track's ${trackLengths[row]}-step loop; this step will not play.`
+                  ? `Outside this track's ${trackLength}-step loop; this step will not play.`
                   : "",
               ]
                 .filter(Boolean)
@@ -178,17 +190,19 @@ export default function StepGrid({
                       tabStop.row === row && tabStop.col === col ? 0 : -1
                     }
                     title={`${velocityName(velocity)} velocity · Shift-drag vertically to set precisely · F2 for trigger settings`}
-                    onFocus={() => setTabStop({ row, col })}
+                    onFocus={() => {
+                      setTabStop({ row, col });
+                    }}
                     onContextMenu={(event) => {
                       event.preventDefault();
-                      onInspectCell(TRACK_INDEX[row], col);
+                      onInspectCell(track, col);
                     }}
                     onPointerDown={(event) => {
                       if (!event.shiftKey) return;
                       event.preventDefault();
                       velocityPointer.current = event.pointerId;
                       suppressClick.current = true;
-                      event.currentTarget.setPointerCapture?.(event.pointerId);
+                      event.currentTarget.setPointerCapture(event.pointerId);
                       event.currentTarget.focus();
                       setPointerVelocity(
                         event.currentTarget,
@@ -208,7 +222,7 @@ export default function StepGrid({
                     }}
                     onPointerUp={(event) => {
                       if (velocityPointer.current !== event.pointerId) return;
-                      event.currentTarget.releasePointerCapture?.(
+                      event.currentTarget.releasePointerCapture(
                         event.pointerId,
                       );
                       velocityPointer.current = null;
@@ -223,7 +237,7 @@ export default function StepGrid({
                     onKeyDown={(event) => {
                       if (event.key === "F2") {
                         event.preventDefault();
-                        onInspectCell(TRACK_INDEX[row], col);
+                        onInspectCell(track, col);
                         return;
                       }
                       if (
@@ -232,7 +246,7 @@ export default function StepGrid({
                       ) {
                         event.preventDefault();
                         onCellChange(
-                          TRACK_INDEX[row],
+                          track,
                           col,
                           nudgeVelocity(
                             velocity,
@@ -260,11 +274,7 @@ export default function StepGrid({
                         return;
                       }
                       if (event.detail > 0) event.currentTarget.blur();
-                      onCellChange(
-                        TRACK_INDEX[row],
-                        col,
-                        cycleVelocity(velocity),
-                      );
+                      onCellChange(track, col, cycleVelocity(velocity));
                     }}
                   >
                     <span id={stateId} className="dm-sr-only">
@@ -300,14 +310,22 @@ export default function StepGrid({
           name={name}
           row={row}
           disabled={disabled}
-          volume={volumes[row]}
-          decay={decays[row]}
-          muted={muted[row]}
-          trackLength={trackLengths[row]}
-          onVolumeChange={(value) => onVolumeChange(row, value)}
-          onDecayChange={(value) => onDecayChange(row, value)}
-          onToggleMute={() => onToggleMute(row)}
-          onTrackLengthChange={(value) => onTrackLengthChange(row, value)}
+          volume={volumes[row] ?? 0.75}
+          decay={decays[row] ?? 0.5}
+          muted={muted[row] ?? false}
+          trackLength={trackLengths[row] ?? stepCount}
+          onVolumeChange={(value) => {
+            onVolumeChange(row, value);
+          }}
+          onDecayChange={(value) => {
+            onDecayChange(row, value);
+          }}
+          onToggleMute={() => {
+            onToggleMute(row);
+          }}
+          onTrackLengthChange={(value) => {
+            onTrackLengthChange(row, value);
+          }}
           onOpenEditor={onOpenEditor}
         />
       ))}
