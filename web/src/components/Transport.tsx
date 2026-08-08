@@ -18,6 +18,8 @@ interface Props {
   humanize: number;
   reverb: number;
   fillMode: boolean;
+  metronomeEnabled: boolean;
+  countInBars: number;
   onAction: (action: DrumStateAction) => void;
   onPlayPause: () => void;
   onStop: () => void;
@@ -35,13 +37,23 @@ export default function Transport({
   humanize,
   reverb,
   fillMode,
+  metronomeEnabled,
+  countInBars,
   onAction,
   onPlayPause,
   onStop,
   onTap,
 }: Props) {
   const starting = transport === "starting";
+  const countingIn = transport === "counting-in";
   const playing = transport === "playing";
+  const playLabel = countingIn
+    ? "Counting in"
+    : starting
+      ? "Starting"
+      : playing
+        ? "Pause"
+        : "Play";
   return (
     <footer id="dm-transport" className="dm-transport" tabIndex={-1}>
       <div className="dm-transport-buttons">
@@ -52,9 +64,10 @@ export default function Transport({
             if (event.detail > 0) event.currentTarget.blur();
             onPlayPause();
           }}
-          disabled={disabled || starting}
-          aria-label={starting ? "Starting" : playing ? "Pause" : "Play"}
-          title={`${playing ? "Pause" : starting ? "Starting" : "Play"} (Space)`}
+          disabled={disabled || starting || countingIn}
+          aria-label={playLabel}
+          aria-keyshortcuts="Space"
+          title={`${playLabel} (Space)`}
         >
           {playing ? (
             <svg width={16} height={16} viewBox="0 0 18 18" aria-hidden="true">
@@ -76,7 +89,8 @@ export default function Transport({
           }}
           disabled={disabled || transport === "stopped"}
           aria-label="Stop"
-          title="Stop and return to step 1"
+          aria-keyshortcuts="S"
+          title="Stop and return to step 1 (S)"
         >
           <span aria-hidden="true" />
         </button>
@@ -92,6 +106,40 @@ export default function Transport({
         >
           FILL
         </button>
+        <button
+          type="button"
+          className="dm-metronome"
+          aria-pressed={metronomeEnabled}
+          aria-label="Playback metronome"
+          disabled={disabled}
+          onClick={() => {
+            onAction({
+              type: "metronomeEnabled",
+              value: !metronomeEnabled,
+            });
+          }}
+          title="Toggle quarter-note guide clicks during playback; count-in clicks always sound"
+        >
+          CLICK
+        </button>
+        <label className="dm-count-in">
+          <span>COUNT</span>
+          <select
+            aria-label="Count-in bars"
+            value={countInBars}
+            disabled={disabled}
+            onChange={(event) => {
+              onAction({
+                type: "countInBars",
+                value: Number(event.target.value),
+              });
+            }}
+          >
+            <option value={0}>OFF</option>
+            <option value={1}>1 BAR</option>
+            <option value={2}>2 BARS</option>
+          </select>
+        </label>
       </div>
 
       <div className="dm-tempo-group">

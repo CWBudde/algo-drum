@@ -13,17 +13,19 @@ import (
 // active tails and RNG position are deliberately runtime state rather than
 // preset state.
 type EngineState struct {
-	TempoBPM       float64
-	Swing          float64
-	Reverb         float64
-	Probability    float64
-	Humanize       float64
-	FillMode       bool
-	Banks          []PatternBankState
-	StandaloneBank int
-	ChainEnabled   bool
-	Chain          []int
-	Tracks         []TrackState
+	TempoBPM         float64
+	Swing            float64
+	Reverb           float64
+	Probability      float64
+	Humanize         float64
+	FillMode         bool
+	MetronomeEnabled bool
+	CountInBars      int
+	Banks            []PatternBankState
+	StandaloneBank   int
+	ChainEnabled     bool
+	Chain            []int
+	Tracks           []TrackState
 }
 
 // PatternBankState is one owned rhythmic snapshot. Cell arrays are flat
@@ -62,17 +64,19 @@ type TomState struct {
 // all returned slices and may modify them without aliasing the live engine.
 func (e *Engine) State() EngineState {
 	state := EngineState{
-		TempoBPM:       e.bpm,
-		Swing:          e.swing,
-		Reverb:         e.reverbAmount,
-		Probability:    e.prob,
-		Humanize:       e.humanize,
-		FillMode:       e.fillMode,
-		Banks:          make([]PatternBankState, PatternBankCount),
-		StandaloneBank: e.standaloneBank,
-		ChainEnabled:   e.chainEnabled,
-		Chain:          append([]int(nil), e.chain[:e.chainLength]...),
-		Tracks:         make([]TrackState, TrackCount),
+		TempoBPM:         e.bpm,
+		Swing:            e.swing,
+		Reverb:           e.reverbAmount,
+		Probability:      e.prob,
+		Humanize:         e.humanize,
+		FillMode:         e.fillMode,
+		MetronomeEnabled: e.metronomeEnabled,
+		CountInBars:      e.countInBars,
+		Banks:            make([]PatternBankState, PatternBankCount),
+		StandaloneBank:   e.standaloneBank,
+		ChainEnabled:     e.chainEnabled,
+		Chain:            append([]int(nil), e.chain[:e.chainLength]...),
+		Tracks:           make([]TrackState, TrackCount),
 	}
 
 	for bank := range PatternBankCount {
@@ -148,6 +152,8 @@ func (e *Engine) ReplaceState(state EngineState) error {
 	e.SetProbability(normalized.Probability)
 	e.SetHumanize(normalized.Humanize)
 	e.SetFillMode(normalized.FillMode)
+	e.SetMetronomeEnabled(normalized.MetronomeEnabled)
+	e.SetCountInBars(normalized.CountInBars)
 
 	for bank, bankState := range normalized.Banks {
 		e.storePatternBank(bank, bankState)
@@ -398,12 +404,19 @@ func (e *Engine) normalizeState(state EngineState) (EngineState, error) {
 	}
 
 	normalized := EngineState{
-		FillMode:       state.FillMode,
-		Banks:          make([]PatternBankState, PatternBankCount),
-		StandaloneBank: state.StandaloneBank,
-		ChainEnabled:   state.ChainEnabled,
-		Chain:          append([]int(nil), state.Chain...),
-		Tracks:         make([]TrackState, TrackCount),
+		FillMode:         state.FillMode,
+		MetronomeEnabled: state.MetronomeEnabled,
+		CountInBars:      state.CountInBars,
+		Banks:            make([]PatternBankState, PatternBankCount),
+		StandaloneBank:   state.StandaloneBank,
+		ChainEnabled:     state.ChainEnabled,
+		Chain:            append([]int(nil), state.Chain...),
+		Tracks:           make([]TrackState, TrackCount),
+	}
+	if normalized.CountInBars < 0 {
+		normalized.CountInBars = 0
+	} else if normalized.CountInBars > MaxCountInBars {
+		normalized.CountInBars = MaxCountInBars
 	}
 
 	var ok bool

@@ -7,6 +7,8 @@ import {
   useState,
 } from "react";
 import { STEP_CAPACITY } from "../algo/pattern";
+import { mutate } from "../algo/mutate";
+import { PRESETS, presetToFlat } from "../algo/presets";
 import {
   loadInitialState,
   replaceAddressBarWithShareUrl,
@@ -21,11 +23,20 @@ import {
   VOICE_PARAMS,
 } from "../engine/voiceParams";
 import AlgoPanel from "./AlgoPanel";
+import { matchingPresetIndex } from "./algoPanelState";
 import CellInspector from "./CellInspector";
 import { demoEngineState, reduceDrumState } from "./drumState";
 import { usePatternHistory } from "./patternHistory";
-import { cellIndex, flatToVisual, TRACK_INDEX } from "./patternView";
+import {
+  applyPaintedCells,
+  cellIndex,
+  flatToVisual,
+  TRACK_INDEX,
+} from "./patternView";
 import PatternBanks from "./PatternBanks";
+import { clearRow, copyBar, copyRow, rotateRow } from "./rowOperations";
+import ShortcutHelp from "./ShortcutHelp";
+import { resolveGlobalShortcut } from "./shortcuts";
 import StepGrid from "./StepGrid";
 import Transport from "./Transport";
 import { useEngineSync } from "./useEngineSync";
@@ -67,6 +78,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
   });
   const [editorTrack, setEditorTrack] = useState<number | null>(null);
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const [shortcutAnnouncement, setShortcutAnnouncement] = useState("");
+  const shortcutHelpOpener = useRef<HTMLElement | null>(null);
   const [selectedBank, setSelectedBank] = useState(() =>
     initial.chainEnabled ? (initial.chain[0] ?? 0) : initial.standaloneBank,
   );
@@ -103,37 +117,6 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     if (!wasmLoaded || transport === "stopped") return;
     engine.stop();
   }, [transport, wasmLoaded]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (editorTrack !== null) return;
-      const target = event.target as HTMLElement;
-      const editing = Boolean(
-        target.closest("input, select, textarea, [contenteditable='true']"),
-      );
-
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && !editing) {
-        const undo = event.code === "KeyZ" && !event.shiftKey;
-        const redo =
-          (event.code === "KeyZ" && event.shiftKey) || event.code === "KeyY";
-        if (undo || redo) {
-          event.preventDefault();
-          if (undo) undoPattern();
-          else redoPattern();
-          return;
-        }
-      }
-
-      if (event.code !== "Space" || editing) return;
-      if (target.closest("button, [role='slider']")) return;
-      event.preventDefault();
-      void handlePlayPause();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [editorTrack, handlePlayPause, redoPattern, undoPattern]);
 
   const tapTimes = useRef<number[]>([]);
   const handleTap = useCallback(() => {
@@ -222,6 +205,123 @@ export default function DrumMachine({ wasmLoaded }: Props) {
     () => Array.from(currentBank.pattern),
     [currentBank.pattern],
   );
+
+  const applyShortcutPreset = useCallback(
+    (direction: 1 | -1) => {
+      const current = matchingPresetIndex(currentBank.pattern);
+      const next =
+        current < 0
+          ? direction > 0
+            ? 0
+            : PRESETS.length - 1
+          : (current + direction + PRESETS.length) % PRESETS.length;
+      const preset = PRESETS[next];
+      if (!preset) return;
+      patternHistory.applyDestructivePattern(presetToFlat(preset));
+      setShortcutAnnouncement(`${preset.name} preset loaded.`);
+    },
+    [currentBank.pattern, patternHistory],
+  );
+
+  const closeShortcutHelp = useCallback(() => {
+    setShortcutHelpOpen(false);
+    window.requestAnimationFrame(() => shortcutHelpOpener.current?.focus());
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (editorTrack !== null || shortcutHelpOpen) return;
+      const target =
+        event.target instanceof HTMLElement ? event.target : document.body;
+      const editing = Boolean(
+        target.closest("input, select, textarea, [contenteditable='true']"),
+      );
+      const rowActionsOpen = document.querySelector(".dm-row-actions") !== null;
+      if (rowActionsOpen) return;
+
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && !editing) {
+        const undo = event.code === "KeyZ" && !event.shiftKey;
+        const redo =
+          (event.code === "KeyZ" && event.shiftKey) || event.code === "KeyY";
+        if (undo || redo) {
+          event.preventDefault();
+          if (undo) undoPattern();
+          else redoPattern();
+          return;
+        }
+      }
+
+      if (editing) return;
+      const shortcut = resolveGlobalShortcut(event);
+      if (!shortcut) return;
+      if (
+        shortcut.type === "playPause" &&
+        target.closest("button, [role='slider']")
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      switch (shortcut.type) {
+        case "playPause":
+          void handlePlayPause();
+          return;
+        case "stop":
+          handleStop();
+          return;
+        case "mutate":
+          patternHistory.applyDestructivePattern(
+            mutate(Array.from(currentBank.pattern), {
+              stepCount: currentBank.stepCount,
+            }),
+          );
+          setShortcutAnnouncement("Pattern mutated.");
+          return;
+        case "clear":
+          patternHistory.applyDestructivePattern(
+            new Float32Array(currentBank.pattern.length),
+          );
+          setShortcutAnnouncement("Pattern cleared.");
+          return;
+        case "muteTrack": {
+          const track = TRACK_INDEX[shortcut.visualRow];
+          if (track === undefined) return;
+          const muted = !drumState.tracks[track].muted;
+          applyStateAction({ type: "muted", track, value: muted });
+          setShortcutAnnouncement(
+            `${muted ? "Muted" : "Unmuted"} track ${shortcut.visualRow + 1}.`,
+          );
+          return;
+        }
+        case "nextPreset":
+          applyShortcutPreset(1);
+          return;
+        case "previousPreset":
+          applyShortcutPreset(-1);
+          return;
+        case "showHelp":
+          shortcutHelpOpener.current = target;
+          setShortcutHelpOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [
+    applyShortcutPreset,
+    applyStateAction,
+    currentBank.pattern,
+    currentBank.stepCount,
+    drumState.tracks,
+    editorTrack,
+    handlePlayPause,
+    handleStop,
+    patternHistory,
+    redoPattern,
+    shortcutHelpOpen,
+    undoPattern,
+  ]);
   const volumes = TRACK_INDEX.map((track) => drumState.tracks[track].volume);
   const decays = TRACK_INDEX.map((track) => drumState.tracks[track].decay);
   const muted = TRACK_INDEX.map((track) => drumState.tracks[track].muted);
@@ -253,6 +353,9 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           ? `Audio engine ready. Transport ${transport}.`
           : "Audio engine loading."}
       </span>
+      <span className="dm-sr-only" role="status" aria-live="polite">
+        {shortcutAnnouncement}
+      </span>
       <header className="dm-header">
         <h1 className="dm-title">
           <span className="dm-title-algo">algo</span>
@@ -263,6 +366,20 @@ export default function DrumMachine({ wasmLoaded }: Props) {
           title={wasmLoaded ? "Engine ready" : "Loading engine"}
           aria-hidden="true"
         />
+        <button
+          type="button"
+          className="dm-shortcuts-open"
+          aria-label="Show keyboard shortcuts"
+          aria-haspopup="dialog"
+          aria-keyshortcuts="?"
+          title="Keyboard shortcuts (?)"
+          onClick={(event) => {
+            shortcutHelpOpener.current = event.currentTarget;
+            setShortcutHelpOpen(true);
+          }}
+        >
+          ?
+        </button>
         <AlgoPanel
           disabled={!wasmLoaded}
           pattern={flatPattern}
@@ -324,6 +441,44 @@ export default function DrumMachine({ wasmLoaded }: Props) {
             step,
             value,
           });
+        }}
+        onPaintComplete={(cells) => {
+          patternHistory.applyDestructivePattern(
+            applyPaintedCells(currentBank.pattern, cells),
+          );
+        }}
+        onClearRow={(row) => {
+          patternHistory.replaceBank(
+            selectedBank,
+            clearRow(currentBank, requiredAt(TRACK_INDEX, row)),
+          );
+        }}
+        onRotateRow={(row, direction) => {
+          patternHistory.replaceBank(
+            selectedBank,
+            rotateRow(currentBank, requiredAt(TRACK_INDEX, row), direction),
+          );
+        }}
+        onCopyRow={(sourceRow, destinationRow) => {
+          patternHistory.replaceBank(
+            selectedBank,
+            copyRow(
+              currentBank,
+              requiredAt(TRACK_INDEX, sourceRow),
+              requiredAt(TRACK_INDEX, destinationRow),
+            ),
+          );
+        }}
+        onCopyBar={(row, sourceBar, destinationBar) => {
+          patternHistory.replaceBank(
+            selectedBank,
+            copyBar(
+              currentBank,
+              requiredAt(TRACK_INDEX, row),
+              sourceBar,
+              destinationBar,
+            ),
+          );
         }}
         onVolumeChange={(row, value) => {
           applyStateAction({
@@ -468,6 +623,8 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         />
       )}
 
+      {shortcutHelpOpen && <ShortcutHelp onRequestClose={closeShortcutHelp} />}
+
       <Transport
         disabled={!wasmLoaded}
         transport={transport}
@@ -479,6 +636,8 @@ export default function DrumMachine({ wasmLoaded }: Props) {
         humanize={drumState.humanize}
         reverb={drumState.reverb}
         fillMode={drumState.fillMode}
+        metronomeEnabled={drumState.metronomeEnabled}
+        countInBars={drumState.countInBars}
         onAction={applyStateAction}
         onPlayPause={() => void handlePlayPause()}
         onStop={handleStop}

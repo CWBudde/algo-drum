@@ -157,11 +157,21 @@ describe("reduceDrumState", () => {
       value: 7,
     });
     const fill = reduceDrumState(length, { type: "fillMode", value: true });
+    const metronome = reduceDrumState(fill, {
+      type: "metronomeEnabled",
+      value: true,
+    });
+    const countIn = reduceDrumState(metronome, {
+      type: "countInBars",
+      value: 2,
+    });
 
-    expect(fill.banks[2].cellProbabilities[36]).toBeCloseTo(0.35);
-    expect(fill.banks[2].cellConditions[36]).toBe(3);
-    expect(fill.banks[2].trackLengths[2]).toBe(7);
-    expect(fill.fillMode).toBe(true);
+    expect(countIn.banks[2].cellProbabilities[36]).toBeCloseTo(0.35);
+    expect(countIn.banks[2].cellConditions[36]).toBe(3);
+    expect(countIn.banks[2].trackLengths[2]).toBe(7);
+    expect(countIn.fillMode).toBe(true);
+    expect(countIn.metronomeEnabled).toBe(true);
+    expect(countIn.countInBars).toBe(2);
     expect(state.banks[2].cellProbabilities[36]).toBe(1);
   });
 

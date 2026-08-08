@@ -49,6 +49,8 @@ export type DrumStateAction =
     }
   | { type: "trackLength"; bank: number; track: number; value: number }
   | { type: "fillMode"; value: boolean }
+  | { type: "metronomeEnabled"; value: boolean }
+  | { type: "countInBars"; value: number }
   | { type: "pattern"; bank: number; value: Float32Array }
   | { type: "patternBank"; bank: number; value: PatternBankState }
   | { type: "requestBank"; value: number }
@@ -215,6 +217,10 @@ export function reduceDrumState(
     }
     case "fillMode":
       return { ...state, fillMode: action.value };
+    case "metronomeEnabled":
+      return { ...state, metronomeEnabled: action.value };
+    case "countInBars":
+      return { ...state, countInBars: action.value };
     case "pattern":
       return updateBank(state, action.bank, (bank) => ({
         ...bank,

@@ -177,6 +177,7 @@ export function usePatternHistory(
   const currentHistory = histories.current[selectedBank];
   return {
     applyDestructivePattern,
+    replaceBank,
     copyBank,
     undo,
     redo,

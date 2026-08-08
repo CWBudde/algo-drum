@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { PATTERN_SIZE, STEP_CAPACITY } from "../algo/pattern";
 import {
+  PATTERN_SIZE,
+  STEP_CAPACITY,
+  TRACK_COUNT,
+  VEL_ACCENT,
+  VEL_NORMAL,
+} from "../algo/pattern";
+import {
+  applyPaintedCells,
   STOPPED_PLAYHEAD,
   advancePlayheadClock,
   cycleVelocity,
@@ -8,6 +15,7 @@ import {
   flatToVisual,
   moveGridFocus,
   nudgeVelocity,
+  paintVelocity,
   patternsEqual,
   velocityFromPointer,
   velocityName,
@@ -25,6 +33,22 @@ describe("pattern view helpers", () => {
     expect(velocityName(0.7)).toBe("on");
     expect(velocityName(0.35)).toBe("35%");
     expect(velocityName(1)).toBe("accent");
+  });
+
+  it("chooses paint or erase from the starting cell and applies each edit", () => {
+    expect(paintVelocity(0)).toBe(VEL_NORMAL);
+    expect(paintVelocity(0.25)).toBe(0);
+    expect(paintVelocity(VEL_ACCENT)).toBe(0);
+
+    const pattern = new Array<number>(TRACK_COUNT * STEP_CAPACITY).fill(0);
+    const painted = applyPaintedCells(pattern, [
+      { track: 2, step: 3, value: VEL_NORMAL },
+      { track: 2, step: 4, value: VEL_NORMAL },
+      { track: -1, step: 0, value: 1 },
+    ]);
+    expect(painted[2 * STEP_CAPACITY + 3]).toBe(VEL_NORMAL);
+    expect(painted[2 * STEP_CAPACITY + 4]).toBe(VEL_NORMAL);
+    expect(pattern[2 * STEP_CAPACITY + 3]).toBe(0);
   });
 
   it("moves grid focus by cell, row, and row or grid edge", () => {

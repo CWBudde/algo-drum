@@ -73,6 +73,11 @@ func TestValidateRejectsBrokenInvariants(t *testing.T) {
 			want:    "step count 17",
 		},
 		{
+			name:    "count-in bars past capacity",
+			corrupt: func(engine *Engine) { engine.countInBars = MaxCountInBars + 1 },
+			want:    "count-in bars 3",
+		},
+		{
 			name:    "track length below one",
 			corrupt: func(engine *Engine) { engine.trackLength[2] = 0 },
 			want:    "track 2 length 0",

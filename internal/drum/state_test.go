@@ -112,6 +112,8 @@ func TestReplaceStateRoundTripsEveryBank(t *testing.T) {
 	source.SetProbability(0.73)
 	source.SetHumanize(0.28)
 	source.SetFillMode(true)
+	source.SetMetronomeEnabled(true)
+	source.SetCountInBars(2)
 
 	for bank := range PatternBankCount {
 		source.SetStepCount(bank, 11+bank)
@@ -181,6 +183,7 @@ func TestReplaceStateClampsEveryFiniteNumericClass(t *testing.T) {
 	state.Reverb = 2
 	state.Probability = -2
 	state.Humanize = 3
+	state.CountInBars = 9
 	state.Banks[0].CellProbabilities[0] = -1
 	state.Banks[0].CellProbabilities[1] = 2
 	state.Banks[0].CellHumanize[0] = -1
@@ -227,6 +230,9 @@ func TestReplaceStateClampsEveryFiniteNumericClass(t *testing.T) {
 	}
 	if got.Banks[0].StepCount != MaxSteps {
 		t.Errorf("step count = %d, want %d", got.Banks[0].StepCount, MaxSteps)
+	}
+	if got.CountInBars != MaxCountInBars {
+		t.Errorf("count-in bars = %d, want %d", got.CountInBars, MaxCountInBars)
 	}
 	if got.Banks[0].TrackLengths[0] != 1 || got.Banks[0].TrackLengths[1] != MaxSteps {
 		t.Errorf("track lengths = %v, want first two clamped to [1, %d]", got.Banks[0].TrackLengths, MaxSteps)

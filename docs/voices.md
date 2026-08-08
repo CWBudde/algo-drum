@@ -365,7 +365,7 @@ Once triggered, a voice's `Tick()` output travels through `Engine.Render`
 
 0. **Idle fast path.** Before any of the below, `Render` checks `IsIdle()`: once
    the output has stayed under `engineSilence` (`1e-6`, ≈ −120 dBFS) for
-   `idleConfirmS` (50 ms) with the transport not playing and no humanize-delayed
+   `idleConfirmS` (50 ms) with the transport not playing/counting and no humanize-delayed
    hit armed, the sample is written as a plain zero and every stage below is
    skipped. Voice, reverb and limiter state is frozen rather than reset, so a
    later hit resumes from where the silence began, and `SetRunning(true)` /
@@ -406,7 +406,11 @@ Once triggered, a voice's `Tick()` output travels through `Engine.Render`
    wet gain would make the knob raise the master level; trading dry for wet
    keeps the level flat across the sweep. At `amount == 0` the wet gain is 0
    and the dry gain 1, which is bit-exactly transparent.
-5. **Lookahead peak limiter.** `Engine.limiter` (`peakLimiter`,
+5. **Guide click.** The deterministic metronome/count-in oscillator is added
+   after the FDN, so it stays dry and independent of all seven track volumes,
+   mutes, probability and humanize. It still enters the limiter below. Count-in
+   always clicks; ordinary quarter-note clicks require the saved metronome toggle.
+6. **Lookahead peak limiter.** `Engine.limiter` (`peakLimiter`,
    `internal/drum/peak_limiter.go`) — a true peak limiter at a `-1.0 dBFS`
    ceiling. The program path is delayed by a 3 ms lookahead while a monotonic
    deque tracks the largest `|input|` over each delayed sample's complete
@@ -414,7 +418,7 @@ Once triggered, a voice's `Tick()` output travels through `Engine.Render`
    is smoothed (100 ms). Unlike an attack-smoothed compressor detector, this
    bounds an isolated one-sample transient as tightly as a sustained one; the
    output cannot cross the ceiling.
-6. **Hard clamp.** A final `if out > 1 / out < -1` clamp to `[-1, 1]`,
+7. **Hard clamp.** A final `if out > 1 / out < -1` clamp to `[-1, 1]`,
    counted in `hardClipCount`. With the limiter in circuit it is unreachable
    — `TestDensePatternDoesNotReachHardClamp` asserts the counter stays at zero
    — so it is a contract guarantee and a regression detector, not a working
@@ -423,7 +427,7 @@ Once triggered, a voice's `Tick()` output travels through `Engine.Render`
 
 ```
 voice.Tick() ×7 → × liveVol[t] (smoothed) → Σ → × mixHeadroom → FDN reverb (wet/dry mix)
-    → lookahead peak limiter (−1 dBFS) → clamp[-1,1] → buf[i]
+    → + dry guide click → lookahead peak limiter (−1 dBFS) → clamp[-1,1] → buf[i]
 ```
 
 ## Determinism and the golden render tests

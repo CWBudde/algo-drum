@@ -280,6 +280,30 @@ func main() {
 		return js.Null()
 	}))
 
+	api.Set("setMetronomeEnabled", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		if enabled, ok := argBool(args, 0, "setMetronomeEnabled"); ok {
+			engine.SetMetronomeEnabled(enabled)
+		}
+
+		return js.Null()
+	}))
+
+	api.Set("setCountInBars", export(func(args []js.Value) any {
+		if !ready() {
+			return js.Null()
+		}
+
+		if bars, ok := argInt(args, 0, "setCountInBars"); ok {
+			engine.SetCountInBars(bars)
+		}
+
+		return js.Null()
+	}))
+
 	// setPattern takes a flat track-major Float32Array (index =
 	// track*MaxSteps + step) of velocities in [0, 1].
 	api.Set("setPattern", export(func(args []js.Value) any {
@@ -786,6 +810,8 @@ func readEngineState(args []js.Value, index int) (drum.EngineState, bool) {
 	probability, probabilityOK := finiteJSNumber(value.Get("probability"))
 	humanize, humanizeOK := finiteJSNumber(value.Get("humanize"))
 	fillModeValue := value.Get("fillMode")
+	metronomeValue := value.Get("metronomeEnabled")
+	countInBars, countInOK := integerJSNumber(value.Get("countInBars"))
 	standaloneBank, standaloneBankOK := integerJSNumber(value.Get("standaloneBank"))
 	chainEnabledValue := value.Get("chainEnabled")
 	chain, chainOK := readVariableIntArray(value.Get("chain"), 1, drum.MaxChainLength)
@@ -800,23 +826,26 @@ func readEngineState(args []js.Value, index int) (drum.EngineState, bool) {
 		tracksValue.Length() == drum.TrackCount
 
 	if !tempoOK || !swingOK || !reverbOK || !probabilityOK || !humanizeOK ||
-		fillModeValue.Type() != js.TypeBoolean || !standaloneBankOK ||
+		fillModeValue.Type() != js.TypeBoolean || metronomeValue.Type() != js.TypeBoolean ||
+		!countInOK || !standaloneBankOK ||
 		chainEnabledValue.Type() != js.TypeBoolean || !chainOK || !banksOK || !tracksOK {
 		return drum.EngineState{}, false
 	}
 
 	state := drum.EngineState{
-		TempoBPM:       tempo,
-		Swing:          swing,
-		Reverb:         reverbAmount,
-		Probability:    probability,
-		Humanize:       humanize,
-		FillMode:       fillModeValue.Bool(),
-		Banks:          make([]drum.PatternBankState, drum.PatternBankCount),
-		StandaloneBank: standaloneBank,
-		ChainEnabled:   chainEnabledValue.Bool(),
-		Chain:          chain,
-		Tracks:         make([]drum.TrackState, drum.TrackCount),
+		TempoBPM:         tempo,
+		Swing:            swing,
+		Reverb:           reverbAmount,
+		Probability:      probability,
+		Humanize:         humanize,
+		FillMode:         fillModeValue.Bool(),
+		MetronomeEnabled: metronomeValue.Bool(),
+		CountInBars:      countInBars,
+		Banks:            make([]drum.PatternBankState, drum.PatternBankCount),
+		StandaloneBank:   standaloneBank,
+		ChainEnabled:     chainEnabledValue.Bool(),
+		Chain:            chain,
+		Tracks:           make([]drum.TrackState, drum.TrackCount),
 	}
 
 	for bank := range state.Banks {
@@ -1067,6 +1096,8 @@ func writeEngineState(state drum.EngineState) js.Value {
 	stateOut.value.Set("probability", state.Probability)
 	stateOut.value.Set("humanize", state.Humanize)
 	stateOut.value.Set("fillMode", state.FillMode)
+	stateOut.value.Set("metronomeEnabled", state.MetronomeEnabled)
+	stateOut.value.Set("countInBars", state.CountInBars)
 	stateOut.value.Set("standaloneBank", state.StandaloneBank)
 	stateOut.value.Set("chainEnabled", state.ChainEnabled)
 

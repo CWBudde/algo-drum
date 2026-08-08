@@ -72,9 +72,13 @@ export default function App() {
         </div>
       )}
       {load.status === "loading" && (
-        <p className="app-loading" role="status">
-          Loading engine…
-        </p>
+        <div className="app-loading" role="status" aria-live="polite">
+          <span className="app-loading-indicator" aria-hidden="true" />
+          <span>
+            <strong>Loading audio engine</strong>
+            <small>Preparing the WebAssembly instrument…</small>
+          </span>
+        </div>
       )}
       <div
         className="app-machine"

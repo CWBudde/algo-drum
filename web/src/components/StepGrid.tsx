@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import { createPortal } from "react-dom";
 import { STEP_CAPACITY, VEL_ACCENT } from "../algo/pattern";
 import { onStep } from "../engine/wasmEngine";
 import TrackStrip from "./TrackStrip";
@@ -10,9 +17,13 @@ import {
   cycleVelocity,
   moveGridFocus,
   nudgeVelocity,
+  paintVelocity,
+  type PaintedCell,
   velocityFromPointer,
   velocityName,
 } from "./patternView";
+
+const BAR_COUNT = STEP_CAPACITY / 4;
 
 interface Props {
   disabled: boolean;
@@ -24,6 +35,11 @@ interface Props {
   muted: boolean[];
   trackLengths: number[];
   onCellChange: (track: number, step: number, value: number) => void;
+  onPaintComplete: (cells: readonly PaintedCell[]) => void;
+  onClearRow: (row: number) => void;
+  onRotateRow: (row: number, direction: "left" | "right") => void;
+  onCopyRow: (sourceRow: number, destinationRow: number) => void;
+  onCopyBar: (row: number, sourceBar: number, destinationBar: number) => void;
   onVolumeChange: (row: number, value: number) => void;
   onDecayChange: (row: number, value: number) => void;
   onToggleMute: (row: number) => void;
@@ -54,6 +70,11 @@ export default function StepGrid({
   muted,
   trackLengths,
   onCellChange,
+  onPaintComplete,
+  onClearRow,
+  onRotateRow,
+  onCopyRow,
+  onCopyBar,
   onVolumeChange,
   onDecayChange,
   onToggleMute,
@@ -77,6 +98,56 @@ export default function StepGrid({
   const suppressClick = useRef(false);
   const cellRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [tabStop, setTabStop] = useState({ row: 0, col: 0 });
+  const [paintPreview, setPaintPreview] = useState<Map<number, number> | null>(
+    null,
+  );
+  const paintGesture = useRef<{
+    pointerId: number;
+    value: number;
+    startIndex: number;
+    start: PaintedCell;
+    visited: Map<number, PaintedCell>;
+    active: boolean;
+  } | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const [rowActions, setRowActions] = useState<{
+    row: number;
+    top: number;
+    left: number;
+  } | null>(null);
+  const [copyDestinationRow, setCopyDestinationRow] = useState(1);
+  const [sourceBar, setSourceBar] = useState(0);
+  const [destinationBar, setDestinationBar] = useState(1);
+  const rowActionsRef = useRef<HTMLDivElement | null>(null);
+  const rowActionOpener = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!rowActions) return;
+    rowActionsRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+
+    const closeForOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (
+        target &&
+        !rowActionsRef.current?.contains(target) &&
+        !rowActionOpener.current?.contains(target)
+      ) {
+        setRowActions(null);
+      }
+    };
+    const closeForEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setRowActions(null);
+      rowActionOpener.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeForOutsidePointer);
+    document.addEventListener("keydown", closeForEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeForOutsidePointer);
+      document.removeEventListener("keydown", closeForEscape);
+    };
+  }, [rowActions]);
 
   const setPointerVelocity = (
     element: HTMLButtonElement,
@@ -94,16 +165,126 @@ export default function StepGrid({
     );
   };
 
+  const beginPaint = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    row: number,
+    col: number,
+    velocity: number,
+  ) => {
+    if (
+      event.shiftKey ||
+      !event.isPrimary ||
+      event.button !== 0 ||
+      (event.pointerType !== "mouse" && event.pointerType !== "pen")
+    ) {
+      return;
+    }
+    const track = TRACK_INDEX[row];
+    if (track === undefined) return;
+    const startIndex = row * STEP_CAPACITY + col;
+    paintGesture.current = {
+      pointerId: event.pointerId,
+      value: paintVelocity(velocity),
+      startIndex,
+      start: { track, step: col, value: paintVelocity(velocity) },
+      visited: new Map(),
+      active: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const continuePaint = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const gesture = paintGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const target = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLButtonElement>(".dm-cell[data-row][data-col]");
+    if (!target) return;
+    const row = Number(target.dataset.row);
+    const col = Number(target.dataset.col);
+    if (!Number.isInteger(row) || !Number.isInteger(col)) return;
+    const targetIndex = row * STEP_CAPACITY + col;
+    if (!gesture.active && targetIndex === gesture.startIndex) return;
+
+    const track = TRACK_INDEX[row];
+    if (track === undefined || gesture.visited.has(targetIndex)) return;
+    event.preventDefault();
+    if (!gesture.active) {
+      gesture.active = true;
+      gesture.visited.set(gesture.startIndex, gesture.start);
+      suppressClick.current = true;
+    }
+    gesture.visited.set(targetIndex, {
+      track,
+      step: col,
+      value: gesture.value,
+    });
+    setPaintPreview(
+      new Map(
+        Array.from(gesture.visited, ([index, cell]) => [index, cell.value]),
+      ),
+    );
+  };
+
+  const finishPaint = (pointerId: number, commit: boolean) => {
+    const gesture = paintGesture.current;
+    if (!gesture || gesture.pointerId !== pointerId) return;
+    paintGesture.current = null;
+    setPaintPreview(null);
+    if (commit && gesture.active) {
+      onPaintComplete(Array.from(gesture.visited.values()));
+      setAnnouncement(
+        `${gesture.value > 0 ? "Painted" : "Erased"} ${gesture.visited.size} steps.`,
+      );
+    }
+    if (gesture.active) {
+      suppressClick.current = true;
+      window.setTimeout(() => {
+        suppressClick.current = false;
+      }, 0);
+    }
+  };
+
+  const openRowActions = (
+    event:
+      | ReactPointerEvent<HTMLButtonElement>
+      | React.MouseEvent<HTMLButtonElement>,
+    row: number,
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const panelWidth = Math.min(360, window.innerWidth - 16);
+    setCopyDestinationRow((row + 1) % TRACKS.length);
+    setSourceBar(0);
+    setDestinationBar(1);
+    rowActionOpener.current = event.currentTarget;
+    setRowActions({
+      row,
+      top: Math.min(rect.bottom + 6, Math.max(8, window.innerHeight - 330)),
+      left: Math.max(
+        8,
+        Math.min(rect.left, window.innerWidth - panelWidth - 8),
+      ),
+    });
+  };
+
+  const finishRowAction = (message: string, action: () => void) => {
+    action();
+    setAnnouncement(message);
+    setRowActions(null);
+    rowActionOpener.current?.focus();
+  };
+
   return (
     <div className="dm-board">
       <p id="dm-velocity-help" className="dm-sr-only">
-        Click to cycle off, normal and accent. Hold Shift and drag vertically
-        for continuous velocity, or press Shift plus Up or Down Arrow in five
-        percent steps. Open the context menu or press F2 for probability,
-        humanize and trigger condition. Arrow keys move between cells. Home and
-        End move to the first and last cell in a row; Control plus Home or End
-        moves to the first or last cell in the grid. Steps outside a track's
-        loop remain editable but do not play.
+        Click to cycle off, normal and accent. Drag across two or more steps
+        with a mouse or pen to paint from an empty step or erase from an active
+        step. Hold Shift and drag vertically for continuous velocity, or press
+        Shift plus Up or Down Arrow in five percent steps. Open the context menu
+        or press F2 for probability, humanize and trigger condition. Arrow keys
+        move between cells. Home and End move to the first and last cell in a
+        row; Control plus Home or End moves to the first or last cell in the
+        grid. Steps outside a track's loop remain editable but do not play.
       </p>
       <div className="dm-screen" aria-hidden="true" />
 
@@ -128,13 +309,32 @@ export default function StepGrid({
               role="rowheader"
               aria-colindex={1}
             >
-              {name.toUpperCase()}
+              <span>{name.toUpperCase()}</span>
+              <button
+                type="button"
+                className="dm-row-actions-open"
+                aria-label={`${name} row actions`}
+                aria-haspopup="dialog"
+                aria-expanded={rowActions?.row === row}
+                disabled={disabled}
+                onClick={(event) => {
+                  if (rowActions?.row === row) {
+                    setRowActions(null);
+                    return;
+                  }
+                  openRowActions(event, row);
+                }}
+              >
+                ⋯
+              </button>
             </span>
 
             {Array.from({ length: STEP_CAPACITY }, (_, col) => {
               const track = requiredTrack(row);
               const trackLength = trackLengths[row] ?? stepCount;
-              const velocity = pattern[row]?.[col] ?? 0;
+              const refIndex = row * STEP_CAPACITY + col;
+              const velocity =
+                paintPreview?.get(refIndex) ?? pattern[row]?.[col] ?? 0;
               const beyondLoop = col >= trackLength;
               const isPlayhead =
                 showPlayhead &&
@@ -150,7 +350,6 @@ export default function StepGrid({
               ]
                 .filter(Boolean)
                 .join(" ");
-              const refIndex = row * STEP_CAPACITY + col;
 
               return (
                 <span
@@ -173,6 +372,8 @@ export default function StepGrid({
                       } as CSSProperties
                     }
                     data-active={velocity > 0 || undefined}
+                    data-row={row}
+                    data-col={col}
                     data-accent={velocity >= VEL_ACCENT || undefined}
                     data-beyond={beyondLoop || undefined}
                     data-playhead={isPlayhead || undefined}
@@ -198,41 +399,54 @@ export default function StepGrid({
                       onInspectCell(track, col);
                     }}
                     onPointerDown={(event) => {
-                      if (!event.shiftKey) return;
-                      event.preventDefault();
-                      velocityPointer.current = event.pointerId;
-                      suppressClick.current = true;
-                      event.currentTarget.setPointerCapture(event.pointerId);
-                      event.currentTarget.focus();
-                      setPointerVelocity(
-                        event.currentTarget,
-                        event.clientY,
-                        row,
-                        col,
-                      );
+                      if (event.shiftKey) {
+                        event.preventDefault();
+                        velocityPointer.current = event.pointerId;
+                        suppressClick.current = true;
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                        event.currentTarget.focus();
+                        setPointerVelocity(
+                          event.currentTarget,
+                          event.clientY,
+                          row,
+                          col,
+                        );
+                        return;
+                      }
+                      beginPaint(event, row, col, velocity);
                     }}
                     onPointerMove={(event) => {
-                      if (velocityPointer.current !== event.pointerId) return;
-                      setPointerVelocity(
-                        event.currentTarget,
-                        event.clientY,
-                        row,
-                        col,
-                      );
+                      if (velocityPointer.current === event.pointerId) {
+                        setPointerVelocity(
+                          event.currentTarget,
+                          event.clientY,
+                          row,
+                          col,
+                        );
+                        return;
+                      }
+                      continuePaint(event);
                     }}
                     onPointerUp={(event) => {
-                      if (velocityPointer.current !== event.pointerId) return;
-                      event.currentTarget.releasePointerCapture(
-                        event.pointerId,
-                      );
-                      velocityPointer.current = null;
-                      window.setTimeout(() => {
-                        suppressClick.current = false;
-                      }, 0);
+                      if (velocityPointer.current === event.pointerId) {
+                        event.currentTarget.releasePointerCapture(
+                          event.pointerId,
+                        );
+                        velocityPointer.current = null;
+                        window.setTimeout(() => {
+                          suppressClick.current = false;
+                        }, 0);
+                        return;
+                      }
+                      finishPaint(event.pointerId, true);
                     }}
-                    onPointerCancel={() => {
-                      velocityPointer.current = null;
-                      suppressClick.current = false;
+                    onPointerCancel={(event) => {
+                      if (velocityPointer.current === event.pointerId) {
+                        velocityPointer.current = null;
+                        suppressClick.current = false;
+                        return;
+                      }
+                      finishPaint(event.pointerId, true);
                     }}
                     onKeyDown={(event) => {
                       if (event.key === "F2") {
@@ -329,6 +543,151 @@ export default function StepGrid({
           onOpenEditor={onOpenEditor}
         />
       ))}
+
+      <span className="dm-sr-only" role="status" aria-live="polite">
+        {announcement}
+      </span>
+
+      {rowActions &&
+        createPortal(
+          <div
+            ref={rowActionsRef}
+            className="dm-row-actions"
+            role="dialog"
+            aria-modal="false"
+            aria-label={`${TRACKS[rowActions.row]} row actions`}
+            style={{ top: rowActions.top, left: rowActions.left }}
+          >
+            <div className="dm-row-actions-title">
+              {TRACKS[rowActions.row]} row
+            </div>
+            <div className="dm-row-actions-buttons">
+              <button
+                type="button"
+                onClick={() => {
+                  finishRowAction(
+                    `${TRACKS[rowActions.row]} row cleared.`,
+                    () => {
+                      onClearRow(rowActions.row);
+                    },
+                  );
+                }}
+              >
+                Clear row
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  finishRowAction(
+                    `${TRACKS[rowActions.row]} row rotated left.`,
+                    () => {
+                      onRotateRow(rowActions.row, "left");
+                    },
+                  );
+                }}
+              >
+                Rotate left
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  finishRowAction(
+                    `${TRACKS[rowActions.row]} row rotated right.`,
+                    () => {
+                      onRotateRow(rowActions.row, "right");
+                    },
+                  );
+                }}
+              >
+                Rotate right
+              </button>
+            </div>
+            <div className="dm-row-copy">
+              <label>
+                Copy row to
+                <select
+                  value={copyDestinationRow}
+                  onChange={(event) => {
+                    setCopyDestinationRow(Number(event.target.value));
+                  }}
+                >
+                  {TRACKS.map((trackName, destinationRow) => (
+                    <option
+                      key={trackName}
+                      value={destinationRow}
+                      disabled={destinationRow === rowActions.row}
+                    >
+                      {trackName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                disabled={copyDestinationRow === rowActions.row}
+                onClick={() => {
+                  finishRowAction(
+                    `${TRACKS[rowActions.row]} row copied to ${TRACKS[copyDestinationRow]}.`,
+                    () => {
+                      onCopyRow(rowActions.row, copyDestinationRow);
+                    },
+                  );
+                }}
+              >
+                Copy row
+              </button>
+            </div>
+            <div className="dm-row-copy">
+              <label>
+                Copy bar
+                <select
+                  aria-label="Source bar"
+                  value={sourceBar}
+                  onChange={(event) => {
+                    setSourceBar(Number(event.target.value));
+                  }}
+                >
+                  {Array.from({ length: BAR_COUNT }, (_, bar) => (
+                    <option key={bar} value={bar}>
+                      {bar + 1}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                to
+                <select
+                  aria-label="Destination bar"
+                  value={destinationBar}
+                  onChange={(event) => {
+                    setDestinationBar(Number(event.target.value));
+                  }}
+                >
+                  {Array.from({ length: BAR_COUNT }, (_, bar) => (
+                    <option key={bar} value={bar} disabled={bar === sourceBar}>
+                      {bar + 1}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                disabled={sourceBar === destinationBar}
+                onClick={() => {
+                  finishRowAction(
+                    `${TRACKS[rowActions.row]} bar ${sourceBar + 1} copied to bar ${destinationBar + 1}.`,
+                    () => {
+                      onCopyBar(rowActions.row, sourceBar, destinationBar);
+                    },
+                  );
+                }}
+              >
+                Copy bar
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

@@ -48,11 +48,14 @@ export default function PatternBanks({
     onChainChange(Uint8Array.from(chain).filter((_, entry) => entry !== index));
   };
 
-  const status = chainEnabled
-    ? `Chain position ${chainPosition + 1}: bank ${bankLabel(activeBank)}`
-    : queuedBank >= 0
-      ? `Bank ${bankLabel(queuedBank)} queued; bank ${bankLabel(activeBank)} is audible`
-      : `Bank ${bankLabel(activeBank)} is audible`;
+  const status =
+    transport === "counting-in"
+      ? `Counting in for bank ${bankLabel(activeBank)}`
+      : chainEnabled
+        ? `Chain position ${chainPosition + 1}: bank ${bankLabel(activeBank)}`
+        : queuedBank >= 0
+          ? `Bank ${bankLabel(queuedBank)} queued; bank ${bankLabel(activeBank)} is audible`
+          : `Bank ${bankLabel(activeBank)} is audible`;
 
   return (
     <section className="dm-banks" aria-label="Pattern banks and chain">

@@ -56,6 +56,24 @@ func (e *Engine) checkTransport(problems []error) []error {
 		problems = append(problems, fmt.Errorf("humanize out of contract: %v", e.humanize))
 	}
 
+	if e.countInBars < 0 || e.countInBars > MaxCountInBars {
+		problems = append(problems, fmt.Errorf("count-in bars %d outside [0, %d]", e.countInBars, MaxCountInBars))
+	}
+
+	if e.transport == transportCountingIn {
+		if e.countInTotalSteps < MaxSteps || e.countInTotalSteps > MaxCountInBars*MaxSteps {
+			problems = append(problems, fmt.Errorf("count-in total steps out of contract: %d", e.countInTotalSteps))
+		}
+
+		if e.countInStep < 0 || e.countInStep >= e.countInTotalSteps {
+			problems = append(problems, fmt.Errorf("count-in step %d outside total %d", e.countInStep, e.countInTotalSteps))
+		}
+
+		if e.countInDuration == 0 || e.countInPhase >= e.countInDuration {
+			problems = append(problems, fmt.Errorf("count-in phase %d outside duration %d", e.countInPhase, e.countInDuration))
+		}
+	}
+
 	if e.humanizeLookahead < 1 {
 		problems = append(problems, fmt.Errorf("humanize lookahead %d below one sample", e.humanizeLookahead))
 	}

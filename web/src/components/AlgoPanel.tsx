@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { euclid } from "../algo/euclid";
 import { mutate } from "../algo/mutate";
 import { PRESETS, presetToFlat } from "../algo/presets";
 import { fillEuclidTrack, TRACK_INDEX, TRACKS } from "./patternView";
+import { matchingPresetIndex, normalizeIntegerDraft } from "./algoPanelState";
 import "./AlgoPanel.css";
 
 interface Props {
@@ -30,13 +31,13 @@ export default function AlgoPanel({
   onRedo,
   onShare,
 }: Props) {
-  const [presetIndex, setPresetIndex] = useState(-1);
+  const presetIndex = useMemo(() => matchingPresetIndex(pattern), [pattern]);
   const [copied, setCopied] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const copiedTimer = useRef<number | null>(null);
   const [euclidTrack, setEuclidTrack] = useState(0);
-  const [euclidPulses, setEuclidPulses] = useState(4);
-  const [euclidRotation, setEuclidRotation] = useState(0);
+  const [euclidPulses, setEuclidPulses] = useState("4");
+  const [euclidRotation, setEuclidRotation] = useState("0");
 
   useEffect(
     () => () => {
@@ -48,7 +49,6 @@ export default function AlgoPanel({
   const applyPreset = useCallback(
     (value: string) => {
       const idx = Number(value);
-      setPresetIndex(idx);
       const preset = PRESETS[idx];
       if (idx >= 0 && preset) {
         onApplyPattern(presetToFlat(preset));
@@ -59,23 +59,34 @@ export default function AlgoPanel({
   );
 
   const handleMutate = useCallback(() => {
-    setPresetIndex(-1);
     onApplyPattern(mutate(pattern, { stepCount }));
     setAnnouncement("Pattern mutated.");
   }, [onApplyPattern, pattern, stepCount]);
 
   const handleClear = useCallback(() => {
-    setPresetIndex(-1);
     onApplyPattern(new Array<number>(pattern.length).fill(0));
     setAnnouncement("Pattern cleared.");
   }, [onApplyPattern, pattern.length]);
 
+  const commitPulses = useCallback(() => {
+    const value = normalizeIntegerDraft(euclidPulses, 0, stepCount);
+    setEuclidPulses(String(value));
+    return value;
+  }, [euclidPulses, stepCount]);
+
+  const commitRotation = useCallback(() => {
+    const value = normalizeIntegerDraft(
+      euclidRotation,
+      0,
+      Math.max(0, stepCount - 1),
+    );
+    setEuclidRotation(String(value));
+    return value;
+  }, [euclidRotation, stepCount]);
+
   const handleEuclid = useCallback(() => {
-    setPresetIndex(-1);
-    const pulses = Number.isFinite(euclidPulses)
-      ? Math.max(0, Math.min(stepCount, euclidPulses))
-      : 0;
-    const rotation = Number.isFinite(euclidRotation) ? euclidRotation : 0;
+    const pulses = commitPulses();
+    const rotation = commitRotation();
     onApplyPattern(
       fillEuclidTrack(
         pattern,
@@ -88,8 +99,8 @@ export default function AlgoPanel({
       `${TRACKS[visualRow] ?? "Track"} filled with ${pulses} Euclidean hits.`,
     );
   }, [
-    euclidPulses,
-    euclidRotation,
+    commitPulses,
+    commitRotation,
     euclidTrack,
     onApplyPattern,
     pattern,
@@ -118,7 +129,7 @@ export default function AlgoPanel({
         value={presetIndex}
         disabled={disabled}
         aria-label="Load preset pattern"
-        title="Load preset pattern"
+        title="Load preset pattern (P / Shift+P)"
         onChange={(e) => {
           applyPreset(e.target.value);
         }}
@@ -138,7 +149,8 @@ export default function AlgoPanel({
         disabled={disabled}
         onClick={handleMutate}
         aria-label="Mutate pattern"
-        title="Random-walk the current pattern"
+        aria-keyshortcuts="M"
+        title="Random-walk the current pattern (M)"
       >
         MUTATE
       </button>
@@ -148,7 +160,8 @@ export default function AlgoPanel({
         disabled={disabled}
         onClick={handleClear}
         aria-label="Clear pattern"
-        title="Clear every track"
+        aria-keyshortcuts="Shift+Backspace"
+        title="Clear every track (Shift+Backspace)"
       >
         CLEAR
       </button>
@@ -179,7 +192,13 @@ export default function AlgoPanel({
               max={stepCount}
               value={euclidPulses}
               onChange={(event) => {
-                setEuclidPulses(Number(event.target.value));
+                setEuclidPulses(event.target.value);
+              }}
+              onBlur={commitPulses}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                commitPulses();
               }}
               disabled={disabled}
             />
@@ -192,7 +211,13 @@ export default function AlgoPanel({
               max={Math.max(0, stepCount - 1)}
               value={euclidRotation}
               onChange={(event) => {
-                setEuclidRotation(Number(event.target.value));
+                setEuclidRotation(event.target.value);
+              }}
+              onBlur={commitRotation}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                commitRotation();
               }}
               disabled={disabled}
             />

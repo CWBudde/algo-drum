@@ -27,7 +27,7 @@ const PRECACHE_PATHS = [
   // Keep this query in lockstep with audioWorker.ts's PROTOCOL_VERSION. It
   // makes the current worklet available offline while preventing an old
   // controlling service worker from satisfying the request with stale code.
-  "worklet.js?v=5",
+  "worklet.js?v=6",
   "algo_drum.wasm",
 ];
 

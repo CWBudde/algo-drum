@@ -64,6 +64,8 @@ const OTHER_METHODS: (keyof AlgoDrumApi)[] = [
   "setCellRepeats",
   "setTrackLength",
   "setFillMode",
+  "setMetronomeEnabled",
+  "setCountInBars",
   "setPattern",
   "setPatternBank",
   "setState",
@@ -127,7 +129,9 @@ function fakeEngine(): FakeEngine {
     if (engine.state === "playing") transition("paused");
   };
   api.currentStep = () =>
-    engine.state === "stopped" || engine.state === "starting"
+    engine.state === "stopped" ||
+    engine.state === "starting" ||
+    engine.state === "counting-in"
       ? -1
       : engine.step;
   api.transportState = () => engine.state;
@@ -461,6 +465,8 @@ describe("state echoes", () => {
     ["setCellRepeats", [0, 0, 0, 3]],
     ["setTrackLength", [0, 0, 7]],
     ["setFillMode", [true]],
+    ["setMetronomeEnabled", [true]],
+    ["setCountInBars", [2]],
     ["setPattern", [0, createDefaultEngineState().banks[0].pattern]],
     ["setPatternBank", [0, createDefaultEngineState().banks[0]]],
     ["setVolume", [0, 0.5]],
@@ -527,6 +533,20 @@ describe("state echoes", () => {
 });
 
 describe("transport acknowledgements", () => {
+  it("accepts counting-in as an inactive transport with no playhead", async () => {
+    const engine = fakeEngine();
+    engine.state = "counting-in";
+    engine.step = -1;
+    engine.revision = 2;
+    const port = await connect(engine);
+
+    expect(port.need().transport).toMatchObject({
+      state: "counting-in",
+      step: -1,
+      revision: 2,
+    });
+  });
+
   it("echoes the confirmed state after each successful transport command", async () => {
     const engine = fakeEngine();
     await connect(engine);

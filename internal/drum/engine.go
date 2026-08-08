@@ -12,6 +12,7 @@ const (
 	TrackCount       = 7
 	PatternBankCount = 4
 	MaxChainLength   = 16
+	MaxCountInBars   = 2
 	NoBank           = -1
 
 	// MaxSteps is the pattern capacity. SetStepCount sets the master/displayed
@@ -145,6 +146,7 @@ type transportState uint8
 const (
 	transportStopped transportState = iota
 	transportStarting
+	transportCountingIn
 	transportPlaying
 	transportPaused
 )
@@ -155,10 +157,11 @@ const (
 type TransportState string
 
 const (
-	TransportStopped  TransportState = "stopped"
-	TransportStarting TransportState = "starting"
-	TransportPlaying  TransportState = "playing"
-	TransportPaused   TransportState = "paused"
+	TransportStopped    TransportState = "stopped"
+	TransportStarting   TransportState = "starting"
+	TransportCountingIn TransportState = "counting-in"
+	TransportPlaying    TransportState = "playing"
+	TransportPaused     TransportState = "paused"
 )
 
 // TransportSnapshot identifies one transport epoch and its playhead. Revision
@@ -179,6 +182,7 @@ type Engine struct {
 	// deliberately runtime-only: loading a preset must not make buffered audio
 	// from the current transport epoch stale.
 	transportRevision uint64
+	startFromStopped  bool
 	bpm               float64
 	swing             float64 // 0.0 = no swing, 0.5 = full shuffle
 
@@ -233,6 +237,14 @@ type Engine struct {
 	humanize          float64 // timing/velocity randomization amount in [0, 1]
 	humanizeLookahead int     // centered timing lookahead in whole samples
 	fillMode          bool    // enables cells carrying TriggerFillOnly
+	metronomeEnabled  bool
+	countInBars       int
+	countInStep       int
+	countInTotalSteps int
+	countInPhase      uint64
+	countInDuration   uint64
+	countInTriggered  bool
+	click             metronomeClick
 	rng               *rand.Rand
 	pending           [maxPending]pendingTrigger
 	pendingMask       uint64
@@ -272,6 +284,8 @@ func NewEngine(sr float64) *Engine {
 		nextBank:          NoBank,
 		chainLength:       1,
 	}
+
+	e.click = newMetronomeClick(sr)
 	for i := range e.volumes {
 		e.volumes[i] = 1.0
 		e.liveVol[i] = 1.0
@@ -444,15 +458,30 @@ func (e *Engine) setTransport(state transportState) {
 // audio graph is ready. Render does not advance the sequencer in this state;
 // SetRunning(true) commits the transition once audio output has resumed.
 func (e *Engine) BeginStart() {
-	if e.transport == transportPlaying || e.transport == transportStarting {
+	if e.transport == transportPlaying || e.transport == transportCountingIn || e.transport == transportStarting {
 		return
 	}
 
+	e.startFromStopped = e.transport == transportStopped
 	e.setTransport(transportStarting)
 }
 
 func (e *Engine) SetRunning(running bool) {
 	if running {
+		if e.transport == transportPlaying || e.transport == transportCountingIn {
+			return
+		}
+
+		fromStopped := e.transport == transportStopped ||
+			(e.transport == transportStarting && e.startFromStopped)
+
+		e.startFromStopped = false
+		if fromStopped && e.countInBars > 0 {
+			e.startCountIn()
+
+			return
+		}
+
 		e.setTransport(transportPlaying)
 		e.wake()
 
@@ -460,6 +489,8 @@ func (e *Engine) SetRunning(running bool) {
 	}
 
 	e.setTransport(transportStopped)
+	e.startFromStopped = false
+	e.resetCountIn()
 	e.queuedBank = NoBank
 	e.chainPosition = 0
 
@@ -501,6 +532,13 @@ func (e *Engine) resetSequencer() {
 // already-triggered voices and effects to ring out. SetRunning(true) resumes
 // from the held fractional position; SetRunning(false) performs a full stop.
 func (e *Engine) Pause() {
+	if e.transport == transportCountingIn {
+		e.resetCountIn()
+		e.setTransport(transportPaused)
+
+		return
+	}
+
 	if e.transport == transportPlaying {
 		e.setTransport(transportPaused)
 	}
@@ -1061,7 +1099,7 @@ func (e *Engine) SetReverb(amount float64) {
 }
 
 func (e *Engine) CurrentStep() int {
-	if e.transport == transportStopped || e.transport == transportStarting {
+	if e.transport == transportStopped || e.transport == transportStarting || e.transport == transportCountingIn {
 		return -1
 	}
 
@@ -1076,6 +1114,8 @@ func (e *Engine) TransportSnapshot() TransportSnapshot {
 	switch e.transport {
 	case transportStarting:
 		state = TransportStarting
+	case transportCountingIn:
+		state = TransportCountingIn
 	case transportPlaying:
 		state = TransportPlaying
 	case transportPaused:
@@ -1087,16 +1127,6 @@ func (e *Engine) TransportSnapshot() TransportSnapshot {
 		Step:     e.CurrentStep(),
 		Revision: e.transportRevision,
 	}
-}
-
-// triggerFirstStep evaluates the first step without a pre-roll. Positive
-// offsets are delayed; negative offsets clamp to the start boundary because
-// audio before Play cannot be rendered causally.
-func (e *Engine) triggerFirstStep() {
-	e.previousFired = e.scheduleBankStep(
-		&e.banks[e.activeBank], e.trackStep, e.trackPass, e.previousFired,
-		1, e.currentStepDuration, true,
-	)
 }
 
 // scheduleNextStep commits the next rhythmic decision inside the centered
@@ -1318,6 +1348,17 @@ func (e *Engine) commitScheduledBoundary() {
 	e.stepTriggered = true
 	e.nextStepScheduled = false
 	e.nextBank = NoBank
+
+	if e.metronomeEnabled && e.clockStep%uint64(stepsPerBeat) == 0 {
+		e.click.Trigger(e.clockStep%MaxSteps == 0)
+	}
+}
+
+func (e *Engine) commitUnscheduledBoundary() {
+	e.clockStep++
+	e.currentStep = (e.currentStep + 1) % e.stepCount
+	e.currentStepDuration = e.stepDuration[e.currentStep]
+	e.stepTriggered = false
 }
 
 // Render fills buf with mono audio samples.
@@ -1330,7 +1371,12 @@ func (e *Engine) Render(buf []float32) {
 	e.assertValid()
 
 	for i := range buf {
-		if e.transport == transportPlaying {
+		wasCountingIn := e.transport == transportCountingIn
+		if wasCountingIn {
+			e.renderCountInSample()
+		}
+
+		if !wasCountingIn && e.transport == transportPlaying {
 			if !e.stepTriggered {
 				e.triggerFirstStep()
 				e.stepTriggered = true
@@ -1351,10 +1397,7 @@ func (e *Engine) Render(buf []float32) {
 				} else {
 					// Defensive fallback: current production bounds guarantee the
 					// lookahead is shorter than every legal step duration.
-					e.clockStep++
-					e.currentStep = (e.currentStep + 1) % e.stepCount
-					e.currentStepDuration = e.stepDuration[e.currentStep]
-					e.stepTriggered = false
+					e.commitUnscheduledBoundary()
 				}
 			}
 
@@ -1405,6 +1448,10 @@ func (e *Engine) Render(buf []float32) {
 			out = e.reverb.ProcessSample(out)
 		}
 
+		// The guide click stays dry and independent of every track/global
+		// performance control, but still passes through the master limiter.
+		out += e.click.Tick()
+
 		if e.limiter != nil {
 			out = e.limiter.ProcessSample(out)
 		}
@@ -1432,7 +1479,8 @@ func (e *Engine) Render(buf []float32) {
 		// accumulate a window. The counter saturates at the window length: it
 		// has nothing left to prove past that point, and not growing keeps it
 		// from running away over a long idle.
-		if e.transport != transportPlaying && e.pendingMask == 0 && math.Abs(out) < engineSilence {
+		if e.transport != transportPlaying && e.transport != transportCountingIn &&
+			e.pendingMask == 0 && math.Abs(out) < engineSilence {
 			if e.silentRun < e.idleSamples {
 				e.silentRun++
 			}

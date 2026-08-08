@@ -55,6 +55,8 @@ export interface AlgoDrumApi {
   ) => void;
   setTrackLength: (bank: number, track: number, length: number) => void;
   setFillMode: (enabled: boolean) => void;
+  setMetronomeEnabled: (enabled: boolean) => void;
+  setCountInBars: (bars: number) => void;
   setPattern: (bank: number, pattern: Float32Array) => void;
   setPatternBank: (bank: number, state: PatternBankState) => void;
   requestBank: (bank: number) => void;
@@ -86,7 +88,8 @@ export interface AlgoDrumApi {
 // the same ownership rule: Go is authoritative and every other layer mirrors
 // a validated snapshot. The revision distinguishes queued chunks from before
 // and after a transition even when their state names happen to match.
-export type TransportState = "stopped" | "starting" | "playing" | "paused";
+export type TransportState =
+  "stopped" | "starting" | "counting-in" | "playing" | "paused";
 
 export interface TransportSnapshot {
   state: TransportState;
@@ -103,7 +106,7 @@ export interface TransportSnapshot {
 // would load happily and play wrong. The engine publishes this number as
 // AlgoDrum.protocolVersion (internal/drum/protocol.go, the peer constant) and
 // the load refuses to proceed on a mismatch. Bump both together, or neither.
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 // The engine as it appears on the worker's global scope: the callable API plus
 // the version property. The property is deliberately kept out of AlgoDrumApi —
@@ -135,6 +138,8 @@ const REQUIRED_METHODS = [
   "setCellRepeats",
   "setTrackLength",
   "setFillMode",
+  "setMetronomeEnabled",
+  "setCountInBars",
   "setPattern",
   "setPatternBank",
   "requestBank",
@@ -488,6 +493,7 @@ function readTransport(): TransportSnapshot {
   if (
     state !== "stopped" &&
     state !== "starting" &&
+    state !== "counting-in" &&
     state !== "playing" &&
     state !== "paused"
   ) {
@@ -518,7 +524,8 @@ function readTransport(): TransportSnapshot {
     throw new TypeError(`invalid chain position ${String(chainPosition)}`);
   }
 
-  const inactive = state === "stopped" || state === "starting";
+  const inactive =
+    state === "stopped" || state === "starting" || state === "counting-in";
   if ((inactive && step !== -1) || (!inactive && step < 0)) {
     throw new TypeError(`transport state ${state} cannot report step ${step}`);
   }

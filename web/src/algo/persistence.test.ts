@@ -77,6 +77,8 @@ const V16_CHAIN_OFFSET = V16_CHAIN_LENGTH_OFFSET + 1;
 const V16_BYTES = V16_CHAIN_OFFSET + MAX_CHAIN_LENGTH / 4;
 const V17_REPEATS_OFFSET = V16_BYTES;
 const V17_BYTES = V16_BYTES + (PATTERN_BANK_COUNT * PATTERN_SIZE) / 4;
+const V18_PERFORMANCE_OFFSET = V17_BYTES;
+const V18_BYTES = V17_BYTES + 1;
 
 const LEGACY_VISUAL_TO_CURRENT = [0, 3, 4, 5, 6] as const;
 const ENGINE_TO_VISUAL = [6, 5, 4, 3, 0, 2, 1] as const;
@@ -123,6 +125,8 @@ function makeState(): EngineState {
     );
   }
   state.fillMode = true;
+  state.metronomeEnabled = true;
+  state.countInBars = 2;
   state.standaloneBank = 2;
   state.chainEnabled = true;
   state.chain = Uint8Array.from([0, 1, 1, 3]);
@@ -354,7 +358,7 @@ function legacyBlob(state: LegacyFixtureState, version: number): string {
   return toB64Url(bytes);
 }
 
-describe("v17 canonical persistence", () => {
+describe("v18 canonical persistence", () => {
   it("roundtrips a representative EngineState", () => {
     const state = makeState();
     expect(decodeState(encodeState(state))).toEqual(state);
@@ -364,8 +368,8 @@ describe("v17 canonical persistence", () => {
     const state = makeState();
     const bytes = toBytes(encodeState(state));
 
-    expect(bytes).toHaveLength(V17_BYTES);
-    expect(bytes[0]).toBe(17);
+    expect(bytes).toHaveLength(V18_BYTES);
+    expect(bytes[0]).toBe(18);
     expect(bytes[1]! | (bytes[2]! << 8)).toBe(state.tempoBpm);
     expect(bytes[3]).toBe(state.banks[0].stepCount);
     expect(bytes[V14_MIXER_OFFSET]).toBe(
@@ -406,6 +410,7 @@ describe("v17 canonical persistence", () => {
     expect(bytes[V16_CHAIN_LENGTH_OFFSET]).toBe(4);
     expect(bytes[V16_CHAIN_OFFSET]).toBe(0b11_01_01_00);
     expect(bytes[V17_REPEATS_OFFSET]).toBe(0b11_10_01_00);
+    expect(bytes[V18_PERFORMANCE_OFFSET]).toBe(0b101);
   });
 
   it("stores BPM and step count semantically and exactly", () => {
@@ -707,11 +712,11 @@ describe("legacy v1-v13 migration", () => {
     expect(decoded.tracks[5].tom.physicalParams[16]).toBeCloseTo(edited * 2, 6);
   });
 
-  it("upgrades legacy blobs to v17 on re-encode", () => {
+  it("upgrades legacy blobs to v18 on re-encode", () => {
     const decoded = decodeState(legacyBlob(makeLegacyState(), 1))!;
     const bytes = toBytes(encodeState(decoded));
-    expect(bytes[0]).toBe(17);
-    expect(bytes).toHaveLength(V17_BYTES);
+    expect(bytes[0]).toBe(18);
+    expect(bytes).toHaveLength(V18_BYTES);
   });
 
   it("migrates v16 ratchets to one hit per cell", () => {
@@ -722,6 +727,25 @@ describe("legacy v1-v13 migration", () => {
     decoded?.banks.forEach((bank) => {
       expect(bank.cellRepeats).toEqual(new Uint8Array(PATTERN_SIZE).fill(1));
     });
+  });
+
+  it("migrates v17 metronome and count-in settings to disabled", () => {
+    const bytes = toBytes(encodeState(makeState())).slice(0, V17_BYTES);
+    bytes[0] = 17;
+    const decoded = decodeState(toB64Url(bytes));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.metronomeEnabled).toBe(false);
+    expect(decoded?.countInBars).toBe(0);
+  });
+
+  it("rejects reserved performance bits and the unused count-in code", () => {
+    const reserved = toBytes(encodeState(makeState()));
+    reserved[V18_PERFORMANCE_OFFSET] = 0x80;
+    expect(decodeState(toB64Url(reserved))).toBeNull();
+
+    const unused = toBytes(encodeState(makeState()));
+    unused[V18_PERFORMANCE_OFFSET] = 0b110;
+    expect(decodeState(toB64Url(unused))).toBeNull();
   });
 });
 
@@ -735,13 +759,13 @@ describe("invalid input", () => {
     future[0] = 99;
     expect(decodeState(toB64Url(future))).toBeNull();
 
-    const truncatedV17 = toBytes(encodeState(makeState())).slice(0, -1);
-    expect(decodeState(toB64Url(truncatedV17))).toBeNull();
+    const truncatedV18 = toBytes(encodeState(makeState())).slice(0, -1);
+    expect(decodeState(toB64Url(truncatedV18))).toBeNull();
 
     const encoded = toBytes(encodeState(makeState()));
-    const extendedV17 = new Uint8Array(V17_BYTES + 1);
-    extendedV17.set(encoded);
-    expect(decodeState(toB64Url(extendedV17))).toBeNull();
+    const extendedV18 = new Uint8Array(V18_BYTES + 1);
+    extendedV18.set(encoded);
+    expect(decodeState(toB64Url(extendedV18))).toBeNull();
 
     const truncatedV14 = toBytes(encodeState(makeState())).slice(
       0,

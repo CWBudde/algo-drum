@@ -20,6 +20,8 @@ describe("EngineState", () => {
       probability: 1,
       humanize: 0,
       fillMode: false,
+      metronomeEnabled: false,
+      countInBars: 0,
       standaloneBank: 0,
       chainEnabled: false,
     });
@@ -101,6 +103,12 @@ describe("EngineState", () => {
       "fractional step count",
       (s: ReturnType<typeof createDefaultEngineState>) => {
         s.banks[0].stepCount = 8.5;
+      },
+    ],
+    [
+      "invalid count-in length",
+      (s: ReturnType<typeof createDefaultEngineState>) => {
+        s.countInBars = 3;
       },
     ],
     [

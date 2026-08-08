@@ -11,8 +11,8 @@ No plugins, no backend — just a `.wasm` file and a browser.
 - 7 voices × up to 16 steps: Bass Drum, Snare, Hi-Hat, two independently
   tunable Toms, Cymbal, and metallic Percussion, with a runtime-adjustable
   pattern length (STEPS knob, 1–16)
-- Per-step velocity: click to cycle off → hit → accent, or Shift-drag / use
-  Shift+Arrow to set a continuous level
+- Per-step velocity: click to cycle off → hit → accent, drag across cells to
+  paint/erase, or Shift-drag / use Shift+Arrow to set a continuous level
 - Per-cell probability, centered humanize depth, 1–4-hit ratchets, and evolving trigger
   conditions (every 2nd/3rd/4th loop, first loop, fill-only, or when the
   previous step did not fire)
@@ -24,15 +24,18 @@ No plugins, no backend — just a `.wasm` file and a browser.
   per-cell controls; timing humanize is centered instead of only dragging late
 - Four rhythm banks (A–D), clean loop-boundary queueing, complete-bank copy,
   and a programmable looping 16-entry pattern chain
-- Pattern mutate, per-track Euclidean fill, Clear, undo/redo, and 6 built-in
-  presets
+- Pattern mutate, per-track Euclidean fill, per-row clear/rotate/copy tools,
+  Clear, undo/redo, and 6 built-in presets
+- A dry quarter-note metronome plus a saved one- or two-bar 4/4 count-in
 - Global reverb control
 - Shareable patterns: state round-trips through a URL hash and
   `localStorage`, so reloading or sending a link restores the pattern, tempo,
   and knobs
-- Keyboard-accessible: Space toggles play/pause; F2 opens a cell's probability,
-  humanize, ratchet, and condition inspector; pattern undo/redo uses the standard
-  shortcuts; and the knobs are ARIA sliders with full keyboard controls
+- Keyboard-accessible: Space controls playback; S stops, M mutates, 1–7 mute
+  the visible rows, P/Shift+P cycle presets, Shift+Backspace clears, and `?`
+  opens the complete shortcut reference. F2 opens a cell's probability,
+  humanize, ratchet, and condition inspector; pattern undo/redo uses the
+  standard shortcuts, and the knobs are ARIA sliders with full keyboard controls
 - Installable as a PWA: a web app manifest plus a service worker that caches
   the app shell, the WASM engine, and the audio worklet (a fully offline reload
   isn't guaranteed yet — the hashed JS/CSS bundle is not precached)

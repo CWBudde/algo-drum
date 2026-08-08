@@ -67,6 +67,12 @@ function sendStateAction(action: DrumStateAction): void {
     case "fillMode":
       engine.setFillMode(action.value);
       return;
+    case "metronomeEnabled":
+      engine.setMetronomeEnabled(action.value);
+      return;
+    case "countInBars":
+      engine.setCountInBars(action.value);
+      return;
     case "pattern":
       engine.setPattern(action.bank, action.value);
       return;

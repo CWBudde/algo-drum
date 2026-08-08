@@ -493,6 +493,18 @@ describe("command queue", () => {
     ]);
   });
 
+  it("sends metronome and count-in edits as reconciled configuration", async () => {
+    const engine = await loaded();
+
+    engine.setMetronomeEnabled(true);
+    engine.setCountInBars(2);
+
+    expect(workers()[0].commands()).toEqual([
+      { type: "cmd", name: "setMetronomeEnabled", args: [true] },
+      { type: "cmd", name: "setCountInBars", args: [2] },
+    ]);
+  });
+
   it("owns typed arrays queued by bank replacement commands", async () => {
     const engine = await loaded();
     const bank = state().banks[1];
@@ -548,20 +560,34 @@ describe("transport", () => {
     expect(states).toEqual(["stopped"]);
 
     sync(workers()[0], "starting", -1, 1);
-    sync(workers()[0], "playing", 0, 2);
-    expect(states).toEqual(["stopped", "starting", "playing"]);
+    sync(workers()[0], "counting-in", -1, 2);
+    sync(workers()[0], "playing", 0, 3);
+    expect(states).toEqual(["stopped", "starting", "counting-in", "playing"]);
 
     engine.pause();
-    expect(states).toEqual(["stopped", "starting", "playing"]);
-    sync(workers()[0], "paused", 0, 3);
-    expect(states).toEqual(["stopped", "starting", "playing", "paused"]);
-
-    engine.stop();
-    expect(states).toEqual(["stopped", "starting", "playing", "paused"]);
-    sync(workers()[0], "stopped", -1, 4);
+    expect(states).toEqual(["stopped", "starting", "counting-in", "playing"]);
+    sync(workers()[0], "paused", 0, 4);
     expect(states).toEqual([
       "stopped",
       "starting",
+      "counting-in",
+      "playing",
+      "paused",
+    ]);
+
+    engine.stop();
+    expect(states).toEqual([
+      "stopped",
+      "starting",
+      "counting-in",
+      "playing",
+      "paused",
+    ]);
+    sync(workers()[0], "stopped", -1, 5);
+    expect(states).toEqual([
+      "stopped",
+      "starting",
+      "counting-in",
       "playing",
       "paused",
       "stopped",

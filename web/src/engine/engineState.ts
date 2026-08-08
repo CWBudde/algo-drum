@@ -62,6 +62,8 @@ export interface EngineState {
   probability: number;
   humanize: number;
   fillMode: boolean;
+  metronomeEnabled: boolean;
+  countInBars: number;
   banks: PatternBanks;
   standaloneBank: number;
   chainEnabled: boolean;
@@ -114,6 +116,8 @@ export const CONFIGURATION_METHODS = [
   "setCellRepeats",
   "setTrackLength",
   "setFillMode",
+  "setMetronomeEnabled",
+  "setCountInBars",
   "setPattern",
   "setPatternBank",
   "requestBank",
@@ -169,6 +173,8 @@ export function createDefaultEngineState(): EngineState {
     probability: 1,
     humanize: 0,
     fillMode: false,
+    metronomeEnabled: false,
+    countInBars: 0,
     banks: Array.from({ length: PATTERN_BANK_COUNT }, () =>
       createDefaultPatternBankState(),
     ) as PatternBanks,
@@ -213,6 +219,8 @@ export function cloneEngineState(state: EngineState): EngineState {
     probability: state.probability,
     humanize: state.humanize,
     fillMode: state.fillMode,
+    metronomeEnabled: state.metronomeEnabled,
+    countInBars: state.countInBars,
     banks: state.banks.map(clonePatternBankState) as PatternBanks,
     standaloneBank: state.standaloneBank,
     chainEnabled: state.chainEnabled,
@@ -319,6 +327,10 @@ export function validateEngineState(value: unknown): EngineState {
   if (typeof value.fillMode !== "boolean") {
     throw new TypeError("engine state fillMode must be boolean");
   }
+  if (typeof value.metronomeEnabled !== "boolean") {
+    throw new TypeError("engine state metronomeEnabled must be boolean");
+  }
+  requireNumber(value, "countInBars", 0, 2, true);
 
   if (
     !Array.isArray(value.banks) ||

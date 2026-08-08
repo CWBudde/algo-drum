@@ -115,7 +115,8 @@ function notifyBankPlayback(snapshot: BankPlayback): void {
 }
 
 function notifyTransport(state: TransportState): void {
-  keepAudioAwake = state === "starting" || state === "playing";
+  keepAudioAwake =
+    state === "starting" || state === "counting-in" || state === "playing";
   if (state === transportState) return;
 
   transportState = state;
@@ -151,7 +152,10 @@ function notifyStep(step: number): void {
 }
 
 function validTransportSnapshot(value: TransportSnapshot): boolean {
-  const inactive = value.state === "stopped" || value.state === "starting";
+  const inactive =
+    value.state === "stopped" ||
+    value.state === "starting" ||
+    value.state === "counting-in";
   return (
     (inactive || value.state === "playing" || value.state === "paused") &&
     Number.isSafeInteger(value.revision) &&
@@ -191,7 +195,11 @@ function acceptTransport(
 
     // Starting and stopped have no active playhead. This is an explicit
     // engine-state rule, not an inference from currentStep's -1 sentinel.
-    if (transport.state === "starting" || transport.state === "stopped") {
+    if (
+      transport.state === "starting" ||
+      transport.state === "counting-in" ||
+      transport.state === "stopped"
+    ) {
       if (audibleStep !== -1) notifyStep(-1);
     }
   } else if (transport.state !== transportState) {
@@ -280,6 +288,7 @@ function reportIdle(idle: boolean): void {
     !idle ||
     keepAudioAwake ||
     transportState === "starting" ||
+    transportState === "counting-in" ||
     transportState === "playing" ||
     !audioCtx
   )
@@ -782,6 +791,14 @@ export function setTrackLength(
 
 export function setFillMode(enabled: boolean): void {
   configurationCommand("setFillMode", enabled);
+}
+
+export function setMetronomeEnabled(enabled: boolean): void {
+  configurationCommand("setMetronomeEnabled", enabled);
+}
+
+export function setCountInBars(bars: number): void {
+  configurationCommand("setCountInBars", bars);
 }
 
 // setPattern replaces the whole pattern: a flat track-major Float32Array of

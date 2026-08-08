@@ -1,6 +1,6 @@
 # algo-drum — Repository Review & Improvement Plan
 
-Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pass: **2026-07-26** · Go engine/state passes: **2026-08-06**.
+Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pass: **2026-07-26** · Go engine/state passes: **2026-08-06** · UI/UX pass: **2026-08-09**.
 
 > The 2026-07-09 review drove three implementation passes; its items are closed and
 > removed (`git log` is the record). The 07-26 re-review below replaced it, and a
@@ -19,7 +19,7 @@ Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pa
 | 3   | Go engine / DSP           | **9/10** | +2  | True peak limiting, drift-free timing, explicit pause, continuous reverb, lean hot paths    |
 | 4   | Architecture & state      | **9/10** | +3  | Engine-owned snapshots now arbitrate configuration, transport and the audible playhead       |
 | 5   | Frontend code quality     | **9/10** | +2  | Shared theme tokens, strict dual-project TypeScript and strict type-aware linting             |
-| 6   | UI / UX                   | **6/10** | —   | Good knob and playhead mechanics; the grid is still unusable below ~725 px                  |
+| 6   | UI / UX                   | **9/10** | +3  | Mobile-scaled editing now has drag-paint, row tools, shortcuts and a saved count-in          |
 | 7   | Accessibility             | **6/10** | —   | Real buttons, real sliders, AA text contrast; 80 flat tab stops and no AT playhead          |
 | 8   | Testing                   | **8/10** | +1  | Fuzzed engine + a fake-Worker bridge suite; components still untestable (no DOM env)        |
 | 9   | CI/CD & tooling           | **9/10** | +2  | Lints the WASM target, deploy gated on CI, tools pinned, caches and artifacts in place      |
@@ -28,10 +28,10 @@ Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pa
 | 12  | PWA & deployment          | **6/10** | —   | Stamp verified and deploy no longer races CI; the bundle is still never precached           |
 | 13  | Feature depth vs the name | **6/10** | —   | Per-cell variation, polymeter and chained rhythm banks now provide real depth                |
 
-**Overall: 7.8/10** (was 6.6 at re-review, 4.0 at first review). The hardening, engine,
-pipeline and state passes closed the correctness, DSP, transport-plumbing and split-state
-gaps; what is left is mostly reach — mobile layout, offline, accessibility depth and the
-per-step algorithms the name promises.
+**Overall: 8.0/10** (was 6.6 at re-review, 4.0 at first review). The hardening, engine,
+pipeline, state and UI passes closed the correctness, DSP, transport-plumbing, split-state
+and everyday editing gaps; what is left is mostly offline reach, accessibility depth and
+the larger generative/export features the name promises.
 
 ### Verified after the hardening pass
 
@@ -423,12 +423,13 @@ checked invariant access rather than leaving the flags as configuration-only the
       `eslint . --max-warnings 0` makes the zero-warning policy executable. Production
       non-null assertions were replaced by checked access; the exemption is test-only.
 
-## 6. UI / UX — 6/10
+## 6. UI / UX — 9/10
 
 The rewrite delivered real DOM, real focus rings, a well-built knob (pointer capture,
 shift-fine, wheel, double-click reset, drag readout, `touch-action: none`), tap tempo,
 share, and `prefers-reduced-motion` in all four stylesheets. The playhead is a cheap
-per-cell attribute toggle — the right mechanism. Layout and feedback are what hurt.
+per-cell attribute toggle — the right mechanism. The UI pass added the missing editing,
+feedback, shortcut, guide-click and whole-panel scaling layer without replacing it.
 
 - [x] **U7 (high): the grid does not fit a phone.** `DrumMachine.css:76` and `:399` keep
       `repeat(16, minmax(0, 1fr))` at **every** width; verified no container queries and
@@ -458,43 +459,62 @@ per-cell attribute toggle — the right mechanism. Layout and feedback are what 
       silently changes the value.
       Wheel changes require intentional focus; merely scrolling over a knob leaves page
       scrolling untouched.
-- [ ] **U12: one keyboard shortcut.** `DrumMachine.tsx:261` handles Space and nothing
+- [x] **U12: one keyboard shortcut.** `DrumMachine.tsx:261` handles Space and nothing
       else — no arrow navigation, no clear/mutate/preset keys, no `1`–`5` track mute.
-- [ ] **U13: no drag-paint on the grid** (`DrumMachine.tsx:337` is a per-cell `onClick`),
+      The finished map adds Stop, Mutate, undoable Clear, preset cycling and all seven
+      visual-row mutes; editable controls and open dialogs keep ownership of their keys.
+- [x] **U13: no drag-paint on the grid** (`DrumMachine.tsx:337` is a per-cell `onClick`),
       and clearing an accent takes two taps. Standard sequencer affordances are absent.
-- [ ] **U14: stale/awkward panel state** — the preset name persists after hand-edits
+      Mouse/pen drags now paint normal hits or erase active ones as one undoable gesture;
+      touch keeps horizontal scrolling and Shift-drag keeps continuous velocity.
+- [x] **U14: stale/awkward panel state** — the preset name persists after hand-edits
       (`AlgoPanel.tsx:103`), and `.dm-algo-num` (`:162`) clamps mid-typing under the cursor.
-- [ ] **U15: bare loading state** — `App.tsx:55` is a plain `<p>`; the engine LED carries
+      Preset identity is derived from Float32-normalized pattern equality, while Euclid
+      fields keep string drafts and normalize only on blur, Enter or FILL.
+- [x] **U15: bare loading state** — `App.tsx:55` is a plain `<p>`; the engine LED carries
       "Engine ready" only in a `title` on an `aria-hidden` span. The error/retry panels,
       by contrast, are good.
+      Loading now has a themed live status card and the header exposes visible ENGINE
+      LOADING / ENGINE READY text without sacrificing retry's mounted-state preservation.
 
 ### To raise this score — UI/UX
 
-Beyond the defects above, the machine is missing the everyday affordances a step
-sequencer is judged by: editing is strictly one cell at a time, and the interface never
-tells you what it can do.
+Beyond the defects above, the review identified the everyday affordances a step
+sequencer is judged by. The completed items below are the closure record for that pass.
 
-- [ ] **U16: per-row operations.** There is no clear-row, shift-row-left/right,
+- [x] **U16: per-row operations.** There is no clear-row, shift-row-left/right,
       duplicate-row, or copy-bar-to-bar anywhere — rotation exists only inside the
       Euclidean fill (`AlgoPanel.tsx:64`). These are a handful of pure array functions
       next to `algo/mutate.ts` plus a row context menu, and they change how the machine
       feels to use far more than their cost suggests.
-- [ ] **U17: accent is conveyed by LED brightness alone.** Normal and accent hits differ
+      An accessible row popover clears, rotates within the polymetric loop, copies a full
+      trigger row/length, or copies four-step bars; all hidden trigger metadata travels
+      with the visible hit and each operation is one history entry.
+- [x] **U17: accent is conveyed by LED brightness alone.** Normal and accent hits differ
       only in glow intensity, which is hard to scan at a glance and disappears entirely
       under X12's forced-colors gap. Differentiate by size or shape as well.
-- [ ] **U18: no shortcut discovery.** Space is the only binding and nothing advertises it.
+      Accent LEDs are now larger rounded squares, so geometry carries the distinction.
+- [x] **U18: no shortcut discovery.** Space is the only binding and nothing advertises it.
       A `?` overlay listing the keys — worth doing together with U12, since shortcuts
       nobody can find are shortcuts nobody uses.
+      A keyboard-accessible native dialog, reachable from both `?` and a visible header
+      button, documents machine, grid and knob controls and restores focus on close.
 - [x] **U19: no first-run guidance.** A new visitor gets an empty grid and a disabled Play
       button with no hint that presets exist. First load now seeds the Funk demo when
       there is no valid saved state or URL hash, so the machine makes sound within one
       explicit Play click; deliberately empty saved/shared states remain empty.
-- [ ] **U20: no count-in or metronome**, which makes tap tempo and humanize hard to judge
+- [x] **U20: no count-in or metronome**, which makes tap tempo and humanize hard to judge
       by ear.
-- [ ] **U21: the panel does not scale as a unit.** Sizes are fixed px throughout
+      A deterministic dry quarter-note click and saved 0/1/2-bar count-in now live in the
+      engine. Count-in owns an audible `counting-in` transport epoch, suppresses the grid
+      for fixed 4/4 bars, and remains stoppable before playback begins.
+- [x] **U21: the panel does not scale as a unit.** Sizes are fixed px throughout
       (`Knob size={42}`, 9–11 px labels), so there is no way to make the whole machine
       bigger on a large display or smaller on a cramped one. A single `--dm-scale`
       custom property driving `rem`-based sizing would also give U7 a lever to pull.
+      Container-driven `--dm-scale` now zooms the complete laid-out panel from compact
+      fine-pointer screens through 1.2× wide displays; coarse pointers retain 44 px
+      targets and the board remains the only horizontal scroll surface.
 
 ## 7. Accessibility — 6/10
 
@@ -898,8 +918,12 @@ Funk demo: A13/A14 (one persistent state shape and owner → closed A4/A8/A9), A
 (per-cell ratchets), G18 (continuous velocity), G14/G21/U19 (one-click first-run demo)
 and F7 (split `DrumMachine.tsx`).
 
-**Quick wins, any time:** U18 (`?` shortcut overlay), CI11 (a WASM size budget), H5
-(take dependabot's first PRs).
+**P6 — UI/UX:** ✔ Done 2026-08-09: U12/U18 (complete shortcut map + discoverable
+reference), U13/U16/U17 (drag-paint, atomic row tools and non-colour accent shape),
+U14/U15 (truthful panel state and themed loading), U20 (saved engine-owned metronome /
+count-in) and U21 (container-driven whole-panel scaling).
+
+**Quick wins, any time:** CI11 (a WASM size budget).
 ---
 
 ## Physical drum synthesis path

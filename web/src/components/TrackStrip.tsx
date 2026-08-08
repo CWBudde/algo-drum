@@ -48,7 +48,8 @@ export default function TrackStrip({
         className="dm-mute"
         aria-pressed={muted}
         aria-label={`Mute ${name}`}
-        title={muted ? `Unmute ${name}` : `Mute ${name}`}
+        aria-keyshortcuts={String(row + 1)}
+        title={`${muted ? `Unmute ${name}` : `Mute ${name}`} (${row + 1})`}
         onClick={(event) => {
           if (event.detail > 0) event.currentTarget.blur();
           onToggleMute();

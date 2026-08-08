@@ -46,7 +46,8 @@ import type { TomModel } from "../engine/tomModel";
 // grids, per-track lengths and the fill-mode latch used by conditional trigs.
 // V16 adds four rhythm banks, local humanize and chain configuration; v17
 // preserves that complete record and appends packed per-cell ratchet counts.
-const FORMAT_VERSION = 17;
+// V18 appends the metronome latch and 0–2-bar count-in selection.
+const FORMAT_VERSION = 18;
 
 // Byte layout: version, 6 scalar knobs, 5 volumes, 5 decays, 1 mute mask,
 // then the 80-cell pattern packed 2 bits per cell (20 bytes)...
@@ -205,6 +206,9 @@ const V16_BYTES = V16_CHAIN_ENTRIES_OFFSET + V16_CHAIN_ENTRY_BYTES;
 // every bank. The complete v16 record remains an immutable migration prefix.
 const V17_CELL_REPEAT_BYTES = (PATTERN_BANK_COUNT * PATTERN_SIZE) / 4;
 const V17_BYTES = V16_BYTES + V17_CELL_REPEAT_BYTES;
+// bit 0 = metronome enabled; bits 1..2 = count-in bars; bits 3..7 reserved.
+const V18_PERFORMANCE_BYTES = 1;
+const V18_BYTES = V17_BYTES + V18_PERFORMANCE_BYTES;
 const MAX_TRIGGER_CONDITION = TRIGGER_CONDITION.notPreviousFired;
 
 // migrateStrikeRadius moves the *exact* shipped strike-radius detent onto the
@@ -387,9 +391,9 @@ function base64UrlToBytes(text: string): Uint8Array | null {
   }
 }
 
-// encodeState serializes the canonical engine-owned state into v17.
+// encodeState serializes the canonical engine-owned state into v18.
 export function encodeState(state: EngineState): string {
-  const bytes = new Uint8Array(V17_BYTES);
+  const bytes = new Uint8Array(V18_BYTES);
   let offset = 0;
   const bankA = state.banks[0];
 
@@ -508,6 +512,12 @@ export function encodeState(state: EngineState): string {
     }
   }
 
+  const rawCountIn = Number.isFinite(state.countInBars)
+    ? Math.round(state.countInBars)
+    : 0;
+  const countInBars = Math.min(2, Math.max(0, rawCountIn));
+  bytes[offset] = (state.metronomeEnabled ? 1 : 0) | (countInBars << 1);
+
   return bytesToBase64Url(bytes);
 }
 
@@ -584,13 +594,32 @@ export function decodeState(text: string): EngineState | null {
   const bytes = base64UrlToBytes(text);
   if (!bytes || bytes.length === 0) return null;
 
-  if (bytes[0] === FORMAT_VERSION) return decodeV17(bytes);
+  if (bytes[0] === FORMAT_VERSION) return decodeV18(bytes);
+  if (bytes[0] === 17) return decodeV17(bytes);
   if (bytes[0] === 16) return decodeV16(bytes);
   if (bytes[0] === 15) return decodeV15(bytes);
   if (bytes[0] === 14) return decodeV14(bytes);
 
   const legacy = decodeLegacyState(bytes);
   return legacy ? canonicalizeLegacy(legacy) : null;
+}
+
+function decodeV18(bytes: Uint8Array): EngineState | null {
+  if (bytes.length !== V18_BYTES) return null;
+
+  const state = decodeV17(bytes.subarray(0, V17_BYTES));
+  if (!state) return null;
+
+  const settings = requiredAt(bytes, V17_BYTES);
+  if ((settings & 0b1111_1000) !== 0) return null;
+
+  const countInBars = (settings >>> 1) & 0b11;
+  if (countInBars > 2) return null;
+
+  state.metronomeEnabled = (settings & 1) !== 0;
+  state.countInBars = countInBars;
+
+  return state;
 }
 
 function decodeV17(bytes: Uint8Array): EngineState | null {

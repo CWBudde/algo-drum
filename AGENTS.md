@@ -88,7 +88,8 @@ Vite serves `web/public/` as static assets, so `algo_drum.wasm` and `wasm_exec.j
 
 ```
 cmd/wasm/main.go          — WASM entry point; registers the AlgoDrum JS API (worker global scope)
-internal/drum/engine.go   — Sequencer: four rhythm banks (7×16 each), queued/chain switching, fixed-point tempo/swing clock, probability + centered per-cell humanize + 1–4-hit ratchets (allocation-free pending-trigger mask), smoothed per-track volumes, Render()
+internal/drum/engine.go   — Sequencer: four rhythm banks (7×16 each), queued/chain switching, fixed-point tempo/swing/count-in clock, probability + centered per-cell humanize + 1–4-hit ratchets (allocation-free pending-trigger mask), smoothed per-track volumes, Render()
+internal/drum/metronome.go — Deterministic dry guide-click oscillator plus stopped-start count-in timing
 internal/drum/state.go    — Engine-owned semantic snapshot/replacement contract: full pattern, controls, engine-major mixer/mute and voice/Tom parameter banks
 internal/drum/voices.go   — Drum synthesizer voices (BassDrum, Snare, HiHat, Tom, Cymbal, Tom 2, Percussion); all tuning is runtime-settable
 internal/drum/params.go   — Per-voice synthesis parameter specs (ranges, curves, defaults) + the normalized→engineering mapping
@@ -98,13 +99,13 @@ internal/drum/assert.go   — assertValid(): a no-op in shipped builds; `-tags d
 cmd/gen-voiceparams/      — Generates web/src/engine/voiceParams.generated.ts from params.go (`just gen-params`; CI diffs it)
 internal/drum/*_test.go   — Go unit tests: sequencing, clamping, bit-exact render determinism, per-voice envelopes
 internal/drum/physical_tom.go — Adapter wrapping algo-tom's physical.DoubleHead as a Voice; the model itself lives in github.com/cwbudde/algo-tom → "The physical Tom voice"
-web/src/engine/engineState.ts — Canonical semantic EngineState shape shared by the bridge, React reducer and persistence; includes four engine-major rhythm banks, per-cell velocity/probability/humanize/condition/ratchet grids, per-track lengths and chain configuration
+web/src/engine/engineState.ts — Canonical semantic EngineState shape shared by the bridge, React reducer and persistence; includes four engine-major rhythm banks, per-cell velocity/probability/humanize/condition/ratchet grids, per-track lengths, chain configuration, metronome and count-in
 web/src/engine/wasmEngine.ts  — Main-thread bridge: spawns the worker, wires the worklet, sends commands, exposes authoritative configuration/transport snapshots and dispose()
 web/src/engine/audioWorker.ts — Web Worker hosting the WASM engine; gates the load on the engine's protocol version and method list, renders audio chunks and echoes the complete authoritative state after every configuration edit
 web/src/engine/stateMirror.ts — Reconciles full engine snapshots with in-flight optimistic UI edits (Go engine = single source of truth)
 web/src/engine/voiceParams.ts   — Curve renderer + readout formatting over voiceParams.generated.ts (the committed mirror of internal/drum/params.go)
 web/public/worklet.js         — AudioWorkletProcessor: consumes chunks, reports the audible engine transport snapshot
-web/src/components/DrumMachine.tsx — Main UI shell over StepGrid/TrackStrip/Transport: continuous velocity, per-cell probability/conditions, polymetric lengths, Fill mode, voice editing and persistence/share wiring
+web/src/components/DrumMachine.tsx — Main UI shell over StepGrid/TrackStrip/Transport: drag-paint + continuous velocity, row tools, shortcuts, per-cell probability/conditions, polymetric lengths, metronome/count-in, Fill mode, voice editing and persistence/share wiring
 web/src/components/AlgoPanel.tsx    — Algorithmic tools panel: preset selector, CLEAR, MUTATE, per-track Euclidean fill (E(k,n) + rotation), undo/redo and SHARE (copy link)
 web/src/components/VoiceEditor.tsx — Per-voice synthesis editor: native <dialog> modal of knobs driven by the generated parameter table, plus AUDITION and RESET
 web/src/components/Knob.tsx        — Reusable rotary knob (SVG; drag, wheel, and keyboard accessible)
@@ -113,7 +114,7 @@ web/src/components/ErrorBoundary.tsx — App-wide React error boundary; a render
 web/src/algo/euclid.ts     — Pure Bjorklund/Euclidean E(pulses, steps) rhythm generator with rotation
 web/src/algo/mutate.ts     — Pure musical random-walk mutation of a flat pattern
 web/src/algo/presets.ts    — Classic 16-step preset patterns (rock, house, breakbeat, hip-hop, techno, funk) + Clear
-web/src/algo/persistence.ts — Pure versioned EngineState encode/decode → base64url (v17 preserves v16 and appends compact per-cell ratchet counts; v1–v16 still decode); localStorage + URL-hash glue
+web/src/algo/persistence.ts — Pure versioned EngineState encode/decode → base64url (v18 preserves v17 and appends metronome/count-in settings; v1–v17 still decode); localStorage + URL-hash glue
 web/src/algo/pattern.ts    — Shared pattern constants (dims, velocities, flat-index helper) for the algo modules
 web/src/App.tsx           — Root: loads WASM on mount, renders DrumMachine inside the ErrorBoundary, shows a retryable fault panel if the engine fails
 web/src/main.tsx          — Browser entry: mounts App and registers the service worker (production builds only)
@@ -127,7 +128,7 @@ PLAN.md                   — Point-in-time review backlog (numbered items); ref
 
 ### Audio Signal Flow
 
-`Engine.Render(buf)` → Go voices mix mono samples → continuously advancing FDN reverb (smoothed wet/dry mix, so the knob does not raise the master level) → true lookahead peak limiter + safety clamp → `Float32Array` → 512-sample chunks posted from the Web Worker to the `AudioWorklet` over a direct `MessageChannel` → `AudioContext` at 48 kHz (~2048 samples buffered). Each chunk carries the engine-owned transport state, step and transition revision from its first sample; the worklet reports that snapshot when it becomes audible, so the UI rejects stale buffered epochs and follows the audible step.
+`Engine.Render(buf)` → Go voices mix mono samples → continuously advancing FDN reverb (smoothed wet/dry mix, so the knob does not raise the master level) → dry metronome/count-in click → true lookahead peak limiter + safety clamp → `Float32Array` → 512-sample chunks posted from the Web Worker to the `AudioWorklet` over a direct `MessageChannel` → `AudioContext` at 48 kHz (~2048 samples buffered). Each chunk carries the engine-owned transport state, step and transition revision from its first sample; the worklet reports that snapshot when it becomes audible, so the UI rejects stale buffered epochs and follows the audible step.
 
 The worklet pulls with a credit counter (four outstanding `need` requests), which is self-healing at both ends: the worker replies to **every** request — silence with a stopped transport snapshot if the engine is not ready or a render throws — and the worklet writes off credit that goes unanswered for ~133 ms and re-requests, so no dropped message can deadlock audio. Chunks also carry the engine's `isIdle()` state; once the output has been below −120 dBFS for 50 ms with the transport stopped, the main thread suspends the `AudioContext` (Play or an audition resumes it), and `Engine.Render` takes a zero-fill fast path instead of running seven voices, the reverb and the limiter forever. Underruns are counted in the worklet and reported to the main thread (`onUnderrun`); the queue target is fixed, so latency does not drift. Drained chunk buffers are transferred back to the worker and reused rather than reallocated ~94×/s.
 
@@ -150,7 +151,7 @@ UI displays Cymbal, Percussion, Tom 2, Tom, Hi-Hat, Snare, Bass from top to bott
 | Method                         | Description                                                                        |
 | ------------------------------ | ---------------------------------------------------------------------------------- |
 | `init(sampleRate)`             | Initialize engine (called once at WASM load)                                       |
-| `setRunning(bool)`             | Play / stop (stop resets to step 0)                                                |
+| `setRunning(bool)`             | Play / stop; stopped Play may count in, while Stop resets to step 0                |
 | `beginStart()`                 | Enter the non-advancing starting state while browser audio output resumes         |
 | `pause()`                      | Freeze sequencer time and pending hits; active voice/effect tails keep ringing     |
 | `setTempo(bpm)`                | Set tempo in BPM (clamped to 30–300)                                               |
@@ -163,6 +164,8 @@ UI displays Cymbal, Percussion, Tom 2, Tom, Hi-Hat, Snare, Bass from top to bott
 | `setCellRepeats(b,t,s,1–4)`    | Set one cell's evenly spaced ratchet hit count                                      |
 | `setTrackLength(bank,track,n)` | Set one track's independent loop length within a bank (clamped to 1–16)            |
 | `setFillMode(bool)`            | Enable or disable cells carrying the fill-only condition                           |
+| `setMetronomeEnabled(bool)`    | Enable/disable dry quarter-note clicks during ordinary playback                    |
+| `setCountInBars(0–2)`          | Set the saved stopped-start count-in length in fixed 4/4 bars                      |
 | `setPattern(bank,Float32Array)` | Atomically replace one bank's flat track-major 7×16 velocity pattern              |
 | `setPatternBank(bank,state)`   | Atomically replace a complete rhythm bank                                          |
 | `requestBank(bank)`            | Select immediately while stopped or queue the bank for the next loop boundary      |
@@ -179,8 +182,8 @@ UI displays Cymbal, Percussion, Tom 2, Tom, Hi-Hat, Snare, Bass from top to bott
 | `setProbability(0–1)`          | Global probability multiplier (1 = unchanged, default; 0 = silence)               |
 | `setHumanize(0–1)`             | Master timing/velocity randomization (steady-state timing ±h·7.5 ms)               |
 | `render(n)`                    | Render n samples → Float32Array                                                    |
-| `currentStep()`                | Returns active/paused step index (-1 if stopped or starting)                       |
-| `transportState()`             | Engine-owned `stopped` / `starting` / `playing` / `paused` state                   |
+| `currentStep()`                | Returns active/paused step index (-1 if stopped, starting or counting in)           |
+| `transportState()`             | Engine-owned `stopped` / `starting` / `counting-in` / `playing` / `paused` state   |
 | `transportRevision()`          | Monotonic state-transition revision used to reject stale buffered chunks           |
 | `activeBank()`                 | Runtime bank currently driving the sequencer                                       |
 | `queuedBank()`                 | Pending standalone bank, or -1 when no manual switch is queued                     |

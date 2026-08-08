@@ -3,6 +3,7 @@ import {
   TRACK_COUNT,
   VEL_ACCENT,
   VEL_NORMAL,
+  VEL_OFF,
 } from "../algo/pattern";
 
 // The hardware-style grid is intentionally the reverse of engine track order.
@@ -26,6 +27,12 @@ export interface PlayheadClock {
 export interface GridPosition {
   row: number;
   col: number;
+}
+
+export interface PaintedCell {
+  track: number;
+  step: number;
+  value: number;
 }
 
 export const STOPPED_PLAYHEAD: PlayheadClock = {
@@ -141,6 +148,29 @@ export function velocityFromPointer(
 export function nudgeVelocity(velocity: number, direction: 1 | -1): number {
   const next = Math.round((velocity + direction * 0.05) * 100) / 100;
   return Math.max(0, Math.min(1, next));
+}
+
+export function paintVelocity(velocity: number): number {
+  return velocity > 0 ? VEL_OFF : VEL_NORMAL;
+}
+
+export function applyPaintedCells(
+  pattern: ArrayLike<number>,
+  cells: readonly PaintedCell[],
+): number[] {
+  const next = Array.from(pattern);
+  for (const cell of cells) {
+    if (
+      cell.track < 0 ||
+      cell.track >= TRACK_COUNT ||
+      cell.step < 0 ||
+      cell.step >= STEP_CAPACITY
+    ) {
+      continue;
+    }
+    next[cellIndex(cell.track, cell.step)] = cell.value;
+  }
+  return next;
 }
 
 export function fillEuclidTrack(
