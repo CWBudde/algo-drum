@@ -22,6 +22,18 @@ export interface Preset {
   rows: VoiceRows;
 }
 
+export const DEMO_PRESET: Preset = {
+  name: "Funk",
+  rows: {
+    0: "X..x..X...x..X..",
+    1: "....X.......X..x",
+    2: "xxxxxxxxxxxxxxxx",
+    3: "............x.xX",
+    5: "..............x.",
+    6: "..x....x..x....x",
+  },
+};
+
 // Track order per row string: Bass, Snare, HiHat, Tom, Cymbal, Tom 2, Perc.
 export const PRESETS: Preset[] = [
   {
@@ -68,16 +80,7 @@ export const PRESETS: Preset[] = [
       6: "............x...",
     },
   },
-  {
-    name: "Funk",
-    rows: {
-      0: "X..x..X...x..X..",
-      1: "....X.......X..x",
-      2: "xxxxxxxxxxxxxxxx",
-      5: "..............x.",
-      6: "..x....x..x....x",
-    },
-  },
+  DEMO_PRESET,
 ];
 
 function charToVelocity(ch: string): number {

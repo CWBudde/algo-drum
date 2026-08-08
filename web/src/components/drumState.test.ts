@@ -1,5 +1,83 @@
 import { describe, expect, it } from "vitest";
-import { defaultEngineState, reduceDrumState } from "./drumState";
+import { DEMO_PRESET, presetToFlat } from "../algo/presets";
+import {
+  defaultEngineState,
+  demoEngineState,
+  reduceDrumState,
+} from "./drumState";
+
+describe("engine state factories", () => {
+  it("keeps the canonical default state empty", () => {
+    const state = defaultEngineState();
+
+    for (const bank of state.banks) {
+      expect(Array.from(bank.pattern).every((velocity) => velocity === 0)).toBe(
+        true,
+      );
+    }
+  });
+
+  it("seeds only Bank A with the Funk demo pattern", () => {
+    const defaults = defaultEngineState();
+    const demo = demoEngineState();
+
+    expect(demo.banks[0].pattern).toEqual(
+      Float32Array.from(presetToFlat(DEMO_PRESET)),
+    );
+    for (let bank = 0; bank < demo.banks.length; bank++) {
+      if (bank > 0) {
+        expect(demo.banks[bank].pattern).toEqual(defaults.banks[bank].pattern);
+      }
+      expect({
+        ...demo.banks[bank],
+        pattern: defaults.banks[bank].pattern,
+      }).toEqual(defaults.banks[bank]);
+    }
+
+    expect({ ...demo, banks: defaults.banks }).toEqual(defaults);
+  });
+
+  it("returns independently owned arrays from each demo state", () => {
+    const first = demoEngineState();
+    const second = demoEngineState();
+
+    expect(first.banks).not.toBe(second.banks);
+    expect(first.tracks).not.toBe(second.tracks);
+    expect(first.chain).not.toBe(second.chain);
+
+    for (let bank = 0; bank < first.banks.length; bank++) {
+      expect(first.banks[bank]).not.toBe(second.banks[bank]);
+      expect(first.banks[bank].pattern).not.toBe(second.banks[bank].pattern);
+      expect(first.banks[bank].cellProbabilities).not.toBe(
+        second.banks[bank].cellProbabilities,
+      );
+      expect(first.banks[bank].cellHumanize).not.toBe(
+        second.banks[bank].cellHumanize,
+      );
+      expect(first.banks[bank].cellConditions).not.toBe(
+        second.banks[bank].cellConditions,
+      );
+      expect(first.banks[bank].cellRepeats).not.toBe(
+        second.banks[bank].cellRepeats,
+      );
+      expect(first.banks[bank].trackLengths).not.toBe(
+        second.banks[bank].trackLengths,
+      );
+    }
+
+    for (let track = 0; track < first.tracks.length; track++) {
+      const firstTrack = first.tracks[track];
+      const secondTrack = second.tracks[track];
+      expect(firstTrack).not.toBe(secondTrack);
+      expect(firstTrack.voiceParams).not.toBe(secondTrack.voiceParams);
+      if (firstTrack.tom && secondTrack.tom) {
+        expect(firstTrack.tom.physicalParams).not.toBe(
+          secondTrack.tom.physicalParams,
+        );
+      }
+    }
+  });
+});
 
 describe("reduceDrumState", () => {
   it("updates engine-major track state without mutating the previous snapshot", () => {

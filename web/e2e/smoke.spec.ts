@@ -1,7 +1,11 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
+import { encodeState } from "../src/algo/persistence";
+import { createDefaultEngineState } from "../src/engine/engineState";
 import { PHYSICAL_TOM_PARAMS } from "../src/engine/voiceParams.generated";
+
+const EMPTY_SHARED_STATE = encodeState(createDefaultEngineState());
 
 test("has no automatically detectable accessibility violations", async ({
   page,
@@ -73,6 +77,71 @@ test("phone layout keeps pads usable inside a local scroll area", async ({
     .boundingBox();
   expect(pad?.width).toBeGreaterThanOrEqual(30);
   expect(tap?.height).toBeGreaterThanOrEqual(24);
+});
+
+test("a fresh session is ready to play the Funk demo in one click", async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.clear());
+  await page.goto("./");
+
+  const play = page.getByRole("button", { name: "Play", exact: true });
+  await expect(play).toBeEnabled({ timeout: 30_000 });
+
+  // The first-run state is already musical, including a Tom fill that makes
+  // the otherwise easy-to-miss voice discoverable. Uppercase preset symbols
+  // compile to the accent/mixed state; lowercase symbols are normal hits.
+  await expect(
+    page.getByRole("button", { name: "Bass step 1", exact: true }),
+  ).toHaveAttribute("aria-pressed", "mixed");
+  await expect(
+    page.getByRole("button", { name: "Snare step 5", exact: true }),
+  ).toHaveAttribute("aria-pressed", "mixed");
+  await expect(
+    page.getByRole("button", { name: "Tom step 13", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "Tom step 15", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "Tom step 16", exact: true }),
+  ).toHaveAttribute("aria-pressed", "mixed");
+
+  // Browser audio policy still owns the start gesture: loading the page must
+  // not move transport, while the first explicit Play starts the demo.
+  await expect(
+    page.getByRole("button", { name: "Pause", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.locator(".dm-cell[data-playhead]")).toHaveCount(0);
+  await play.click();
+  await expect(
+    page.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".dm-cell[data-playhead]")).not.toHaveCount(0, {
+    timeout: 6_000,
+  });
+});
+
+test("a valid empty shared pattern is not replaced by the first-run demo", async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.clear());
+  await page.goto(`./#${EMPTY_SHARED_STATE}`);
+
+  await expect(
+    page.getByRole("button", { name: "Play", exact: true }),
+  ).toBeEnabled({ timeout: 30_000 });
+
+  const grid = page.getByRole("grid", { name: "Drum pattern" });
+  await expect(
+    grid.locator(
+      ".dm-cell[aria-pressed='true'], .dm-cell[aria-pressed='mixed']",
+    ),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Tom step 16", exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(".dm-cell[data-playhead]")).toHaveCount(0);
 });
 
 // End-to-end smoke test against the production build: the page loads, the WASM
@@ -199,7 +268,7 @@ test("cell edits survive the engine's authoritative pattern echo", async ({
   await expect(play).toBeEnabled({ timeout: 30_000 });
 
   const cell = page.getByRole("button", {
-    name: "Snare step 5",
+    name: "Snare step 2",
     exact: true,
   });
   await expect(cell).toHaveAttribute("aria-pressed", "false");
@@ -576,7 +645,7 @@ test("pattern banks copy, diverge, and persist independently", async ({
   const bankA = page.getByRole("button", { name: "A", exact: true });
   const bankB = page.getByRole("button", { name: "B", exact: true });
   const bass = page.getByRole("button", {
-    name: "Bass step 1",
+    name: "Bass step 2",
     exact: true,
   });
   await bass.click();

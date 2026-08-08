@@ -473,9 +473,10 @@ tells you what it can do.
 - [ ] **U18: no shortcut discovery.** Space is the only binding and nothing advertises it.
       A `?` overlay listing the keys — worth doing together with U12, since shortcuts
       nobody can find are shortcuts nobody uses.
-- [ ] **U19: no first-run guidance.** A new visitor gets an empty grid and a disabled Play
-      button with no hint that presets exist. Seed a default pattern on first load (no
-      saved state, no URL hash) so the machine makes a sound within one click.
+- [x] **U19: no first-run guidance.** A new visitor gets an empty grid and a disabled Play
+      button with no hint that presets exist. First load now seeds the Funk demo when
+      there is no valid saved state or URL hash, so the machine makes sound within one
+      explicit Play click; deliberately empty saved/shared states remain empty.
 - [ ] **U20: no count-in or metronome**, which makes tap tempo and humanize hard to judge
       by ear.
 - [ ] **U21: the panel does not scale as a unit.** Sizes are fixed px throughout
@@ -805,8 +806,10 @@ pattern.
 - [ ] **G13: Euclid is shallow** — `n` is forced to the global step count
       (`AlgoPanel.tsx:64`), fills at `VEL_NORMAL` only (`:68`), overwrites in one shot,
       and the k/rotation settings are neither persisted nor shared.
-- [ ] **G14: the Tom track appears in zero presets** (verified across all six in
-      `presets.ts:25-75`) — one of five voices is invisible to anyone exploring presets.
+- [x] **G14: the Tom track appears in zero presets** (verified across all six in
+      `presets.ts:25-75`) — the Funk preset now ends with a three-hit Tom fill, including
+      an accented final step, so the voice is present both in the catalogue and first-run
+      demo.
 - [ ] **G15: swing is global and fixed-shape** (`engine.go:142`) — no per-track swing, no
       swing-8 vs swing-16 choice.
 
@@ -845,9 +848,10 @@ deterministically.
       plus `triggerVoice` for auditioning, edited in a per-strip modal
       (`VoiceEditor.tsx`) driven by a generated descriptor table, and persisted in
       the v2 share/localStorage blob. Closes D11.
-- [ ] **G21: a demo that plays itself.** The landing experience is a silent empty grid
-      (see U19). Given presets, mutate and a share format already exist, an autoplaying
-      demo pattern is nearly free and is what communicates "algorithmic" in five seconds.
+- [x] **G21: a demo that plays itself.** The landing experience now preloads the Funk
+      pattern (see U19), including its Tom fill, and remains stopped until the browser-safe
+      Play gesture. One click unlocks audio and starts the demo; no policy-breaking
+      effect-driven autoplay is attempted.
 - [ ] **G22: a second sound set for every voice.** Six of seven voices offer exactly one
       synthesis recipe; only the two Toms can be switched (`SetTomModel`, `engine.go:514`).
       Tracked in full as the waveguide voice-model path below (W1–W6), which generalizes
@@ -875,14 +879,15 @@ reuse remain 0 % covered.
 indicator contrast) landed 2026-08-08. Next: X15 (pattern summary), P12 (generated SW →
 closes P5/P8), P13 (update UX) and T10 (a DOM component-test environment).
 
-**P5 — depth:** ✔ Done 2026-08-07, extended 2026-08-08 with G17: A13/A14 (one persistent state shape and owner →
-closed A4/A8/A9), A16 (engine-owned transport arbitration), G8 (per-cell probability +
-centered humanize), G16 (conditional trigs), G9 (per-track length), G10 (four banks +
-chain), G11 (undo), G17 (per-cell ratchets), G18 (continuous velocity) and F7 (split `DrumMachine.tsx`).
+**P5 — depth:** ✔ Done 2026-08-07, extended 2026-08-08 with G17 and the first-run
+Funk demo: A13/A14 (one persistent state shape and owner → closed A4/A8/A9), A16
+(engine-owned transport arbitration), G8 (per-cell probability + centered humanize), G16
+(conditional trigs), G9 (per-track length), G10 (four banks + chain), G11 (undo), G17
+(per-cell ratchets), G18 (continuous velocity), G14/G21/U19 (one-click first-run demo)
+and F7 (split `DrumMachine.tsx`).
 
-**Quick wins, any time:** G14 (Tom absent from every preset), G21 + U19 (a default
-pattern so the app makes a sound on first click), U18 (`?` shortcut overlay), CI11 (a
-WASM size budget), H5 (take dependabot's first PRs).
+**Quick wins, any time:** U18 (`?` shortcut overlay), CI11 (a WASM size budget), H5
+(take dependabot's first PRs).
 ---
 
 ## Physical drum synthesis path

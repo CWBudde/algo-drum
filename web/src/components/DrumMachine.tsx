@@ -22,7 +22,7 @@ import {
 } from "../engine/voiceParams";
 import AlgoPanel from "./AlgoPanel";
 import CellInspector from "./CellInspector";
-import { defaultEngineState, reduceDrumState } from "./drumState";
+import { demoEngineState, reduceDrumState } from "./drumState";
 import { usePatternHistory } from "./patternHistory";
 import { cellIndex, flatToVisual, TRACK_INDEX } from "./patternView";
 import PatternBanks from "./PatternBanks";
@@ -49,7 +49,7 @@ interface SelectedCell {
 }
 
 export default function DrumMachine({ wasmLoaded }: Props) {
-  const initial = useMemo(() => loadInitialState() ?? defaultEngineState(), []);
+  const initial = useMemo(() => loadInitialState() ?? demoEngineState(), []);
   const [drumState, dispatch] = useReducer(reduceDrumState, initial);
   const { applyStateAction, transport, bankPlayback } = useEngineSync({
     wasmLoaded,

@@ -6,6 +6,7 @@ import {
 } from "../engine/engineState";
 import type { TomModel } from "../engine/tomModel";
 import { STEP_CAPACITY, TRACK_COUNT } from "../algo/pattern";
+import { DEMO_PRESET, presetToFlat } from "../algo/presets";
 
 export const DEFAULT_TEMPO_BPM = 120;
 
@@ -290,4 +291,12 @@ export function reduceDrumState(
 
 export function defaultEngineState(): EngineState {
   return createDefaultEngineState();
+}
+
+// First-run UI state stays separate from the canonical empty engine default,
+// which persistence migrations and tests use as their neutral baseline.
+export function demoEngineState(): EngineState {
+  const state = createDefaultEngineState();
+  state.banks[0].pattern = Float32Array.from(presetToFlat(DEMO_PRESET));
+  return state;
 }

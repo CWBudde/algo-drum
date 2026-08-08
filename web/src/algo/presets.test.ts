@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { PRESETS, emptyPattern, presetToFlat } from "./presets";
-import { PATTERN_SIZE, VEL_ACCENT, VEL_NORMAL, VEL_OFF } from "./pattern";
+import {
+  PATTERN_SIZE,
+  STEP_CAPACITY,
+  VEL_ACCENT,
+  VEL_NORMAL,
+  VEL_OFF,
+  index,
+} from "./pattern";
+import { DEMO_PRESET, PRESETS, emptyPattern, presetToFlat } from "./presets";
 
 const VALID = new Set([VEL_OFF, VEL_NORMAL, VEL_ACCENT]);
 
@@ -42,6 +49,46 @@ describe("presets", () => {
     // HiHat row (track 2) "x.x.x..." normal hits on even steps.
     expect(flat[2 * 16 + 0]).toBe(VEL_NORMAL);
     expect(flat[2 * 16 + 1]).toBe(VEL_OFF);
+  });
+
+  it("keeps the Funk demo at its established catalogue position", () => {
+    expect(PRESETS.map((preset) => preset.name)).toEqual([
+      "Rock",
+      "House",
+      "Breakbeat",
+      "Hip-Hop",
+      "Techno",
+      "Funk",
+    ]);
+    expect(PRESETS[5]).toBe(DEMO_PRESET);
+  });
+
+  it("gives the Funk demo a Tom fill at the end of the bar", () => {
+    expect(DEMO_PRESET.rows[3]).toBe("............x.xX");
+
+    const flat = presetToFlat(DEMO_PRESET);
+    const tom = Array.from(
+      { length: STEP_CAPACITY },
+      (_, step) => flat[index(3, step)],
+    );
+    expect(tom).toEqual([
+      VEL_OFF,
+      VEL_OFF,
+      VEL_OFF,
+      VEL_OFF,
+      VEL_OFF,
+      VEL_OFF,
+      VEL_OFF,
+      VEL_OFF,
+      VEL_OFF,
+      VEL_OFF,
+      VEL_OFF,
+      VEL_OFF,
+      VEL_NORMAL,
+      VEL_OFF,
+      VEL_NORMAL,
+      VEL_ACCENT,
+    ]);
   });
 
   it("emptyPattern is all-off and full length", () => {
