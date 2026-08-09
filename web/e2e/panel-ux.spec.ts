@@ -48,6 +48,42 @@ test("preset identity follows edits and destructive history", async ({
   await expect(preset).toHaveValue("1");
 });
 
+test("preset loading and MUTATE rewrite the audible pattern atomically", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await waitForEngine(page);
+
+  const preset = page.getByRole("combobox", { name: "Load preset pattern" });
+  await preset.selectOption({ label: "Rock" });
+  await expect(
+    page.getByRole("button", { name: "Bass step 1", exact: true }),
+  ).toHaveAttribute("aria-pressed", "mixed");
+  await expect(
+    page.getByRole("button", { name: "Bass step 9", exact: true }),
+  ).toHaveAttribute("aria-pressed", "mixed");
+  await expect(
+    page.getByRole("button", { name: "Snare step 5", exact: true }),
+  ).toHaveAttribute("aria-pressed", "mixed");
+  await expect(
+    page.getByRole("button", { name: "HiHat step 3", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "Bass step 2", exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
+
+  const cells = page.locator(".dm-cell");
+  const snapshot = async () =>
+    cells.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute("aria-pressed")).join(),
+    );
+  const before = await snapshot();
+  await page.getByRole("button", { name: "Mutate pattern" }).click();
+  await expect.poll(snapshot).not.toBe(before);
+  await page.getByRole("button", { name: "Undo pattern action" }).click();
+  await expect.poll(snapshot).toBe(before);
+});
+
 test("Euclid number drafts commit on blur, Enter, and Fill", async ({
   page,
 }) => {
@@ -77,6 +113,77 @@ test("Euclid number drafts commit on blur, Enter, and Fill", async ({
     .getByRole("button", { name: "FILL", exact: true })
     .click();
   await expect(rotation).toHaveValue("15");
+});
+
+test("Euclid FILL replaces only the selected track with the requested rhythm", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await waitForEngine(page);
+  await page
+    .getByRole("combobox", { name: "Load preset pattern" })
+    .selectOption({ label: "Rock" });
+
+  await page.getByText("EUCLID", { exact: true }).click();
+  const euclid = page.locator(".dm-euclid-panel");
+  await euclid.locator("select").selectOption({ label: "Snare" });
+  await euclid.getByLabel("HITS", { exact: true }).fill("4");
+  await euclid.getByLabel("ROTATE", { exact: true }).fill("0");
+  await euclid.getByRole("button", { name: "FILL", exact: true }).click();
+
+  for (let step = 1; step <= 16; step++) {
+    await expect(
+      page.getByRole("button", { name: `Snare step ${step}`, exact: true }),
+    ).toHaveAttribute(
+      "aria-pressed",
+      [1, 5, 9, 13].includes(step) ? "true" : "false",
+    );
+  }
+  await expect(
+    page.getByRole("button", { name: "Bass step 1", exact: true }),
+  ).toHaveAttribute("aria-pressed", "mixed");
+});
+
+test("master knobs accept keyboard and pointer edits and persist them", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await waitForEngine(page);
+
+  const steps = page.getByRole("slider", { name: "Pattern length" });
+  const probability = page.getByRole("slider", {
+    name: "Trigger probability",
+  });
+  const humanize = page.getByRole("slider", { name: "Humanize" });
+  const reverb = page.getByRole("slider", { name: "REVERB", exact: true });
+
+  await steps.focus();
+  await page.keyboard.press("Home");
+  await expect(steps).toHaveAttribute("aria-valuetext", "1 steps");
+  await probability.focus();
+  await page.keyboard.press("Home");
+  await expect(probability).toHaveAttribute("aria-valuenow", "0");
+  await humanize.focus();
+  await page.keyboard.press("End");
+  await expect(humanize).toHaveAttribute("aria-valuenow", "100");
+
+  const box = await reverb.boundingBox();
+  if (!box) throw new Error("Reverb knob has no bounding box");
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y - 75, { steps: 5 });
+  await page.mouse.up();
+  await expect(reverb).toHaveAttribute("aria-valuenow", "50");
+
+  await page.waitForTimeout(500);
+  await page.reload();
+  await waitForEngine(page);
+  await expect(steps).toHaveAttribute("aria-valuetext", "1 steps");
+  await expect(probability).toHaveAttribute("aria-valuenow", "0");
+  await expect(humanize).toHaveAttribute("aria-valuenow", "100");
+  await expect(reverb).toHaveAttribute("aria-valuenow", "50");
 });
 
 test("the themed loading status transitions to the visible ready state", async ({

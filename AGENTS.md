@@ -20,7 +20,10 @@ just build           # build-wasm, then the production bundle → web/dist/
 just preview         # build, then serve web/dist/ locally
 just test            # Go test suite
 just test-assert     # Go test suite with the engine self-check compiled into Render
+just test-wasm       # cmd/wasm API tests under the real Node WASM runtime
+just test-cover      # engine tests with the enforced 90% statement floor
 just web-test        # frontend unit tests (Vitest)
+just web-test-coverage # frontend tests with enforced V8 coverage floors
 just fmt             # format everything via treefmt (gofumpt, gci, shfmt, prettier)
 just lint            # golangci-lint against the js/wasm target
 just gen-params      # regenerate the TS mirror of the voice parameter table
@@ -61,9 +64,12 @@ There is a real test suite; run it before claiming a change works.
 
 ```bash
 go test ./...        # Go engine + voice tests (host arch — cmd/wasm is js/wasm-only)
+just test-wasm       # syscall/js API marshalling and buffer tests under Node
+just test-cover      # internal/drum statement coverage must remain at least 90%
 
 cd web
-bun run test         # Vitest: the pure algo/, knobMath and patternMirror modules
+bun run test         # Vitest: pure modules, bridge shims and jsdom component tests
+bun run test:coverage # Vitest including jsdom component tests + coverage thresholds
 bun run test:e2e     # Playwright: builds WASM + a production bundle, serves it on
                      # :4173, then drives the real app in headless Chromium
 ```

@@ -21,6 +21,12 @@ jobs:
       - name: Test
         run: go test ./...
 
+      - name: Test WASM API under Node
+        run: GOOS=js GOARCH=wasm go test -exec="$PWD/scripts/go-js-wasm-test-exec.sh" ./cmd/wasm
+
+      - name: Enforce Go engine coverage
+        run: bash scripts/check-go-coverage.sh
+
       - name: Test with the engine self-check enabled
         # -tags drumassert compiles Engine.Validate into Render
         # (internal/drum/assert_debug.go), so the same suite fails on corrupt

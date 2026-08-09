@@ -30,6 +30,14 @@ lint-fix:
 test:
     go test ./...
 
+# Exercise the syscall/js API under Go's real Node WASM runner
+test-wasm:
+    GOOS=js GOARCH=wasm go test -exec="$PWD/scripts/go-js-wasm-test-exec.sh" ./cmd/wasm
+
+# Enforce the statement-coverage floor for the production engine package
+test-cover:
+    bash scripts/check-go-coverage.sh
+
 # Run the Go test suite with the engine self-check compiled into Render
 # (internal/drum/assert_debug.go); a broken invariant panics where it happens
 # instead of surfacing as plausible-sounding audio.
@@ -81,6 +89,10 @@ web-typecheck:
 web-test:
     cd web && bun run test
 
+# Run frontend tests with the enforced V8 coverage thresholds
+web-test-coverage:
+    cd web && bun run test:coverage
+
 # Run the Vite dev server (WASM must be built first)
 dev: build-wasm
     cd web && bun run dev
@@ -96,7 +108,7 @@ preview: build
 # ── Quality gates ────────────────────────────────────────────────────────────
 
 # Run all CI checks, mirroring .github/workflows/ci.yml (a green `just ci` must mean the same as a green CI run)
-ci: check-formatted lint check-tidy check-params test test-assert test-purego web-typecheck web-test
+ci: check-formatted lint check-tidy check-params test test-assert test-wasm test-cover test-purego web-typecheck web-test-coverage
 
 # ── Housekeeping ─────────────────────────────────────────────────────────────
 

@@ -37,8 +37,8 @@ jobs:
       - name: Lint
         run: bun run lint
 
-      - name: Unit tests
-        run: bun run test
+      - name: Unit tests and coverage
+        run: bun run test:coverage
 
       - name: Build
         run: bunx vite build

@@ -21,17 +21,17 @@ Reviewed: 2026-07-09 · Re-reviewed: **2026-07-26** at `81dae31` · Hardening pa
 | 5   | Frontend code quality     | **9/10** | +2  | Shared theme tokens, strict dual-project TypeScript and strict type-aware linting             |
 | 6   | UI / UX                   | **9/10** | +3  | Mobile-scaled editing now has drag-paint, row tools, shortcuts and a saved count-in          |
 | 7   | Accessibility             | **6/10** | —   | Real buttons, real sliders, AA text contrast; 80 flat tab stops and no AT playhead          |
-| 8   | Testing                   | **8/10** | +1  | Fuzzed engine + a fake-Worker bridge suite; components still untestable (no DOM env)        |
+| 8   | Testing                   | **10/10** | +3  | Real WASM API + render goldens, jsdom components, production e2e and coverage gates         |
 | 9   | CI/CD & tooling           | **9/10** | +2  | Lints the WASM target, deploy gated on CI, tools pinned, caches and artifacts in place      |
 | 10  | Repo hygiene              | **8/10** | —   | Clean tree and dependabot now watching; the deps themselves are still three majors behind   |
 | 11  | Documentation             | **9/10** | +2  | Every verified-stale claim corrected; the toolchain and test suite are finally documented   |
 | 12  | PWA & deployment          | **6/10** | —   | Stamp verified and deploy no longer races CI; the bundle is still never precached           |
 | 13  | Feature depth vs the name | **6/10** | —   | Per-cell variation, polymeter and chained rhythm banks now provide real depth                |
 
-**Overall: 8.0/10** (was 6.6 at re-review, 4.0 at first review). The hardening, engine,
-pipeline, state and UI passes closed the correctness, DSP, transport-plumbing, split-state
-and everyday editing gaps; what is left is mostly offline reach, accessibility depth and
-the larger generative/export features the name promises.
+**Overall: 8.2/10** (was 6.6 at re-review, 4.0 at first review). The hardening, engine,
+pipeline, state, UI and testing passes closed the correctness, DSP, transport-plumbing,
+split-state and regression-safety gaps; what is left is mostly offline reach,
+accessibility depth and the larger generative/export features the name promises.
 
 ### Verified after the hardening pass
 
@@ -599,22 +599,30 @@ remaining "can a screen-reader user actually operate this?" gaps.
       screen-reader pass (NVDA or VoiceOver) — automation catches perhaps half of what
       X6/X7 are about.
 
-## 8. Testing — 8/10
+## 8. Testing — 10/10
 
-The Go engine is genuinely well tested: 44 test functions plus a fuzz target, **98.0 %**
-statement coverage,
-asserting real invariants (swing preserves bar length, clamping on every setter, output
-bounded and finite, humanize bounds, allocation-free render via `AllocsPerRun`). The
-frontend's tests are up to **247 passing**, now including a fake-Worker suite for the
-main-thread bridge. The remaining island is the UI itself.
+The host Go suite now passes **256 cases** plus its fuzz target at **92.2 %** measured
+`internal/drum` statement coverage, with a full-engine sound golden beside the existing
+physical-Tom digest. Four additional tests execute the real `cmd/wasm` API under Go's
+Node WASM runtime. The frontend stands at **298 passing tests across 24 files**, including
+21 jsdom component tests, plus **29 production Playwright scenarios**. Both languages now
+have enforced coverage floors.
 
-- [ ] **T7: `cmd/wasm/main.go` is invisible to the test runner.** Its `js && wasm` build
+- [x] **T7: `cmd/wasm/main.go` is invisible to the test runner.** Its `js && wasm` build
       tag means `go test ./...` never even compiles it, so the arg marshalling,
       clamping, `unsafe` buffer reuse and pre-init gating — the entire API surface the
       frontend depends on — are 0 % covered. This is where C13 and C19 live.
-- [ ] **T8: no golden render test.** `engine_test.go:608` builds two engines in the same
+      Closed with a small `newAPI()` construction seam and four build-tagged tests run
+      through Go's real Node WASM executor. They cover every pre-init method, scalar and
+      typed-array marshalling, atomic state replacement, the render cap, byte-copy
+      correctness and grow/shrink buffer reuse; `just test-wasm` and CI run them.
+- [x] **T8: no golden render test.** `engine_test.go:902` builds two engines in the same
       process and compares them, which proves determinism but not stability — any DSP
       change passes silently. Commit a reference checksum/RMS-per-step-window instead.
+      A canonical 96,000-sample bar now covers all seven procedural voices, overlap,
+      reverb, mixing and limiting in production-sized chunks. amd64 checks the exact
+      float32 SHA-256; every architecture checks 16 narrow-tolerance step RMS windows
+      and prints reviewable replacement constants on a mismatch.
 - [x] **T9: the bridge is untested** — `wasmEngine.ts` (258 lines) and `audioWorker.ts`
       (206 lines): worker spawn, MessageChannel wiring, command dispatch, chunking, step
       tagging, echo-after-edit and the new API-compat checks have no unit test. C14–C16
@@ -625,19 +633,28 @@ main-thread bridge. The remaining island is the UI itself.
       before rendering, buffer reuse and its size-mismatch fallback), and
       `worklet.test.ts` stubs `AudioWorkletProcessor` to cover the credit watchdog,
       underrun throttling and buffer return. `wasmEngine.test.ts` gained idle-suspend and
-      underrun coverage. The suite now stands at 247 tests across 15 files.
+      underrun coverage. Those bridge tests remain part of the current 298-test suite.
       Left open by design: `worklet.js` is reached from a test by URL import because it
       must stay in `public/` to be addressable by `addModule`.
-- [ ] **T10: no component tests at all**, and currently impossible: `vitest.config.ts:9`
+- [x] **T10: no component tests at all**, and currently impossible: `vitest.config.ts:9`
       sets `environment: "node"` with no jsdom/happy-dom or Testing Library in
       `package.json`. Adding them would let X5–X8 be regression-tested.
-- [ ] **T11: e2e breadth remains incomplete.** The production suite is now 15 tests wide,
+      Vitest now has isolated Node and jsdom projects. Twenty-one Testing Library cases
+      cover the app lifecycle, grid semantics and gestures, live announcements, every
+      master control, banks, inspectors, dialogs, voice editing and the browser entry.
+- [x] **T11: e2e breadth remains incomplete.** The production suite was 26 tests wide,
       including axe, keyboard-grid/skip-link behavior, phone overflow/target sizing,
       SHARE/URL restore, localStorage, mute, voice editing, banks and chaining. Preset
       load, MUTATE, Euclid fill, knob drag, STEPS/PROB/HUMAN and reverb still need direct
       coverage.
-- [ ] **T12: no coverage measurement or threshold in CI** for either language, and no
+      Three direct production scenarios bring the suite to 29: they assert Rock's cells
+      and MUTATE/undo identity, an isolated Snare E(4,16), and persisted STEPS/PROB/HUMAN
+      edits plus a real pointer-dragged REVERB knob.
+- [x] **T12: no coverage measurement or threshold in CI** for either language, and no
       `coverage` block in `vitest.config.ts`.
+      CI and `just ci` enforce 90 % statements on `internal/drum` and honest all-source
+      frontend floors of 80 % statements/lines/functions and 75 % branches. The closing
+      frontend run measured 88.78/91.00/89.55/78.37 %, respectively.
 
 ## 9. CI/CD & tooling — 9/10
 
