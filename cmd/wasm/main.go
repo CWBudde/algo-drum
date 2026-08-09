@@ -82,6 +82,12 @@ type patternBankOutput struct {
 }
 
 func main() {
+	js.Global().Set("AlgoDrum", newAPI())
+
+	select {} // keep Go runtime alive
+}
+
+func newAPI() js.Value {
 	api := js.Global().Get("Object").New()
 
 	api.Set("init", export(func(args []js.Value) any {
@@ -699,9 +705,7 @@ func main() {
 	// during the load handshake and refuses to run on a mismatch.
 	api.Set("protocolVersion", drum.ProtocolVersion)
 
-	js.Global().Set("AlgoDrum", api)
-
-	select {} // keep Go runtime alive
+	return api
 }
 
 // ready reports whether init has run, logging a single warning the first
