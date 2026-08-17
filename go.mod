@@ -3,7 +3,7 @@ module github.com/cwbudde/algo-drum
 go 1.25.0
 
 require (
-	github.com/cwbudde/algo-dsp v0.0.0-20260729115219-8ea972cf5f07
+	github.com/cwbudde/algo-dsp v0.6.0
 	github.com/cwbudde/algo-tom v0.1.0
 )
 
