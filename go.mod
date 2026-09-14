@@ -3,12 +3,12 @@ module github.com/cwbudde/algo-drum
 go 1.25.0
 
 require (
-	github.com/cwbudde/algo-dsp v0.0.0-20260729115219-8ea972cf5f07
+	github.com/cwbudde/algo-dsp v0.7.1
 	github.com/cwbudde/algo-tom v0.1.0
 )
 
 require (
-	github.com/cwbudde/algo-fft v0.7.4 // indirect
-	github.com/cwbudde/algo-vecmath v0.1.0 // indirect
+	github.com/cwbudde/algo-fft v0.8.0 // indirect
+	github.com/cwbudde/algo-vecmath v0.1.3 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 )
