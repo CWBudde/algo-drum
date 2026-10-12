@@ -1,5 +1,5 @@
-github.com/cwbudde/algo-dsp v0.7.1 h1:KqU+w3ne0FUD9vMPW+0fz6X+Neg/gu+bQkL0CLCAxgQ=
-github.com/cwbudde/algo-dsp v0.7.1/go.mod h1:WHf7IHUr1XZza4oQbGAymnuVM+gqbtRbIB7bMjvQHSc=
+github.com/cwbudde/algo-dsp v0.12.4 h1:hCN9DyyRt3CWpU/NJrbAHhbfcaOL4521GnjWSCNleas=
+github.com/cwbudde/algo-dsp v0.12.4/go.mod h1:WHf7IHUr1XZza4oQbGAymnuVM+gqbtRbIB7bMjvQHSc=
 github.com/cwbudde/algo-fft v0.8.0 h1:kmjmSYdYYC0cELjORwUV5Qd02KQB91sTLFC4ifm07D4=
 github.com/cwbudde/algo-fft v0.8.0/go.mod h1:H5rJ7JNXvhe3kT4yc41TJB9DEnO7KlhHN7toLO+ZZXU=
 github.com/cwbudde/algo-tom v0.1.0 h1:R/rGcD1VilsIUrxy6nfVSm8y5LYK2If5BKzIS03XN2g=
